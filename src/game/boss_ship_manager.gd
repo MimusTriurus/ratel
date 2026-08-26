@@ -55,7 +55,7 @@ func update() -> void:
 			else:
 				brown_tank_delay = 10 * 91
 				var sx := game_mode.camera_x \
-					+ main.random.randi_range(0, Main.DISPLAY_WIDTH - 1)
+					+ main.random.randi_range(0, Main.SCREEN_WIDTH - 1)
 				if sx < 320:
 					sx = 320
 				elif sx > 1472:

@@ -46,7 +46,7 @@ func _init(p_down: bool) -> void:
 		+ (-APPEAR_DISTANCE if main.random.randi_range(0, 1) == 0 else APPEAR_DISTANCE)
 	if x - 96 < game_mode.camera_x:
 		x = game_mode.player.x + APPEAR_DISTANCE
-	elif x + 96 > game_mode.camera_x + Main.DISPLAY_WIDTH:
+	elif x + 96 > game_mode.camera_x + Main.SCREEN_WIDTH:
 		x = game_mode.player.x - APPEAR_DISTANCE
 
 	if p_down:

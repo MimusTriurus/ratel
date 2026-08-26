@@ -88,6 +88,33 @@ grid, packed 21 to a `long`, which is how the tanks path in O(1).
 track through `AudioStreamPlayer.finished`; `Sfx` keeps a small voice pool per
 effect and reproduces the original's 125 ms retrigger throttle.
 
+## The widened view
+
+The original ran in a 1024x960 frame, which is a 256x240 NES screen at 4x. The
+maps, though, are 64 tiles across -- exactly twice that -- so half the terrain
+was always off to one side. The viewport is now 1728x960: the same 4x pixel
+scale, 54 tiles visible instead of 32, and roughly 16:9.
+
+Only the width changed. Enemies are spawned by trigger rows keyed to `camera_y`
+(`GameMode._process_triggers`), so a taller frame would show the player the
+empty ground that they have not spawned into yet. Height stays at 960.
+
+`Main.SCREEN_WIDTH` is the viewport; `Main.DISPLAY_WIDTH` stays 1024 and is now
+the layout box for everything that is fixed-size artwork -- the title, the
+mission map, the cutscenes, the menus. Those are centred in the wider viewport
+and clipped to that box, because several of them slide content in from just
+outside the frame and relied on the old viewport to hide it. Gameplay code that
+asks "where is the edge of the visible frame" uses `SCREEN_WIDTH`.
+
+Two consequences worth knowing, neither of them fixable without redrawing the
+maps:
+
+* Enemies are spawned at fixed map positions, so some now appear in view at the
+  sides instead of safely off-frame.
+* A wider frame is a wider `is_outside_of_frame`, so grenades and missiles
+  reach targets that used to be immune, and the bosses that scatter spawns
+  across the frame scatter them wider.
+
 ## Controls, and where they deviate
 
 The original is a NES game: eight-direction movement, grenades thrown in

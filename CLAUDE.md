@@ -140,6 +140,36 @@ triggers derive from the previous snap, which is what makes
 `clear_key_pressed_record()` work. `ButtonMapping` persists to
 `user://buttons.cfg`.
 
+### Two widths: SCREEN_WIDTH vs DISPLAY_WIDTH
+
+`DISPLAY_WIDTH` (1024) is no longer the viewport. It is the original frame, kept
+as the layout box for fixed-size artwork; `SCREEN_WIDTH` (1728) is the actual
+viewport. When touching anything that reads either, decide which one the code
+means:
+
+- "the edge of the visible frame" -- `is_outside_of_frame`, camera margins,
+  enemies turning at the edge, boss spawn spread -> `SCREEN_WIDTH`.
+- "where on the title screen / menu / cutscene does this go" -> `DISPLAY_WIDTH`.
+  `JeepYeahPlane` lives in `src/game` but is a cutscene actor, so it is the one
+  file there still on `DISPLAY_WIDTH`.
+
+`Main._draw` centres every non-`GameMode` mode by `PILLAR_X` and wraps it in
+`set_outer_clip`. The clip is not optional: `IntroMode` slides its story crawl
+in from outside the frame and relied on the old viewport to hide it.
+
+Clipping therefore has two independent rects intersected into `_clip_rect`: the
+inner one is Slick's `setWorldClip` (`set_clip`/`clear_clip`), the outer one the
+pillar box. They are kept separate deliberately -- `set_clip` is a replace and
+`clear_clip` an off, and call sites like `boss_garage_manager` set twice and
+clear once, so a push/pop stack would leak, and a single shared rect would let a
+mode's `clear_clip` drop the pillar box for the rest of the frame. `_blit` skips
+the polygon path for sprites wholly inside the clip, which matters now that
+every sprite on a menu screen is clipped.
+
+`GameMode.TILES_ACROSS` is derived from `SCREEN_WIDTH`; the background loop
+draws one column more, and one fewer at the right edge of the map where
+`row[TILES_ACROSS + x_tile]` would index `map_width` itself.
+
 ### Controls: WASD + mouse aim
 
 The one deliberate gameplay departure from the Java original. Movement defaults

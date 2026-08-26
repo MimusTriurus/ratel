@@ -41,6 +41,10 @@ const DIRECTION_RADIANS: Array[float] = [
 
 const DIRECTION_DEGREES: Array[int] = [270, 90, 180, 0, 225, 315, 135, 45]
 
+# Tile columns the frame spans. The background loop draws one more than this,
+# to cover the sub-tile scroll offset.
+const TILES_ACROSS := Main.SCREEN_WIDTH >> 5
+
 const WATER_ALPHAS_PERIOD := 136
 static var WATER_ALPHAS: PackedFloat32Array = PackedFloat32Array()
 
@@ -110,7 +114,7 @@ func init(p_main: Main) -> void:
 		elements.append(layer)
 
 	trigger_y = map_height
-	max_camera_x = float((map_width - 32) * 32)
+	max_camera_x = float((map_width - TILES_ACROSS) * 32)
 	max_camera_y = float((map_height - 31) * 32)
 	camera_x = 0.0
 	camera_y = max_camera_y
@@ -293,8 +297,8 @@ func _camera_track_player() -> void:
 		camera_x = player.x - CAMERA_MARGIN_SIDES
 		if camera_x < 0:
 			camera_x = 0
-	elif camera_x - player.x < CAMERA_MARGIN_SIDES - Main.DISPLAY_WIDTH:
-		camera_x = player.x + CAMERA_MARGIN_SIDES - Main.DISPLAY_WIDTH
+	elif camera_x - player.x < CAMERA_MARGIN_SIDES - Main.SCREEN_WIDTH:
+		camera_x = player.x + CAMERA_MARGIN_SIDES - Main.SCREEN_WIDTH
 		if camera_x > max_camera_x:
 			camera_x = max_camera_x
 
@@ -338,7 +342,7 @@ func process_trigger(index: int, x: int, y: int) -> void:
 		Triggers.BROWN_TANK:
 			BrownTank.new(x + 32, y + 48)
 		Triggers.FRIENDLY_HELICOPTER_LANDING:
-			FriendlyHelicopter.new(camera_x + Main.DISPLAY_WIDTH / 2.0,
+			FriendlyHelicopter.new(camera_x + Main.SCREEN_WIDTH / 2.0,
 				camera_y + Main.DISPLAY_HEIGHT + 128, true, false)
 		Triggers.YELLOW_GUN:
 			RotatingGun.make_gray(x + 64, y + 64, false)
@@ -528,12 +532,12 @@ func is_conveyor(x: float, y: float) -> bool:
 
 func is_outside_of_frame(x: float, y: float) -> bool:
 	return y > camera_y + Main.DISPLAY_HEIGHT or x < camera_x or y < camera_y \
-		or x > camera_x + Main.DISPLAY_WIDTH
+		or x > camera_x + Main.SCREEN_WIDTH
 
 
 func is_outside_of_frame_rect(x1: float, y1: float, x2: float, y2: float) -> bool:
 	return y1 > camera_y + Main.DISPLAY_HEIGHT or x2 < camera_x or y2 < camera_y \
-		or x1 > camera_x + Main.DISPLAY_WIDTH
+		or x1 > camera_x + Main.SCREEN_WIDTH
 
 
 func distance_outside_of_frame(x: float, y: float) -> float:
@@ -543,8 +547,8 @@ func distance_outside_of_frame(x: float, y: float) -> float:
 		return y - (camera_y + Main.DISPLAY_HEIGHT)
 	if x < camera_x:
 		return camera_x - x
-	if x > camera_x + Main.DISPLAY_WIDTH:
-		return x - (camera_x + Main.DISPLAY_WIDTH)
+	if x > camera_x + Main.SCREEN_WIDTH:
+		return x - (camera_x + Main.SCREEN_WIDTH)
 	return 0.0
 
 
@@ -730,7 +734,10 @@ func _draw_background() -> void:
 	var y_offset := fmod(camera_y, 32.0)
 	var x_tile := int(camera_x / 32.0)
 	var y_tile := int(camera_y / 32.0)
-	var x_start := 31 if 32 + x_tile == map_width else 32
+	# One short at the far right edge: row[TILES_ACROSS + x_tile] would index
+	# map_width itself.
+	var at_right_edge := TILES_ACROSS + x_tile == map_width
+	var x_start := TILES_ACROSS - 1 if at_right_edge else TILES_ACROSS
 
 	if stage_index > 0:
 		if stage_index == 2:

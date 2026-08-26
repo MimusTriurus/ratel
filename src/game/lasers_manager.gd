@@ -56,7 +56,7 @@ func _advance_beam_index() -> void:
 
 func _beam_visible(beam_x: float) -> bool:
 	return not (beam_x + 8 < game_mode.camera_x
-		or beam_x - 8 > game_mode.camera_x + Main.DISPLAY_WIDTH)
+		or beam_x - 8 > game_mode.camera_x + Main.SCREEN_WIDTH)
 
 
 func update() -> void:

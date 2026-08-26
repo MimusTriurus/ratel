@@ -79,7 +79,7 @@ func update() -> void:
 			var b: BossGarage = garages[garage_index]
 			garage_index += 1
 			if not b.remove and b.x + 128 > game_mode.camera_x \
-					and b.x < game_mode.camera_x + Main.DISPLAY_WIDTH:
+					and b.x < game_mode.camera_x + Main.SCREEN_WIDTH:
 				boss_garage = b
 				break
 			elif garage_index == 4:

@@ -100,7 +100,7 @@ func _choose_target() -> void:
 		target_x = player.x
 	else:
 		target_x = game_mode.camera_x + 48 \
-			+ main.random.randi_range(0, Main.DISPLAY_WIDTH - 96 - 1)
+			+ main.random.randi_range(0, Main.SCREEN_WIDTH - 96 - 1)
 	if target_x < 176:
 		target_x = 176
 	elif target_x > 1872:

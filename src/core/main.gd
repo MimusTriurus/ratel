@@ -9,8 +9,21 @@
 class_name Main
 extends Node2D
 
+# The frame the original ran in. Still the layout box for everything that is
+# fixed-size 1024x960 artwork: the title, the mission map, the cutscenes and
+# the menus.
 const DISPLAY_WIDTH := 1024
 const DISPLAY_HEIGHT := 960
+
+# The actual viewport. Wider than the original so that more of the map is
+# visible at the same 4x pixel scale -- the maps are 64 tiles across, twice the
+# original frame, so there is real terrain to show. Only the height is left
+# alone: enemies are spawned by trigger rows keyed to camera_y, so a taller
+# frame would reveal the empty ground they have not spawned into yet.
+const SCREEN_WIDTH := 1728
+
+# Fixed-size screens are centred in the wider viewport rather than stretched.
+const PILLAR_X := (SCREEN_WIDTH - DISPLAY_WIDTH) / 2
 
 const FONT_WHITE := 0
 const FONT_GRAY := 1
@@ -212,6 +225,17 @@ var _clip_rect: Rect2 = Rect2()
 var _clipping: bool = false
 var _cursor_hidden: bool = false
 
+# Two independent clips, intersected into _clip_rect. The inner one is Slick's
+# setWorldClip, driven by set_clip/clear_clip; the outer one is the pillar box
+# around a fixed-size screen. They are kept apart because set_clip is a replace
+# and clear_clip an off, and several call sites set twice and clear once -- a
+# push/pop stack would leak there, and a shared rect would let a mode's
+# clear_clip drop the pillar box for the rest of the frame.
+var _inner_clip: Rect2 = Rect2()
+var _inner_on: bool = false
+var _outer_clip: Rect2 = Rect2()
+var _outer_on: bool = false
+
 
 static func _static_init() -> void:
 	FADES.resize(FADE_COUNT)
@@ -279,13 +303,30 @@ func _draw() -> void:
 	_xf = Transform2D.IDENTITY
 	_xf_stack.clear()
 	_clipping = false
+	_inner_on = false
+	_outer_on = false
 	draw_set_transform_matrix(_xf)
 
 	if mode != null:
-		mode.render()
+		if mode is GameMode:
+			mode.render()
+		else:
+			# Fixed 1024-wide artwork: paint the pillars, then centre it. The
+			# modes themselves are untouched and still lay out against
+			# DISPLAY_WIDTH. set_clip runs the clip rect through the current
+			# transform, so their clipping follows the shift.
+			draw_rect(Rect2(0, 0, SCREEN_WIDTH, DISPLAY_HEIGHT), Color.BLACK, true)
+			translate_graphics(PILLAR_X, 0)
+			# Clipped as well as centred: these screens slide content in from
+			# outside the frame (IntroMode's story crawl) and relied on the
+			# 1024 viewport to hide it.
+			set_outer_clip(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT)
+			mode.render()
+			clear_outer_clip()
+			pop_graphics()
 
 	if fading:
-		draw_rect(Rect2(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT), FADES[fade_index], true)
+		draw_rect(Rect2(0, 0, SCREEN_WIDTH, DISPLAY_HEIGHT), FADES[fade_index], true)
 
 
 # The system cursor is replaced by the drawn crosshair while aiming, and comes
@@ -564,11 +605,26 @@ func scale_graphics(x: float, y: float, scale_x: float, scale_y: float) -> void:
 
 func _blit(s: Spr, x: float, y: float, alpha: float = -1.0) -> void:
 	var a: float = s.alpha if alpha < 0.0 else clampf(alpha, 0.0, 1.0)
-	if _clipping:
+	if _clipping and not _inside_clip(s, x, y):
 		_blit_clipped(s, x, y, a)
 		return
 	draw_texture_rect_region(s.tex, Rect2(x, y, s.w, s.h), s.region,
 		Color(1.0, 1.0, 1.0, a))
+
+
+# Sprites wholly inside the clip skip the polygon path. Worth the four
+# transforms: the pillar box means every sprite on a title, menu or cutscene
+# screen is now clipped, and nearly all of them are comfortably inside it.
+func _inside_clip(s: Spr, x: float, y: float) -> bool:
+	var p0 := _xf * Vector2(x, y)
+	var p1 := _xf * Vector2(x + s.w, y)
+	var p2 := _xf * Vector2(x + s.w, y + s.h)
+	var p3 := _xf * Vector2(x, y + s.h)
+	var lo := Vector2(minf(minf(p0.x, p1.x), minf(p2.x, p3.x)),
+		minf(minf(p0.y, p1.y), minf(p2.y, p3.y)))
+	var hi := Vector2(maxf(maxf(p0.x, p1.x), maxf(p2.x, p3.x)),
+		maxf(maxf(p0.y, p1.y), maxf(p2.y, p3.y)))
+	return _clip_rect.encloses(Rect2(lo, hi - lo))
 
 
 # --- Clipping ----------------------------------------------------------------
@@ -579,15 +635,44 @@ func _blit(s: Spr, x: float, y: float, alpha: float = -1.0) -> void:
 # Sutherland-Hodgman, and its UVs recovered through the inverse transform. This
 # is exact for rotated and scaled sprites alike.
 
-func set_clip(cx: float, cy: float, cw: float, ch: float) -> void:
+func _device_rect(cx: float, cy: float, cw: float, ch: float) -> Rect2:
 	var p0 := _xf * Vector2(cx, cy)
 	var p1 := _xf * Vector2(cx + cw, cy + ch)
-	_clip_rect = Rect2(p0, p1 - p0).abs()
-	_clipping = true
+	return Rect2(p0, p1 - p0).abs()
+
+
+func set_clip(cx: float, cy: float, cw: float, ch: float) -> void:
+	_inner_clip = _device_rect(cx, cy, cw, ch)
+	_inner_on = true
+	_refresh_clip()
 
 
 func clear_clip() -> void:
-	_clipping = false
+	_inner_on = false
+	_refresh_clip()
+
+
+# The pillar box a fixed-size screen is drawn inside. Call after the centring
+# translate, so the rect lands in device space where the box actually is.
+func set_outer_clip(cx: float, cy: float, cw: float, ch: float) -> void:
+	_outer_clip = _device_rect(cx, cy, cw, ch)
+	_outer_on = true
+	_refresh_clip()
+
+
+func clear_outer_clip() -> void:
+	_outer_on = false
+	_refresh_clip()
+
+
+func _refresh_clip() -> void:
+	_clipping = _inner_on or _outer_on
+	if _inner_on and _outer_on:
+		_clip_rect = _inner_clip.intersection(_outer_clip)
+	elif _inner_on:
+		_clip_rect = _inner_clip
+	elif _outer_on:
+		_clip_rect = _outer_clip
 
 
 func _blit_clipped(s: Spr, x: float, y: float, a: float) -> void:
