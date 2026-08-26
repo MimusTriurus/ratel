@@ -64,8 +64,12 @@ one line per painted row and nothing else, then `git checkout -- assets/maps`.
 `src/tools/map_editor.tscn` shows a stage the way the game draws it, with the
 collision types, destruction groups and spawn triggers over the top — including
 the row each trigger actually fires on, which is the thing about the map format
-that is impossible to see in the game. It edits the tile grid, the collision
-grid and the triggers; groups are drawn but not yet editable:
+that is impossible to see in the game. It edits all four things a stage file
+holds: the tile grid, the collision grid, the triggers and the destruction
+groups. Check stage looks for the mistake the format invites — a destructible
+object binds to its group by reading `groups_map` at one cell of its own
+footprint, so a group that has drifted off that cell silently fires group 0
+instead:
 
 ```bash
 godot --path . src/tools/map_editor.tscn

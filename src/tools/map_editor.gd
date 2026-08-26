@@ -13,10 +13,16 @@
 # above the top of the frame, so it is filed under tile_y + height - 1, and the
 # whole row goes off at once. Hover a trigger to see that row drawn.
 #
-# Editing covers the two grids -- tiles and collision types -- and the spawn
-# triggers. Groups are drawn but not editable yet, and they survive a save
-# untouched because the document the stage was loaded from is what gets written
-# back for the parts the Stage does not carry in authored form.
+# Editing covers the two grids -- tiles and collision types -- the spawn
+# triggers, and the destruction groups. Everything else in the stage file
+# survives a save untouched, because the document it was loaded from is what
+# gets written back for the parts the Stage does not carry in authored form.
+#
+# Check stage looks for the mistake this format invites: a destructible object
+# does not hold a reference to its group, it reads groups_map at one cell of its
+# own footprint, so a group that does not cover that cell binds the object to
+# group 0 instead -- silently, because a byte array cannot tell "no group" from
+# "group 0".
 #
 # Painting collision types invalidates dirs-N.dat, the precomputed flow field.
 # The status panel says so, and Rebuild pathing rebuilds it -- but that is a
@@ -34,7 +40,29 @@ const TOOL_INSPECT := 0
 const TOOL_TILES := 1
 const TOOL_TYPES := 2
 const TOOL_TRIGGERS := 3
-const TOOL_NAMES: Array[String] = ["Inspect", "Tiles", "Types", "Triggers"]
+const TOOL_GROUPS := 4
+const TOOL_NAMES: Array[String] = [
+	"Inspect", "Tiles", "Types", "Triggers", "Groups",
+]
+
+# Where each destructible object looks its group up. It is not a reference: the
+# element reads groups_map at one cell of its own footprint, so a group that does
+# not cover that exact cell binds the object to whatever is there instead --
+# usually group 0, because groups_map is a byte array and "no group" and "group
+# 0" are the same value. Offsets are in tiles from the trigger's own position,
+# which is where the object spawns. See House, Hut, Gate, Statue and Column.
+const GROUP_PROBES := {
+	Triggers.HOUSE_LEFT: Vector2i(0, 2),
+	Triggers.HOUSE_RIGHT: Vector2i(5, 2),
+	Triggers.HUT: Vector2i(1, 1),
+	Triggers.SHACK: Vector2i(2, 3),
+	Triggers.TANK_SHACK: Vector2i(2, 3),
+	Triggers.GATE: Vector2i(1, 0),
+	Triggers.STATUE_NONE: Vector2i(1, 1),
+	Triggers.STATUE_LEFT: Vector2i(1, 1),
+	Triggers.STATUE_RIGHT: Vector2i(1, 1),
+	Triggers.COLUMN: Vector2i(0, 0),
+}
 
 # Indexed by MapIO.TYPE_* .
 const TYPE_COLORS: Array[Color] = [
@@ -77,6 +105,12 @@ var current_trigger := Triggers.SOLDIER_WALKER
 # Index into the document's trigger list for the difficulty on show, or -1.
 var selected_trigger := -1
 
+# Index into stage.groups, or -1. after_preview draws the map as it will look
+# once the selected group fires, and points the two brushes at the group's cells
+# instead of the map, which is how the "after" state gets authored.
+var selected_group := -1
+var after_preview := false
+
 var layers := {
 	"tiles": true,
 	"overlay": true,
@@ -93,7 +127,10 @@ var _stroke_layer := ""
 var _rect_anchor := Vector2i(-1, -1)
 var _drag_grab := Vector2i.ZERO   # cursor tile minus trigger tile, while dragging
 var _drag_before: Array = []      # the trigger list as it was when the drag began
-var _dirty := {"tiles": false, "types": false, "triggers": false}
+var _selected_cells := {}         # Vector2i -> index into the selected group
+var _stroke_groups: Array = []    # groups as they were when an after-state stroke began
+var _dirty := {"tiles": false, "types": false, "triggers": false,
+	"groups": false}
 # Unsaved edits and a stale flow field are different problems with different
 # fixes: Ctrl+S writes the stage, rebuilding writes dirs-N.dat, and painting one
 # tile does not invalidate the pathing at all.
@@ -108,6 +145,8 @@ var _type_buttons: Array[Button] = []
 var _tile_palette: GridContainer
 var _tile_scroll: ScrollContainer
 var _trigger_list: ItemList
+var _group_panel: VBoxContainer
+var _group_list: ItemList
 var _tile_group := ButtonGroup.new()
 var _layer_boxes := {}
 var _font: Font
@@ -196,11 +235,13 @@ func _load_stage(index: int) -> void:
 	MapIO.load_stage(index, stage, trigger_sizes)
 
 	_undo_redo.clear_history()
-	_dirty = {"tiles": false, "types": false, "triggers": false}
+	_dirty = {"tiles": false, "types": false, "triggers": false, "groups": false}
 	_dirs_stale = false
 	_stroke.clear()
+	_stroke_groups = []
 	_drag_before = []
 	selected_trigger = -1
+	_select_group(-1)
 	current_tile = clampi(current_tile, 0, maxi(0, stage.tiles.size() - 1))
 
 	if _stage_picker != null:
@@ -215,7 +256,7 @@ func _load_stage(index: int) -> void:
 
 func _save() -> void:
 	if MapIO.save_stage(stage_index, stage, document) == OK:
-		_dirty = {"tiles": false, "types": false, "triggers": false}
+		_dirty = {"tiles": false, "types": false, "triggers": false, "groups": false}
 		_message = "saved stage-%d.json" % stage_index
 	else:
 		_message = "SAVE FAILED, see the console"
@@ -247,7 +288,7 @@ func _rebuild_pathing() -> void:
 
 
 func _is_dirty() -> bool:
-	return _dirty["tiles"] or _dirty["types"] or _dirty["triggers"]
+	return _dirty["tiles"] or _dirty["types"] or _dirty["triggers"] 		or _dirty["groups"]
 
 
 # size is not settled during _ready, so the viewport is the honest measure. It
@@ -307,6 +348,9 @@ func _mouse_button(event: InputEventMouseButton) -> void:
 					_grab_trigger(event.alt_pressed)
 				else:
 					_release_trigger()
+			elif tool == TOOL_GROUPS:
+				if event.pressed:
+					_click_group(event.shift_pressed)
 			elif event.pressed:
 				if event.alt_pressed:
 					_pick_at(hover_tile)
@@ -421,6 +465,13 @@ func _layer_for_tool() -> String:
 func _begin_stroke() -> void:
 	_stroke = {}
 	_stroke_layer = _layer_for_tool()
+	# In after-state mode the brushes write into the selected group instead of
+	# the map, so the stroke is undone as a group snapshot rather than as cells.
+	_stroke_groups = _copy_groups() if _painting_after() else []
+
+
+func _painting_after() -> bool:
+	return after_preview and selected_group >= 0
 
 
 func _paint_at(tile: Vector2i) -> void:
@@ -453,6 +504,14 @@ func _write(cell: Vector2i, value: int) -> void:
 			or cell.y >= stage.map_height - 1:
 		return
 
+	if _painting_after():
+		# Only cells the group already covers: adding them is the Groups tool's
+		# job, and a brush that quietly grew the group would be a trap.
+		if _selected_cells.has(cell):
+			var entry: Array = stage.groups[selected_group][_selected_cells[cell]]
+			entry[2 if _stroke_layer == "tiles" else 3] = value
+		return
+
 	var grid: Array = stage.tile_map if _stroke_layer == "tiles" else stage.types_map
 	var row: PackedInt32Array = grid[cell.y]
 	var old: int = row[cell.x]
@@ -472,6 +531,13 @@ func _commit_stroke() -> void:
 	var cells := _stroke
 	_stroke = {}
 	_stroke_layer = ""
+
+	if not _stroke_groups.is_empty():
+		var before := _stroke_groups
+		_stroke_groups = []
+		_after_group_change(before, "Paint group %s" % layer)
+		return
+
 	if cells.is_empty():
 		return
 
@@ -702,13 +768,241 @@ func _refresh_triggers() -> void:
 		stage.map_height, trigger_sizes, stage_index)
 
 
+# --- Groups ------------------------------------------------------------------
+#
+# A group is the set of cells rewritten when the thing standing on them is
+# destroyed, each cell carrying the tile and type it becomes. Order is
+# significant -- groups_map holds an index, and BossHeadquarters reaches for
+# groups[0] by number -- so a group is only ever appended, and group 0 is not
+# removable.
+
+func _select_group(index: int) -> void:
+	selected_group = index
+	_selected_cells = {}
+	if index >= 0 and index < stage.groups.size():
+		var group: Array = stage.groups[index]
+		for i in group.size():
+			_selected_cells[Vector2i(group[i][0], group[i][1])] = i
+	_refresh_group_list()
+	_update_status()
+	queue_redraw()
+
+
+# groups_map cannot answer this on its own: the cell of a group 0 and a cell of
+# no group both read zero, so membership is confirmed against the group itself.
+func _group_of(cell: Vector2i) -> int:
+	if cell.x < 0 or cell.y < 0 or cell.x >= stage.map_width \
+			or cell.y >= stage.map_height - 1:
+		return -1
+	var index: int = stage.groups_map[cell.y][cell.x]
+	if index >= stage.groups.size():
+		return -1
+	for entry in stage.groups[index]:
+		if entry[0] == cell.x and entry[1] == cell.y:
+			return index
+	return -1
+
+
+# Click selects the group under the cursor; with one already selected, clicking
+# bare ground adds that cell to it, and shift-clicking one of its cells removes
+# it. A new cell changes nothing on its own -- it starts as what is already
+# there, and the after state is painted with the brushes.
+func _click_group(remove: bool) -> void:
+	if hover_tile.x < 0 or hover_tile.y >= stage.map_height - 1:
+		return
+
+	var before := _copy_groups()
+	var owner := _group_of(hover_tile)
+
+	if remove:
+		if owner < 0 or owner != selected_group:
+			_message = "shift-click removes a cell from the selected group"
+			_update_status()
+			return
+		var group: Array = stage.groups[selected_group]
+		group.remove_at(_selected_cells[hover_tile])
+		_after_group_change(before, "Remove group cell")
+		return
+
+	if owner >= 0 and owner != selected_group:
+		_select_group(owner)
+		return
+
+	if selected_group < 0:
+		_message = "no group selected: click one of its cells, or New group"
+		_update_status()
+		return
+
+	if owner == selected_group:
+		return
+
+	stage.groups[selected_group].append([hover_tile.x, hover_tile.y,
+		stage.tile_map[hover_tile.y][hover_tile.x],
+		stage.types_map[hover_tile.y][hover_tile.x]])
+	_after_group_change(before, "Add group cell")
+
+
+func _new_group() -> void:
+	var before := _copy_groups()
+	stage.groups.append([])
+	selected_group = stage.groups.size() - 1
+	_after_group_change(before, "New group")
+	_message = "group %d is empty: click cells to add them" % selected_group
+	_update_status()
+
+
+func _delete_group() -> void:
+	if selected_group < 0:
+		_message = "no group selected"
+		_update_status()
+		return
+	if selected_group == 0:
+		# Removing it would renumber every other group, and BossHeadquarters
+		# takes groups[0] by number rather than by cell.
+		_message = "group 0 cannot be removed: BossHeadquarters names it directly"
+		_update_status()
+		return
+
+	var before := _copy_groups()
+	stage.groups.remove_at(selected_group)
+	selected_group = -1
+	_after_group_change(before, "Delete group")
+
+
+func _copy_groups() -> Array:
+	var out: Array = []
+	for group in stage.groups:
+		var cells: Array = []
+		for entry in group:
+			cells.append([entry[0], entry[1], entry[2], entry[3]])
+		out.append(cells)
+	return out
+
+
+func _after_group_change(before: Array, what: String) -> void:
+	_rebuild_groups_map()
+	_select_group(selected_group)
+	var after := _copy_groups()
+	if before == after:
+		return
+	_undo_redo.create_action(what)
+	_undo_redo.add_do_method(_set_groups.bind(after))
+	_undo_redo.add_undo_method(_set_groups.bind(before))
+	_undo_redo.commit_action(false)
+	_dirty["groups"] = true
+	_message = ""
+	_update_status()
+	queue_redraw()
+
+
+func _set_groups(groups: Array) -> void:
+	stage.groups = groups.duplicate(true)
+	if selected_group >= stage.groups.size():
+		selected_group = -1
+	_rebuild_groups_map()
+	_select_group(selected_group)
+	_dirty["groups"] = true
+	_update_status()
+	_update_inspector()
+	queue_redraw()
+
+
+func _refresh_group_list() -> void:
+	if _group_list == null:
+		return
+	_group_list.clear()
+	for i in stage.groups.size():
+		var cells: Array = stage.groups[i]
+		var where := ""
+		if not cells.is_empty():
+			where = "  at (%d, %d)" % [cells[0][0], cells[0][1]]
+		_group_list.add_item("%d:  %d cells%s" % [i, cells.size(), where])
+	if selected_group >= 0 and selected_group < _group_list.item_count:
+		_group_list.select(selected_group)
+
+
+# Puts the group in the middle of the map view, since a stage is ten screens
+# tall and the list is the only way to find one.
+func _show_group(index: int) -> void:
+	if index < 0 or index >= stage.groups.size() or stage.groups[index].is_empty():
+		return
+	var cell: Array = stage.groups[index][0]
+	var view := _view_size()
+	view_offset.x = -SIDEBAR_WIDTH / zoom
+	view_offset.y = cell[1] * TILE - view.y / (2.0 * zoom)
+	queue_redraw()
+
+
+func _rebuild_groups_map() -> void:
+	for row in stage.groups_map:
+		(row as PackedByteArray).fill(0)
+	for i in stage.groups.size():
+		for entry in stage.groups[i]:
+			stage.groups_map[entry[1]][entry[0]] = i
+
+
+# --- Checking ----------------------------------------------------------------
+
+# The one thing about this format that cannot be seen and cannot be guessed: a
+# destructible object binds to its group by reading one cell of its footprint.
+func _check_stage() -> Array[String]:
+	var problems: Array[String] = []
+
+	for difficulty in 2:
+		var key := "hard" if difficulty == 1 else "normal"
+		for entry in document["triggers"][key]:
+			var trigger: Dictionary = entry
+			var index := _trigger_index(trigger)
+			if not GROUP_PROBES.has(index):
+				continue
+			var probe: Vector2i = GROUP_PROBES[index]
+			var cell := Vector2i(int(trigger["x"]) + probe.x,
+				int(trigger["y"]) + probe.y)
+			var group := _group_of(cell)
+			if group < 0:
+				problems.append("%s (%s) at (%d, %d): cell (%d, %d) is in no group, so it will fire group 0"
+					% [trigger["type"], key, int(trigger["x"]), int(trigger["y"]),
+						cell.x, cell.y])
+
+	for i in stage.groups.size():
+		if stage.groups[i].is_empty():
+			problems.append("group %d is empty" % i)
+
+	if stage.groups.size() > 255:
+		problems.append("%d groups: groups_map is a byte array and cannot index past 255"
+			% stage.groups.size())
+
+	var tile_count: int = stage.tiles.size()
+	for i in stage.groups.size():
+		for entry in stage.groups[i]:
+			if entry[2] >= tile_count:
+				problems.append("group %d wants tile %d, the stage has %d"
+					% [i, entry[2], tile_count])
+				break
+
+	return problems
+
+
+func _run_check() -> void:
+	var problems := _check_stage()
+	if problems.is_empty():
+		_message = "checked: nothing wrong"
+	else:
+		_message = "%d problem(s):\n  %s" % [problems.size(),
+			"\n  ".join(problems.slice(0, 6))]
+		if problems.size() > 6:
+			_message += "\n  ... and %d more" % (problems.size() - 6)
+	_update_status()
+
+
 func _set_tool(new_tool: int) -> void:
 	tool = new_tool
 	for i in _tool_buttons.size():
 		_tool_buttons[i].set_pressed_no_signal(i == tool)
 	if _tile_scroll != null:
-		_tile_scroll.visible = tool != TOOL_TRIGGERS
+		_tile_scroll.visible = tool == TOOL_TILES or tool == TOOL_TYPES 			or tool == TOOL_INSPECT
 		_trigger_list.visible = tool == TOOL_TRIGGERS
+		_group_panel.visible = tool == TOOL_GROUPS
 	if tool != TOOL_TRIGGERS:
 		selected_trigger = -1
 	_update_status()
@@ -779,6 +1073,10 @@ func _draw_tiles(first_x: int, first_y: int, last_x: int, last_y: int,
 		var Y := y * TILE
 		for x in range(first_x, last_x + 1):
 			var index := row[x]
+			if after_preview and selected_group >= 0:
+				var cell := Vector2i(x, y)
+				if _selected_cells.has(cell):
+					index = stage.groups[selected_group][_selected_cells[cell]][2]
 			if (index >= 225) != overlay:
 				continue
 			var X := x * TILE
@@ -806,6 +1104,10 @@ func _draw_types(first_x: int, first_y: int, last_x: int, last_y: int) -> void:
 		var row: PackedInt32Array = stage.types_map[y]
 		for x in range(first_x, last_x + 1):
 			var t := row[x]
+			if after_preview and selected_group >= 0:
+				var cell := Vector2i(x, y)
+				if _selected_cells.has(cell):
+					t = stage.groups[selected_group][_selected_cells[cell]][3]
 			if t >= 0 and t < TYPE_COLORS.size():
 				draw_rect(Rect2(x * TILE, y * TILE, TILE, TILE), TYPE_COLORS[t], true)
 
@@ -838,12 +1140,35 @@ func _draw_grid(first_x: int, first_y: int, last_x: int, last_y: int) -> void:
 			cy += 4
 
 
-# A group is the set of cells rewritten when the thing on them is destroyed.
+# A group is the set of cells rewritten when the thing on them is destroyed. The
+# selected one is drawn heavier, and its probe cells -- the ones the objects
+# standing on it actually read -- get a cross so a group that has drifted off
+# them is visible rather than merely wrong.
 func _draw_groups() -> void:
 	for i in stage.groups.size():
+		var selected := i == selected_group
+		var color := COLOR_BRUSH if selected else COLOR_GROUP
+		var width := (2.5 if selected else 1.5) / zoom
 		for cell in stage.groups[i]:
 			draw_rect(Rect2(cell[0] * TILE, cell[1] * TILE, TILE, TILE),
-				COLOR_GROUP, false, 1.5 / zoom)
+				color, false, width)
+
+	if tool != TOOL_GROUPS:
+		return
+
+	var rows: Array = document["triggers"]["hard" if hard else "normal"]
+	for entry in rows:
+		var trigger: Dictionary = entry
+		var index := _trigger_index(trigger)
+		if not GROUP_PROBES.has(index):
+			continue
+		var probe: Vector2i = GROUP_PROBES[index]
+		var x := float(int(trigger["x"]) + probe.x) * TILE
+		var y := float(int(trigger["y"]) + probe.y) * TILE
+		var bound := _group_of(Vector2i(int(x / TILE), int(y / TILE))) >= 0
+		var color := COLOR_GROUP if bound else Color(1.0, 0.25, 0.25)
+		draw_line(Vector2(x, y), Vector2(x + TILE, y + TILE), color, 2.0 / zoom)
+		draw_line(Vector2(x + TILE, y), Vector2(x, y + TILE), color, 2.0 / zoom)
 
 
 func _draw_triggers() -> void:
@@ -990,6 +1315,15 @@ func _build_ui() -> void:
 	_build_layers(box)
 	box.add_child(HSeparator.new())
 
+	var check := Button.new()
+	check.text = "Check stage"
+	check.tooltip_text = ("Looks for the mistakes this format hides: a "
+		+ "destructible object whose group does not cover the cell it reads, an "
+		+ "empty group, a tile index the stage does not have.")
+	check.focus_mode = Control.FOCUS_NONE
+	check.pressed.connect(_run_check)
+	box.add_child(check)
+
 	var rebuild := Button.new()
 	rebuild.text = "Rebuild pathing"
 	rebuild.tooltip_text = ("Recomputes dirs-N.dat from the collision grid and "
@@ -1092,6 +1426,37 @@ func _build_tools(box: VBoxContainer) -> void:
 		_set_tool(TOOL_TRIGGERS))
 	box.add_child(_trigger_list)
 
+	_group_panel = VBoxContainer.new()
+	_group_panel.visible = false
+	box.add_child(_group_panel)
+
+	var group_buttons := HBoxContainer.new()
+	for entry in [["New group", _new_group], ["Delete", _delete_group]]:
+		var button := Button.new()
+		button.text = entry[0]
+		button.focus_mode = Control.FOCUS_NONE
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.pressed.connect(entry[1])
+		group_buttons.add_child(button)
+	_group_panel.add_child(group_buttons)
+
+	var after := CheckBox.new()
+	after.text = "Show and paint after state"
+	after.focus_mode = Control.FOCUS_NONE
+	after.toggled.connect(func(pressed: bool) -> void:
+		after_preview = pressed
+		_update_status()
+		queue_redraw())
+	_group_panel.add_child(after)
+
+	_group_list = ItemList.new()
+	_group_list.custom_minimum_size.y = 140
+	_group_list.focus_mode = Control.FOCUS_NONE
+	_group_list.item_selected.connect(func(item: int) -> void:
+		_select_group(item)
+		_show_group(item))
+	_group_panel.add_child(_group_list)
+
 
 # One button per tile in the stage's sheet, rebuilt when the stage changes
 # because every stage has its own.
@@ -1176,6 +1541,13 @@ func _update_status() -> void:
 			detail = "tile %d   brush %d" % [current_tile, brush]
 		TOOL_TYPES:
 			detail = "%s   brush %d" % [MapIO.TYPE_NAME[current_type], brush]
+		TOOL_GROUPS:
+			if selected_group >= 0:
+				detail = "group %d, %d cells%s" % [selected_group,
+					stage.groups[selected_group].size(),
+					"   painting the after state" if _painting_after() else ""]
+			else:
+				detail = "nothing selected"
 		TOOL_TRIGGERS:
 			detail = trigger_names[current_trigger]
 			if selected_trigger >= 0 and selected_trigger < _triggers().size():

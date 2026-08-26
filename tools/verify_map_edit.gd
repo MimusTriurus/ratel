@@ -124,6 +124,81 @@ func _init() -> void:
 	editor._grab_trigger(false)
 	editor._release_trigger()
 
+	# Groups: membership, the after state, and the check that reads the same cell
+	# the game reads.
+	var group_count: int = stage.groups.size()
+	editor.tool = editor.TOOL_GROUPS
+	var first_cell: Array = stage.groups[0][0]
+	editor.hover_tile = Vector2i(first_cell[0], first_cell[1])
+	editor._click_group(false)
+	_check("clicking a group cell selects that group", editor.selected_group == 0)
+
+	var cells_before: int = stage.groups[0].size()
+	var fresh := Vector2i(int(first_cell[0]) + 8, int(first_cell[1]))
+	editor.hover_tile = fresh
+	editor._click_group(false)
+	_check("a bare cell joins the selected group",
+		stage.groups[0].size() == cells_before + 1)
+	_check("groups_map followed the new cell",
+		stage.groups_map[fresh.y][fresh.x] == 0 and editor._group_of(fresh) == 0)
+
+	# The after state is painted with the ordinary brushes, retargeted.
+	editor.after_preview = true
+	editor.tool = editor.TOOL_TILES
+	editor.current_tile = 77
+	editor.brush = 1
+	editor._begin_stroke()
+	editor._paint_at(fresh)
+	editor._commit_stroke()
+	var painted: Array = stage.groups[0][editor._selected_cells[fresh]]
+	_check("the brush wrote the group's after tile", painted[2] == 77)
+	_check("the map itself was left alone",
+		stage.tile_map[fresh.y][fresh.x] != 77)
+
+	editor._undo()
+	_check("undo restored the group",
+		stage.groups[0][editor._selected_cells[fresh]][2] != 77)
+	editor._redo()
+	editor.after_preview = false
+
+	editor.tool = editor.TOOL_GROUPS
+	editor.hover_tile = fresh
+	editor._click_group(true)
+	_check("shift-click removes the cell", stage.groups[0].size() == cells_before)
+	_check("groups_map forgot it", editor._group_of(fresh) < 0)
+
+	editor._new_group()
+	_check("new group appended", stage.groups.size() == group_count + 1)
+	_check("new group is selected", editor.selected_group == group_count)
+	editor._delete_group()
+	_check("delete removed it", stage.groups.size() == group_count)
+
+	editor._select_group(0)
+	editor._delete_group()
+	_check("group 0 is refused", stage.groups.size() == group_count)
+
+	# editor is typed as Control here, so the return type has to be spelled out.
+	var problems: Array = editor._check_stage()
+	_check("the check finds nothing wrong with a stage as shipped",
+		problems.is_empty())
+
+	# Break the binding the way an edit would, and see it caught.
+	var probe_before := _copy_group(stage.groups[0])
+	stage.groups[0].clear()
+	editor._rebuild_groups_map()
+	editor._select_group(0)
+	_check("an object whose group lost its cell is reported",
+		editor._check_stage().size() > 0)
+	stage.groups[0] = probe_before
+	editor._rebuild_groups_map()
+
+	# Leave one group edit in place so the save has to carry it.
+	editor._select_group(0)
+	editor.hover_tile = fresh
+	editor._click_group(false)
+	stage.groups[0][editor._selected_cells[fresh]][2] = 77
+	stage.groups[0][editor._selected_cells[fresh]][3] = MapIO.TYPE_WATER
+
 	editor._save()
 	_check("save cleared the dirty flags", not editor._is_dirty())
 	# Saving the stage does not fix the flow field: that is a separate file, a
@@ -148,6 +223,17 @@ func _init() -> void:
 		_row_holds(reloaded, drop.y - grab.y + editor.trigger_sizes[Triggers.BROWN_TANK][1] - 1,
 			Triggers.BROWN_TANK))
 
+	var reloaded_cell: Array = []
+	for entry in reloaded.groups[0]:
+		if entry[0] == fresh.x and entry[1] == fresh.y:
+			reloaded_cell = entry
+	_check("the group cell came back", not reloaded_cell.is_empty())
+	_check("with the after state it was given",
+		not reloaded_cell.is_empty() and reloaded_cell[2] == 77
+		and reloaded_cell[3] == MapIO.TYPE_WATER)
+	_check("groups_map was rebuilt from the file",
+		reloaded.groups_map[fresh.y][fresh.x] == 0)
+
 	editor.free()
 
 	if failures == 0:
@@ -155,6 +241,13 @@ func _init() -> void:
 	else:
 		print("\n%d check(s) failed" % failures)
 	quit(1 if failures > 0 else 0)
+
+
+func _copy_group(group: Array) -> Array:
+	var out: Array = []
+	for entry in group:
+		out.append([entry[0], entry[1], entry[2], entry[3]])
+	return out
 
 
 func _row_holds(stage: Stage, row: int, trigger_index: int) -> bool:
