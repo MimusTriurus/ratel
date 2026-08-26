@@ -164,6 +164,12 @@ touching this:
   `Menu`, `IntroMode`, `SunsetMode`, `HardEndingMode` and `KonamiCode`; a click
   must not navigate a menu. `Player` reads `is_gun()` / `is_grenade()`, which OR
   the mouse in.
+- **`InputMode` binds whatever it is given.** It is a faithful port, so every
+  prompt accepts any key — which used to include `Escape`, leaving no way out
+  of the screen but to bind six controls. It now snapshots the mapping on entry
+  (`ButtonMapping.duplicate_mapping`), treats `Escape` as cancel, and shows the
+  binding each prompt would replace. Options → Defaults calls
+  `reset_to_defaults()` for when a mapping is already unusable.
 - **Direction keys shadow the fallback gun keys.** `GUN_FALLBACK` is the
   original's `Z / Y / W / K`, and `W` is now "up", so `snap()` skips any
   fallback key a direction or the grenade claims.

@@ -22,6 +22,34 @@ var mouse_aim: bool = true
 
 const SAVE_PATH := "user://buttons.cfg"
 
+# Every persisted field. InputMode snapshots the mapping on entry and restores
+# it through this when the remap is cancelled, and reset_to_defaults() copies
+# from a fresh instance.
+func copy_from(o: ButtonMapping) -> void:
+	key_up = o.key_up
+	key_down = o.key_down
+	key_left = o.key_left
+	key_right = o.key_right
+	key_grenade = o.key_grenade
+	key_gun = o.key_gun
+	gun_key_mapped = o.gun_key_mapped
+	controller = o.controller
+	controller_index = o.controller_index
+	controller_grenade = o.controller_grenade
+	controller_gun = o.controller_gun
+	mouse_aim = o.mouse_aim
+
+
+func duplicate_mapping() -> ButtonMapping:
+	var copy := ButtonMapping.new()
+	copy.copy_from(self)
+	return copy
+
+
+func reset_to_defaults() -> void:
+	copy_from(ButtonMapping.new())
+
+
 func save() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("keys", "up", key_up)

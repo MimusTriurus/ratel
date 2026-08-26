@@ -2,6 +2,12 @@
 # answered by pressing the key or pad button to bind, and a binding already in
 # use is simply ignored. Pressing a pad button binds grenade and gun and skips
 # the four direction prompts.
+#
+# Beyond the original, which had no way out of this screen: Escape cancels and
+# restores the mapping as it was on entry, instead of being bound as a control.
+# The binding each prompt is about to replace is shown too, so it is clear what
+# is being changed. Without these it is easy to walk in, try to back out with
+# Escape, and leave with the jeep bound to nonsense.
 class_name InputMode
 extends RefCounted
 
@@ -31,6 +37,9 @@ var state: int = STATE_FADE_IN
 var name_index: int
 var delay: int
 var controller_pressed: bool
+var cancelled: bool
+# The mapping as it was on entry, restored if the remap is cancelled.
+var entry_mapping: ButtonMapping
 
 
 static func _static_init() -> void:
@@ -42,6 +51,7 @@ static func _static_init() -> void:
 func init(p_main: Main) -> void:
 	main = p_main
 	button_mapping = p_main.button_mapping
+	entry_mapping = button_mapping.duplicate_mapping()
 	p_main.start_fade(false, self)
 
 
@@ -50,8 +60,14 @@ func fade_completed() -> void:
 		state = STATE_READING
 	elif state == STATE_FADE_OUT:
 		state = STATE_DONE
-		button_mapping.save()
-		main.request_mode(Modes.INTRO)
+		if cancelled:
+			# Nothing was written to disk, so restoring the live mapping is all
+			# it takes. Back to Options, where this screen was entered from.
+			button_mapping.copy_from(entry_mapping)
+			main.request_mode(Modes.OPTIONS)
+		else:
+			button_mapping.save()
+			main.request_mode(Modes.INTRO)
 
 
 # Fed from Main._input.
@@ -59,6 +75,9 @@ func input_event(event: InputEvent) -> void:
 	if state != STATE_READING:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_ESCAPE:
+			_cancel()
+			return
 		_key_pressed(event.keycode)
 	elif event is InputEventJoypadButton and event.pressed:
 		_button_pressed(event.device, event.button_index)
@@ -116,6 +135,31 @@ func _key_pressed(keycode: int) -> void:
 				_advance()
 
 
+func _cancel() -> void:
+	cancelled = true
+	state = STATE_FADE_OUT
+	main.play_sound_always(main.bullet_hit_sound)
+	main.start_fade(true, self)
+
+
+# What the current prompt is about to replace. The gun falls back to the
+# original's Z/Y/W/K set until it is mapped, and Z is the one shown.
+func _current_binding() -> String:
+	var bm := button_mapping
+	var code: Key = bm.key_grenade
+	match name_index:
+		1: code = bm.key_gun
+		2: code = bm.key_up
+		3: code = bm.key_down
+		4: code = bm.key_left
+		5: code = bm.key_right
+	return OS.get_keycode_string(code)
+
+
+static func _centered_x(text: String) -> float:
+	return (Main.DISPLAY_WIDTH - (text.length() << 5)) / 2.0
+
+
 func _advance() -> void:
 	main.play_sound_always(main.bullet_hit_sound)
 	state = STATE_READ_FADE
@@ -142,12 +186,19 @@ func render() -> void:
 	main.draw_text("On either your keyboard", 144, 304, Main.FONT_GRAY)
 	main.draw_text("or gamepad, press:", 224, 368, Main.FONT_GRAY)
 
+	main.draw_text("escape cancels", _centered_x("escape cancels"), 800,
+		Main.FONT_GRAY)
+
 	if state == STATE_FADE_OUT or name_index >= NAMES.size():
 		return
 
+	var now := "now " + _current_binding()
 	if state == STATE_READ_FADE:
 		main.draw_text_alpha(NAMES[name_index], NAME_XS[name_index], 464,
 			Main.FONT_ORANGE_GRAY, delay * I_FADE_TIME)
+		main.draw_text_alpha(now, _centered_x(now), 560, Main.FONT_GRAY,
+			delay * I_FADE_TIME)
 	else:
 		main.draw_text(NAMES[name_index], NAME_XS[name_index], 464,
 			Main.FONT_ORANGE_GRAY)
+		main.draw_text(now, _centered_x(now), 560, Main.FONT_GRAY)

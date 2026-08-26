@@ -20,7 +20,7 @@ func init(p_main: Main) -> void:
 	input = p_main.input
 
 	menu = Menu.new(448, 512, p_main, 0, Menu.ICON_TANK, self,
-		["input", "controls", "difficulty", "done"])
+		["input", "controls", "difficulty", "defaults", "done"])
 
 	p_main.start_fade(false, self)
 
@@ -38,6 +38,12 @@ func fade_completed() -> void:
 			2:
 				main.request_mode(Modes.DIFFICULTY)
 			3:
+				# Not in the original: a way back to WASD, X, Z and mouse
+				# aiming, for when a remap has left the jeep unusable.
+				main.button_mapping.reset_to_defaults()
+				main.button_mapping.save()
+				main.request_mode(Modes.INTRO)
+			4:
 				main.request_mode(Modes.INTRO)
 
 

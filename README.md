@@ -18,7 +18,9 @@ the machine gun, right mouse button to throw a grenade or missile. The arrow
 keys always work as a second set of direction keys, and `X` / `Z` still throw
 and fire from the keyboard. `F12` toggles fullscreen, `Escape` leaves it, `P` or
 `Enter` pauses. Keys and pad buttons can be remapped from Options → Input, and
-are saved to `user://buttons.cfg`.
+are saved to `user://buttons.cfg`. That screen shows the binding each prompt is
+about to replace, and `Escape` leaves it without changing anything.
+Options → Defaults puts everything back.
 
 While aiming, the system cursor is replaced by a drawn crosshair. It comes back
 in the menus, in the cutscenes and while paused, and the pointer is never
