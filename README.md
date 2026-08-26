@@ -18,9 +18,11 @@ the machine gun, right mouse button to throw a grenade or missile. The arrow
 keys always work as a second set of direction keys, and `X` / `Z` still throw
 and fire from the keyboard. `F12` toggles fullscreen, `Escape` leaves it, `P` or
 `Enter` pauses. Keys and pad buttons can be remapped from Options → Input, and
-are saved to `user://buttons.cfg`; mouse aiming can be turned off there by
-setting `[mouse] aim=false` in the same file, which restores the original
-scheme.
+are saved to `user://buttons.cfg`.
+
+Options → Controls switches between `mouse` (the default) and `classic`, which
+restores the original aiming: the grenade follows the jeep and the machine gun
+only ever fires north. The choice is saved with the key bindings.
 
 ## Layout
 

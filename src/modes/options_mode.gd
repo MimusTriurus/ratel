@@ -20,7 +20,7 @@ func init(p_main: Main) -> void:
 	input = p_main.input
 
 	menu = Menu.new(448, 512, p_main, 0, Menu.ICON_TANK, self,
-		["input", "difficulty", "done"])
+		["input", "controls", "difficulty", "done"])
 
 	p_main.start_fade(false, self)
 
@@ -34,8 +34,10 @@ func fade_completed() -> void:
 			0:
 				main.request_mode(Modes.INPUT)
 			1:
-				main.request_mode(Modes.DIFFICULTY)
+				main.request_mode(Modes.CONTROLS)
 			2:
+				main.request_mode(Modes.DIFFICULTY)
+			3:
 				main.request_mode(Modes.INTRO)
 
 

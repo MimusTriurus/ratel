@@ -144,8 +144,16 @@ triggers derive from the previous snap, which is what makes
 
 The one deliberate gameplay departure from the Java original. Movement defaults
 to WASD (arrows always work as a second set), the cursor sets the weapon angle,
-LMB fires the machine gun and RMB throws the grenade/missile. `README.md` has
-the rationale; the three constraints to keep in mind when touching this:
+LMB fires the machine gun and RMB throws the grenade/missile.
+
+`ButtonMapping.mouse_aim` gates the aiming half and is switched from Options →
+Controls (`ControlsMode`, `Modes.CONTROLS` — a mode with no counterpart in the
+original, modelled on `DifficultyMode`). Off, `HumanInput._snap_mouse` reports
+no cursor motion and no mouse buttons, so `Player` falls back to the original
+code path; the WASD/arrow movement is not gated and always applies.
+
+`README.md` has the rationale; the three constraints to keep in mind when
+touching this:
 
 - **`create_unit_vector(int)` silently lies.** It is a `match` over multiples of
   45 with no default, so an off-grid angle leaves `unit_vector` at its previous

@@ -15,3 +15,5 @@ const OPTIONS := 10
 const INPUT := 11
 const INTRO_MAP := 12
 const LOADING := 13
+# Not in the original: the mouse-aim / classic toggle.
+const CONTROLS := 14

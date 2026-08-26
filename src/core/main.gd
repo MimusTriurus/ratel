@@ -418,6 +418,8 @@ func request_mode(m: int) -> void:
 			set_mode(IntroMapMode.new())
 		Modes.LOADING:
 			set_mode(LoadingMode.new())
+		Modes.CONTROLS:
+			set_mode(ControlsMode.new())
 
 
 func set_mode(m) -> void:
