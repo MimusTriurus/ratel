@@ -809,3 +809,9 @@ func render() -> void:
 	_draw_sprites()
 	if playing:
 		_draw_score()
+
+	# Last, and in display space: _draw_sprites() has popped the camera
+	# translation by now, so the reticle sits at the cursor rather than in the
+	# world. Skipped while paused, where the system cursor comes back.
+	if playing and not paused and input.is_aiming():
+		main.draw_crosshair(input.aim_position())

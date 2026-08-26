@@ -28,6 +28,14 @@ const TILES: Array[int] = [218, 235, 273, 233, 328, 330]
 
 const FADE_COUNT := 23
 
+# Aiming reticle. The bar thickness matches the font's 8 px stroke, and the gap
+# is wide enough to keep whatever is being aimed at visible through it.
+const CROSSHAIR_UNIT := 8.0
+const CROSSHAIR_ARM := 24.0
+const CROSSHAIR_GAP := 16.0
+const CROSSHAIR_COLOR := Color(1, 1, 1)
+const CROSSHAIR_OUTLINE := Color(0, 0, 0)
+
 static var main: Main
 static var game_mode = null  # GameMode
 
@@ -201,6 +209,7 @@ var _xf: Transform2D = Transform2D.IDENTITY
 var _xf_stack: Array[Transform2D] = []
 var _clip_rect: Rect2 = Rect2()
 var _clipping: bool = false
+var _cursor_hidden: bool = false
 
 
 static func _static_init() -> void:
@@ -260,6 +269,8 @@ func _process(_delta: float) -> void:
 	if current_song != null:
 		current_song.update()
 
+	_update_cursor_visibility()
+
 	queue_redraw()
 
 
@@ -274,6 +285,20 @@ func _draw() -> void:
 
 	if fading:
 		draw_rect(Rect2(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT), FADES[fade_index], true)
+
+
+# The system cursor is replaced by the drawn crosshair while aiming, and comes
+# back everywhere else — menus, cutscenes, and while paused, so the window can
+# still be left alone. MOUSE_MODE_HIDDEN does not confine the pointer, so it
+# never traps anyone in the window.
+func _update_cursor_visibility() -> void:
+	# Explicitly typed: mode is untyped, so the expression cannot be inferred.
+	var hide_it: bool = input != null and input.is_aiming() and mode is GameMode \
+		and mode.playing and not mode.paused
+	if hide_it == _cursor_hidden:
+		return
+	_cursor_hidden = hide_it
+	Input.mouse_mode = Input.MOUSE_MODE_HIDDEN if hide_it else Input.MOUSE_MODE_VISIBLE
 
 
 # InputMode needs raw key/pad events for its remapping screen.
@@ -765,6 +790,38 @@ func draw_vehicle_centers(sprites: Array, x: float, y: float, centers: Array,
 		draw_rotated_centers(sprites[2], x, y, centers[2], a + 90.0)
 	else:
 		draw_rotated_centers(sprites[1], x, y, centers[1], a + 45.0)
+
+
+# The aiming reticle, drawn in display space in place of the system cursor.
+# Not in the original, which had no pointer at all.
+#
+# There is no crosshair sprite in the sheets, so it is four bars drawn as
+# rectangles, over a black backing that keeps them readable on pale sand and
+# water. The black is drawn as a second, grown pass rather than an outline so
+# the corners stay square.
+#
+# The centre is snapped to whole pixels, and every extent is even, so the bar
+# edges land on pixel boundaries and stay crisp. Deliberately *not* snapped to
+# CROSSHAIR_UNIT: that would make the reticle jump 8 px at a time while the
+# rest of the game moves on floats.
+func draw_crosshair(pos: Vector2) -> void:
+	var u := CROSSHAIR_UNIT
+	var cx := roundf(pos.x)
+	var cy := roundf(pos.y)
+	var half := u * 0.5
+	var gap := CROSSHAIR_GAP
+	var arm := CROSSHAIR_ARM
+
+	var bars: Array[Rect2] = [
+		Rect2(cx + gap, cy - half, arm, u),          # east
+		Rect2(cx - gap - arm, cy - half, arm, u),    # west
+		Rect2(cx - half, cy + gap, u, arm),          # south
+		Rect2(cx - half, cy - gap - arm, u, arm),    # north
+	]
+	for b in bars:
+		draw_rect(b.grow(half), CROSSHAIR_OUTLINE, true)
+	for b in bars:
+		draw_rect(b, CROSSHAIR_COLOR, true)
 
 
 func draw_vehicle(sprites: Array, x: float, y: float, angle: float,

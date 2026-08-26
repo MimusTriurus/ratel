@@ -173,6 +173,18 @@ camera offset), so a shot uses the angle the cursor had on its tick. The jeep
 body still faces its movement direction — the original's gun never pointed
 where the sprite did, so nothing is lost and no new art is needed.
 
+The reticle is `Main.draw_crosshair`, four `draw_rect` bars over a grown black
+pass (there is no crosshair in the sprite sheets). It is called last in
+`GameMode.render()`, after `_draw_sprites()` has popped the camera translation,
+so it sits at the cursor rather than in the world. `Main._update_cursor_visibility`
+hides the system cursor to match, but only while a `GameMode` is playing and
+unpaused — menus and pauses get the pointer back, and `MOUSE_MODE_HIDDEN` never
+confines it.
+
+Both are gated on `input.is_aiming()`, which stays false through the Chinook
+intro drop only incidentally — the real gate there is `GameMode.playing`, which
+`Chinook` holds false until the jeep lands.
+
 ## Conventions
 
 - Renames forced by GDScript, all documented in the source: `Main.rotate` →

@@ -20,6 +20,10 @@ and fire from the keyboard. `F12` toggles fullscreen, `Escape` leaves it, `P` or
 `Enter` pauses. Keys and pad buttons can be remapped from Options → Input, and
 are saved to `user://buttons.cfg`.
 
+While aiming, the system cursor is replaced by a drawn crosshair. It comes back
+in the menus, in the cutscenes and while paused, and the pointer is never
+confined to the window.
+
 Options → Controls switches between `mouse` (the default) and `classic`, which
 restores the original aiming: the grenade follows the jeep and the machine gun
 only ever fires north. The choice is saved with the key bindings.
