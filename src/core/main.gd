@@ -87,6 +87,10 @@ var close_requested: bool
 
 var stages: Array = [null, null, null, null, null, null]  # Array[Stage]
 
+# Resolves every sprite name against the per-object atlases in
+# assets/images/sprites/, so the loaders below no longer name a sheet.
+var sprite_bank: SpriteBank
+
 var players: Array = []            # [4][5]
 var explosions: Array[Spr] = []
 var grenade: Spr
@@ -254,6 +258,7 @@ func _ready() -> void:
 	button_mapping.load_saved()
 	input = HumanInput.new(button_mapping)
 
+	sprite_bank = SpriteBank.new(SPRITES)
 	load_progress_bar()
 	load_font()
 
@@ -1035,6 +1040,7 @@ func stop_all_sound() -> void:
 # --- Asset loading -----------------------------------------------------------
 
 const IMAGES := "res://assets/images/"
+const SPRITES := "res://assets/images/sprites/"
 const MAPS := "res://assets/maps/"
 const MUSIC := "res://assets/music/"
 const SFX := "res://assets/soundeffects/"
@@ -1091,10 +1097,9 @@ func load_font() -> void:
 
 
 func load_progress_bar() -> void:
-	var pack9 := _atlas("sprites-9")
 	controllers = _spr_array(2)
-	controllers[0] = pack9.get_sprite("controller-0.png")
-	controllers[1] = pack9.get_sprite("controller-1.png")
+	controllers[0] = sprite_bank.get_sprite("controller-0.png")
+	controllers[1] = sprite_bank.get_sprite("controller-1.png")
 
 
 func load_tiles(index: int, stage: Stage) -> void:
@@ -1112,30 +1117,28 @@ func load_tiles(index: int, stage: Stage) -> void:
 
 
 func load_sprites() -> void:
-	var pack1 := _atlas("sprites-1")
-
 	players = _spr_array_2d(4, 5)
 	const PLAYER_COLORS := ["green", "yellow", "brown", "gray"]
 	for i in 4:
 		var row: Array[Spr] = players[i]
 		for j in 3:
-			row[j] = pack1.get_sprite("player-%s-%d.png" % [PLAYER_COLORS[i], j])
+			row[j] = sprite_bank.get_sprite("player-%s-%d.png" % [PLAYER_COLORS[i], j])
 		row[3] = row[0].flipped_copy(true, false)
 		row[4] = row[1].flipped_copy(true, false)
 
 	explosions = _spr_array(4)
 	for i in 4:
-		explosions[i] = pack1.get_sprite("explosion-%d.png" % i)
+		explosions[i] = sprite_bank.get_sprite("explosion-%d.png" % i)
 
-	grenade = pack1.get_sprite("grenade-large.png")
-	player_missile = pack1.get_sprite("player-missile-1.png")
-	white_bullet = pack1.get_sprite("white-bullet.png")
-	yellow_bullet = pack1.get_sprite("yellow-bullet.png")
-	bullet_hit = pack1.get_sprite("bullet-hit.png")
+	grenade = sprite_bank.get_sprite("grenade-large.png")
+	player_missile = sprite_bank.get_sprite("player-missile-1.png")
+	white_bullet = sprite_bank.get_sprite("white-bullet.png")
+	yellow_bullet = sprite_bank.get_sprite("yellow-bullet.png")
+	bullet_hit = sprite_bank.get_sprite("bullet-hit.png")
 
 	gray_guns = _spr_array(2)
-	gray_guns[0] = pack1.get_sprite("gray-gun-4.png")
-	gray_guns[1] = pack1.get_sprite("gray-gun-5.png")
+	gray_guns[0] = sprite_bank.get_sprite("gray-gun-4.png")
+	gray_guns[1] = sprite_bank.get_sprite("gray-gun-5.png")
 
 	enemy_soldiers = _spr_array_2d(2, 8)
 	for i in 2:
@@ -1143,128 +1146,126 @@ func load_sprites() -> void:
 		var row: Array[Spr] = enemy_soldiers[i]
 		for j in 8:
 			if j < 6:
-				row[j] = pack1.get_sprite("enemy-soldier-%s-%d.png" % [color, j])
+				row[j] = sprite_bank.get_sprite("enemy-soldier-%s-%d.png" % [color, j])
 			else:
 				row[j] = row[j - 4].flipped_copy(true, false)
-	dead_enemy_soldier = pack1.get_sprite("enemy-soldier-dead.png")
+	dead_enemy_soldier = sprite_bank.get_sprite("enemy-soldier-dead.png")
 
 	brown_tanks = _spr_array(5)
 	for i in 3:
-		brown_tanks[i] = pack1.get_sprite("brown-tank-%d.png" % i)
+		brown_tanks[i] = sprite_bank.get_sprite("brown-tank-%d.png" % i)
 	brown_tanks[3] = brown_tanks[0].flipped_copy(true, false)
 	brown_tanks[4] = brown_tanks[1].flipped_copy(true, false)
 
 	gray_jeeps = _spr_array(5)
 	for i in 3:
-		gray_jeeps[i] = pack1.get_sprite("gray-jeep-%d.png" % i)
+		gray_jeeps[i] = sprite_bank.get_sprite("gray-jeep-%d.png" % i)
 	gray_jeeps[3] = gray_jeeps[0].flipped_copy(true, false)
 	gray_jeeps[4] = gray_jeeps[1].flipped_copy(true, false)
 
-	cannonball = pack1.get_sprite("cannonball.png")
-	parked_gray_jeep = pack1.get_sprite("gray-parked.png")
+	cannonball = sprite_bank.get_sprite("cannonball.png")
+	parked_gray_jeep = sprite_bank.get_sprite("gray-parked.png")
 
 	mines = _spr_array(4)
-	mines[0] = pack1.get_sprite("mine-green.png")
-	mines[1] = pack1.get_sprite("mine-brown.png")
-	mines[2] = pack1.get_sprite("mine-gray.png")
-	mines[3] = pack1.get_sprite("mine-yellow.png")
+	mines[0] = sprite_bank.get_sprite("mine-green.png")
+	mines[1] = sprite_bank.get_sprite("mine-brown.png")
+	mines[2] = sprite_bank.get_sprite("mine-gray.png")
+	mines[3] = sprite_bank.get_sprite("mine-yellow.png")
 
 	lamps = _spr_array(4)
-	lamps[0] = pack1.get_sprite("lamp-blue-bright.png")
-	lamps[1] = pack1.get_sprite("lamp-blue-dark.png")
-	lamps[2] = pack1.get_sprite("lamp-red-bright.png")
-	lamps[3] = pack1.get_sprite("lamp-red-dark.png")
+	lamps[0] = sprite_bank.get_sprite("lamp-blue-bright.png")
+	lamps[1] = sprite_bank.get_sprite("lamp-blue-dark.png")
+	lamps[2] = sprite_bank.get_sprite("lamp-red-bright.png")
+	lamps[3] = sprite_bank.get_sprite("lamp-red-dark.png")
 
-	bomb = pack1.get_sprite("bomb-large.png")
+	bomb = sprite_bank.get_sprite("bomb-large.png")
 
-	statue_blue_eyes = pack1.get_sprite("blue-eyes.png")
-	statue_blue_mouth = pack1.get_sprite("blue-mouth.png")
-	statue_white_eyes = pack1.get_sprite("white-eyes.png")
-	statue_white_mouth = pack1.get_sprite("white-mouth.png")
+	statue_blue_eyes = sprite_bank.get_sprite("blue-eyes.png")
+	statue_blue_mouth = sprite_bank.get_sprite("blue-mouth.png")
+	statue_white_eyes = sprite_bank.get_sprite("white-eyes.png")
+	statue_white_mouth = sprite_bank.get_sprite("white-mouth.png")
 	statue_missiles = _spr_array(2)
-	statue_missiles[0] = pack1.get_sprite("statue-missile.png")
+	statue_missiles[0] = sprite_bank.get_sprite("statue-missile.png")
 	statue_missiles[1] = statue_missiles[0].flipped_copy(true, false)
 
 	lasers = _spr_array(6)
-	lasers[0] = pack1.get_sprite("laser-green.png")
-	lasers[1] = pack1.get_sprite("laser-brown.png")
-	lasers[2] = pack1.get_sprite("laser-gray.png")
-	lasers[3] = pack1.get_sprite("laser-yellow.png")
-	lasers[4] = pack1.get_sprite("laser-flash-0.png")
-	lasers[5] = pack1.get_sprite("laser-flash-1.png")
+	lasers[0] = sprite_bank.get_sprite("laser-green.png")
+	lasers[1] = sprite_bank.get_sprite("laser-brown.png")
+	lasers[2] = sprite_bank.get_sprite("laser-gray.png")
+	lasers[3] = sprite_bank.get_sprite("laser-yellow.png")
+	lasers[4] = sprite_bank.get_sprite("laser-flash-0.png")
+	lasers[5] = sprite_bank.get_sprite("laser-flash-1.png")
 
 	swamp_missiles = _spr_array(5)
-	swamp_missiles[0] = pack1.get_sprite("swamp-missile-0.png")
+	swamp_missiles[0] = sprite_bank.get_sprite("swamp-missile-0.png")
 
-	parked_brown_tank = pack1.get_sprite("brown-parked.png")
+	parked_brown_tank = sprite_bank.get_sprite("brown-parked.png")
 
-	var pack2 := _atlas("sprites-2")
-
-	swamp_missiles[1] = pack2.get_sprite("missile-splash-0.png")
+	swamp_missiles[1] = sprite_bank.get_sprite("missile-splash-0.png")
 	swamp_missiles[2] = swamp_missiles[1].flipped_copy(true, false)
-	swamp_missiles[3] = pack2.get_sprite("missile-splash-1.png")
-	swamp_missiles[4] = pack2.get_sprite("missile-splash-2.png")
+	swamp_missiles[3] = sprite_bank.get_sprite("missile-splash-1.png")
+	swamp_missiles[4] = sprite_bank.get_sprite("missile-splash-2.png")
 
 	friendly_soldiers = _spr_array_2d(4, 12)
 	const FRIENDLY_COLORS := ["green", "brown", "gray", "yellow"]
 	for i in 4:
 		var color: String = FRIENDLY_COLORS[i]
 		var row: Array[Spr] = friendly_soldiers[i]
-		row[1] = pack2.get_sprite("friendly-soldier-%s-0.png" % color)
+		row[1] = sprite_bank.get_sprite("friendly-soldier-%s-0.png" % color)
 		row[0] = row[1].flipped_copy(true, false)
-		row[2] = pack2.get_sprite("friendly-soldier-%s-1.png" % color)
-		row[3] = pack2.get_sprite("friendly-soldier-%s-2.png" % color)
-		row[4] = pack2.get_sprite("friendly-soldier-%s-3.png" % color)
+		row[2] = sprite_bank.get_sprite("friendly-soldier-%s-1.png" % color)
+		row[3] = sprite_bank.get_sprite("friendly-soldier-%s-2.png" % color)
+		row[4] = sprite_bank.get_sprite("friendly-soldier-%s-3.png" % color)
 		row[5] = row[4].flipped_copy(true, false)
 		row[6] = row[2].flipped_copy(true, false)
 		row[7] = row[3].flipped_copy(true, false)
-		row[8] = pack2.get_sprite("friendly-soldier-%s-4.png" % color)
-		row[9] = pack2.get_sprite("friendly-soldier-%s-5.png" % color)
+		row[8] = sprite_bank.get_sprite("friendly-soldier-%s-4.png" % color)
+		row[9] = sprite_bank.get_sprite("friendly-soldier-%s-5.png" % color)
 		row[10] = row[8].flipped_copy(true, false)
 		row[11] = row[9].flipped_copy(true, false)
 
-	help = pack2.get_sprite("help.png")
+	help = sprite_bank.get_sprite("help.png")
 
 	green_boats = _spr_array(2)
-	green_boats[0] = pack2.get_sprite("green-boat-0.png")
-	green_boats[1] = pack2.get_sprite("green-boat-1.png")
+	green_boats[0] = sprite_bank.get_sprite("green-boat-0.png")
+	green_boats[1] = sprite_bank.get_sprite("green-boat-1.png")
 
 	stars = _spr_array(4)
-	stars[0] = pack2.get_sprite("star-brown.png")
-	stars[1] = pack2.get_sprite("star-gray.png")
-	stars[2] = pack2.get_sprite("star-green.png")
-	stars[3] = pack2.get_sprite("star-yellow.png")
+	stars[0] = sprite_bank.get_sprite("star-brown.png")
+	stars[1] = sprite_bank.get_sprite("star-gray.png")
+	stars[2] = sprite_bank.get_sprite("star-green.png")
+	stars[3] = sprite_bank.get_sprite("star-yellow.png")
 
 	friendly_helicopters = _spr_array(4)
-	friendly_helicopters[0] = pack2.get_sprite("friendly-helicopter-large.png")
-	friendly_helicopters[1] = pack2.get_sprite("friendly-helicopter-shadow.png")
-	friendly_helicopters[2] = pack2.get_sprite("friendly-helicopter-wing-15.png")
-	friendly_helicopters[3] = pack2.get_sprite("friendly-helicopter-wing-30.png")
+	friendly_helicopters[0] = sprite_bank.get_sprite("friendly-helicopter-large.png")
+	friendly_helicopters[1] = sprite_bank.get_sprite("friendly-helicopter-shadow.png")
+	friendly_helicopters[2] = sprite_bank.get_sprite("friendly-helicopter-wing-15.png")
+	friendly_helicopters[3] = sprite_bank.get_sprite("friendly-helicopter-wing-30.png")
 
 	airplanes = _spr_array_2d(2, 2)
-	airplanes[0][0] = pack2.get_sprite("airplane.png")
-	airplanes[0][1] = pack2.get_sprite("airplane-shadow.png")
+	airplanes[0][0] = sprite_bank.get_sprite("airplane.png")
+	airplanes[0][1] = sprite_bank.get_sprite("airplane-shadow.png")
 	airplanes[1][0] = airplanes[0][0].flipped_copy(false, true)
 	airplanes[1][1] = airplanes[0][1].flipped_copy(false, true)
 
 	columns = _spr_array(2)
-	columns[0] = pack2.get_sprite("column-0.png").flipped_copy(true, false)
-	columns[1] = pack2.get_sprite("column-0.png").flipped_copy(false, true)
+	columns[0] = sprite_bank.get_sprite("column-0.png").flipped_copy(true, false)
+	columns[1] = sprite_bank.get_sprite("column-0.png").flipped_copy(false, true)
 
 	gray_boats = _spr_array(3)
-	gray_boats[0] = pack2.get_sprite("gray-boat-0.png")
-	gray_boats[1] = pack2.get_sprite("gray-boat-1.png")
-	gray_boats[2] = pack2.get_sprite("gray-boat-2.png")
+	gray_boats[0] = sprite_bank.get_sprite("gray-boat-0.png")
+	gray_boats[1] = sprite_bank.get_sprite("gray-boat-1.png")
+	gray_boats[2] = sprite_bank.get_sprite("gray-boat-2.png")
 
 	player_wakes = _spr_array(6)
-	player_wakes[0] = pack2.get_sprite("player-wake-0.png")
+	player_wakes[0] = sprite_bank.get_sprite("player-wake-0.png")
 	player_wakes[1] = player_wakes[0].flipped_copy(true, false)
-	player_wakes[2] = pack2.get_sprite("player-wake-2.png")
+	player_wakes[2] = sprite_bank.get_sprite("player-wake-2.png")
 	player_wakes[3] = player_wakes[2].flipped_copy(false, true)
-	player_wakes[4] = pack2.get_sprite("player-wake-1.png")
+	player_wakes[4] = sprite_bank.get_sprite("player-wake-1.png")
 	player_wakes[5] = player_wakes[4].flipped_copy(true, false)
 
-	rock = pack2.get_sprite("rock-large.png")
+	rock = sprite_bank.get_sprite("rock-large.png")
 
 	swamp_soldiers = _spr_array_2d(2, 8)
 	for i in 2:
@@ -1272,13 +1273,11 @@ func load_sprites() -> void:
 		var row: Array[Spr] = swamp_soldiers[i]
 		for j in 8:
 			if j < 6:
-				row[j] = pack2.get_sprite("swamp-soldier-%s-%d.png" % [color, j])
+				row[j] = sprite_bank.get_sprite("swamp-soldier-%s-%d.png" % [color, j])
 			else:
 				row[j] = row[j - 4].flipped_copy(true, false)
 
-	cliff_missile_launcher = pack2.get_sprite("missile-launcher.png")
-
-	var pack3 := _atlas("sprites-3")
+	cliff_missile_launcher = sprite_bank.get_sprite("missile-launcher.png")
 
 	boss_blue_tanks = _spr_array_2d(4, 5)
 	for j in 2:
@@ -1286,94 +1285,92 @@ func load_sprites() -> void:
 		var k := j << 1
 		var row: Array[Spr] = boss_blue_tanks[k]
 		for i in 3:
-			row[i] = pack3.get_sprite("boss-%s-tank-%d.png" % [color, i << 1])
+			row[i] = sprite_bank.get_sprite("boss-%s-tank-%d.png" % [color, i << 1])
 		row[3] = row[0].flipped_copy(true, false)
 		row[4] = row[1].flipped_copy(true, false)
 
 		k += 1
 		row = boss_blue_tanks[k]
 		for i in 3:
-			row[i] = pack3.get_sprite("boss-%s-tank-%d.png" % [color, (i << 1) + 1])
+			row[i] = sprite_bank.get_sprite("boss-%s-tank-%d.png" % [color, (i << 1) + 1])
 		row[3] = row[0].flipped_copy(true, false)
 		row[4] = row[1].flipped_copy(true, false)
 
 	gray_tanks = _spr_array(5)
 	for i in 3:
-		gray_tanks[i] = pack3.get_sprite("gray-tank-%d.png" % i)
+		gray_tanks[i] = sprite_bank.get_sprite("gray-tank-%d.png" % i)
 	gray_tanks[3] = gray_tanks[0].flipped_copy(true, false)
 	gray_tanks[4] = gray_tanks[1].flipped_copy(true, false)
 
-	troops_truck = pack3.get_sprite("troops-truck.png")
+	troops_truck = sprite_bank.get_sprite("troops-truck.png")
 
 	cannon_truck = _spr_array_2d(2, 2)
-	cannon_truck[0][0] = pack3.get_sprite("cannon-truck-0.png")
-	cannon_truck[0][1] = pack3.get_sprite("cannon-truck-1.png")
+	cannon_truck[0][0] = sprite_bank.get_sprite("cannon-truck-0.png")
+	cannon_truck[0][1] = sprite_bank.get_sprite("cannon-truck-1.png")
 	cannon_truck[1][0] = cannon_truck[0][0].flipped_copy(true, false)
 	cannon_truck[1][1] = cannon_truck[0][1].flipped_copy(true, false)
 
-	tank_shack = pack3.get_sprite("gray-tank-shack.png")
+	tank_shack = sprite_bank.get_sprite("gray-tank-shack.png")
 
 	sparks = _spr_array_2d(2, 7)
 	for i in 7:
-		sparks[0][i] = pack3.get_sprite("spark-%d.png" % i)
+		sparks[0][i] = sprite_bank.get_sprite("spark-%d.png" % i)
 		sparks[1][i] = sparks[0][i].flipped_copy(true, false)
 
 	green_guns = _spr_array(2)
-	green_guns[0] = pack3.get_sprite("green-gun-4.png")
-	green_guns[1] = pack3.get_sprite("green-gun-5.png")
+	green_guns[0] = sprite_bank.get_sprite("green-gun-4.png")
+	green_guns[1] = sprite_bank.get_sprite("green-gun-5.png")
 	brown_guns = _spr_array(2)
-	brown_guns[0] = pack3.get_sprite("brown-gun-4.png")
-	brown_guns[1] = pack3.get_sprite("brown-gun-5.png")
-
-	var pack4 := _atlas("sprites-4")
+	brown_guns[0] = sprite_bank.get_sprite("brown-gun-4.png")
+	brown_guns[1] = sprite_bank.get_sprite("brown-gun-5.png")
 
 	submarines = _spr_array(4)
 	for i in 4:
-		submarines[i] = pack4.get_sprite("submarine-%d.png" % i)
+		submarines[i] = sprite_bank.get_sprite("submarine-%d.png" % i)
 
 	floor_guns = _spr_array(8)
-	floor_guns[0] = pack4.get_sprite("floor-gun-gray.png")
-	floor_guns[1] = pack4.get_sprite("floor-gun-yellow.png")
-	floor_guns[2] = pack4.get_sprite("floor-gun-brown.png")
-	floor_guns[3] = pack4.get_sprite("floor-gun-green.png")
-	floor_guns[4] = pack4.get_sprite("floor-gun-background-black.png")
-	floor_guns[5] = pack4.get_sprite("floor-gun-background-red.png")
-	floor_guns[6] = pack4.get_sprite("floor-gun-stripes-mask.png")
-	floor_guns[7] = pack4.get_sprite("floor-gun-striped-panel.png")
+	floor_guns[0] = sprite_bank.get_sprite("floor-gun-gray.png")
+	floor_guns[1] = sprite_bank.get_sprite("floor-gun-yellow.png")
+	floor_guns[2] = sprite_bank.get_sprite("floor-gun-brown.png")
+	floor_guns[3] = sprite_bank.get_sprite("floor-gun-green.png")
+	floor_guns[4] = sprite_bank.get_sprite("floor-gun-background-black.png")
+	floor_guns[5] = sprite_bank.get_sprite("floor-gun-background-red.png")
+	floor_guns[6] = sprite_bank.get_sprite("floor-gun-stripes-mask.png")
+	floor_guns[7] = sprite_bank.get_sprite("floor-gun-striped-panel.png")
 
 	ship_guns = _spr_array(3)
-	ship_guns[0] = pack4.get_sprite("ship-gun-mask.png")
-	ship_guns[1] = pack4.get_sprite("ship-gun-upper-panel.png")
-	ship_guns[2] = pack4.get_sprite("ship-gun-lower-panel.png")
+	ship_guns[0] = sprite_bank.get_sprite("ship-gun-mask.png")
+	ship_guns[1] = sprite_bank.get_sprite("ship-gun-upper-panel.png")
+	ship_guns[2] = sprite_bank.get_sprite("ship-gun-lower-panel.png")
 
 	plain_floor_guns = _spr_array(2)
-	plain_floor_guns[0] = pack4.get_sprite("floor-gun-plain-mask.png")
-	plain_floor_guns[1] = pack4.get_sprite("floor-gun-plain-panel.png")
+	plain_floor_guns[0] = sprite_bank.get_sprite("floor-gun-plain-mask.png")
+	plain_floor_guns[1] = sprite_bank.get_sprite("floor-gun-plain-panel.png")
 
 	trains = _spr_array(3)
-	trains[0] = pack4.get_sprite("train-0.png")
-	trains[1] = pack4.get_sprite("train-1.png")
-	trains[2] = pack4.get_sprite("tunnel.png")
+	trains[0] = sprite_bank.get_sprite("train-0.png")
+	trains[1] = sprite_bank.get_sprite("train-1.png")
+	trains[2] = sprite_bank.get_sprite("tunnel.png")
 
 	boss_helicopters = _spr_array(6)
-	boss_helicopters[0] = pack4.get_sprite("boss-helicopter-0.png")
+	boss_helicopters[0] = sprite_bank.get_sprite("boss-helicopter-0.png")
 	boss_helicopters[1] = boss_helicopters[0].flipped_copy(true, false)
-	boss_helicopters[2] = pack4.get_sprite("boss-helicopter-blade.png")
-	boss_helicopters[3] = pack4.get_sprite("boss-helicopter-tail-0.png")
-	boss_helicopters[4] = pack4.get_sprite("boss-helicopter-tail-1.png")
-	boss_helicopters[5] = pack4.get_sprite("boss-helicopter-shadow.png")
+	boss_helicopters[2] = sprite_bank.get_sprite("boss-helicopter-blade.png")
+	boss_helicopters[3] = sprite_bank.get_sprite("boss-helicopter-tail-0.png")
+	boss_helicopters[4] = sprite_bank.get_sprite("boss-helicopter-tail-1.png")
+	boss_helicopters[5] = sprite_bank.get_sprite("boss-helicopter-shadow.png")
 
 	parachutes = _spr_array(5)
 	for i in 5:
-		parachutes[i] = pack4.get_sprite("parachute-%d.png" % i)
+		parachutes[i] = sprite_bank.get_sprite("parachute-%d.png" % i)
 
 	cliff_guns = _spr_array(5)
 	for i in 5:
-		cliff_guns[i] = pack4.get_sprite("cliff-gun-%d.png" % i)
+		cliff_guns[i] = sprite_bank.get_sprite("cliff-gun-%d.png" % i)
 
 	fires = _spr_array_2d(2, 3)
 	for i in 3:
-		fires[0][i] = pack4.get_sprite("fire-%d.png" % i)
+		fires[0][i] = sprite_bank.get_sprite("fire-%d.png" % i)
 		if i == 2:
 			fires[1][i] = fires[0][i].flipped_copy(true, false)
 		else:
@@ -1381,118 +1378,110 @@ func load_sprites() -> void:
 
 	fire_tanks = _spr_array(5)
 	for i in 3:
-		fire_tanks[i] = pack4.get_sprite("fire-tank-%d.png" % i)
+		fire_tanks[i] = sprite_bank.get_sprite("fire-tank-%d.png" % i)
 	fire_tanks[3] = fire_tanks[0].flipped_copy(true, false)
 	fire_tanks[4] = fire_tanks[1].flipped_copy(true, false)
 
 	garages = _spr_array(5)
 	for i in 5:
-		garages[i] = pack4.get_sprite("door-%d.png" % i)
-
-	var pack5 := _atlas("sprites-5")
+		garages[i] = sprite_bank.get_sprite("door-%d.png" % i)
 
 	floor_missile_launcher = _spr_array(4)
 	for i in 4:
-		floor_missile_launcher[i] = pack5.get_sprite("missile-launcher-floor-%d.png" % i)
+		floor_missile_launcher[i] = sprite_bank.get_sprite("missile-launcher-floor-%d.png" % i)
 
 	enemy_helicopters = _spr_array(3)
-	enemy_helicopters[0] = pack5.get_sprite("enemy-helicopter-body.png")
-	enemy_helicopters[1] = pack5.get_sprite("enemy-helicopter-blade.png")
-	enemy_helicopters[2] = pack5.get_sprite("enemy-helicopter-shadow.png")
+	enemy_helicopters[0] = sprite_bank.get_sprite("enemy-helicopter-body.png")
+	enemy_helicopters[1] = sprite_bank.get_sprite("enemy-helicopter-blade.png")
+	enemy_helicopters[2] = sprite_bank.get_sprite("enemy-helicopter-shadow.png")
 
 	headquarters_lights = _spr_array(2)
-	headquarters_lights[0] = pack5.get_sprite("headquarters-light-yellow.png")
-	headquarters_lights[1] = pack5.get_sprite("headquarters-light-brown.png")
+	headquarters_lights[0] = sprite_bank.get_sprite("headquarters-light-yellow.png")
+	headquarters_lights[1] = sprite_bank.get_sprite("headquarters-light-brown.png")
 
 	elephant_guns = _spr_array(9)
-	elephant_guns[1] = pack5.get_sprite("elephant-gun-0.png")
-	elephant_guns[2] = pack5.get_sprite("elephant-gun-1.png")
+	elephant_guns[1] = sprite_bank.get_sprite("elephant-gun-0.png")
+	elephant_guns[2] = sprite_bank.get_sprite("elephant-gun-1.png")
 	elephant_guns[0] = elephant_guns[2].flipped_copy(true, false)
-	elephant_guns[3] = pack5.get_sprite("elephant-gun-5.png")
-	elephant_guns[4] = pack5.get_sprite("elephant-gun-2.png")
-	elephant_guns[5] = pack5.get_sprite("elephant-gun-3.png")
-	elephant_guns[6] = pack5.get_sprite("elephant-gun-4.png")
+	elephant_guns[3] = sprite_bank.get_sprite("elephant-gun-5.png")
+	elephant_guns[4] = sprite_bank.get_sprite("elephant-gun-2.png")
+	elephant_guns[5] = sprite_bank.get_sprite("elephant-gun-3.png")
+	elephant_guns[6] = sprite_bank.get_sprite("elephant-gun-4.png")
 	elephant_guns[7] = elephant_guns[6].flipped_copy(true, false)
-	elephant_guns[8] = pack5.get_sprite("elephant-missile.png")
+	elephant_guns[8] = sprite_bank.get_sprite("elephant-missile.png")
 
 	super_tanks = _spr_array_2d(4, 5)
-	super_tanks[0][0] = pack5.get_sprite("super-tank-tread-yellow.png")
-	super_tanks[0][1] = pack5.get_sprite("super-tank-wheel-yellow.png")
-	super_tanks[0][2] = pack5.get_sprite("super-tank-top-yellow.png")
-	super_tanks[0][3] = pack5.get_sprite("super-tank-middle-yellow.png")
-	super_tanks[0][4] = pack5.get_sprite("super-tank-bottom-yellow.png")
+	super_tanks[0][0] = sprite_bank.get_sprite("super-tank-tread-yellow.png")
+	super_tanks[0][1] = sprite_bank.get_sprite("super-tank-wheel-yellow.png")
+	super_tanks[0][2] = sprite_bank.get_sprite("super-tank-top-yellow.png")
+	super_tanks[0][3] = sprite_bank.get_sprite("super-tank-middle-yellow.png")
+	super_tanks[0][4] = sprite_bank.get_sprite("super-tank-bottom-yellow.png")
 
 	super_fires = _spr_array_2d(2, 3)
-	super_fires[0][0] = pack5.get_sprite("super-fire-0.png")
-	super_fires[0][1] = pack5.get_sprite("super-fire-1.png")
+	super_fires[0][0] = sprite_bank.get_sprite("super-fire-0.png")
+	super_fires[0][1] = sprite_bank.get_sprite("super-fire-1.png")
 	super_fires[0][2] = super_fires[0][0].flipped_copy(false, true)
-	super_fires[1][0] = pack5.get_sprite("super-fire-2.png")
-	super_fires[1][1] = pack5.get_sprite("super-fire-3.png")
+	super_fires[1][0] = sprite_bank.get_sprite("super-fire-2.png")
+	super_fires[1][1] = sprite_bank.get_sprite("super-fire-3.png")
 	super_fires[1][2] = super_fires[0][0].flipped_copy(false, true)
 
 	super_guns = _spr_array(2)
-	super_guns[0] = pack5.get_sprite("super-tank-gun-green-0.png")
-	super_guns[1] = pack5.get_sprite("super-tank-gun-brown-0.png")
+	super_guns[0] = sprite_bank.get_sprite("super-tank-gun-green-0.png")
+	super_guns[1] = sprite_bank.get_sprite("super-tank-gun-brown-0.png")
 
-	var pack6 := _atlas("sprites-6")
+	super_tanks[1][0] = sprite_bank.get_sprite("super-tank-tread-orange.png")
+	super_tanks[1][1] = sprite_bank.get_sprite("super-tank-wheel-orange.png")
+	super_tanks[1][2] = sprite_bank.get_sprite("super-tank-top-orange.png")
+	super_tanks[1][3] = sprite_bank.get_sprite("super-tank-middle-orange.png")
+	super_tanks[1][4] = sprite_bank.get_sprite("super-tank-bottom-orange.png")
 
-	super_tanks[1][0] = pack6.get_sprite("super-tank-tread-orange.png")
-	super_tanks[1][1] = pack6.get_sprite("super-tank-wheel-orange.png")
-	super_tanks[1][2] = pack6.get_sprite("super-tank-top-orange.png")
-	super_tanks[1][3] = pack6.get_sprite("super-tank-middle-orange.png")
-	super_tanks[1][4] = pack6.get_sprite("super-tank-bottom-orange.png")
-
-	super_tanks[2][0] = pack6.get_sprite("super-tank-tread-red.png")
-	super_tanks[2][1] = pack6.get_sprite("super-tank-wheel-red.png")
-	super_tanks[2][2] = pack6.get_sprite("super-tank-top-red.png")
-	super_tanks[2][3] = pack6.get_sprite("super-tank-middle-red.png")
-	super_tanks[2][4] = pack6.get_sprite("super-tank-bottom-red.png")
-
-	var pack7 := _atlas("sprites-7")
+	super_tanks[2][0] = sprite_bank.get_sprite("super-tank-tread-red.png")
+	super_tanks[2][1] = sprite_bank.get_sprite("super-tank-wheel-red.png")
+	super_tanks[2][2] = sprite_bank.get_sprite("super-tank-top-red.png")
+	super_tanks[2][3] = sprite_bank.get_sprite("super-tank-middle-red.png")
+	super_tanks[2][4] = sprite_bank.get_sprite("super-tank-bottom-red.png")
 
 	super_tanks[3][0] = super_tanks[2][0]
 	super_tanks[3][1] = super_tanks[2][1]
-	super_tanks[3][2] = pack7.get_sprite("super-tank-top-smashed.png")
-	super_tanks[3][3] = pack7.get_sprite("super-tank-middle-smashed.png")
-	super_tanks[3][4] = pack7.get_sprite("super-tank-bottom-smashed.png")
+	super_tanks[3][2] = sprite_bank.get_sprite("super-tank-top-smashed.png")
+	super_tanks[3][3] = sprite_bank.get_sprite("super-tank-middle-smashed.png")
+	super_tanks[3][4] = sprite_bank.get_sprite("super-tank-bottom-smashed.png")
 
 	chinooks = _spr_array(4)
-	chinooks[0] = pack7.get_sprite("chinook-body.png")
+	chinooks[0] = sprite_bank.get_sprite("chinook-body.png")
 	chinooks[1] = chinooks[0].flipped_copy(false, true)
-	chinooks[2] = pack7.get_sprite("chinook-blade.png")
-	chinooks[3] = pack7.get_sprite("chinook-shadow.png")
+	chinooks[2] = sprite_bank.get_sprite("chinook-blade.png")
+	chinooks[3] = sprite_bank.get_sprite("chinook-shadow.png")
 
 	heres = _spr_array(2)
-	heres[0] = pack7.get_sprite("here-0.png")
-	heres[1] = pack7.get_sprite("here-1.png")
-	smoke = pack7.get_sprite("smoke.png")
-	black_plane = pack7.get_sprite("jeep-yeah-plane.png")
+	heres[0] = sprite_bank.get_sprite("here-0.png")
+	heres[1] = sprite_bank.get_sprite("here-1.png")
+	smoke = sprite_bank.get_sprite("smoke.png")
+	black_plane = sprite_bank.get_sprite("jeep-yeah-plane.png")
 	gun_fires = _spr_array(2)
-	gun_fires[0] = pack7.get_sprite("jeep-yeah-fire-0.png")
-	gun_fires[1] = pack7.get_sprite("jeep-yeah-fire-1.png")
-	jeep_yeah_bullet = pack7.get_sprite("jeep-yeah-bullet.png")
+	gun_fires[0] = sprite_bank.get_sprite("jeep-yeah-fire-0.png")
+	gun_fires[1] = sprite_bank.get_sprite("jeep-yeah-fire-1.png")
+	jeep_yeah_bullet = sprite_bank.get_sprite("jeep-yeah-bullet.png")
 	yeahs = _spr_array(4)
 	for i in 4:
-		yeahs[i] = pack7.get_sprite("yeah-%d.png" % i)
-
-	var pack8 := _atlas("sprites-8")
+		yeahs[i] = sprite_bank.get_sprite("yeah-%d.png" % i)
 
 	# The sun and the wave band are sliced into scanlines so that later modes
 	# can shift each row independently.
-	var sun := pack8.get_sprite("sun.png")
+	var sun := sprite_bank.get_sprite("sun.png")
 	suns = _spr_array(int(sun.h))
 	for i in range(suns.size() - 1, -1, -1):
 		suns[i] = sun.sub_image(0, i, int(sun.w), 1)
 
-	var wave := pack8.get_sprite("waves-0.png")
+	var wave := sprite_bank.get_sprite("waves-0.png")
 	waves = _spr_array(int(wave.h))
 	for i in range(waves.size() - 1, -1, -1):
 		waves[i] = wave.sub_image(0, i, int(wave.w), 1)
 
 	rescue_helicopters = _spr_array(3)
-	rescue_helicopters[0] = pack8.get_sprite("rescue-helicopter-body-0.png")
-	rescue_helicopters[1] = pack8.get_sprite("rescue-helicopter-body-1.png")
-	rescue_helicopters[2] = pack8.get_sprite("rescue-helicopter-blade.png")
+	rescue_helicopters[0] = sprite_bank.get_sprite("rescue-helicopter-body-0.png")
+	rescue_helicopters[1] = sprite_bank.get_sprite("rescue-helicopter-body-1.png")
+	rescue_helicopters[2] = sprite_bank.get_sprite("rescue-helicopter-blade.png")
 
 
 func load_large_images() -> void:

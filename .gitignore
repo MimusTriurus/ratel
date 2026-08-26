@@ -15,3 +15,6 @@
 
 # NOTE: *.uid files are deliberately NOT ignored. Godot 4.4+ uses them as the
 # stable identity of each script; excluding them breaks references on clone.
+
+# Python bytecode from tools/
+__pycache__/

@@ -99,7 +99,9 @@ Collision is the original's hand-written AABB tests (`HitElement.overlap` and th
 `Main` owns the whole draw path. `Spr` stands in for Slick's `Image` — including
 its per-image `alpha`, which the stage 2 water cross-fade mutates directly.
 `Atlas` parses the `.xml` sprite sheets with `XMLParser`, returning `null` for an
-unknown name (`load_extra_large_image` relies on that). `_push`/`pop_graphics`/
+unknown name (`load_extra_large_image` relies on that); it still serves the tile
+sheets, the large cutscene images and the font, while the object sprites go
+through `SpriteBank` (see Sprite atlases below). `_push`/`pop_graphics`/
 `translate_graphics`/`rotate_graphics`/`scale_graphics` emulate the
 `glPushMatrix`/`glTranslatef`/`glRotatef` stack; the `draw_*` family mirrors
 Slick's overloads one for one.
@@ -113,6 +115,36 @@ rolling columns need.
 
 `GameMode.render()` is `_draw_background()` → `_draw_sprites()` → `_draw_score()`,
 replaying the original's order.
+
+### Sprite atlases
+
+The original's nine `sprites-N.png` sheets were packing-driven — `sprites-1`
+held the player, brown tanks, soldiers, mines and lasers only because they fit
+together — so every loader had to know which sheet its sprite lived in, and
+`load_sprites` threaded `pack1`..`pack9` through 400 lines. They are now one
+atlas per object in `assets/images/sprites/`: `brown-tank.png` holds exactly
+the three brown-tank frames. 140 atlases, 264 sprites, and the total canvas
+area went *down* (1.96 Mpx against 2.36 Mpx), because the sheets no longer pad
+to 512x512.
+
+`SpriteBank` (`src/core/sprite_bank.gd`) resolves a name against all of them
+through the generated `sprites/index.xml`, loading each texture on first use,
+so no loader names an atlas and the physical grouping can be changed again
+without touching GDScript. It returns `null` for an unknown name, like
+`Atlas.get_sprite`. Sprite names still carry their `.png` suffix
+(`"brown-tank-%d.png"`), so call sites read exactly as before.
+
+`tools/` owns the migration: `sprite_repack.py` regrouped the sheets (pixels
+copied verbatim, 1 px transparent gutter), `sprite_verify.py` compared all 264
+regions against the originals pixel for pixel and checked for overlaps, and
+`sprite_index.py` regenerates `assets/images/SPRITES.md` — the name → atlas →
+size table, which is the thing to grep when looking for a sprite. Verify needs
+the pre-migration sheets, so run it after
+`git checkout <ref-before-migration> -- assets/images/sprites-*`.
+
+Two things to keep in mind: `index.xml` is what ships (the export preset's
+`include_filter` covers `*.xml`, so no change was needed there), and new PNGs
+need one editor open — or `--headless --import` — before they resolve.
 
 ### Data
 
