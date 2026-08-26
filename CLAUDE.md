@@ -4,16 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A 1:1 port of meatfighter.com's Java/Slick2D remake of Konami's *Jackal* (NES) to
+A port of meatfighter.com's Java/Slick2D remake of Konami's *Jackal* (NES) to
 Godot 4 / GDScript. LGPL v3, © meatfighter.com — keep the licence and attribution
 with any redistribution.
 
-**The Java original is the specification.** It lives beside this repo in
-`../java_src/jackal/` (126 `.java` files, not tracked here). Every GDScript file
-names the `jackal.*` class it came from in its header comment, so `grep` the
-header to find the counterpart. When changing behaviour, read the Java source
-first: divergence from it is a bug, not a style choice, and "cleaner" Godot-native
-rewrites are the wrong direction.
+**The Java original is the reference, not a contract.** It lives beside this repo
+in `../java_src/jackal/` (126 `.java` files, not tracked here). Every GDScript
+file names the `jackal.*` class it came from in its header comment, so `grep` the
+header to find the counterpart. Read it before changing behaviour: it is the only
+explanation of why anything works the way it does, and most of the odd-looking
+code here is odd because the original was.
+
+Matching it is no longer binding, though. Deliberate departures are allowed and
+several already exist — WASD and mouse aim, a longer camera leash, a flow field
+that paths better than the one that shipped. What is not allowed is departing by
+accident: know what the original did, say in the source why this differs, and do
+not reach for a "cleaner" Godot-native rewrite of something that already works.
 
 ## Commands
 
@@ -429,8 +435,18 @@ intro drop only incidentally — the real gate there is `GameMode.playing`, whic
 
 ## Known deviations from the original
 
-Intentional, do not "fix":
+Deliberate. Not bugs, and not to be "fixed" back without saying why:
+
+- Controls: WASD movement and mouse aim, gated on `ButtonMapping.mouse_aim`.
+- `CAMERA_BOUND` is a full frame rather than the original's 224, so the jeep can
+  back up about a screen and a half.
+- `FlowField.build` produces shortest paths, which the shipped `dirs-N.dat` do
+  not always contain. Only stages whose collision grid is edited get rebuilt, so
+  this only bites where it has to.
+
+And one bug kept on purpose, because reproducing it is cheaper than explaining
+the difference:
 
 - `SunsetMode._draw_helicopter`'s rotor disc grows instead of fading in. The Java
   original passes its fade value into `drawRotated`'s `scale` parameter rather
-  than its `alpha` one; the bug is reproduced.
+  than its `alpha` one.
