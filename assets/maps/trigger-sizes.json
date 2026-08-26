@@ -1,0 +1,246 @@
+{
+  "GRAY_GUN": {
+    "width": 4,
+    "height": 4
+  },
+  "SOLDIER_WALKER": {
+    "width": 2,
+    "height": 3
+  },
+  "SOLDIER_STATIONARY": {
+    "width": 2,
+    "height": 3
+  },
+  "GREEN_BOAT": {
+    "width": 4,
+    "height": 4
+  },
+  "BROWN_TANK": {
+    "width": 2,
+    "height": 3
+  },
+  "FRIENDLY_HELICOPTER_LANDING": {
+    "width": 64,
+    "height": 1
+  },
+  "YELLOW_GUN": {
+    "width": 4,
+    "height": 4
+  },
+  "STAR_BROWN": {
+    "width": 2,
+    "height": 2
+  },
+  "GRAY_TANK": {
+    "width": 4,
+    "height": 4
+  },
+  "STAR_FLASHING": {
+    "width": 2,
+    "height": 2
+  },
+  "AIRPLANE": {
+    "width": 4,
+    "height": 4
+  },
+  "GRAY_JEEP": {
+    "width": 2,
+    "height": 3
+  },
+  "PARKED_GRAY_JEEP": {
+    "width": 2,
+    "height": 3
+  },
+  "GRAY_BOAT": {
+    "width": 2,
+    "height": 6
+  },
+  "APPEARING_SOLDIER": {
+    "width": 2,
+    "height": 3
+  },
+  "APPEARING_BROWN_TANK": {
+    "width": 2,
+    "height": 3
+  },
+  "SUBMARINE": {
+    "width": 2,
+    "height": 8
+  },
+  "TROOPS_TRUCK": {
+    "width": 4,
+    "height": 3
+  },
+  "FLOOR_GUN": {
+    "width": 2,
+    "height": 3
+  },
+  "SWAMP_MISSILE_LAUNCHER": {
+    "width": 2,
+    "height": 1
+  },
+  "ROCK": {
+    "width": 2,
+    "height": 2
+  },
+  "CANNON_TRUCK_RIGHT": {
+    "width": 4,
+    "height": 3
+  },
+  "MINE": {
+    "width": 2,
+    "height": 1
+  },
+  "CLIFF_MISSILE_LAUNCHER": {
+    "width": 4,
+    "height": 4
+  },
+  "TRAIN": {
+    "width": 2,
+    "height": 4
+  },
+  "CANNON_TRUCK_LEFT": {
+    "width": 4,
+    "height": 3
+  },
+  "HOUSE_LEFT": {
+    "width": 6,
+    "height": 6
+  },
+  "HOUSE_RIGHT": {
+    "width": 6,
+    "height": 6
+  },
+  "HUT": {
+    "width": 6,
+    "height": 5
+  },
+  "SHACK": {
+    "width": 6,
+    "height": 6
+  },
+  "GATE": {
+    "width": 6,
+    "height": 4
+  },
+  "TANK_SHACK": {
+    "width": 6,
+    "height": 6
+  },
+  "CLIFF_GUN": {
+    "width": 4,
+    "height": 2
+  },
+  "FIRE_TANK": {
+    "width": 4,
+    "height": 4
+  },
+  "SOLDIER_FIRE": {
+    "width": 2,
+    "height": 3
+  },
+  "PARKED_BROWN_TANK": {
+    "width": 2,
+    "height": 3
+  },
+  "PLAYER": {
+    "width": 3,
+    "height": 3
+  },
+  "GREEN_GUN": {
+    "width": 3,
+    "height": 3
+  },
+  "APPEARING_PLANE": {
+    "width": 4,
+    "height": 4
+  },
+  "ENEMY_HELICOPTER": {
+    "width": 4,
+    "height": 4
+  },
+  "FLOOR_GUN_PLAIN": {
+    "width": 2,
+    "height": 2
+  },
+  "BROWN_GUN": {
+    "width": 3,
+    "height": 3
+  },
+  "APPEARING_ENEMY_HELICOPTER": {
+    "width": 4,
+    "height": 4
+  },
+  "APPEARING_GRAY_JEEP": {
+    "width": 2,
+    "height": 3
+  },
+  "FLOOR_MISSILE_LAUNCHER": {
+    "width": 4,
+    "height": 2
+  },
+  "STATUE_NONE": {
+    "width": 3,
+    "height": 6
+  },
+  "STATUE_LEFT": {
+    "width": 3,
+    "height": 6
+  },
+  "STATUE_RIGHT": {
+    "width": 3,
+    "height": 6
+  },
+  "COLUMN": {
+    "width": 2,
+    "height": 4
+  },
+  "LANDING_PORT_LEFT": {
+    "width": 16,
+    "height": 12
+  },
+  "LANDING_PORT_RIGHT": {
+    "width": 16,
+    "height": 12
+  },
+  "LANDING_PORT_CIRCLE": {
+    "width": 17,
+    "height": 16
+  },
+  "BOSS_BLUE_TANKS": {
+    "width": 1,
+    "height": 17
+  },
+  "BOSS_STATUES": {
+    "width": 1,
+    "height": 17
+  },
+  "LASER": {
+    "width": 4,
+    "height": 4
+  },
+  "BOSS_SHIP": {
+    "width": 1,
+    "height": 17
+  },
+  "BOSS_HELICOPTER": {
+    "width": 1,
+    "height": 17
+  },
+  "STAR_GREEN": {
+    "width": 2,
+    "height": 2
+  },
+  "BOSS_GARAGE": {
+    "width": 1,
+    "height": 17
+  },
+  "BOSS_HEADQUARTERS": {
+    "width": 1,
+    "height": 17
+  },
+  "CHINOOK": {
+    "width": 3,
+    "height": 10
+  }
+}

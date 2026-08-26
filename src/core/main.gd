@@ -1555,7 +1555,11 @@ func load_extra_large_image(name: String, pack_names: Array) -> ExtraLargeImage:
 
 # --- Binary data -------------------------------------------------------------
 #
-# Every .dat file is a big-endian java.io.DataInputStream dump.
+# Every .dat file is a big-endian java.io.DataInputStream dump. Two kinds are
+# left: the cutscene tile tables in assets/images, and dirs-N.dat, the
+# precomputed flow field. Both are generated, never authored. The stage maps
+# that used to be read here are assets/maps/stage-N.json now, and MapIO owns
+# them.
 
 static func _open(path: String) -> FileAccess:
 	var f := FileAccess.open(path, FileAccess.READ)
@@ -1576,91 +1580,6 @@ static func _s32(f: FileAccess) -> int:
 	return v - 4294967296 if v >= 2147483648 else v
 
 
-func load_sizes() -> void:
-	var f := _open(MAPS + "sizes.dat")
-	var count := _s16(f)
-	trigger_sizes = []
-	for i in count:
-		var width := _s16(f)
-		var height := _s16(f)
-		# Boss triggers fire four rows earlier so the camera pan can start.
-		if i == Triggers.BOSS_BLUE_TANKS or i == Triggers.BOSS_GARAGE \
-				or i == Triggers.BOSS_HEADQUARTERS or i == Triggers.BOSS_HELICOPTER \
-				or i == Triggers.BOSS_SHIP or i == Triggers.BOSS_STATUES:
-			height -= 4
-		trigger_sizes.append([width, height])
-	f.close()
-
-
-func load_maps(index: int, stage: Stage) -> void:
-	var f := _open(MAPS + "map-%d.dat" % index)
-	stage.map_width = _s16(f)
-	stage.map_height = _s16(f)
-
-	stage.tile_map = []
-	stage.groups_map = []
-	for y in stage.map_height + 1:
-		var row := PackedInt32Array()
-		row.resize(stage.map_width)
-		stage.tile_map.append(row)
-		var grow := PackedByteArray()
-		grow.resize(stage.map_width)
-		stage.groups_map.append(grow)
-
-	for y in stage.map_height:
-		var row: PackedInt32Array = stage.tile_map[y]
-		for x in stage.map_width:
-			row[x] = _s16(f)
-
-	var group_count := _s16(f)
-	stage.groups = []
-	for i in group_count:
-		var group_size := _s16(f)
-		var group: Array = []
-		for j in group_size:
-			var gx := _s16(f)
-			var gy := _s16(f)
-			var tile := _s16(f)
-			group.append([gx, gy, tile, 0])
-			stage.groups_map[gy][gx] = i
-		stage.groups.append(group)
-	f.close()
-
-
-func load_types(index: int, stage: Stage) -> void:
-	var f := _open(MAPS + "types-%d.dat" % index)
-	stage.map_width = _s16(f)
-	stage.map_height = _s16(f)
-
-	stage.types_map = []
-	for y in stage.map_height + 1:
-		var row := PackedInt32Array()
-		row.resize(stage.map_width)
-		stage.types_map.append(row)
-
-	for y in stage.map_height:
-		var row: PackedInt32Array = stage.types_map[y]
-		for x in stage.map_width:
-			row[x] = _s16(f)
-
-	# The row past the bottom of the map is water, so anything that falls off
-	# the end drowns instead of reading out of bounds.
-	var last: PackedInt32Array = stage.types_map[stage.map_height]
-	for x in stage.map_width:
-		last[x] = GameMode.TYPE_WATER
-	stage.map_height += 1
-
-	var group_count := _s16(f)
-	for i in group_count:
-		var group_size := _s16(f)
-		var group: Array = stage.groups[i]
-		for j in group_size:
-			_s16(f)  # x
-			_s16(f)  # y
-			group[j][3] = _s16(f)
-	f.close()
-
-
 func load_directions(index: int, stage: Stage) -> void:
 	var f := _open(MAPS + "dirs-%d.dat" % index)
 	var size := _s32(f)
@@ -1674,32 +1593,10 @@ func load_directions(index: int, stage: Stage) -> void:
 	f.close()
 
 
-func load_trigger_map(height: int, enemy_sizes: Array, index: int,
-		stage: Stage, hard: bool) -> void:
-	var lists: Array = []
-	for i in height:
-		lists.append([])
-
-	var f := _open(MAPS + "enemies%s-%d.dat" % ["-hard" if hard else "", index])
-	var count := _s16(f)
-	for i in count:
-		var trigger_index := _s16(f)
-		var tile_x := _s16(f)
-		var tile_y := _s16(f)
-		var trigger_y: int = tile_y + enemy_sizes[trigger_index][1] - 1
-		lists[trigger_y].append([trigger_index, tile_x << 5, tile_y << 5])
-	f.close()
-
-	stage.trigger_map[1 if hard else 0] = lists
-
-
 func load_stage(index: int, stage: Stage) -> void:
 	load_tiles(index, stage)
-	load_maps(index, stage)
-	load_types(index, stage)
+	MapIO.load_stage(index, stage, trigger_sizes)
 	load_directions(index, stage)
-	load_trigger_map(stage.map_height, trigger_sizes, index, stage, false)
-	load_trigger_map(stage.map_height, trigger_sizes, index, stage, true)
 
 
 func load_stages() -> void:
@@ -1810,7 +1707,7 @@ func load_next() -> float:
 		38:
 			load_large_images()
 		39:
-			load_sizes()
+			trigger_sizes = MapIO.load_trigger_sizes()
 		40:
 			load_stages()
 		41:
