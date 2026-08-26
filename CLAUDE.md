@@ -39,6 +39,22 @@ through `MapIO` and compares it against the original binary readers (see Data):
 godot --path . --headless --script tools/verify_json_maps.gd
 ```
 
+`src/tools/map_viewer.tscn` shows a stage the way the game draws it, with the
+collision types, destruction groups and spawn triggers over the top — including
+the row each trigger actually fires on, which is the thing about the map format
+that is impossible to see in the game:
+
+```bash
+godot --path . src/tools/map_viewer.tscn
+```
+
+It can also render one view and quit, which is how it gets checked (a real
+window is required, `--headless` has no framebuffer to read back):
+
+```bash
+godot --path . --windowed --resolution 1280x720 src/tools/map_viewer.tscn -- --shot out.png 3 0.6 150 "tiles,overlay,types,triggers"
+```
+
 Export uses the single `Windows Desktop` preset in `export_presets.cfg`:
 
 ```bash
