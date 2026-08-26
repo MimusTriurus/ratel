@@ -32,27 +32,43 @@ A fresh clone has no `.godot/`, so `class_name` globals are unresolved and any
 `--script` run fails with "Identifier not declared in the current scope". Run
 `godot --path . --headless --import` once first.
 
-The closest thing to a test is the map conversion check, which loads every stage
-through `MapIO` and compares it against the original binary readers (see Data):
+The closest thing to a test suite is the three map checks in `tools/`, none of
+which need a window:
 
 ```bash
 godot --path . --headless --script tools/verify_json_maps.gd
 ```
 
-`src/tools/map_viewer.tscn` shows a stage the way the game draws it, with the
-collision types, destruction groups and spawn triggers over the top — including
-the row each trigger actually fires on, which is the thing about the map format
-that is impossible to see in the game:
+```bash
+godot --path . --headless --script tools/verify_json_roundtrip.gd
+```
 
 ```bash
-godot --path . src/tools/map_viewer.tscn
+godot --path . --headless --script tools/verify_map_edit.gd
+```
+
+The first loads every stage through `MapIO` and through the original binary
+readers and compares the two (see Data). The second writes every stage straight
+back out: `git diff --exit-code assets/maps` must stay clean, which is what
+proves `MapIO.serialize` agrees with `tools/map_json.py` byte for byte. The
+third drives the editor's brushes, undo and save without a tree, and leaves
+`stage-0.json` modified on purpose — `git diff --stat assets/maps` should show
+one line per painted row and nothing else, then `git checkout -- assets/maps`.
+
+`src/tools/map_editor.tscn` shows a stage the way the game draws it, with the
+collision types, destruction groups and spawn triggers over the top — including
+the row each trigger actually fires on, which is the thing about the map format
+that is impossible to see in the game — and paints the tile and collision grids:
+
+```bash
+godot --path . src/tools/map_editor.tscn
 ```
 
 It can also render one view and quit, which is how it gets checked (a real
 window is required, `--headless` has no framebuffer to read back):
 
 ```bash
-godot --path . --windowed --resolution 1280x720 src/tools/map_viewer.tscn -- --shot out.png 3 0.6 150 "tiles,overlay,types,triggers"
+godot --path . --windowed --resolution 1280x720 src/tools/map_editor.tscn -- --shot out.png 3 0.6 150 "tiles,overlay,types,triggers"
 ```
 
 Export uses the single `Windows Desktop` preset in `export_presets.cfg`:
@@ -210,6 +226,14 @@ hand.
 
 `Stage` holds the pristine per-stage maps; `GameMode` copies `tile_map` /
 `types_map` because gameplay mutates them.
+
+`MapIO` writes as well as reads. `serialize` reproduces `map_json.py`'s layout
+exactly, one map row to a line, so that saving a stage nobody edited leaves no
+diff and an edit to one tile touches one line. The grids come from the `Stage`;
+everything else is carried over from the document the stage was loaded from,
+which is why `read_document` exists and why `save_stage` wants it — the trigger
+list keeps the order it was authored in, and a `Stage` cannot preserve that
+because it files triggers by the row they fire on.
 
 `tools/map_json.py` did the conversion from the original `.dat` maps and can
 still check it: `verify` re-encodes each JSON into the binary layout and

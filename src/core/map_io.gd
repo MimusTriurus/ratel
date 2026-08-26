@@ -32,6 +32,13 @@ const TYPE_CHARS := {
 	">": TYPE_CONVEYOR,
 }
 
+# The same thing the other way round, indexed by type, for writing and for
+# anything that needs to name a type to a human.
+const TYPE_CHAR: Array[String] = ["#", ".", "S", "~", "%", ">"]
+const TYPE_NAME: Array[String] = [
+	"SOLID", "EMPTY", "SHIELD", "WATER", "SWAMP", "CONVEYOR",
+]
+
 # Boss triggers fire four rows earlier so the camera pan can start. Same list
 # as Main.load_sizes.
 const EARLY_BOSS_TRIGGERS: Array[int] = [
@@ -83,6 +90,97 @@ static func load_trigger_sizes() -> Array:
 			push_error("trigger-sizes.json is missing an entry for trigger %d" % i)
 			sizes[i] = [1, 1]
 	return sizes
+
+
+# The parsed stage file, for a tool that needs to carry the parts a Stage does
+# not keep in authored form -- the trigger list in its original order -- across
+# a load and save.
+static func read_document(index: int) -> Dictionary:
+	return _read_json(MAPS + "stage-%d.json" % index)
+
+
+static func save_stage(index: int, stage: Stage, source: Dictionary) -> Error:
+	var path := MAPS + "stage-%d.json" % index
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		var error := FileAccess.get_open_error()
+		push_error("Cannot write %s (error %d)" % [path, error])
+		return error
+	f.store_string(serialize(index, stage, source))
+	f.close()
+	return OK
+
+
+# Reproduces the layout tools/map_json.py writes, so that saving a stage nobody
+# edited leaves no diff behind. One map row is one line, which is the whole
+# point of the format.
+#
+# The grids come from the Stage, everything else from the document it was loaded
+# from: triggers keep the order they were authored in, which the Stage cannot
+# preserve because it files them by the row they fire on.
+static func serialize(index: int, stage: Stage, source: Dictionary) -> String:
+	var width := stage.map_width
+	var height := stage.map_height - 1  # the sentinel water row is not authored
+
+	var out := PackedStringArray()
+	out.append("{")
+	out.append('  "stage": %d,' % index)
+	out.append('  "width": %d,' % width)
+	out.append('  "height": %d,' % height)
+
+	var legend := PackedStringArray()
+	for t in TYPE_NAME.size():
+		legend.append('"%s": "%s"' % [TYPE_CHAR[t], TYPE_NAME[t]])
+	out.append('  "type_legend": {%s},' % ", ".join(legend))
+
+	var rows := PackedStringArray()
+	for y in height:
+		var row: PackedInt32Array = stage.types_map[y]
+		var chars := ""
+		for x in width:
+			chars += TYPE_CHAR[row[x]]
+		rows.append('    "%s"' % chars)
+	out.append('  "types": [')
+	out.append(",\n".join(rows))
+	out.append("  ],")
+
+	rows = PackedStringArray()
+	for y in height:
+		var row: PackedInt32Array = stage.tile_map[y]
+		var numbers := PackedStringArray()
+		for x in width:
+			numbers.append(str(row[x]))
+		rows.append("    [%s]" % ",".join(numbers))
+	out.append('  "tiles": [')
+	out.append(",\n".join(rows))
+	out.append("  ],")
+
+	rows = PackedStringArray()
+	for i in stage.groups.size():
+		var cells := PackedStringArray()
+		for cell in stage.groups[i]:
+			cells.append('[%d, %d, %d, "%s"]'
+				% [cell[0], cell[1], cell[2], TYPE_CHAR[cell[3]]])
+		rows.append('    {"index": %d, "cells": [%s]}' % [i, ", ".join(cells)])
+	out.append('  "groups": [')
+	out.append(",\n".join(rows))
+	out.append("  ],")
+
+	out.append('  "triggers": {')
+	var difficulties := ["normal", "hard"]
+	for d in 2:
+		out.append('    "%s": [' % difficulties[d])
+		var entries := PackedStringArray()
+		for t in source["triggers"][difficulties[d]]:
+			var trigger: Dictionary = t
+			entries.append('      {"type": "%s", "x": %d, "y": %d}'
+				% [trigger["type"], int(trigger["x"]), int(trigger["y"])])
+		out.append(",\n".join(entries))
+		out.append("    ]" if d == 1 else "    ],")
+	out.append("  }")
+	out.append("}")
+
+	return "\n".join(out) + "\n"
 
 
 static func load_stage(index: int, stage: Stage, trigger_sizes: Array) -> void:
