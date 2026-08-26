@@ -28,11 +28,12 @@ const TILES: Array[int] = [218, 235, 273, 233, 328, 330]
 
 const FADE_COUNT := 23
 
-# Aiming reticle. The bar thickness matches the font's 8 px stroke, and the gap
-# is wide enough to keep whatever is being aimed at visible through it.
-const CROSSHAIR_UNIT := 8.0
-const CROSSHAIR_ARM := 24.0
-const CROSSHAIR_GAP := 16.0
+# Aiming reticle. The bars are one pixel of the original 256x240 screen thick,
+# and the whole thing is about two thirds of the jeep's width — enough to read
+# against the terrain without covering what is being aimed at.
+const CROSSHAIR_UNIT := 4.0
+const CROSSHAIR_ARM := 12.0
+const CROSSHAIR_GAP := 8.0
 const CROSSHAIR_COLOR := Color(1, 1, 1)
 const CROSSHAIR_OUTLINE := Color(0, 0, 0)
 

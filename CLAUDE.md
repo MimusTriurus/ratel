@@ -174,7 +174,8 @@ body still faces its movement direction — the original's gun never pointed
 where the sprite did, so nothing is lost and no new art is needed.
 
 The reticle is `Main.draw_crosshair`, four `draw_rect` bars over a grown black
-pass (there is no crosshair in the sprite sheets). It is called last in
+pass (there is no crosshair in the sprite sheets), one original-screen pixel
+thick and about two thirds of the jeep's width. It is called last in
 `GameMode.render()`, after `_draw_sprites()` has popped the camera translation,
 so it sits at the cursor rather than in the world. `Main._update_cursor_visibility`
 hides the system cursor to match, but only while a `GameMode` is playing and
