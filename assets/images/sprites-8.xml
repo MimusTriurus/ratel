@@ -1,0 +1,7 @@
+<sheet>
+	<sprite name="sun.png" x="1" y="1" width="164" height="92" />
+	<sprite name="rescue-helicopter-body-0.png" x="167" y="1" width="76" height="81" />
+	<sprite name="rescue-helicopter-body-1.png" x="245" y="1" width="76" height="81" />
+	<sprite name="waves-0.png" x="323" y="1" width="168" height="32" />
+	<sprite name="rescue-helicopter-blade.png" x="323" y="35" width="91" height="56" />
+</sheet>

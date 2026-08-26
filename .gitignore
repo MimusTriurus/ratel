@@ -1,0 +1,17 @@
+# Godot editor cache and per-machine state — regenerated on open.
+.godot/
+
+# Exported builds
+/build/
+/export/
+*.exe
+*.pck
+*.zip
+
+# Mono/C# leftovers (this project is GDScript, but the editor is a Mono build)
+.mono/
+*.csproj
+*.sln
+
+# NOTE: *.uid files are deliberately NOT ignored. Godot 4.4+ uses them as the
+# stable identity of each script; excluding them breaks references on clone.

@@ -1,0 +1,4 @@
+<sheet>
+	<sprite name="controller-0.png" x="0" y="0" width="512" height="218" />
+	<sprite name="controller-1.png" x="0" y="218" width="512" height="218" />
+</sheet>

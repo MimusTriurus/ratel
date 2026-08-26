@@ -1,0 +1,9 @@
+# All text is LF in the repo and in the working tree. Godot and GDScript are
+# fine with LF on Windows, and this stops the whole tree churning between
+# machines.
+* text=auto eol=lf
+
+# Binary assets — never touch these.
+*.png binary
+*.ogg binary
+*.dat binary
