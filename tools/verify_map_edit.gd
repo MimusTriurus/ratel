@@ -55,7 +55,7 @@ func _init() -> void:
 	_check("rect filled its far corner", stage.types_map[120][20] == MapIO.TYPE_SWAMP)
 	_check("rect left the neighbour alone",
 		stage.types_map[120][19] != MapIO.TYPE_SWAMP or original_type == MapIO.TYPE_SWAMP)
-	_check("types edit is reported as stale pathing", editor._dirty["types"])
+	_check("types edit is reported as stale pathing", editor._dirs_stale)
 
 	# The sentinel water row past the bottom of the map is not authored.
 	editor.tool = editor.TOOL_TILES
@@ -67,6 +67,9 @@ func _init() -> void:
 
 	editor._save()
 	_check("save cleared the dirty flags", not editor._is_dirty())
+	# Saving the stage does not fix the flow field: that is a separate file, a
+	# separate action, and a much heavier one.
+	_check("save left the pathing marked stale", editor._dirs_stale)
 
 	# Read it back through the loader the game uses.
 	var reloaded := Stage.new()

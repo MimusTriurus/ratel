@@ -17,9 +17,10 @@
 # are drawn but not editable yet, and they survive a save untouched because the
 # document they were loaded from is what gets written back for those parts.
 #
-# Painting collision types invalidates dirs-N.dat, the precomputed flow field,
-# and there is no generator for it yet -- see the Data section of CLAUDE.md. The
-# status panel says so rather than pretending otherwise.
+# Painting collision types invalidates dirs-N.dat, the precomputed flow field.
+# The status panel says so, and Rebuild pathing rebuilds it -- but that is a
+# reverse engineered generator overwriting data that shipped with the port, so
+# it is a deliberate button and not part of Ctrl+S. See FlowField.
 extends Control
 
 const SIDEBAR_WIDTH := 320.0
@@ -84,6 +85,10 @@ var _stroke := {}               # Vector2i -> [old, new], the drag in progress
 var _stroke_layer := ""
 var _rect_anchor := Vector2i(-1, -1)
 var _dirty := {"tiles": false, "types": false}
+# Unsaved edits and a stale flow field are different problems with different
+# fixes: Ctrl+S writes the stage, rebuilding writes dirs-N.dat, and painting one
+# tile does not invalidate the pathing at all.
+var _dirs_stale := false
 var _message := ""
 
 var _inspector: Label
@@ -174,6 +179,7 @@ func _load_stage(index: int) -> void:
 
 	_undo_redo.clear_history()
 	_dirty = {"tiles": false, "types": false}
+	_dirs_stale = false
 	_stroke.clear()
 	current_tile = clampi(current_tile, 0, maxi(0, stage.tiles.size() - 1))
 
@@ -199,6 +205,25 @@ func _save() -> void:
 func _reload() -> void:
 	_message = "reloaded stage-%d.json" % stage_index
 	_load_stage(stage_index)
+
+
+# Rebuilding takes about a second, long enough to be worth saying so first --
+# hence the frame handed back before the work starts.
+func _rebuild_pathing() -> void:
+	_message = "rebuilding dirs-%d.dat ..." % stage_index
+	_update_status()
+	await get_tree().process_frame
+
+	var started := Time.get_ticks_msec()
+	FlowField.build(stage)
+	var error := FlowField.save(stage_index, stage)
+	if error == OK:
+		_dirs_stale = false
+		_message = "rebuilt dirs-%d.dat in %d ms" % [stage_index,
+			Time.get_ticks_msec() - started]
+	else:
+		_message = "REBUILD FAILED, see the console"
+	_update_status()
 
 
 func _is_dirty() -> bool:
@@ -423,6 +448,8 @@ func _commit_stroke() -> void:
 	_undo_redo.commit_action(false)
 
 	_dirty[layer] = true
+	if layer == "types":
+		_dirs_stale = true
 	_message = ""
 	_update_status()
 	queue_redraw()
@@ -434,6 +461,8 @@ func _apply_cells(layer: String, cells: Dictionary, redo: bool) -> void:
 		var row: PackedInt32Array = grid[cell.y]
 		row[cell.x] = cells[cell][1 if redo else 0]
 	_dirty[layer] = true
+	if layer == "types":
+		_dirs_stale = true
 	_update_status()
 	_update_inspector()
 	queue_redraw()
@@ -715,6 +744,16 @@ func _build_ui() -> void:
 	_build_layers(box)
 	box.add_child(HSeparator.new())
 
+	var rebuild := Button.new()
+	rebuild.text = "Rebuild pathing"
+	rebuild.tooltip_text = ("Recomputes dirs-N.dat from the collision grid and "
+		+ "overwrites it. Only needed after editing collision types.")
+	rebuild.focus_mode = Control.FOCUS_NONE
+	rebuild.pressed.connect(_rebuild_pathing)
+	box.add_child(rebuild)
+
+	box.add_child(HSeparator.new())
+
 	_status = Label.new()
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_status)
@@ -723,7 +762,7 @@ func _build_ui() -> void:
 
 	_inspector = Label.new()
 	_inspector.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_inspector.custom_minimum_size.y = 190
+	_inspector.custom_minimum_size.y = 172
 	_inspector.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	box.add_child(_inspector)
 
@@ -776,7 +815,7 @@ func _build_tools(box: VBoxContainer) -> void:
 	box.add_child(types)
 
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size.y = 230
+	scroll.custom_minimum_size.y = 205
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	box.add_child(scroll)
 
@@ -869,7 +908,7 @@ func _update_status() -> void:
 
 	if _is_dirty():
 		lines.append("* unsaved changes")
-	if _dirty["types"]:
+	if _dirs_stale:
 		lines.append("* collision changed: dirs-%d.dat is stale" % stage_index)
 	if _message != "":
 		lines.append(_message)

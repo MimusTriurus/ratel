@@ -1555,11 +1555,10 @@ func load_extra_large_image(name: String, pack_names: Array) -> ExtraLargeImage:
 
 # --- Binary data -------------------------------------------------------------
 #
-# Every .dat file is a big-endian java.io.DataInputStream dump. Two kinds are
-# left: the cutscene tile tables in assets/images, and dirs-N.dat, the
-# precomputed flow field. Both are generated, never authored. The stage maps
-# that used to be read here are assets/maps/stage-N.json now, and MapIO owns
-# them.
+# What is left here reads the cutscene tile tables in assets/images, big-endian
+# java.io.DataInputStream dumps like everything inherited from the Java remake.
+# The stage maps are assets/maps/stage-N.json and MapIO owns them; the flow
+# field is still binary and FlowField owns it.
 
 static func _open(path: String) -> FileAccess:
 	var f := FileAccess.open(path, FileAccess.READ)
@@ -1575,28 +1574,10 @@ static func _s16(f: FileAccess) -> int:
 	return v - 65536 if v >= 32768 else v
 
 
-static func _s32(f: FileAccess) -> int:
-	var v := f.get_32()
-	return v - 4294967296 if v >= 2147483648 else v
-
-
-func load_directions(index: int, stage: Stage) -> void:
-	var f := _open(MAPS + "dirs-%d.dat" % index)
-	var size := _s32(f)
-	stage.directions_width = _s32(f)
-	stage.directions_height = _s32(f)
-	var dirs := PackedInt64Array()
-	dirs.resize(size)
-	for i in size:
-		dirs[i] = f.get_64()
-	stage.directions = dirs
-	f.close()
-
-
 func load_stage(index: int, stage: Stage) -> void:
 	load_tiles(index, stage)
 	MapIO.load_stage(index, stage, trigger_sizes)
-	load_directions(index, stage)
+	FlowField.load_into(index, stage)
 
 
 func load_stages() -> void:
