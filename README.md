@@ -129,6 +129,23 @@ frame is a wider `is_outside_of_frame`, so grenades and missiles reach targets
 that used to be immune, the bosses that scatter spawns across the frame scatter
 them wider, and seeing further ahead is simply easier.
 
+## Backtracking
+
+`GameMode` ratchets the camera forward: every tick `max_camera_y` is pulled down
+to `camera_y + CAMERA_BOUND` and never rises again, and the jeep is clamped to
+the bottom edge of that frame. The original set `CAMERA_BOUND` to 224, which
+left 768 px of room to retreat -- a level was very nearly a one-way trip.
+
+It is a full frame here, so the room to retreat is 1696 px, about a screen and a
+half. The ratchet itself is untouched, so this is a longer leash rather than
+free roaming, and a boss fight still locks its arena because the boss pan sets
+`max_camera_y` to 0 outright.
+
+Two things to know: triggers fire once and enemies left behind are removed by
+`check_bounds`, so ground you have already cleared stays empty; and
+`REMOVE_BOUND` is measured from `max_camera_y`, so elements now live further
+below the frame (measured at a peak of 28 live elements, which is nothing).
+
 ## Controls, and where they deviate
 
 The original is a NES game: eight-direction movement, grenades thrown in

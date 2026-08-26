@@ -17,7 +17,11 @@ const CAMERA_MARGIN_SOUTH := 192.0
 # with a taller frame does not drag the spawn sideways.
 const PLAYER_SPAWN_CAMERA_OFFSET := 432.0
 const CAMERA_MARGIN_SIDES := 256.0
-const CAMERA_BOUND := 224.0
+# How far the camera may scroll back from its furthest-north point. The
+# original's 224 made a level a one-way trip; a full frame lets the player back
+# off from trouble or return for a missed pickup. The ratchet itself stays, so
+# this is a longer leash rather than free roaming.
+const CAMERA_BOUND := float(Main.SCREEN_HEIGHT)
 # Grown with the frame so that the gap between the bottom edge and the removal
 # line stays what it was.
 const REMOVE_BOUND := 1536.0 + EXTRA_HEIGHT

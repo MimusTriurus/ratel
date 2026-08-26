@@ -194,6 +194,13 @@ taller frame moved the spawn sideways -- it has its own
 `PLAYER_SPAWN_CAMERA_OFFSET` now. The background loop clamps its column and row
 counts as a backstop rather than special-casing the exact map edge.
 
+`CAMERA_BOUND` is a deliberate departure: the original's 224 is a full frame
+here, so the jeep can back up about a screen and a half instead of two thirds
+of one. The ratchet in `_camera_track_player` is unchanged, and the boss pan
+still pins `max_camera_y` to 0, so an arena cannot be driven out of. Note that
+`REMOVE_BOUND` is measured from `max_camera_y`, so a longer leash also keeps
+elements alive further below the frame.
+
 Boss managers are the exception to that, and worth checking when the frame
 changes: most of their coordinates are absolute positions on the 2048-wide map
 (garages, statues, ship guns, headquarters lights) and must stay that way, but a
