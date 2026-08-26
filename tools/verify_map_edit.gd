@@ -18,6 +18,16 @@ func _init() -> void:
 	var editor: Control = load("res://src/tools/map_editor.gd").new()
 	editor.trigger_sizes = MapIO.load_trigger_sizes()
 	editor._load_trigger_meta()
+
+	# Whatever the check reports about a stage as shipped is a bug in the check.
+	for index in 6:
+		editor._load_stage(index)
+		var found: Array = editor._check_stage()
+		_check("stage %d as shipped passes the check" % index, found.is_empty())
+		if not found.is_empty():
+			for problem in found.slice(0, 4):
+				print("         %s" % problem)
+
 	editor._load_stage(0)
 
 	var stage: Stage = editor.stage

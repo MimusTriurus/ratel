@@ -964,6 +964,54 @@ func _check_stage() -> Array[String]:
 					% [trigger["type"], key, int(trigger["x"]), int(trigger["y"]),
 						cell.x, cell.y])
 
+	for difficulty in 2:
+		var key := "hard" if difficulty == 1 else "normal"
+		var list: Array = document["triggers"][key]
+
+		# Every stage brings the player in exactly once, either by parking the
+		# jeep (PLAYER) or by flying it in (CHINOOK, which stage 1 uses).
+		var arrivals := 0
+		var rows := {}
+		for entry in list:
+			var trigger: Dictionary = entry
+			var index := _trigger_index(trigger)
+			if index == Triggers.PLAYER or index == Triggers.CHINOOK:
+				arrivals += 1
+
+			var footprint := _footprint(index)
+			var x := int(trigger["x"])
+			var y := int(trigger["y"])
+			if x < 0 or x + footprint.x > stage.map_width:
+				problems.append("%s (%s) at (%d, %d) hangs off the side of the map"
+					% [trigger["type"], key, x, y])
+
+			var row: int = y + trigger_sizes[index][1] - 1
+			if row < 0 or row >= stage.map_height:
+				problems.append("%s (%s) at (%d, %d) fires on row %d, which is not on the map"
+					% [trigger["type"], key, x, y, row])
+			else:
+				rows[row] = rows.get(row, 0) + 1
+
+		if arrivals != 1:
+			problems.append("%s has %d PLAYER/CHINOOK triggers, it needs exactly one"
+				% [key, arrivals])
+
+		# A row fires all at once, so a crowded one is a wall of enemies rather
+		# than a wave. The busiest row in the game as shipped holds eight.
+		for row in rows:
+			if rows[row] > 12:
+				problems.append("%s row %d fires %d triggers at once"
+					% [key, row, rows[row]])
+
+	var tiles: int = stage.tiles.size()
+	for y in stage.map_height - 1:
+		var row: PackedInt32Array = stage.tile_map[y]
+		for x in stage.map_width:
+			if row[x] >= tiles:
+				problems.append("tile %d at (%d, %d): the stage has %d tiles"
+					% [row[x], x, y, tiles])
+				break
+
 	for i in stage.groups.size():
 		if stage.groups[i].is_empty():
 			problems.append("group %d is empty" % i)
@@ -1251,13 +1299,20 @@ func _trigger_color(index: int) -> Color:
 	return COLOR_TRIGGER
 
 
-# Names go on last, in screen space, so they stay legible at any zoom.
+# Names go on last, in screen space, so they stay legible at any zoom. Where
+# triggers are packed together their names used to pile into an unreadable
+# smear, so a name that would land on one already drawn is dropped -- except for
+# the one under the cursor, which is drawn last and always wins.
 func _draw_labels() -> void:
 	if not layers["triggers"] or zoom < 0.45:
 		return
+
 	var rows: Array = stage.trigger_map[1 if hard else 0]
 	var top := view_offset.y
 	var bottom := view_offset.y + _view_size().y / zoom
+	var taken: Array[Rect2] = []
+	var hovered: Array = []
+
 	for row in rows.size():
 		for t in rows[row]:
 			var y: float = t[2]
@@ -1266,8 +1321,39 @@ func _draw_labels() -> void:
 			var at := (Vector2(t[1], y) - view_offset) * zoom + Vector2(3, -4)
 			if at.x < SIDEBAR_WIDTH:
 				continue
-			draw_string(_font, at, trigger_names[t[0]], HORIZONTAL_ALIGNMENT_LEFT,
-				-1, _font_size, _trigger_color(t[0]))
+
+			var footprint := _footprint(t[0])
+			if hover_tile.x >= 0 \
+					and hover_tile.x >= t[1] / 32 and hover_tile.x < t[1] / 32 + footprint.x \
+					and hover_tile.y >= t[2] / 32 and hover_tile.y < t[2] / 32 + footprint.y:
+				hovered.append([at, t[0]])
+				continue
+
+			var name: String = trigger_names[t[0]]
+			var size := _font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1,
+				_font_size)
+			var box := Rect2(at.x, at.y - size.y, size.x, size.y)
+			var clear := true
+			for placed in taken:
+				if placed.intersects(box):
+					clear = false
+					break
+			if not clear:
+				continue
+
+			taken.append(box)
+			_draw_label(at, name, _trigger_color(t[0]))
+
+	for entry in hovered:
+		_draw_label(entry[0], trigger_names[entry[1]], COLOR_HOVER)
+
+
+# Outlined, because the terrain underneath runs from black rock to white
+# concrete and a plain string is unreadable over half of it.
+func _draw_label(at: Vector2, text: String, color: Color) -> void:
+	draw_string_outline(_font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, _font_size,
+		4, Color(0, 0, 0, 0.85))
+	draw_string(_font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, _font_size, color)
 
 
 # --- Sidebar -----------------------------------------------------------------
