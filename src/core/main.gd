@@ -228,7 +228,6 @@ var _xf: Transform2D = Transform2D.IDENTITY
 var _xf_stack: Array[Transform2D] = []
 var _clip_rect: Rect2 = Rect2()
 var _clipping: bool = false
-var _cursor_hidden: bool = false
 
 # Two independent clips, intersected into _clip_rect. The inner one is Slick's
 # setWorldClip, driven by set_clip/clear_clip; the outer one is the pillar box
@@ -335,17 +334,25 @@ func _draw() -> void:
 
 
 # The system cursor is replaced by the drawn crosshair while aiming, and comes
-# back everywhere else — menus, cutscenes, and while paused, so the window can
-# still be left alone. MOUSE_MODE_HIDDEN does not confine the pointer, so it
-# never traps anyone in the window.
+# back in a window everywhere else — menus, cutscenes, and while paused, so the
+# window can still be left alone. MOUSE_MODE_HIDDEN does not confine the
+# pointer, so it never traps anyone.
 func _update_cursor_visibility() -> void:
+	var win := get_window()
+	var fullscreen: bool = win.mode == Window.MODE_FULLSCREEN \
+		or win.mode == Window.MODE_EXCLUSIVE_FULLSCREEN
 	# Explicitly typed: mode is untyped, so the expression cannot be inferred.
-	var hide_it: bool = input != null and input.is_aiming() and mode is GameMode \
+	var aiming: bool = input != null and input.is_aiming() and mode is GameMode \
 		and mode.playing and not mode.paused
-	if hide_it == _cursor_hidden:
-		return
-	_cursor_hidden = hide_it
-	Input.mouse_mode = Input.MOUSE_MODE_HIDDEN if hide_it else Input.MOUSE_MODE_VISIBLE
+	# Fullscreen hides the pointer throughout, which is what the port did before
+	# the crosshair existed.
+	var want := Input.MOUSE_MODE_HIDDEN if (aiming or fullscreen) \
+		else Input.MOUSE_MODE_VISIBLE
+	# Compared against the real mouse mode rather than a cached flag, so this
+	# stays authoritative when something else changes it — full_screen_toggle_check
+	# used to set the mode itself, and the cached flag then went stale.
+	if Input.mouse_mode != want:
+		Input.mouse_mode = want
 
 
 # InputMode needs raw key/pad events for its remapping screen.
@@ -519,12 +526,11 @@ func full_screen_toggle_check() -> void:
 	var win := get_window()
 	var fullscreen := win.mode == Window.MODE_EXCLUSIVE_FULLSCREEN \
 		or win.mode == Window.MODE_FULLSCREEN
+	# The cursor is left to _update_cursor_visibility, which owns it.
 	if fullscreen:
 		win.mode = Window.MODE_WINDOWED
-		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	elif not is_escape:
 		win.mode = Window.MODE_FULLSCREEN
-		Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
 
 
 # --- Vector helpers ----------------------------------------------------------

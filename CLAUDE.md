@@ -175,6 +175,15 @@ of the map where `row[TILES_ACROSS + x_tile]` would index `map_width` itself.
 in `Player.update` and the score HUD's y are all derived from the frame rather
 than hardcoded to 960 now.
 
+The project starts fullscreen (`display/window/size/mode=3`). Note that
+`project.godot` comments use `;`, not `#` -- a `#` comment silently stops the
+keys after it from being applied.
+
+`_update_cursor_visibility` owns the mouse mode and compares against the live
+`Input.mouse_mode` rather than a cached flag, because `full_screen_toggle_check`
+used to set the mode itself and left that cache stale, stranding the cursor
+hidden on the menus.
+
 Because the frame is as wide as the map, `max_camera_x` is 0, and **every write
 to `camera_x` must clamp to it**. Two places got this wrong when the frame
 widened and crashed the background loop: `_create_player`, which the `PLAYER`

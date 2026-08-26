@@ -111,6 +111,15 @@ the viewport and clipped to that box, because several of them slide content in
 from just outside the frame and relied on the old viewport to hide it. Gameplay
 code asking "where is the edge of the visible frame" uses the `SCREEN_*` pair.
 
+The game starts fullscreen, because a 16:9 viewport scales to fill a 16:9
+screen with no letterboxing at all -- on a 2560x1440 display that is a uniform
+1.25x with zero black bars. `Escape` or `F12` drops back to a 2048x1152 window,
+which is pixel-exact but leaves the desktop showing around it on a larger
+screen. There is no third option that is both: filling a 2560-wide screen at an
+integer scale would need a frame wider than the 2048-wide maps. Setting
+`display/window/stretch/scale_mode` to `integer` trades the uniform fill for
+exact pixels and thin black borders.
+
 The extra height goes to the view *ahead*: `CAMERA_MARGIN_NORTH` grows with the
 frame, so the jeep sees 576 px north instead of 384 while the 576 behind it is
 unchanged.
