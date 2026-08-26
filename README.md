@@ -10,11 +10,17 @@ game; that is a separate question from the code licence.
 
 ## Running
 
-Open `godot/project.godot` in Godot 4.7 (or any 4.x with `static var`
-support) and press Play. Default controls: arrow keys to drive, `X` to throw a
-grenade, `Z` to fire. `F12` toggles fullscreen, `Escape` leaves it, `P` or
-`Enter` pauses. Controls can be remapped from Options → Input, and are saved to
-`user://buttons.cfg`.
+Open `project.godot` in Godot 4.7 (or any 4.x with `static var` support) and
+press Play.
+
+Default controls: `WASD` to drive, the mouse to aim, left mouse button to fire
+the machine gun, right mouse button to throw a grenade or missile. The arrow
+keys always work as a second set of direction keys, and `X` / `Z` still throw
+and fire from the keyboard. `F12` toggles fullscreen, `Escape` leaves it, `P` or
+`Enter` pauses. Keys and pad buttons can be remapped from Options → Input, and
+are saved to `user://buttons.cfg`; mouse aiming can be turned off there by
+setting `[mouse] aim=false` in the same file, which restores the original
+scheme.
 
 ## Layout
 
@@ -73,6 +79,33 @@ grid, packed 21 to a `long`, which is how the tanks path in O(1).
 **Audio.** `Song` chains an intro, an optional second intro and a looping
 track through `AudioStreamPlayer.finished`; `Sfx` keeps a small voice pool per
 effect and reproduces the original's 125 ms retrigger throttle.
+
+## Controls, and where they deviate
+
+The original is a NES game: eight-direction movement, grenades thrown in
+whatever direction the jeep faces, and a machine gun that only ever fires
+north. Mouse aiming replaces the last two, so `Player` now resolves a
+continuous weapon angle once per tick from the cursor's world position
+(`HumanInput.aim_position()` plus the camera offset) and passes it to
+`Grenade`, `PlayerMissile` and `PlayerBullet`.
+
+Three things this had to respect:
+
+* `create_unit_vector(int)` is an exact table over multiples of 45, and it
+  returns a *stale* vector for anything else. `create_unit_vector_deg(float)`
+  dispatches back to that table whenever the angle is a multiple of 45, so
+  keyboard and pad aiming stay bit-identical to the Java version, and only
+  mouse angles go through `cos`/`sin`.
+* Mouse buttons are kept out of `is_fire()` / `is_shoot()`, which also feed the
+  menus, the title screen and the Konami code — a click must not navigate a
+  menu. `Player` reads `is_grenade()` / `is_gun()` instead.
+* `W` is in the original's fallback gun-key set (`Z / Y / W / K`) and is now
+  also the default "up", so a fallback key claimed by a direction is skipped.
+
+The jeep body still turns to face its movement direction, not the cursor. That
+is not a shortcut: the original's machine gun never pointed where the sprite
+did either, so decoupling aim from the body costs no fidelity and needs no new
+art.
 
 ## Known deviations
 

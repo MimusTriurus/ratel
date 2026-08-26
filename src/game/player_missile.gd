@@ -17,14 +17,14 @@ var power: int
 var enemies: Array[Enemy]
 
 
-func _init(p_x: float, p_y: float, p_angle: int, p_power: int) -> void:
+func _init(p_x: float, p_y: float, p_angle: float, p_power: int) -> void:
 	super()
 	x = p_x
 	y = p_y
 	angle = p_angle
 	power = p_power
 
-	var unit := main.create_unit_vector(p_angle)
+	var unit := main.create_unit_vector_deg(p_angle)
 	var v := VELOCITY2 if game_mode.player.long_range else VELOCITY
 	vx = unit[0] * v
 	vy = unit[1] * v

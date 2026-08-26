@@ -1,10 +1,10 @@
 class_name ButtonMapping
 extends RefCounted
 
-var key_up: Key = KEY_UP
-var key_down: Key = KEY_DOWN
-var key_left: Key = KEY_LEFT
-var key_right: Key = KEY_RIGHT
+var key_up: Key = KEY_W
+var key_down: Key = KEY_S
+var key_left: Key = KEY_A
+var key_right: Key = KEY_D
 var key_grenade: Key = KEY_X
 var key_gun: Key = KEY_Z
 
@@ -14,6 +14,11 @@ var controller_grenade: int = JOY_BUTTON_A
 var controller_gun: int = JOY_BUTTON_B
 
 var gun_key_mapped: bool
+
+# Mouse aiming: the cursor sets the weapon angle, LMB fires the machine gun and
+# RMB throws the grenade/missile. Off falls back to the original scheme, where
+# the gun always fires north and the grenade follows the jeep.
+var mouse_aim: bool = true
 
 const SAVE_PATH := "user://buttons.cfg"
 
@@ -30,6 +35,7 @@ func save() -> void:
 	cfg.set_value("pad", "index", controller_index)
 	cfg.set_value("pad", "grenade", controller_grenade)
 	cfg.set_value("pad", "gun", controller_gun)
+	cfg.set_value("mouse", "aim", mouse_aim)
 	cfg.save(SAVE_PATH)
 
 
@@ -48,3 +54,4 @@ func load_saved() -> void:
 	controller_index = cfg.get_value("pad", "index", controller_index)
 	controller_grenade = cfg.get_value("pad", "grenade", controller_grenade)
 	controller_gun = cfg.get_value("pad", "gun", controller_gun)
+	mouse_aim = cfg.get_value("mouse", "aim", mouse_aim)

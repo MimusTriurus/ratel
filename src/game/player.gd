@@ -61,7 +61,12 @@ var angle_steps: int = 0
 var diagonal_delay: int = 0
 var target_angle: int = 0
 var last_target_angle: int = 270
-var fire_angle: int = 270
+# Continuous, so that mouse aiming is not limited to the original's eight
+# directions. Multiples of 45 still take the exact unit-vector table.
+var fire_angle: float = 270.0
+# Weapon angle under mouse aiming; kept across ticks so a still cursor keeps
+# the last direction rather than resetting.
+var aim_angle: float = 270.0
 var rumble: int = 0
 var invincible: int = 0
 var invincible_color: int = 0
@@ -340,11 +345,24 @@ func update() -> void:
 	if invincible > 0:
 		invincible -= 1
 
-	if input.is_fire():
+	# Mouse aiming, a port addition. It replaces both of the original's rules
+	# — the grenade following the jeep and the machine gun always firing north
+	# — and is resolved once per tick, so a shot uses the angle the cursor had
+	# on the tick it was fired.
+	var aiming := input.is_aiming()
+	if aiming:
+		var cursor := input.aim_position() 			+ Vector2(game_mode.camera_x, game_mode.camera_y)
+		var to_cursor := cursor - Vector2(x, y)
+		if to_cursor.length() >= HumanInput.AIM_DEADZONE:
+			aim_angle = rad_to_deg(to_cursor.angle())
+
+	if input.is_grenade():
 		if fire_released and weapon_armed:
 			fire_released = false
 			weapon_armed = false
-			if target_angle == -1 and angle_steps == 0:
+			if aiming:
+				fire_angle = aim_angle
+			elif target_angle == -1 and angle_steps == 0:
 				fire_angle = angle
 			if main.has_missiles:
 				PlayerMissile.new(x, y, fire_angle, main.missile_power)
@@ -355,9 +373,9 @@ func update() -> void:
 
 	if gun_armed > 0:
 		gun_armed -= 1
-	if input.is_shoot():
+	if input.is_gun():
 		if shoot_released or gun_armed == 0:
-			PlayerBullet.new(x, y)
+			PlayerBullet.new(x, y, aim_angle if aiming else 270.0)
 			gun_armed = GUN_ARMED_DELAY
 		shoot_released = false
 	else:

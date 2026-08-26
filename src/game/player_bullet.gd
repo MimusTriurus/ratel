@@ -1,4 +1,8 @@
 # Port of jackal.PlayerBullet.
+#
+# The original always fires north; the angle is a port addition for mouse
+# aiming. At the default 270 the unit vector is exactly (0, -1), so the
+# keyboard path is unchanged.
 class_name PlayerBullet
 extends GameElement
 
@@ -7,14 +11,21 @@ const TRAVEL_TIME := 20
 const VELOCITY := DISTANCE / TRAVEL_TIME
 const MARGIN := 16.0
 
+var vx: float
+var vy: float
 var t: int
 var enemies: Array[Enemy]
 
 
-func _init(p_x: float, p_y: float) -> void:
+func _init(p_x: float, p_y: float, p_angle: float = 270.0) -> void:
 	super()
 	x = p_x
 	y = p_y
+
+	var unit := main.create_unit_vector_deg(p_angle)
+	vx = unit[0] * VELOCITY
+	vy = unit[1] * VELOCITY
+
 	enemies = game_mode.enemies
 
 
@@ -24,7 +35,8 @@ func init() -> void:
 
 
 func update() -> void:
-	y -= VELOCITY
+	x += vx
+	y += vy
 
 	var did_hit := false
 	var x1 := x - MARGIN

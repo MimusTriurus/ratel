@@ -140,6 +140,31 @@ triggers derive from the previous snap, which is what makes
 `clear_key_pressed_record()` work. `ButtonMapping` persists to
 `user://buttons.cfg`.
 
+### Controls: WASD + mouse aim
+
+The one deliberate gameplay departure from the Java original. Movement defaults
+to WASD (arrows always work as a second set), the cursor sets the weapon angle,
+LMB fires the machine gun and RMB throws the grenade/missile. `README.md` has
+the rationale; the three constraints to keep in mind when touching this:
+
+- **`create_unit_vector(int)` silently lies.** It is a `match` over multiples of
+  45 with no default, so an off-grid angle leaves `unit_vector` at its previous
+  value. Continuous angles must go through `create_unit_vector_deg(float)`,
+  which routes multiples of 45 back to the exact table so keyboard aiming stays
+  bit-identical.
+- **Mouse buttons stay out of `is_fire()` / `is_shoot()`.** Those are read by
+  `Menu`, `IntroMode`, `SunsetMode`, `HardEndingMode` and `KonamiCode`; a click
+  must not navigate a menu. `Player` reads `is_gun()` / `is_grenade()`, which OR
+  the mouse in.
+- **Direction keys shadow the fallback gun keys.** `GUN_FALLBACK` is the
+  original's `Z / Y / W / K`, and `W` is now "up", so `snap()` skips any
+  fallback key a direction or the grenade claims.
+
+Aim is resolved once per logic tick in `Player.update` (cursor position plus the
+camera offset), so a shot uses the angle the cursor had on its tick. The jeep
+body still faces its movement direction — the original's gun never pointed
+where the sprite did, so nothing is lost and no new art is needed.
+
 ## Conventions
 
 - Renames forced by GDScript, all documented in the source: `Main.rotate` →

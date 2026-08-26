@@ -496,6 +496,15 @@ func create_unit_vector(angle: int) -> PackedFloat32Array:
 	return unit_vector
 
 
+# Continuous-angle version, for mouse aiming. A multiple of 45 still goes
+# through the table above, so keyboard and pad aiming stay bit-identical to the
+# original — cos(deg_to_rad(90)) is 6e-17, not 0.
+func create_unit_vector_deg(angle: float) -> PackedFloat32Array:
+	if fmod(angle, 45.0) == 0.0:
+		return create_unit_vector(int(fposmod(angle, 360.0)))
+	return create_unit_vector2(deg_to_rad(angle))
+
+
 # --- Drawing -----------------------------------------------------------------
 #
 # The original pushes an OpenGL matrix around every rotated/scaled sprite and
