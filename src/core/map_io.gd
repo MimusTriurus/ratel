@@ -250,9 +250,9 @@ static func load_stage(index: int, stage: Stage, trigger_sizes: Array) -> void:
 		stage.groups.append(group)
 
 	stage.trigger_map = [
-		_build_trigger_map(doc["triggers"]["normal"], stage.map_height,
+		build_trigger_map(doc["triggers"]["normal"], stage.map_height,
 			trigger_sizes, index),
-		_build_trigger_map(doc["triggers"]["hard"], stage.map_height,
+		build_trigger_map(doc["triggers"]["hard"], stage.map_height,
 			trigger_sizes, index),
 	]
 
@@ -260,7 +260,7 @@ static func load_stage(index: int, stage: Stage, trigger_sizes: Array) -> void:
 # A trigger fires when the bottom row of its footprint is one tile above the top
 # edge of the frame, so it is filed under tile_y + height - 1 rather than its own
 # row, and a whole row fires at once regardless of x.
-static func _build_trigger_map(triggers: Array, map_height: int,
+static func build_trigger_map(triggers: Array, map_height: int,
 		trigger_sizes: Array, stage_index: int) -> Array:
 	var consts := trigger_constants()
 	var lists: Array = []

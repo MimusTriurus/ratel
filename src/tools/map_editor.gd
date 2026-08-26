@@ -13,9 +13,10 @@
 # above the top of the frame, so it is filed under tile_y + height - 1, and the
 # whole row goes off at once. Hover a trigger to see that row drawn.
 #
-# Editing covers the two grids: tiles and collision types. Groups and triggers
-# are drawn but not editable yet, and they survive a save untouched because the
-# document they were loaded from is what gets written back for those parts.
+# Editing covers the two grids -- tiles and collision types -- and the spawn
+# triggers. Groups are drawn but not editable yet, and they survive a save
+# untouched because the document the stage was loaded from is what gets written
+# back for the parts the Stage does not carry in authored form.
 #
 # Painting collision types invalidates dirs-N.dat, the precomputed flow field.
 # The status panel says so, and Rebuild pathing rebuilds it -- but that is a
@@ -32,7 +33,8 @@ const MAX_BRUSH := 8
 const TOOL_INSPECT := 0
 const TOOL_TILES := 1
 const TOOL_TYPES := 2
-const TOOL_NAMES: Array[String] = ["Inspect", "Tiles", "Types"]
+const TOOL_TRIGGERS := 3
+const TOOL_NAMES: Array[String] = ["Inspect", "Tiles", "Types", "Triggers"]
 
 # Indexed by MapIO.TYPE_* .
 const TYPE_COLORS: Array[Color] = [
@@ -59,6 +61,7 @@ var hard := false
 var trigger_sizes: Array = []       # adjusted; boss entries are four rows short
 var trigger_footprints: Array = []  # as authored, for drawing the box
 var trigger_names: Array = []       # index -> Triggers constant name
+var trigger_indices := {}           # Triggers constant name -> index
 
 var zoom := 1.0
 var view_offset := Vector2.ZERO
@@ -69,6 +72,10 @@ var tool := TOOL_INSPECT
 var brush := 1
 var current_tile := 0
 var current_type := MapIO.TYPE_SOLID
+var current_trigger := Triggers.SOLDIER_WALKER
+
+# Index into the document's trigger list for the difficulty on show, or -1.
+var selected_trigger := -1
 
 var layers := {
 	"tiles": true,
@@ -84,7 +91,9 @@ var _undo_redo := UndoRedo.new()
 var _stroke := {}               # Vector2i -> [old, new], the drag in progress
 var _stroke_layer := ""
 var _rect_anchor := Vector2i(-1, -1)
-var _dirty := {"tiles": false, "types": false}
+var _drag_grab := Vector2i.ZERO   # cursor tile minus trigger tile, while dragging
+var _drag_before: Array = []      # the trigger list as it was when the drag began
+var _dirty := {"tiles": false, "types": false, "triggers": false}
 # Unsaved edits and a stale flow field are different problems with different
 # fixes: Ctrl+S writes the stage, rebuilding writes dirs-N.dat, and painting one
 # tile does not invalidate the pathing at all.
@@ -97,6 +106,8 @@ var _stage_picker: OptionButton
 var _tool_buttons: Array[Button] = []
 var _type_buttons: Array[Button] = []
 var _tile_palette: GridContainer
+var _tile_scroll: ScrollContainer
+var _trigger_list: ItemList
 var _tile_group := ButtonGroup.new()
 var _layer_boxes := {}
 var _font: Font
@@ -130,11 +141,18 @@ func _notification(what: int) -> void:
 # by four rows so the camera pan can start early, which is right for the firing
 # row and wrong for the box.
 func _load_trigger_meta() -> void:
+	# get_script_constant_map keys are StringNames, and sorting those orders them
+	# by the interned id -- which is declaration order, not the alphabet. They
+	# become Strings here so the palette can be sorted and so what is written into
+	# the document is the same kind of value that was read out of it.
 	var constants := MapIO.trigger_constants()
+	trigger_indices = {}
 	trigger_names = []
 	trigger_names.resize(constants.size())
-	for name in constants:
-		trigger_names[constants[name]] = name
+	for key in constants:
+		var name := String(key)
+		trigger_indices[name] = constants[key]
+		trigger_names[constants[key]] = name
 
 	trigger_footprints = []
 	trigger_footprints.resize(constants.size())
@@ -145,9 +163,9 @@ func _load_trigger_meta() -> void:
 	var doc: Variant = JSON.parse_string(f.get_as_text())
 	f.close()
 	for name in doc:
-		if constants.has(name):
+		if trigger_indices.has(name):
 			var entry: Dictionary = doc[name]
-			trigger_footprints[constants[name]] = Vector2i(
+			trigger_footprints[trigger_indices[name]] = Vector2i(
 				int(entry["width"]), int(entry["height"]))
 
 
@@ -178,9 +196,11 @@ func _load_stage(index: int) -> void:
 	MapIO.load_stage(index, stage, trigger_sizes)
 
 	_undo_redo.clear_history()
-	_dirty = {"tiles": false, "types": false}
+	_dirty = {"tiles": false, "types": false, "triggers": false}
 	_dirs_stale = false
 	_stroke.clear()
+	_drag_before = []
+	selected_trigger = -1
 	current_tile = clampi(current_tile, 0, maxi(0, stage.tiles.size() - 1))
 
 	if _stage_picker != null:
@@ -195,7 +215,7 @@ func _load_stage(index: int) -> void:
 
 func _save() -> void:
 	if MapIO.save_stage(stage_index, stage, document) == OK:
-		_dirty = {"tiles": false, "types": false}
+		_dirty = {"tiles": false, "types": false, "triggers": false}
 		_message = "saved stage-%d.json" % stage_index
 	else:
 		_message = "SAVE FAILED, see the console"
@@ -227,7 +247,7 @@ func _rebuild_pathing() -> void:
 
 
 func _is_dirty() -> bool:
-	return _dirty["tiles"] or _dirty["types"]
+	return _dirty["tiles"] or _dirty["types"] or _dirty["triggers"]
 
 
 # size is not settled during _ready, so the viewport is the honest measure. It
@@ -260,7 +280,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			view_offset -= motion.relative / zoom
 			queue_redraw()
 		_update_hover(motion.position)
-		if not _stroke.is_empty() or _stroke_layer != "":
+		if not _drag_before.is_empty():
+			_drag_trigger_to(hover_tile)
+		elif not _stroke.is_empty() or _stroke_layer != "":
 			_paint_at(hover_tile)
 	elif event is InputEventKey and event.pressed and not event.echo:
 		_key(event as InputEventKey)
@@ -280,6 +302,11 @@ func _mouse_button(event: InputEventMouseButton) -> void:
 			_update_hover(event.position)
 			if tool == TOOL_INSPECT:
 				panning = event.pressed
+			elif tool == TOOL_TRIGGERS:
+				if event.pressed:
+					_grab_trigger(event.alt_pressed)
+				else:
+					_release_trigger()
 			elif event.pressed:
 				if event.alt_pressed:
 					_pick_at(hover_tile)
@@ -312,8 +339,14 @@ func _key(event: InputEventKey) -> void:
 		return
 
 	match event.keycode:
+		KEY_DELETE, KEY_BACKSPACE:
+			if tool == TOOL_TRIGGERS:
+				_delete_trigger()
 		KEY_ESCAPE:
-			if _is_dirty():
+			if selected_trigger >= 0:
+				selected_trigger = -1
+				queue_redraw()
+			elif _is_dirty():
 				_message = "unsaved changes: Ctrl+S to save, Ctrl+R to discard"
 				_update_status()
 			else:
@@ -325,6 +358,7 @@ func _key(event: InputEventKey) -> void:
 			queue_redraw()
 		KEY_H:
 			hard = not hard
+			selected_trigger = -1
 			_update_status()
 			queue_redraw()
 		KEY_BRACKETLEFT:
@@ -498,12 +532,197 @@ func _pick_at(tile: Vector2i) -> void:
 	_update_status()
 
 
+# --- Triggers ----------------------------------------------------------------
+#
+# The document is what gets written back, so the document is what gets edited;
+# stage.trigger_map is rebuilt from it after every change, which is also how the
+# firing row on screen stays honest. Undo works on snapshots of the whole list
+# rather than single entries -- a stage has at most 171 of them, and a snapshot
+# cannot get the indices wrong the way a delete-then-undo can.
+
+func _trigger_key() -> String:
+	return "hard" if hard else "normal"
+
+
+func _triggers() -> Array:
+	return document["triggers"][_trigger_key()]
+
+
+# Topmost first: later entries are drawn over earlier ones, so they are what the
+# cursor is pointing at.
+func _trigger_at(tile: Vector2i) -> int:
+	var list := _triggers()
+	for i in range(list.size() - 1, -1, -1):
+		var entry: Dictionary = list[i]
+		var footprint := _footprint(_trigger_index(entry))
+		var x := int(entry["x"])
+		var y := int(entry["y"])
+		if tile.x >= x and tile.x < x + footprint.x \
+				and tile.y >= y and tile.y < y + footprint.y:
+			return i
+	return -1
+
+
+func _trigger_index(entry: Dictionary) -> int:
+	var name: String = entry["type"]
+	return trigger_indices[name] if trigger_indices.has(name) else 0
+
+
+# Clicking an existing trigger picks it up; clicking bare ground drops a new one
+# of the selected kind and picks that up, so it can be nudged straight away.
+# Alt+click only selects, and sets the palette from what was clicked.
+func _grab_trigger(pick_only: bool) -> void:
+	if hover_tile.x < 0:
+		return
+
+	var index := _trigger_at(hover_tile)
+	if index >= 0:
+		selected_trigger = index
+		var entry: Dictionary = _triggers()[index]
+		if pick_only:
+			current_trigger = _trigger_index(entry)
+			_select_trigger_item(current_trigger)
+			_update_status()
+			queue_redraw()
+			return
+		_drag_grab = hover_tile - Vector2i(int(entry["x"]), int(entry["y"]))
+		_drag_before = _triggers().duplicate(true)
+	elif not pick_only:
+		if not _place_trigger(hover_tile):
+			return
+	_update_status()
+	queue_redraw()
+
+
+# A new trigger lands centred on the cursor, which is where the eye expects it
+# for the big footprints -- a boss is sixteen tiles across.
+func _place_trigger(tile: Vector2i) -> bool:
+	var footprint := _footprint(current_trigger)
+	var grab := Vector2i(footprint.x / 2, footprint.y / 2)
+	var x := tile.x - grab.x
+	var y := tile.y - grab.y
+
+	if not _trigger_placement_valid(current_trigger, x, y):
+		_message = "%s does not fit there" % trigger_names[current_trigger]
+		_update_status()
+		return false
+
+	_drag_before = _triggers().duplicate(true)
+	_drag_grab = grab
+	var list := _triggers()
+	list.append({"type": trigger_names[current_trigger], "x": x, "y": y})
+	selected_trigger = list.size() - 1
+	_refresh_triggers()
+	return true
+
+
+# A trigger has to sit inside the map, and the row it fires on -- the bottom of
+# its footprint, minus the four rows the boss triggers get early -- has to be a
+# row that exists. MapIO drops one that is not, so the editor never writes one.
+func _trigger_placement_valid(index: int, x: int, y: int) -> bool:
+	var footprint := _footprint(index)
+	if x < 0 or y < 0 or x + footprint.x > stage.map_width:
+		return false
+	var row: int = y + trigger_sizes[index][1] - 1
+	return row >= 0 and row < stage.map_height
+
+
+func _drag_trigger_to(tile: Vector2i) -> void:
+	if tile.x < 0 or selected_trigger < 0 or _drag_before.is_empty():
+		return
+	var list := _triggers()
+	if selected_trigger >= list.size():
+		return
+	var entry: Dictionary = list[selected_trigger]
+	var index := _trigger_index(entry)
+	var x := tile.x - _drag_grab.x
+	var y := tile.y - _drag_grab.y
+	if not _trigger_placement_valid(index, x, y):
+		return
+	if int(entry["x"]) == x and int(entry["y"]) == y:
+		return
+	entry["x"] = x
+	entry["y"] = y
+	_refresh_triggers()
+	_update_inspector()
+	queue_redraw()
+
+
+func _release_trigger() -> void:
+	if _drag_before.is_empty():
+		return
+	var before := _drag_before
+	_drag_before = []
+	_commit_triggers(before, "Move trigger")
+
+
+func _delete_trigger() -> void:
+	var list := _triggers()
+	if selected_trigger < 0 or selected_trigger >= list.size():
+		_message = "nothing selected"
+		_update_status()
+		return
+	var before := list.duplicate(true)
+	var name: String = list[selected_trigger]["type"]
+	list.remove_at(selected_trigger)
+	selected_trigger = -1
+	_refresh_triggers()
+	_commit_triggers(before, "Delete trigger")
+	_message = "deleted %s" % name
+	_update_status()
+
+
+func _commit_triggers(before: Array, what: String) -> void:
+	var after := _triggers().duplicate(true)
+	if before == after:
+		return
+	var key := _trigger_key()
+	_undo_redo.create_action(what)
+	_undo_redo.add_do_method(_set_triggers.bind(key, after))
+	_undo_redo.add_undo_method(_set_triggers.bind(key, before))
+	_undo_redo.commit_action(false)
+	_dirty["triggers"] = true
+	_message = ""
+	_update_status()
+
+
+func _set_triggers(key: String, list: Array) -> void:
+	document["triggers"][key] = list.duplicate(true)
+	selected_trigger = -1
+	_dirty["triggers"] = true
+	_refresh_triggers()
+	_update_status()
+	_update_inspector()
+	queue_redraw()
+
+
+func _refresh_triggers() -> void:
+	var difficulty := 1 if hard else 0
+	stage.trigger_map[difficulty] = MapIO.build_trigger_map(_triggers(),
+		stage.map_height, trigger_sizes, stage_index)
+
+
 func _set_tool(new_tool: int) -> void:
 	tool = new_tool
 	for i in _tool_buttons.size():
 		_tool_buttons[i].set_pressed_no_signal(i == tool)
+	if _tile_scroll != null:
+		_tile_scroll.visible = tool != TOOL_TRIGGERS
+		_trigger_list.visible = tool == TOOL_TRIGGERS
+	if tool != TOOL_TRIGGERS:
+		selected_trigger = -1
 	_update_status()
 	queue_redraw()
+
+
+func _select_trigger_item(index: int) -> void:
+	if _trigger_list == null:
+		return
+	for item in _trigger_list.item_count:
+		if _trigger_list.get_item_metadata(item) == index:
+			_trigger_list.select(item)
+			_trigger_list.ensure_current_is_visible()
+			return
 
 
 # --- Drawing -----------------------------------------------------------------
@@ -646,6 +865,30 @@ func _draw_triggers() -> void:
 				draw_line(Vector2(0, fire_y), Vector2(stage.map_width * TILE, fire_y),
 					Color(1.0, 0.95, 0.40, 0.85), 2.0 / zoom)
 
+	_draw_selected_trigger()
+
+
+# The selected one gets a heavier box and its firing row whether or not the
+# cursor is on it, because while dragging the cursor usually is not.
+func _draw_selected_trigger() -> void:
+	if tool != TOOL_TRIGGERS or selected_trigger < 0:
+		return
+	var list := _triggers()
+	if selected_trigger >= list.size():
+		return
+
+	var entry: Dictionary = list[selected_trigger]
+	var index := _trigger_index(entry)
+	var footprint := _footprint(index)
+	var x := int(entry["x"])
+	var y := int(entry["y"])
+	draw_rect(Rect2(x * TILE, y * TILE, footprint.x * TILE, footprint.y * TILE),
+		COLOR_BRUSH, false, 3.0 / zoom)
+
+	var fire_y: float = (y + trigger_sizes[index][1]) * TILE
+	draw_line(Vector2(0, fire_y), Vector2(stage.map_width * TILE, fire_y),
+		COLOR_BRUSH, 2.0 / zoom)
+
 
 func _draw_cursor() -> void:
 	if hover_tile.x < 0:
@@ -734,6 +977,9 @@ func _build_ui() -> void:
 	hard_box.focus_mode = Control.FOCUS_NONE
 	hard_box.toggled.connect(func(pressed: bool) -> void:
 		hard = pressed
+		# The selection indexes one difficulty's list; it means nothing in the
+		# other one.
+		selected_trigger = -1
 		_update_status()
 		queue_redraw())
 	box.add_child(hard_box)
@@ -760,19 +1006,24 @@ func _build_ui() -> void:
 
 	box.add_child(HSeparator.new())
 
-	_inspector = Label.new()
-	_inspector.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_inspector.custom_minimum_size.y = 172
-	_inspector.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	box.add_child(_inspector)
-
+	# The help goes above the inspector, not below it: the inspector grows with
+	# whatever is under the cursor, and anything under it gets pushed off the
+	# bottom of the frame.
 	var help := Label.new()
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	help.modulate = Color(1, 1, 1, 0.6)
-	help.text = ("LMB paint   RMB pan   Alt+LMB pick   Shift+LMB rect\n"
+	help.text = ("LMB paint / place   RMB pan   Alt+LMB pick\n"
+		+ "Shift+LMB rect   Del removes a trigger\n"
 		+ "Tab tool   [ ] brush   Ctrl+Z/Y undo   Ctrl+S save\n"
 		+ "Ctrl+R reload   1-6 stage   H hard   F fit   Esc quit")
 	box.add_child(help)
+
+	box.add_child(HSeparator.new())
+
+	_inspector = Label.new()
+	_inspector.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_inspector.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	box.add_child(_inspector)
 
 
 func _build_tools(box: VBoxContainer) -> void:
@@ -814,15 +1065,32 @@ func _build_tools(box: VBoxContainer) -> void:
 		_type_buttons.append(button)
 	box.add_child(types)
 
-	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size.y = 205
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	box.add_child(scroll)
+	# The tile grid and the trigger list share one slot: only the palette the
+	# current tool actually uses is on show, which is what keeps the sidebar
+	# inside the frame.
+	_tile_scroll = ScrollContainer.new()
+	_tile_scroll.custom_minimum_size.y = 205
+	_tile_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(_tile_scroll)
 
 	_tile_palette = GridContainer.new()
 	_tile_palette.columns = 8
 	_tile_palette.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_tile_palette)
+	_tile_scroll.add_child(_tile_palette)
+
+	_trigger_list = ItemList.new()
+	_trigger_list.custom_minimum_size.y = 205
+	_trigger_list.focus_mode = Control.FOCUS_NONE
+	_trigger_list.visible = false
+	var names := trigger_names.duplicate()
+	names.sort()
+	for name in names:
+		var item := _trigger_list.add_item(name)
+		_trigger_list.set_item_metadata(item, trigger_indices[name])
+	_trigger_list.item_selected.connect(func(item: int) -> void:
+		current_trigger = _trigger_list.get_item_metadata(item)
+		_set_tool(TOOL_TRIGGERS))
+	box.add_child(_trigger_list)
 
 
 # One button per tile in the stage's sheet, rebuilt when the stage changes
@@ -902,9 +1170,19 @@ func _update_status() -> void:
 		stage.map_height])
 	lines.append("%d groups, %d %s triggers"
 		% [stage.groups.size(), count, "hard" if hard else "normal"])
-	lines.append("%s   brush %d   %s" % [TOOL_NAMES[tool], brush,
-		("tile %d" % current_tile) if tool == TOOL_TILES
-		else (MapIO.TYPE_NAME[current_type] if tool == TOOL_TYPES else "")])
+	var detail := ""
+	match tool:
+		TOOL_TILES:
+			detail = "tile %d   brush %d" % [current_tile, brush]
+		TOOL_TYPES:
+			detail = "%s   brush %d" % [MapIO.TYPE_NAME[current_type], brush]
+		TOOL_TRIGGERS:
+			detail = trigger_names[current_trigger]
+			if selected_trigger >= 0 and selected_trigger < _triggers().size():
+				var entry: Dictionary = _triggers()[selected_trigger]
+				detail += "   selected: %s (%d, %d)" % [entry["type"],
+					int(entry["x"]), int(entry["y"])]
+	lines.append("%s   %s" % [TOOL_NAMES[tool], detail])
 
 	if _is_dirty():
 		lines.append("* unsaved changes")
@@ -984,7 +1262,7 @@ func _update_inspector() -> void:
 # thing to a visual regression test the project has:
 #
 #     godot --path . --windowed --resolution 1280x720 src/tools/map_editor.tscn \
-#         -- --shot out.png <stage 0-5> <zoom> <top row> <layer,layer,...>
+#         -- --shot out.png <stage 0-5> <zoom> <top row> <layer,layer,...> <tool>
 #
 # Everything after the PNG is optional. It needs a real window: --headless has
 # no framebuffer to read back.
@@ -1006,6 +1284,8 @@ func _screenshot_mode() -> void:
 			# Keep the sidebar honest: the shot shows the boxes it was taken with.
 			if _layer_boxes.has(key):
 				_layer_boxes[key].set_pressed_no_signal(layers[key])
+	if args.size() >= 7:
+		_set_tool(int(args[6]))
 	hover_tile = Vector2i(-1, -1)
 	queue_redraw()
 

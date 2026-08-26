@@ -64,7 +64,8 @@ one line per painted row and nothing else, then `git checkout -- assets/maps`.
 `src/tools/map_editor.tscn` shows a stage the way the game draws it, with the
 collision types, destruction groups and spawn triggers over the top — including
 the row each trigger actually fires on, which is the thing about the map format
-that is impossible to see in the game — and paints the tile and collision grids:
+that is impossible to see in the game. It edits the tile grid, the collision
+grid and the triggers; groups are drawn but not yet editable:
 
 ```bash
 godot --path . src/tools/map_editor.tscn

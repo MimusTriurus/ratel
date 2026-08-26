@@ -65,6 +65,65 @@ func _init() -> void:
 	_check("the water row refuses paint", editor._stroke.is_empty())
 	editor._commit_stroke()
 
+	# Triggers: place, drag, delete, undo. The document is the source of truth and
+	# stage.trigger_map is rebuilt from it, so both are checked.
+	var before_count: int = editor._triggers().size()
+	var footprint: Vector2i = editor._footprint(Triggers.BROWN_TANK)
+	var grab := Vector2i(footprint.x / 2, footprint.y / 2)
+	var drop := Vector2i(30, 200)
+
+	editor.tool = editor.TOOL_TRIGGERS
+	editor.current_trigger = Triggers.BROWN_TANK
+	editor.hover_tile = drop
+	editor._grab_trigger(false)
+	editor._release_trigger()
+	_check("placing added one trigger", editor._triggers().size() == before_count + 1)
+
+	var placed: Dictionary = editor._triggers().back()
+	_check("placed trigger is centred on the cursor",
+		int(placed["x"]) == drop.x - grab.x and int(placed["y"]) == drop.y - grab.y)
+	_check("placed trigger reached the trigger map",
+		_row_holds(stage, drop.y - grab.y + editor.trigger_sizes[Triggers.BROWN_TANK][1] - 1,
+			Triggers.BROWN_TANK))
+
+	var moved_to := Vector2i(34, 210)
+	editor.selected_trigger = editor._triggers().size() - 1
+	editor._drag_before = editor._triggers().duplicate(true)
+	editor._drag_grab = grab
+	editor._drag_trigger_to(moved_to)
+	editor._release_trigger()
+	var moved: Dictionary = editor._triggers().back()
+	_check("dragging moved it", int(moved["x"]) == moved_to.x - grab.x
+		and int(moved["y"]) == moved_to.y - grab.y)
+
+	editor._undo()
+	_check("undo put it back",
+		int(editor._triggers().back()["x"]) == drop.x - grab.x)
+	editor._redo()
+	_check("redo moved it again",
+		int(editor._triggers().back()["x"]) == moved_to.x - grab.x)
+
+	# A boss trigger a few rows from the top fires before row zero, and MapIO
+	# would drop it on load, so placing it has to fail.
+	editor.current_trigger = Triggers.BOSS_SHIP
+	editor.hover_tile = Vector2i(30, 1)
+	var count_before_bad: int = editor._triggers().size()
+	editor._grab_trigger(false)
+	editor._release_trigger()
+	_check("a trigger that cannot fire is refused",
+		editor._triggers().size() == count_before_bad)
+
+	editor.selected_trigger = editor._triggers().size() - 1
+	editor._delete_trigger()
+	_check("delete removed it", editor._triggers().size() == before_count)
+	_check("delete cleared the selection", editor.selected_trigger == -1)
+
+	# Put one back so the save has a trigger change in it.
+	editor.current_trigger = Triggers.BROWN_TANK
+	editor.hover_tile = drop
+	editor._grab_trigger(false)
+	editor._release_trigger()
+
 	editor._save()
 	_check("save cleared the dirty flags", not editor._is_dirty())
 	# Saving the stage does not fix the flow field: that is a separate file, a
@@ -84,7 +143,10 @@ func _init() -> void:
 	var triggers := 0
 	for row in reloaded.trigger_map[0]:
 		triggers += row.size()
-	_check("triggers came through the save", triggers == 70)
+	_check("triggers came through the save", triggers == 71)
+	_check("the placed trigger came back",
+		_row_holds(reloaded, drop.y - grab.y + editor.trigger_sizes[Triggers.BROWN_TANK][1] - 1,
+			Triggers.BROWN_TANK))
 
 	editor.free()
 
@@ -93,6 +155,15 @@ func _init() -> void:
 	else:
 		print("\n%d check(s) failed" % failures)
 	quit(1 if failures > 0 else 0)
+
+
+func _row_holds(stage: Stage, row: int, trigger_index: int) -> bool:
+	if row < 0 or row >= stage.trigger_map[0].size():
+		return false
+	for trigger in stage.trigger_map[0][row]:
+		if trigger[0] == trigger_index:
+			return true
+	return false
 
 
 func _check(what: String, condition: bool) -> void:
