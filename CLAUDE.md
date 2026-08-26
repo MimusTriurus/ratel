@@ -175,6 +175,16 @@ of the map where `row[TILES_ACROSS + x_tile]` would index `map_width` itself.
 in `Player.update` and the score HUD's y are all derived from the frame rather
 than hardcoded to 960 now.
 
+Because the frame is as wide as the map, `max_camera_x` is 0, and **every write
+to `camera_x` must clamp to it**. Two places got this wrong when the frame
+widened and crashed the background loop: `_create_player`, which the `PLAYER`
+trigger runs at the start of every stage, and the ending pan, which drove
+`camera_x` towards a hardcoded 512. `_create_player` also reused
+`CAMERA_MARGIN_NORTH` as a horizontal offset, so growing that margin for the
+taller frame moved the spawn sideways -- it has its own
+`PLAYER_SPAWN_CAMERA_OFFSET` now. The background loop clamps its column and row
+counts as a backstop rather than special-casing the exact map edge.
+
 Spawning is frame-independent and does not need adjusting when the viewport
 changes: `load_trigger_map` sets a trigger's row to `tile_y + height - 1`, so it
 fires when the bottom of the enemy's footprint is one tile above the top edge,

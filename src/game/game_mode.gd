@@ -10,6 +10,12 @@ const EXTRA_HEIGHT := Main.SCREEN_HEIGHT - Main.DISPLAY_HEIGHT
 # which is where the enemies come from; "behind" stays at the original 576.
 const CAMERA_MARGIN_NORTH := 384.0 + EXTRA_HEIGHT
 const CAMERA_MARGIN_SOUTH := 192.0
+
+# Where the camera sits horizontally when a stage places the jeep. The original
+# spelled this CAMERA_MARGIN_NORTH + 48, reusing a vertical margin as a
+# horizontal offset; it gets its own constant so that growing the north margin
+# with a taller frame does not drag the spawn sideways.
+const PLAYER_SPAWN_CAMERA_OFFSET := 432.0
 const CAMERA_MARGIN_SIDES := 256.0
 const CAMERA_BOUND := 224.0
 # Grown with the frame so that the gap between the bottom edge and the removal
@@ -85,6 +91,9 @@ var camera_x: float
 var camera_y: float
 var max_camera_x: float
 var max_camera_y: float
+# Where the ending pan comes to rest. The original hardcoded 512, which centred
+# its 1024 frame on the 2048-wide map; a frame as wide as the map pans nowhere.
+var ending_pan_camera_x: float
 var paused: bool
 var trigger_y: int
 var boss_camera_pan: bool
@@ -125,6 +134,8 @@ func init(p_main: Main) -> void:
 	trigger_y = map_height
 	max_camera_x = float((map_width - TILES_ACROSS) * 32)
 	max_camera_y = float((map_height - TILES_DOWN - 1) * 32)
+	ending_pan_camera_x = clampf(
+		(map_width * 32 - Main.SCREEN_WIDTH) / 2.0, 0.0, max_camera_x)
 	camera_x = 0.0
 	camera_y = max_camera_y
 
@@ -483,9 +494,11 @@ func process_trigger(index: int, x: int, y: int) -> void:
 
 
 func _create_player(x: float, y: float) -> void:
-	camera_x = x - CAMERA_MARGIN_NORTH - 48
-	if camera_x < 0:
-		camera_x = 0
+	# Clamped at both ends. The original only clamped at 0, which was enough
+	# while the frame was half the map; with a frame as wide as the map
+	# max_camera_x is 0, and any positive camera_x runs the background loop off
+	# the end of a row.
+	camera_x = clampf(x - PLAYER_SPAWN_CAMERA_OFFSET, 0.0, max_camera_x)
 	player.x = x
 	player.y = y
 	player.make_invincible()
@@ -683,18 +696,18 @@ func update() -> void:
 			return
 
 	if ending_camera_pan:
-		if camera_x > 512:
+		if camera_x > ending_pan_camera_x:
 			camera_x -= ENDING_PAN_CAMERA_SPEED
-			if camera_x <= 512:
-				camera_x = 512
+			if camera_x <= ending_pan_camera_x:
+				camera_x = ending_pan_camera_x
 				ending_camera_pan = false
 				camera_pan_listener.pan_complete()
 			else:
 				return
 		else:
 			camera_x += ENDING_PAN_CAMERA_SPEED
-			if camera_x >= 512:
-				camera_x = 512
+			if camera_x >= ending_pan_camera_x:
+				camera_x = ending_pan_camera_x
 				ending_camera_pan = false
 				camera_pan_listener.pan_complete()
 			else:
@@ -743,10 +756,11 @@ func _draw_background() -> void:
 	var y_offset := fmod(camera_y, 32.0)
 	var x_tile := int(camera_x / 32.0)
 	var y_tile := int(camera_y / 32.0)
-	# One short at the far right edge: row[TILES_ACROSS + x_tile] would index
-	# map_width itself.
-	var at_right_edge := TILES_ACROSS + x_tile == map_width
-	var x_start := TILES_ACROSS - 1 if at_right_edge else TILES_ACROSS
+	# Clamped, not just special-cased at the exact edge: the camera can be
+	# driven outside its normal range -- the ending pan does exactly that -- and
+	# with the frame as wide as the map even x_tile == 1 overruns a row.
+	var x_start: int = mini(TILES_ACROSS, map_width - 1 - x_tile)
+	var y_start: int = mini(TILES_DOWN, map_height - 1 - y_tile)
 
 	if stage_index > 0:
 		if stage_index == 2:
@@ -754,7 +768,7 @@ func _draw_background() -> void:
 			# Only tiles 0..3 carry the animated alpha, as in the original.
 			for i in 4:
 				tiles[i].alpha = WATER_ALPHAS[water_alpha_index]
-			for y in range(TILES_DOWN, -1, -1):
+			for y in range(y_start, -1, -1):
 				var Y := float(y << 5) - y_offset
 				var row: PackedInt32Array = tile_map[y + y_tile]
 				for x in range(x_start, -1, -1):
@@ -767,7 +781,7 @@ func _draw_background() -> void:
 					if tile < 225:
 						main.draw(tiles[tile], X, Y)
 		else:
-			for y in range(TILES_DOWN, -1, -1):
+			for y in range(y_start, -1, -1):
 				var Y := float(y << 5) - y_offset
 				var row: PackedInt32Array = tile_map[y + y_tile]
 				for x in range(x_start, -1, -1):
@@ -776,7 +790,7 @@ func _draw_background() -> void:
 						main.draw(tiles[tile], float(x << 5) - x_offset, Y)
 
 		# Tiles from sheet 6 sit on top of everything else in the background.
-		for y in range(TILES_DOWN, -1, -1):
+		for y in range(y_start, -1, -1):
 			var Y := float(y << 5) - y_offset
 			var row: PackedInt32Array = tile_map[y + y_tile]
 			for x in range(x_start, -1, -1):
@@ -784,7 +798,7 @@ func _draw_background() -> void:
 				if tile >= 225:
 					main.draw(tiles[tile], float(x << 5) - x_offset, Y)
 	else:
-		for y in range(TILES_DOWN, -1, -1):
+		for y in range(y_start, -1, -1):
 			var Y := float(y << 5) - y_offset
 			var row: PackedInt32Array = tile_map[y + y_tile]
 			for x in range(x_start, -1, -1):
