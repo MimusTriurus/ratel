@@ -290,8 +290,10 @@ func update() -> void:
 	else:
 		diagonal_delay = 0
 
-	if y > game_mode.max_camera_y + 928:
-		y = game_mode.max_camera_y + 928
+	# The bottom edge of the frame, less one tile.
+	var floor_y := game_mode.max_camera_y + Main.SCREEN_HEIGHT - 32
+	if y > floor_y:
+		y = floor_y
 
 	if angle_steps > 0:
 		angle_steps -= 1

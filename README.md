@@ -88,32 +88,37 @@ grid, packed 21 to a `long`, which is how the tanks path in O(1).
 track through `AudioStreamPlayer.finished`; `Sfx` keeps a small voice pool per
 effect and reproduces the original's 125 ms retrigger throttle.
 
-## The widened view
+## The 16:9 view
 
-The original ran in a 1024x960 frame, which is a 256x240 NES screen at 4x. The
-maps, though, are 64 tiles across -- exactly twice that -- so half the terrain
-was always off to one side. The viewport is now 1728x960: the same 4x pixel
-scale, 54 tiles visible instead of 32, and roughly 16:9.
+The original ran in a 1024x960 frame -- a 256x240 NES screen at 4x. The
+viewport is now **2048x1152**: exact 16:9, 64 by 36 tiles, the same 4x pixel
+scale. 2048 is the full width of every map, so this is as wide as the game can
+go; there is no horizontal scrolling left, and both edges of the map are always
+on screen.
 
-Only the width changed. Enemies are spawned by trigger rows keyed to `camera_y`
-(`GameMode._process_triggers`), so a taller frame would show the player the
-empty ground that they have not spawned into yet. Height stays at 960.
+Spawning does not depend on the frame at all, in either direction.
+`load_trigger_map` sets a trigger's row to `tile_y + height - 1`, so it fires
+when the bottom of the enemy's footprint is one tile above the top edge -- and a
+whole row fires at once, whatever the camera's x. Measured over a real run of
+stage 1: of 383 elements created, 12 were inside the wide frame but would not
+have been inside a 1024 one, and nine of those were enemy bullets and bullet
+hits fired by enemies already on screen.
 
-`Main.SCREEN_WIDTH` is the viewport; `Main.DISPLAY_WIDTH` stays 1024 and is now
-the layout box for everything that is fixed-size artwork -- the title, the
-mission map, the cutscenes, the menus. Those are centred in the wider viewport
-and clipped to that box, because several of them slide content in from just
-outside the frame and relied on the old viewport to hide it. Gameplay code that
-asks "where is the edge of the visible frame" uses `SCREEN_WIDTH`.
+`SCREEN_WIDTH`/`SCREEN_HEIGHT` are the viewport; `DISPLAY_WIDTH`/`DISPLAY_HEIGHT`
+stay 1024x960 and are the layout box for everything that is fixed-size artwork
+-- the title, the mission map, the cutscenes, the menus. Those are centred in
+the viewport and clipped to that box, because several of them slide content in
+from just outside the frame and relied on the old viewport to hide it. Gameplay
+code asking "where is the edge of the visible frame" uses the `SCREEN_*` pair.
 
-Two consequences worth knowing, neither of them fixable without redrawing the
-maps:
+The extra height goes to the view *ahead*: `CAMERA_MARGIN_NORTH` grows with the
+frame, so the jeep sees 576 px north instead of 384 while the 576 behind it is
+unchanged.
 
-* Enemies are spawned at fixed map positions, so some now appear in view at the
-  sides instead of safely off-frame.
-* A wider frame is a wider `is_outside_of_frame`, so grenades and missiles
-  reach targets that used to be immune, and the bosses that scatter spawns
-  across the frame scatter them wider.
+What this does change, and is not fixable without redrawing the maps: a wider
+frame is a wider `is_outside_of_frame`, so grenades and missiles reach targets
+that used to be immune, the bosses that scatter spawns across the frame scatter
+them wider, and seeing further ahead is simply easier.
 
 ## Controls, and where they deviate
 

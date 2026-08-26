@@ -79,7 +79,7 @@ func update() -> void:
 		y += vy
 
 	if y < game_mode.camera_y - REMOVE_MARGIN \
-			or y > game_mode.camera_y + Main.DISPLAY_HEIGHT + REMOVE_MARGIN \
+			or y > game_mode.camera_y + Main.SCREEN_HEIGHT + REMOVE_MARGIN \
 			or x < game_mode.camera_x - REMOVE_MARGIN \
 			or x > game_mode.camera_x + Main.SCREEN_WIDTH + REMOVE_MARGIN:
 		play_sound_on_remove = false

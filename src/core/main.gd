@@ -15,15 +15,20 @@ extends Node2D
 const DISPLAY_WIDTH := 1024
 const DISPLAY_HEIGHT := 960
 
-# The actual viewport. Wider than the original so that more of the map is
-# visible at the same 4x pixel scale -- the maps are 64 tiles across, twice the
-# original frame, so there is real terrain to show. Only the height is left
-# alone: enemies are spawned by trigger rows keyed to camera_y, so a taller
-# frame would reveal the empty ground they have not spawned into yet.
-const SCREEN_WIDTH := 1728
+# The actual viewport: exact 16:9 at the original's 4x pixel scale, 64 by 36
+# tiles. 2048 is the full width of every map, so there is no wider frame to be
+# had -- and no horizontal scrolling left either.
+#
+# Spawning is unaffected by either dimension: load_trigger_map fires a trigger
+# when the bottom row of the enemy's footprint is one tile above the top edge,
+# so content is created just out of sight whatever the frame measures, and a
+# whole row fires at once regardless of x.
+const SCREEN_WIDTH := 2048
+const SCREEN_HEIGHT := 1152
 
-# Fixed-size screens are centred in the wider viewport rather than stretched.
+# Fixed-size screens are centred in the viewport rather than stretched.
 const PILLAR_X := (SCREEN_WIDTH - DISPLAY_WIDTH) / 2
+const PILLAR_Y := (SCREEN_HEIGHT - DISPLAY_HEIGHT) / 2
 
 const FONT_WHITE := 0
 const FONT_GRAY := 1
@@ -315,8 +320,8 @@ func _draw() -> void:
 			# modes themselves are untouched and still lay out against
 			# DISPLAY_WIDTH. set_clip runs the clip rect through the current
 			# transform, so their clipping follows the shift.
-			draw_rect(Rect2(0, 0, SCREEN_WIDTH, DISPLAY_HEIGHT), Color.BLACK, true)
-			translate_graphics(PILLAR_X, 0)
+			draw_rect(Rect2(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT), Color.BLACK, true)
+			translate_graphics(PILLAR_X, PILLAR_Y)
 			# Clipped as well as centred: these screens slide content in from
 			# outside the frame (IntroMode's story crawl) and relied on the
 			# 1024 viewport to hide it.
@@ -326,7 +331,7 @@ func _draw() -> void:
 			pop_graphics()
 
 	if fading:
-		draw_rect(Rect2(0, 0, SCREEN_WIDTH, DISPLAY_HEIGHT), FADES[fade_index], true)
+		draw_rect(Rect2(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT), FADES[fade_index], true)
 
 
 # The system cursor is replaced by the drawn crosshair while aiming, and comes

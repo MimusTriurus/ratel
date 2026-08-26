@@ -14,7 +14,7 @@ func init() -> void:
 
 
 func update() -> void:
-	if game_mode.camera_y + Main.DISPLAY_HEIGHT < y - 48:
+	if game_mode.camera_y + Main.SCREEN_HEIGHT < y - 48:
 		var jeep := GrayJeep.new(x, y)
 		jeep.target_angle = 270
 		jeep.display_angle = 270

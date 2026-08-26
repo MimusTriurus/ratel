@@ -2,11 +2,19 @@
 class_name GameMode
 extends RefCounted
 
-const CAMERA_MARGIN_NORTH := 384.0
+# How much taller the frame is than the original's 960.
+const EXTRA_HEIGHT := Main.SCREEN_HEIGHT - Main.DISPLAY_HEIGHT
+
+# The original pinned the jeep 384 px below the top edge while driving north,
+# so it saw 384 ahead and 576 behind. The extra height goes to the view ahead,
+# which is where the enemies come from; "behind" stays at the original 576.
+const CAMERA_MARGIN_NORTH := 384.0 + EXTRA_HEIGHT
 const CAMERA_MARGIN_SOUTH := 192.0
 const CAMERA_MARGIN_SIDES := 256.0
 const CAMERA_BOUND := 224.0
-const REMOVE_BOUND := 1536.0
+# Grown with the frame so that the gap between the bottom edge and the removal
+# line stays what it was.
+const REMOVE_BOUND := 1536.0 + EXTRA_HEIGHT
 const BOSS_PAN_CAMERA_SPEED := 4.0
 const ENDING_PAN_CAMERA_SPEED := 2.0
 const CONVEYOR_SPEED := Player.SPEED / 3.0
@@ -41,9 +49,10 @@ const DIRECTION_RADIANS: Array[float] = [
 
 const DIRECTION_DEGREES: Array[int] = [270, 90, 180, 0, 225, 315, 135, 45]
 
-# Tile columns the frame spans. The background loop draws one more than this,
-# to cover the sub-tile scroll offset.
+# Tile columns and rows the frame spans. The background loop draws one more of
+# each, to cover the sub-tile scroll offset.
 const TILES_ACROSS := Main.SCREEN_WIDTH >> 5
+const TILES_DOWN := Main.SCREEN_HEIGHT >> 5
 
 const WATER_ALPHAS_PERIOD := 136
 static var WATER_ALPHAS: PackedFloat32Array = PackedFloat32Array()
@@ -115,12 +124,12 @@ func init(p_main: Main) -> void:
 
 	trigger_y = map_height
 	max_camera_x = float((map_width - TILES_ACROSS) * 32)
-	max_camera_y = float((map_height - 31) * 32)
+	max_camera_y = float((map_height - TILES_DOWN - 1) * 32)
 	camera_x = 0.0
 	camera_y = max_camera_y
 
 	player = Player.new()
-	player.y = camera_y + 2 * Main.DISPLAY_HEIGHT
+	player.y = camera_y + 2 * Main.SCREEN_HEIGHT
 
 
 func set_stage(p_stage_index: int, p_stage: Stage, hard: bool) -> void:
@@ -306,8 +315,8 @@ func _camera_track_player() -> void:
 		camera_y = player.y - CAMERA_MARGIN_NORTH
 		if camera_y < 0:
 			camera_y = 0
-	elif camera_y - player.y < CAMERA_MARGIN_SOUTH - Main.DISPLAY_HEIGHT:
-		camera_y = player.y + CAMERA_MARGIN_SOUTH - Main.DISPLAY_HEIGHT
+	elif camera_y - player.y < CAMERA_MARGIN_SOUTH - Main.SCREEN_HEIGHT:
+		camera_y = player.y + CAMERA_MARGIN_SOUTH - Main.SCREEN_HEIGHT
 		if camera_y > max_camera_y:
 			camera_y = max_camera_y
 
@@ -343,7 +352,7 @@ func process_trigger(index: int, x: int, y: int) -> void:
 			BrownTank.new(x + 32, y + 48)
 		Triggers.FRIENDLY_HELICOPTER_LANDING:
 			FriendlyHelicopter.new(camera_x + Main.SCREEN_WIDTH / 2.0,
-				camera_y + Main.DISPLAY_HEIGHT + 128, true, false)
+				camera_y + Main.SCREEN_HEIGHT + 128, true, false)
 		Triggers.YELLOW_GUN:
 			RotatingGun.make_gray(x + 64, y + 64, false)
 		Triggers.STAR_BROWN:
@@ -531,20 +540,20 @@ func is_conveyor(x: float, y: float) -> bool:
 
 
 func is_outside_of_frame(x: float, y: float) -> bool:
-	return y > camera_y + Main.DISPLAY_HEIGHT or x < camera_x or y < camera_y \
+	return y > camera_y + Main.SCREEN_HEIGHT or x < camera_x or y < camera_y \
 		or x > camera_x + Main.SCREEN_WIDTH
 
 
 func is_outside_of_frame_rect(x1: float, y1: float, x2: float, y2: float) -> bool:
-	return y1 > camera_y + Main.DISPLAY_HEIGHT or x2 < camera_x or y2 < camera_y \
+	return y1 > camera_y + Main.SCREEN_HEIGHT or x2 < camera_x or y2 < camera_y \
 		or x1 > camera_x + Main.SCREEN_WIDTH
 
 
 func distance_outside_of_frame(x: float, y: float) -> float:
 	if y < camera_y:
 		return camera_y - y
-	if y > camera_y + Main.DISPLAY_HEIGHT:
-		return y - (camera_y + Main.DISPLAY_HEIGHT)
+	if y > camera_y + Main.SCREEN_HEIGHT:
+		return y - (camera_y + Main.SCREEN_HEIGHT)
 	if x < camera_x:
 		return camera_x - x
 	if x > camera_x + Main.SCREEN_WIDTH:
@@ -745,7 +754,7 @@ func _draw_background() -> void:
 			# Only tiles 0..3 carry the animated alpha, as in the original.
 			for i in 4:
 				tiles[i].alpha = WATER_ALPHAS[water_alpha_index]
-			for y in range(30, -1, -1):
+			for y in range(TILES_DOWN, -1, -1):
 				var Y := float(y << 5) - y_offset
 				var row: PackedInt32Array = tile_map[y + y_tile]
 				for x in range(x_start, -1, -1):
@@ -758,7 +767,7 @@ func _draw_background() -> void:
 					if tile < 225:
 						main.draw(tiles[tile], X, Y)
 		else:
-			for y in range(30, -1, -1):
+			for y in range(TILES_DOWN, -1, -1):
 				var Y := float(y << 5) - y_offset
 				var row: PackedInt32Array = tile_map[y + y_tile]
 				for x in range(x_start, -1, -1):
@@ -767,7 +776,7 @@ func _draw_background() -> void:
 						main.draw(tiles[tile], float(x << 5) - x_offset, Y)
 
 		# Tiles from sheet 6 sit on top of everything else in the background.
-		for y in range(30, -1, -1):
+		for y in range(TILES_DOWN, -1, -1):
 			var Y := float(y << 5) - y_offset
 			var row: PackedInt32Array = tile_map[y + y_tile]
 			for x in range(x_start, -1, -1):
@@ -775,7 +784,7 @@ func _draw_background() -> void:
 				if tile >= 225:
 					main.draw(tiles[tile], float(x << 5) - x_offset, Y)
 	else:
-		for y in range(30, -1, -1):
+		for y in range(TILES_DOWN, -1, -1):
 			var Y := float(y << 5) - y_offset
 			var row: PackedInt32Array = tile_map[y + y_tile]
 			for x in range(x_start, -1, -1):
@@ -805,10 +814,14 @@ func _draw_sprites() -> void:
 
 
 func _draw_score() -> void:
-	main.draw_text("1P", 64, 804, Main.FONT_WHITE)
-	main.draw_text(main.score_str, 160, 804, Main.FONT_WHITE)
-	main.draw_text("P", 176, 868, Main.FONT_WHITE)
-	main.draw_text(main.extra_lives_str, 216, 868, Main.FONT_WHITE)
+	# The original's 804 and 868 measured from a 960-tall frame; keep the same
+	# distance from the bottom edge instead of leaving the HUD mid-screen.
+	var score_y := Main.SCREEN_HEIGHT - 156
+	var lives_y := Main.SCREEN_HEIGHT - 92
+	main.draw_text("1P", 64, score_y, Main.FONT_WHITE)
+	main.draw_text(main.score_str, 160, score_y, Main.FONT_WHITE)
+	main.draw_text("P", 176, lives_y, Main.FONT_WHITE)
+	main.draw_text(main.extra_lives_str, 216, lives_y, Main.FONT_WHITE)
 
 
 func render() -> void:

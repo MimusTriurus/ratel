@@ -60,7 +60,7 @@ func update() -> void:
 					sx = 320
 				elif sx > 1472:
 					sx = 1472
-				BrownTank.tracked(sx, Main.DISPLAY_HEIGHT + 48, self)
+				BrownTank.tracked(sx, Main.SCREEN_HEIGHT + 48, self)
 
 
 # Walks the turret list from wherever it left off, opening the next two that

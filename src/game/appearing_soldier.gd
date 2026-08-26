@@ -15,7 +15,7 @@ func init() -> void:
 
 
 func update() -> void:
-	if game_mode.camera_y + Main.DISPLAY_HEIGHT < y - 75:
+	if game_mode.camera_y + Main.SCREEN_HEIGHT < y - 75:
 		EnemySoldier.new(x, y, EnemySoldierType.APPEARING)
 		do_remove()
 

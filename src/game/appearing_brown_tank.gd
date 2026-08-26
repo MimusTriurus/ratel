@@ -15,7 +15,7 @@ func init() -> void:
 
 
 func update() -> void:
-	if game_mode.camera_y + Main.DISPLAY_HEIGHT < y - 48:
+	if game_mode.camera_y + Main.SCREEN_HEIGHT < y - 48:
 		var tank := BrownTank.new(x, y)
 		tank.target_angle = 270
 		tank.display_angle = 270

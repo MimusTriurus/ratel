@@ -140,12 +140,14 @@ triggers derive from the previous snap, which is what makes
 `clear_key_pressed_record()` work. `ButtonMapping` persists to
 `user://buttons.cfg`.
 
-### Two widths: SCREEN_WIDTH vs DISPLAY_WIDTH
+### Two frames: SCREEN_* vs DISPLAY_*
 
-`DISPLAY_WIDTH` (1024) is no longer the viewport. It is the original frame, kept
-as the layout box for fixed-size artwork; `SCREEN_WIDTH` (1728) is the actual
-viewport. When touching anything that reads either, decide which one the code
-means:
+`DISPLAY_WIDTH`/`DISPLAY_HEIGHT` (1024x960) are no longer the viewport. They are
+the original frame, kept as the layout box for fixed-size artwork;
+`SCREEN_WIDTH`/`SCREEN_HEIGHT` (2048x1152, exact 16:9 at 4x) are the actual
+viewport. 2048 is the full width of every map, so `max_camera_x` is 0 and there
+is no horizontal scrolling. When touching anything that reads either, decide
+which one the code means:
 
 - "the edge of the visible frame" -- `is_outside_of_frame`, camera margins,
   enemies turning at the edge, boss spawn spread -> `SCREEN_WIDTH`.
@@ -166,9 +168,18 @@ mode's `clear_clip` drop the pillar box for the rest of the frame. `_blit` skips
 the polygon path for sprites wholly inside the clip, which matters now that
 every sprite on a menu screen is clipped.
 
-`GameMode.TILES_ACROSS` is derived from `SCREEN_WIDTH`; the background loop
-draws one column more, and one fewer at the right edge of the map where
-`row[TILES_ACROSS + x_tile]` would index `map_width` itself.
+`GameMode.TILES_ACROSS`/`TILES_DOWN` are derived from the viewport; the
+background loop draws one more of each, and one column fewer at the right edge
+of the map where `row[TILES_ACROSS + x_tile]` would index `map_width` itself.
+`max_camera_y`, `REMOVE_BOUND`, `CAMERA_MARGIN_NORTH`, the player's bottom clamp
+in `Player.update` and the score HUD's y are all derived from the frame rather
+than hardcoded to 960 now.
+
+Spawning is frame-independent and does not need adjusting when the viewport
+changes: `load_trigger_map` sets a trigger's row to `tile_y + height - 1`, so it
+fires when the bottom of the enemy's footprint is one tile above the top edge,
+and a whole row fires at once regardless of x. This was measured, not assumed --
+see `README.md`.
 
 ### Controls: WASD + mouse aim
 

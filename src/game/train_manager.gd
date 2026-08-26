@@ -17,7 +17,7 @@ func init() -> void:
 
 
 func update() -> void:
-	if y > game_mode.camera_y + Main.DISPLAY_HEIGHT:
+	if y > game_mode.camera_y + Main.SCREEN_HEIGHT:
 		do_remove()
 		for i in CARS:
 			Train.new(x + (0 if i == 0 else 4), y + (i << 7), i == 0)

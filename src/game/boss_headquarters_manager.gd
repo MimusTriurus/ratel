@@ -48,7 +48,7 @@ func update() -> void:
 			tank_spawn_delay = TANK_SPAWN_DELAY
 			var tank := BrownTank.tracked(
 				256 + main.random.randi_range(0, 1535),
-				game_mode.camera_y + Main.DISPLAY_HEIGHT + 48, self)
+				game_mode.camera_y + Main.SCREEN_HEIGHT + 48, self)
 			tank.display_angle = 270
 			tank.target_angle = 270
 

@@ -13,7 +13,7 @@ func init() -> void:
 
 
 func update() -> void:
-	if game_mode.camera_y + Main.DISPLAY_HEIGHT < y - 60:
+	if game_mode.camera_y + Main.SCREEN_HEIGHT < y - 60:
 		EnemyHelicopter.new(false)
 		do_remove()
 

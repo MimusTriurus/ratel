@@ -167,7 +167,7 @@ func update() -> void:
 				angle = -180
 		STATE_FLYING_AWAY:
 			y += FLIGHT_SPEED
-			if y > game_mode.camera_y + Main.DISPLAY_HEIGHT + 128:
+			if y > game_mode.camera_y + Main.SCREEN_HEIGHT + 128:
 				do_remove()
 		STATE_FLYING_TOWARD:
 			y -= FLIGHT_SPEED

@@ -55,7 +55,7 @@ func update() -> void:
 					sx = 352
 				elif sx > 1760:
 					sx = 1760
-				BrownTank.tracked(sx, Main.DISPLAY_HEIGHT + 48, self)
+				BrownTank.tracked(sx, Main.SCREEN_HEIGHT + 48, self)
 
 
 func render() -> void:

@@ -77,7 +77,7 @@ func update() -> void:
 				state = STATE_MOVING
 		STATE_MOVING:
 			y += SPEED
-			if y > game_mode.camera_y + Main.DISPLAY_HEIGHT + 32:
+			if y > game_mode.camera_y + Main.SCREEN_HEIGHT + 32:
 				do_remove()
 
 	if state != STATE_ASTER:

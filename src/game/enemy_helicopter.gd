@@ -54,11 +54,11 @@ func _init(p_down: bool) -> void:
 		y = game_mode.camera_y - 60
 	else:
 		angle = 270
-		y = game_mode.camera_y + Main.DISPLAY_HEIGHT + 60
+		y = game_mode.camera_y + Main.SCREEN_HEIGHT + 60
 
 	# Decelerate to a stop at mid-screen exactly at ENTERING_TIME.
 	entering_acceleration = 2.0 * (y - (game_mode.camera_y
-		+ 0.5 * Main.DISPLAY_HEIGHT)) / float(ENTERING_TIME * ENTERING_TIME)
+		+ 0.5 * Main.SCREEN_HEIGHT)) / float(ENTERING_TIME * ENTERING_TIME)
 	vy = -entering_acceleration * ENTERING_TIME
 
 	down = p_down

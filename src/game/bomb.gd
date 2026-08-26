@@ -55,7 +55,7 @@ func _is_close_to_frame() -> bool:
 	var X := x - game_mode.camera_x
 	var Y := y - game_mode.camera_y
 	return X >= -CLOSE_MARGIN and X <= Main.SCREEN_WIDTH + CLOSE_MARGIN \
-		and Y >= -CLOSE_MARGIN and Y <= Main.DISPLAY_HEIGHT + CLOSE_MARGIN
+		and Y >= -CLOSE_MARGIN and Y <= Main.SCREEN_HEIGHT + CLOSE_MARGIN
 
 
 func init() -> void:
