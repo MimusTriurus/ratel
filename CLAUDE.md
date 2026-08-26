@@ -194,8 +194,17 @@ taller frame moved the spawn sideways -- it has its own
 `PLAYER_SPAWN_CAMERA_OFFSET` now. The background loop clamps its column and row
 counts as a backstop rather than special-casing the exact map edge.
 
-Spawning is frame-independent and does not need adjusting when the viewport
-changes: `load_trigger_map` sets a trigger's row to `tile_y + height - 1`, so it
+Boss managers are the exception to that, and worth checking when the frame
+changes: most of their coordinates are absolute positions on the 2048-wide map
+(garages, statues, ship guns, headquarters lights) and must stay that way, but a
+few are screen coordinates in disguise. The boss pan leaves `camera_y` at 0, so
+`BossBlueTanksManager` wrote its off-screen spawn as a literal 1012, which was
+960 + 52; with a 1152-tall frame that put a tank 140 px inside the view. It is
+derived from `SCREEN_HEIGHT` now. The reinforcement tanks in the ship, statue
+and headquarters fights were already written as `SCREEN_HEIGHT + 48`.
+
+Spawning is otherwise frame-independent and does not need adjusting when the
+viewport changes: `load_trigger_map` sets a trigger's row to `tile_y + height - 1`, so it
 fires when the bottom of the enemy's footprint is one tile above the top edge,
 and a whole row fires at once regardless of x. This was measured, not assumed --
 see `README.md`.

@@ -29,8 +29,15 @@ func update() -> void:
 		if spawn_delay == 0:
 			spawned += 1
 			spawn_delay = SPAWN_DELAY
+			# The boss pan leaves camera_y at 0, so these are screen
+			# coordinates: 52 px beyond the top or bottom edge, off-screen, and
+			# the tank drives in from there. The original wrote the bottom one
+			# as 1012, which was 960 + 52 -- derived now, or a taller frame puts
+			# the spawn in plain view. sx is a position in the arena, not an
+			# edge, and stays as it was.
 			var sx: float = 640 if main.random.randi_range(0, 1) == 0 else 1408
-			var sy: float = -52 if main.random.randi_range(0, 1) == 0 else 1012
+			var from_top := main.random.randi_range(0, 1) == 0
+			var sy: float = -52.0 if from_top else Main.SCREEN_HEIGHT + 52.0
 			BossBlueTank.new(sx, sy, self)
 
 
