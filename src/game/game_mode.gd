@@ -94,6 +94,31 @@ var directions: PackedInt64Array = PackedInt64Array()
 var directions_width: int
 var directions_height: int
 var water_alpha_index: int
+
+# The image backdrop, when the stage carries one (MapIO.BACKGROUND_IMAGE).
+# Chunks are loaded on demand and kept for as long as the run lasts, which is
+# what GameMode outlives: at most two are ever on screen, and the alternative --
+# dropping the ones behind the camera -- would reload during a boss pan, which
+# can drive the camera back up a whole stage.
+var background_mode: int
+var background_chunk_height: int
+var background_chunk_rows: int
+var background_chunks: Array[Spr] = []
+# The cells the tile path would have rewritten in tile_map: the destruction
+# groups and the tiles TileDebris throws. Few enough per stage (16 to 50 group
+# cells) to draw one at a time over the chunk. The art comes from the tile
+# sheet, which is why load_tiles still runs for an image stage -- correct while
+# the images are baked from those same tiles, and the point at which a
+# hand-painted stage will want a patch atlas of its own.
+var background_patches: Dictionary = {}
+# Two 64x64 patterns standing in for the animated water of stage 2, in the same
+# 2x2 arrangement the per-cell path lays out: [animated set, static set].
+var water_patterns: Array[Spr] = []
+# Conveyor cells per map row, for stage 5, off the pristine collision grid --
+# no destruction group in any stage turns a cell into a conveyor, so this cannot
+# go stale.
+var conveyor_columns: Dictionary = {}
+
 var conveyor_offset: float
 var conveyor_last_index: int
 var conveyor_delta: float
@@ -188,6 +213,54 @@ func set_stage(p_stage_index: int, p_stage: Stage, hard: bool) -> void:
 	trigged_groups = PackedByteArray()
 	trigged_groups.resize(groups.size())
 
+	prepare_background()
+
+
+# Everything an image backdrop needs that does not change during a run. Left
+# empty for a stage drawn from tiles, which is what a stage file without a
+# background block means. Public because tools/verify_backdrop.gd switches a
+# stage between the two backdrops and has to run this again.
+func prepare_background() -> void:
+	background_mode = stage.background_mode
+	background_chunk_height = stage.background_chunk_height
+	background_chunk_rows = MapIO.background_chunk_rows(stage)
+	background_chunks = []
+	background_patches = {}
+	water_patterns = []
+	conveyor_columns = {}
+
+	if background_mode != MapIO.BACKGROUND_IMAGE:
+		return
+
+	background_chunks.resize(MapIO.background_chunk_count(stage))
+
+	if stage_index == 2:
+		water_patterns = [_water_pattern(0), _water_pattern(4)]
+
+	if stage_index == 5:
+		for y in map_height:
+			var row: PackedInt32Array = types_map[y]
+			var columns := PackedInt32Array()
+			for x in map_width:
+				if row[x] == TYPE_CONVEYOR:
+					columns.append(x)
+			if not columns.is_empty():
+				conveyor_columns[y] = columns
+
+
+# Four water tiles into one repeating pattern, in the arrangement the per-cell
+# path picks them with (((y & 1) << 1) + (x & 1)).
+func _water_pattern(first: int) -> Spr:
+	var img := Image.create_empty(64, 64, false, Image.FORMAT_RGBA8)
+	for i in 4:
+		var s: Spr = tiles[first + i]
+		var src: Image = s.tex.get_image()
+		if src.is_compressed():
+			src.decompress()
+		img.blit_rect(src, Rect2i(s.region),
+			Vector2i((i & 1) << 5, (i >> 1) << 5))
+	return Spr.new(ImageTexture.create_from_image(img), Rect2(0, 0, 64, 64))
+
 
 func start_boss_camera_pan(listener) -> void:
 	boss_camera_pan = true
@@ -218,6 +291,7 @@ func trigger_group(group_index: int) -> void:
 		var g: Array = group[i]
 		tile_map[g[1]][g[0]] = g[2]
 		types_map[g[1]][g[0]] = g[3]
+		mark_patched(g[0], g[1])
 
 
 # Rotates 90+ degrees; used after a collision.
@@ -895,6 +969,112 @@ func update() -> void:
 
 
 func _draw_background() -> void:
+	if background_mode == MapIO.BACKGROUND_IMAGE:
+		_draw_background_image()
+		return
+	_draw_background_tiles()
+
+
+# The backdrop as baked chunks: the animated water under it, the chunks the
+# frame spans, the cells destruction has rewritten since, and the conveyor over
+# the top. Same order as _draw_background_tiles, one layer at a time instead of
+# one cell at a time.
+func _draw_background_image() -> void:
+	if stage_index == 2:
+		_draw_water_layer()
+
+	var first: int = maxi(0, int(camera_y) / background_chunk_height)
+	var last := first
+	for k in range(first, background_chunks.size()):
+		var top := float(k * background_chunk_height) - camera_y
+		if top >= Main.SCREEN_HEIGHT:
+			break
+		last = k
+		var chunk := _background_chunk(k)
+		if chunk != null:
+			main.draw(chunk, -camera_x, top)
+
+	# One chunk ahead, so the load lands a frame or two before the camera needs
+	# it rather than on the frame it comes into view.
+	_background_chunk(last + 1)
+
+	for key in background_patches:
+		@warning_ignore("integer_division")
+		var y: int = key / map_width
+		var Y := float(y << 5) - camera_y
+		if Y <= -32.0 or Y >= Main.SCREEN_HEIGHT:
+			continue
+		main.draw(tiles[tile_map[y][key % map_width]],
+			float((key % map_width) << 5) - camera_x, Y)
+
+	if stage_index == 5:
+		_draw_conveyor_layer()
+
+
+# The two water sets the per-cell path cross-fades under every cell whose tile
+# is under 32. Under an image backdrop they cover the whole frame instead, and
+# the terrain shows them through its own transparency -- which is why
+# tools/bake_stage_image.gd leaves those holes in the image.
+func _draw_water_layer() -> void:
+	var x := -fmod(camera_x, 64.0)
+	var y := -fmod(camera_y, 64.0)
+	var rect := Rect2(x, y, Main.SCREEN_WIDTH - x, Main.SCREEN_HEIGHT - y)
+	main.draw_tiled(water_patterns[1], rect, 1.0)
+	main.draw_tiled(water_patterns[0], rect, WATER_ALPHAS[water_alpha_index])
+
+
+# tiles[0] is the conveyor frame the update tick swapped in, exactly as the
+# per-cell path draws it -- only the cells it belongs on are looked up rather
+# than tested one by one.
+func _draw_conveyor_layer() -> void:
+	var y_tile: int = int(camera_y / 32.0)
+	for y in range(y_tile, mini(y_tile + TILES_DOWN + 2, map_height)):
+		var columns: Variant = conveyor_columns.get(y)
+		if columns == null:
+			continue
+		var Y := float(y << 5) - camera_y
+		for x in (columns as PackedInt32Array):
+			main.draw(tiles[0], float(x << 5) - camera_x, Y)
+
+
+# Loaded on first use; null for a chunk past the end of the stage, so the
+# prefetch does not have to bounds-check.
+func _background_chunk(k: int) -> Spr:
+	if k < 0 or k >= background_chunks.size():
+		return null
+	if background_chunks[k] == null:
+		background_chunks[k] = main.load_background_chunk(stage_index, k)
+	return background_chunks[k]
+
+
+# A cell the image no longer describes, because something standing on it was
+# destroyed. Nothing to record while the backdrop is tiles: there tile_map is
+# what gets drawn.
+func mark_patched(x: int, y: int) -> void:
+	if background_mode == MapIO.BACKGROUND_IMAGE:
+		background_patches[y * map_width + x] = true
+
+
+# What the cell looks like right now, for TileDebris to fling away. Off the
+# chunk under an image backdrop -- Spr is a rectangle of a texture either way,
+# so the debris code does not care which it got.
+func background_sprite(x: int, y: int) -> Spr:
+	# A patched cell is no longer what the image says, and a conveyor cell holds
+	# a baked frame 0 rather than the frame the belt is on; the sheet is right
+	# about both.
+	if background_mode != MapIO.BACKGROUND_IMAGE \
+			or background_patches.has(y * map_width + x) \
+			or types_map[y][x] == TYPE_CONVEYOR:
+		return tiles[tile_map[y][x]]
+	@warning_ignore("integer_division")
+	var k: int = y / background_chunk_rows
+	var chunk := _background_chunk(k)
+	if chunk == null:
+		return tiles[tile_map[y][x]]
+	return chunk.sub_image(x << 5, (y - k * background_chunk_rows) << 5, 32, 32)
+
+
+func _draw_background_tiles() -> void:
 	var x_offset := fmod(camera_x, 32.0)
 	var y_offset := fmod(camera_y, 32.0)
 	var x_tile := int(camera_x / 32.0)

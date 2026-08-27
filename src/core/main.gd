@@ -767,6 +767,18 @@ func draw_offset(s: Spr, x: float, y: float, alpha: float = -1.0) -> void:
 	_blit(s, x, y, alpha)
 
 
+# No Slick counterpart: the animated water under an image backdrop is one
+# repeating 64x64 pattern rather than a tile per cell, which is two draws for the
+# whole frame instead of a few thousand. The pattern starts at rect.position, so
+# the caller aligns that to the world grid; the sprite has to be a texture of its
+# own, since a region cannot be tiled. The clip is not consulted because the
+# backdrop is drawn at the top of GameMode.render(), where _draw has just
+# cleared both clips and nothing has set one yet.
+func draw_tiled(s: Spr, rect: Rect2, alpha: float = -1.0) -> void:
+	var a: float = s.alpha if alpha < 0.0 else clampf(alpha, 0.0, 1.0)
+	draw_texture_rect(s.tex, rect, true, Color(1.0, 1.0, 1.0, a))
+
+
 func draw_centered(s: Spr, x: float, y: float) -> void:
 	_blit(s, x - s.w * 0.5, y - s.h * 0.5)
 
@@ -1132,6 +1144,19 @@ func load_tiles(index: int, stage: Stage) -> void:
 		conveyors = _spr_array(16)
 		for i in 16:
 			conveyors[i] = stage.tiles[i]
+
+
+# One chunk of a baked image backdrop, as a standalone Spr covering the whole
+# texture. Loaded on demand rather than with the stage: a stage is six or seven
+# of these and load_stages() loads all six stages, which would be more than half
+# a gigabyte of textures for the five stages nobody is playing.
+func load_background_chunk(index: int, chunk: int) -> Spr:
+	var path := MapIO.background_chunk_path(index, chunk)
+	var tex: Texture2D = load(path)
+	if tex == null:
+		push_error("Main: missing background chunk %s" % path)
+		return null
+	return Spr.new(tex, Rect2(Vector2.ZERO, tex.get_size()))
 
 
 func load_sprites() -> void:

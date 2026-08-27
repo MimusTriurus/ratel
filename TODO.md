@@ -49,6 +49,14 @@ What is left, in the order it matters.
 4. **A seventh stage.** The editor edits the six that exist; a new one needs its
    own `tiles-N` atlas first, which is an art problem rather than an editor one.
 
+5. **Image backdrops in the editor.** The game draws them (see CLAUDE.md, Image
+   backdrops); the editor still draws the tile grid whatever the stage says. What
+   it should show for an image stage is the chunks as the backdrop with the
+   collision, trigger and group layers over them, and the tile brush off. The
+   thing that then wants checking is the mistake the split invites, which Check
+   stage cannot see today: art and collision drifting apart — a cell typed solid
+   or water where the image has nothing, and the reverse.
+
 ## Gaps in Check stage
 
 - `BOSS_GARAGE` and `BOSS_STATUES` bind to groups the same way everything else

@@ -13,6 +13,21 @@ class_name MapIO
 extends RefCounted
 
 const MAPS := "res://assets/maps/"
+const TILE := 32
+
+# What a stage draws its terrain from. "tiles" assembles it out of tiles-N.png a
+# cell at a time, as the original did; "image" blits the baked chunks under
+# LEVELS instead (tools/bake_stage_image.gd writes them). A stage file with no
+# background block means tiles, which is why that is 0.
+const BACKGROUND_TILES := 0
+const BACKGROUND_IMAGE := 1
+const BACKGROUND_NAMES: Array[String] = ["tiles", "image"]
+
+# The chunk files are a convention rather than data, as dirs-N.dat and
+# tiles-N.png are: chunk k covers map rows [k * chunk_height / TILE, ...) and the
+# last one is cropped to whatever is left, so only the chunk height is authored
+# -- the count and the last chunk's height follow from map_height.
+const LEVELS := "res://assets/images/levels/"
 
 # Mirrors GameMode.TYPE_* and tools/map_json.py TYPE_CHARS. Spelled out rather
 # than referencing GameMode so that src/core does not depend on src/game.
@@ -92,6 +107,25 @@ static func load_trigger_sizes() -> Array:
 	return sizes
 
 
+# How many map rows one chunk holds, and how many chunks a stage takes. Zero
+# rows means the stage has no baked backdrop, and the count is 0 with it.
+static func background_chunk_rows(stage: Stage) -> int:
+	@warning_ignore("integer_division")
+	return stage.background_chunk_height / TILE
+
+
+static func background_chunk_count(stage: Stage) -> int:
+	var rows := background_chunk_rows(stage)
+	if rows <= 0:
+		return 0
+	@warning_ignore("integer_division")
+	return (stage.map_height + rows - 1) / rows
+
+
+static func background_chunk_path(index: int, chunk: int) -> String:
+	return LEVELS + "stage-%d-%d.png" % [index, chunk]
+
+
 # The parsed stage file, for a tool that needs to carry the parts a Stage does
 # not keep in authored form -- the trigger list in its original order -- across
 # a load and save.
@@ -127,6 +161,13 @@ static func serialize(index: int, stage: Stage, source: Dictionary) -> String:
 	out.append('  "stage": %d,' % index)
 	out.append('  "width": %d,' % width)
 	out.append('  "height": %d,' % height)
+
+	# Written only for a stage that carries a backdrop, in either mode: a stage
+	# that has never been baked has to round-trip byte for byte.
+	if stage.background_mode != BACKGROUND_TILES or source.has("background"):
+		out.append('  "background": {"mode": "%s", "chunk_height": %d},'
+			% [BACKGROUND_NAMES[stage.background_mode],
+				stage.background_chunk_height])
 
 	var legend := PackedStringArray()
 	for t in TYPE_NAME.size():
@@ -192,6 +233,11 @@ static func load_stage(index: int, stage: Stage, trigger_sizes: Array) -> void:
 	var height := int(doc["height"])
 	stage.map_width = width
 
+	stage.background_mode = BACKGROUND_TILES
+	stage.background_chunk_height = 0
+	if doc.has("background"):
+		_load_background(index, stage, doc["background"])
+
 	# Both grids get one row past the bottom of the map, as in the original: the
 	# extra types row is water, so anything that drives off the end drowns
 	# instead of reading out of bounds. map_height counts it.
@@ -255,6 +301,30 @@ static func load_stage(index: int, stage: Stage, trigger_sizes: Array) -> void:
 		build_trigger_map(doc["triggers"]["hard"], stage.map_height,
 			trigger_sizes, index),
 	]
+
+
+# The backdrop block is optional and the game has to draw something either way,
+# so anything wrong with it falls back to tiles instead of refusing the stage.
+static func _load_background(index: int, stage: Stage, doc: Variant) -> void:
+	if typeof(doc) != TYPE_DICTIONARY:
+		push_error("stage-%d.json: background is not an object" % index)
+		return
+	var block: Dictionary = doc
+
+	var chunk_height := int(block.get("chunk_height", 0))
+	if chunk_height <= 0 or chunk_height % TILE != 0:
+		push_error("stage-%d.json: background chunk_height %d is not a positive multiple of %d"
+			% [index, chunk_height, TILE])
+		return
+
+	var name := str(block.get("mode", BACKGROUND_NAMES[BACKGROUND_TILES]))
+	var mode := BACKGROUND_NAMES.find(name)
+	if mode < 0:
+		push_error("stage-%d.json: unknown background mode %s" % [index, name])
+		return
+
+	stage.background_mode = mode
+	stage.background_chunk_height = chunk_height
 
 
 # A trigger fires when the bottom row of its footprint is one tile above the top

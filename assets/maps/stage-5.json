@@ -2,6 +2,7 @@
   "stage": 5,
   "width": 64,
   "height": 391,
+  "background": {"mode": "tiles", "chunk_height": 2048},
   "type_legend": {"#": "SOLID", ".": "EMPTY", "S": "SHIELD", "~": "WATER", "%": "SWAMP", ">": "CONVEYOR"},
   "types": [
     "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",

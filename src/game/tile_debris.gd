@@ -30,7 +30,9 @@ func _init(p_x: int, p_y: int, p_tile: int, p_type: int) -> void:
 	y = (p_y << 5) + 16
 	tile = p_tile
 	type = p_type
-	sprite = game_mode.tiles[game_mode.tile_map[p_y][p_x]]
+	# Off the image backdrop when the stage has one, off the tile sheet when it
+	# does not; background_sprite answers either way.
+	sprite = game_mode.background_sprite(p_x, p_y)
 	delay = int(game_mode.player.x - x) >> 3
 	if delay < 0:
 		delay = -delay
@@ -57,6 +59,7 @@ func update() -> void:
 		moving = true
 		game_mode.tile_map[Y][X] = tile
 		game_mode.types_map[Y][X] = type
+		game_mode.mark_patched(X, Y)
 		vx = 1 + main.random.randf() * 5
 		if game_mode.player.x > x:
 			vx = -vx

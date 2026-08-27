@@ -56,10 +56,19 @@ godot --path . --headless --script tools/verify_map_edit.gd
 The first loads every stage through `MapIO` and through the original binary
 readers and compares the two (see Data). The second writes every stage straight
 back out: `git diff --exit-code assets/maps` must stay clean, which is what
-proves `MapIO.serialize` agrees with `tools/map_json.py` byte for byte. The
+proves `MapIO.serialize` agrees with `tools/map_json.py` byte for byte; it also
+checks the optional `background` block both ways round. The
 third drives the editor's brushes, undo and save without a tree, and leaves
 `stage-0.json` modified on purpose — `git diff --stat assets/maps` should show
 one line per painted row and nothing else, then `git checkout -- assets/maps`.
+
+A fourth check does need a window, because it compares rendered frames: it draws
+every stage both ways, from the tile grid and from the baked image chunks, and
+they must come out identical. See Image backdrops.
+
+```bash
+godot --path . --windowed --resolution 1280x720 --script tools/verify_backdrop.gd
+```
 
 `src/tools/map_editor.tscn` shows a stage the way the game draws it, with the
 collision types, destruction groups and spawn triggers over the top — including
@@ -223,6 +232,11 @@ into a `Stage`. One file holds everything authored about a stage:
   `[x, y, new tile, new type]`. **Order is significant**: `groups_map` stores the
   group index per cell and `BossHeadquarters` hardcodes `groups[0]`.
 - `triggers` — spawn triggers by `Triggers` name, for both difficulties.
+- `background` — optional, and the one part of the file that is not the
+  original's data: `{"mode": "tiles" | "image", "chunk_height": 2048}`. See
+  Image backdrops below. Absent means `tiles`, so a stage that has never been
+  baked round-trips byte for byte without it, which
+  `tools/verify_json_roundtrip.gd` checks along with the block itself.
 
 `Triggers` (61 constants) indexes `GameMode.process_trigger`, which spawns the
 element for each map trigger, and is also what the JSON names resolve through
@@ -289,6 +303,69 @@ Following the *shipped* field arrives on 99% of walks for `dirs-0`, 98% for
 their own collision grids and were most likely generated from a different
 revision of those maps, so rebuilding them changes tank behaviour more than the
 others — towards the map that is actually in the game.
+
+### Image backdrops
+
+An alternative to assembling the terrain out of tiles: one image per stage,
+authored as a whole rather than as a grid. It draws, and it draws exactly what
+the tile path drew — `tools/verify_backdrop.gd` compares 222 rendered frames
+across the six stages and finds no differing pixel. What does not exist yet is a
+reason to switch: the images are baked *from* the tiles, so every stage still
+says `"mode": "tiles"`, and there is nothing to gain until a stage is painted by
+hand. Flipping that one word per stage file is the whole switch.
+
+The geometry is what makes it cheap. A map is 64 tiles wide, so 2048 px, which
+is exactly `SCREEN_WIDTH` — hence `max_camera_x == 0` — and a stage image is a
+2048x11488 strip (2048x12512 for stage 5). That is 94 MB of RGBA8, and
+`Main.load_stages` loads all six up front, so it is cut into 2048x2048 chunks:
+`assets/images/levels/stage-N-K.png`, chunk `K` covering map rows
+`[K * chunk_height / 32, ...)` with the last one cropped to what is left. The
+names and the count are a convention rather than data — `MapIO.background_chunk_*`
+derives both from `chunk_height` and `map_height`, as `dirs-N.dat` and
+`tiles-N.png` are derived from a stage index. At a 1152 px frame no more than two
+chunks are ever on screen.
+
+`tools/bake_stage_image.gd` writes them, reproducing `_draw_background` cell for
+cell out of the same sheets, so a stage can be compared against the tile path
+frame by frame and the images double as wallpaper to paint over:
+
+```bash
+godot --path . --headless --script tools/bake_stage_image.gd -- all
+```
+
+Three things are deliberately not in the image, because they move: stage 2's
+water (`tiles-2` is the one sheet with transparency, so the terrain layer comes
+out with holes in exactly the shape of the water, which is what an animated layer
+drawn *under* the image wants — `--water` fills them in for a look, not for
+shipping), stage 5's conveyor (frame 0 is baked in; the frames are opaque, so an
+animated layer over the image covers it), and destruction, which rewrites 16 to
+50 cells a stage through `trigger_group`.
+
+`tile_map` is otherwise **only** visual: collisions are `types_map`, the flow
+field is built from `types_map`, triggers fire by row. That is why the switch
+touches so little — the four places that read it are the whole of it:
+
+- `GameMode._draw_background` picks between `_draw_background_tiles`, unchanged,
+  and `_draw_background_image`: the water pattern, then the chunks the frame
+  spans, then the patches, then the conveyor. `Main.draw_tiled` is the one new
+  primitive, and the one with no Slick counterpart — the water is a repeating
+  64x64 pattern rather than a tile per cell, two draws for the whole frame
+  instead of a few thousand.
+- `trigger_group` and `TileDebris` also call `mark_patched`, which records the
+  cell in `background_patches`. `tile_map` stays the source of truth for what a
+  cell looks like now; the patch set is just which cells the image is wrong
+  about, and they are drawn from the tile sheet.
+- `TileDebris` takes the cell's current sprite off the chunk through
+  `Spr.sub_image` — `GameMode.background_sprite` answers for either backdrop, so
+  the debris code does not know which it got. It falls back to the sheet for a
+  patched cell and for a conveyor cell, where the image holds a frame of an
+  animation.
+
+Chunks load on demand and are kept for the run: 12 ms each, 16 ms worst, so a
+chunk coming into view without the one-ahead prefetch would cost a single frame.
+Nothing is evicted — a stage is 90 to 98 MB of texture, and dropping chunks
+behind the camera would reload during a boss pan, which can drive the camera back
+up a whole stage.
 
 ### Audio and input
 
