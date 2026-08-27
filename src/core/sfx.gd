@@ -13,7 +13,7 @@ func _init(parent: Node, path: String) -> void:
 	for i in POOL_SIZE:
 		var p := AudioStreamPlayer.new()
 		p.stream = stream
-		p.bus = &"Master"
+		p.bus = AudioSettings.SFX_BUS
 		parent.add_child(p)
 		_players.append(p)
 

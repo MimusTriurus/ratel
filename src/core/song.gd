@@ -23,7 +23,7 @@ static func make_player(parent: Node, path: String, looping: bool) -> AudioStrea
 		stream.loop_mode = AudioStreamWAV.LOOP_FORWARD if looping else AudioStreamWAV.LOOP_DISABLED
 	var p := AudioStreamPlayer.new()
 	p.stream = stream
-	p.bus = &"Master"
+	p.bus = AudioSettings.MUSIC_BUS
 	parent.add_child(p)
 	return p
 

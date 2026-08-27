@@ -224,7 +224,9 @@ var unit_vector := PackedFloat32Array([0.0, 0.0, 0.0])
 var _last_play_time: Dictionary = {}
 var konami_code: KonamiCode
 
-var music_on := true
+# Music on, effects on, master volume -- and the buses they mute. Loaded before
+# anything else so that the first sound to play is already at the saved volume.
+var audio := AudioSettings.new()
 
 # --- Slick/OpenGL matrix-stack emulation -------------------------------------
 
@@ -254,6 +256,12 @@ static func _static_init() -> void:
 func _ready() -> void:
 	Main.main = self
 	random.randomize()
+
+	# Before load_next() builds the first Sfx: a player assigned to a bus that
+	# does not exist yet would silently fall back to Master.
+	AudioSettings.install_buses()
+	audio.load_saved()
+	audio.apply()
 
 	button_mapping.load_saved()
 	input = HumanInput.new(button_mapping)
@@ -504,6 +512,8 @@ func request_mode(m: int) -> void:
 			set_mode(LoadingMode.new())
 		Modes.CONTROLS:
 			set_mode(ControlsMode.new())
+		Modes.SOUND:
+			set_mode(SoundMode.new())
 
 
 func set_mode(m) -> void:
@@ -525,7 +535,10 @@ func remove_fade_listener() -> void:
 
 
 func full_screen_toggle_check() -> void:
-	var is_escape := input.is_escape()
+	# Escape belongs to the in-game menu while a stage is up; F12 still toggles
+	# the window either way, and every other screen keeps Escape as the way out
+	# of fullscreen.
+	var is_escape := input.is_escape() and not (mode is GameMode)
 	if not (input.is_f12() or is_escape):
 		return
 	var win := get_window()
@@ -1019,8 +1032,21 @@ func request_song(song: Song) -> void:
 
 
 func set_music_on(on: bool) -> void:
-	music_on = on
-	AudioServer.set_bus_mute(AudioServer.get_bus_index(&"Master"), not on)
+	audio.music_on = on
+	audio.apply()
+
+
+func set_sound_on(on: bool) -> void:
+	audio.sound_on = on
+	audio.apply()
+
+
+# Pause, not preference. This used to mute Master, which took the effects with
+# it; and it used to be undone with set_music_on(true), which turned the music
+# back on for someone who had switched it off.
+func set_music_paused(paused: bool) -> void:
+	audio.music_paused = paused
+	audio.apply()
 
 
 func stop_all_sound() -> void:

@@ -30,6 +30,14 @@ const ENDING_PAN_CAMERA_SPEED := 2.0
 const CONVEYOR_SPEED := Player.SPEED / 3.0
 const STAGE_COMPLETED_DELAY := 228
 
+# The two pages of the Escape menu. Options is a page rather than a mode change
+# because a mode change destroys the GameMode, and with it the run.
+const MENU_MAIN := 0
+const MENU_OPTIONS := 1
+
+const MENU_X := 384.0
+const MENU_Y := 384.0
+
 const TYPE_SOLID := 0
 const TYPE_EMPTY := 1
 const TYPE_SHIELD := 2
@@ -99,6 +107,13 @@ var max_camera_y: float
 # its 1024 frame on the 2048-wide map; a frame as wide as the map pans nowhere.
 var ending_pan_camera_x: float
 var paused: bool
+# The Escape menu, drawn over the frozen stage. Not in the original, which had
+# no way out of a stage but to die or finish it: Escape only ever left
+# fullscreen, and the pause key only froze the frame. It reuses paused so that
+# the crosshair and the system cursor behave as they do under the pause key.
+var menu_open: bool
+var menu: Menu
+var menu_page: int = MENU_MAIN
 var trigger_y: int
 var boss_camera_pan: bool
 var ending_camera_pan: bool
@@ -663,16 +678,140 @@ func fade_completed() -> void:
 		CutsceneSequence.request_cutscene()
 
 
+# --- The Escape menu ---------------------------------------------------------
+#
+# Two pages, both drawn over the frozen stage. Options is a page rather than a
+# mode change because requesting a mode destroys this GameMode, and with it the
+# run -- which is exactly what "quit to title" is for.
+#
+# The music keeps playing. The pause key mutes it, this does not: the options
+# page can switch the music off, and a switch you cannot hear tells you nothing.
+
+func _menu_labels(page: int) -> Array:
+	if page == MENU_MAIN:
+		return ["resume", "options", "quit to title", "quit game"]
+
+	var audio := main.audio
+	return [
+		"music %s" % ("on" if audio.music_on else "off"),
+		"sound %s" % ("on" if audio.sound_on else "off"),
+		"volume %d" % audio.volume,
+		"controls %s" % ("mouse" if main.button_mapping.mouse_aim else "classic"),
+		"back",
+	]
+
+
+func _open_menu(page: int) -> void:
+	var opening := not menu_open
+	menu_page = page
+	menu = Menu.new(MENU_X, MENU_Y, main, 0,
+		Menu.ICON_JEEP if page == MENU_MAIN else Menu.ICON_GRENADE,
+		self, _menu_labels(page))
+	menu_open = true
+	# paused is what the crosshair, the system cursor and the pause key all
+	# read, so the menu borrows it rather than adding a second frozen state.
+	paused = true
+	if opening:
+		main.play_sound(main.pause_sound)
+
+
+func _close_menu() -> void:
+	menu_open = false
+	menu = null
+	paused = false
+
+
+func _quit_to_title() -> void:
+	menu_open = false
+	paused = false
+	main.stop_song()
+	# start_player() runs on the way into stage 1, so nothing needs resetting
+	# here; the title screen is where a new run begins.
+	main.request_mode(Modes.INTRO)
+
+
+func _quit_game() -> void:
+	menu_open = false
+	# The same two steps the window's close button takes, in the same order.
+	main.close_requested = true
+	main.stop_all_sound()
+	main.get_tree().quit()
+
+
+func selection_changed(_index: int) -> void:
+	pass
+
+
+func option_selected(index: int) -> void:
+	if menu_page == MENU_MAIN:
+		match index:
+			0:
+				_close_menu()
+			1:
+				_open_menu(MENU_OPTIONS)
+			2:
+				_quit_to_title()
+			3:
+				_quit_game()
+		return
+
+	if index == 4:
+		_open_menu(MENU_MAIN)
+		return
+
+	var audio := main.audio
+	match index:
+		0:
+			audio.music_on = not audio.music_on
+			audio.apply()
+		1:
+			audio.sound_on = not audio.sound_on
+			audio.apply()
+			# Something to hear the answer with, when it was just switched on.
+			main.play_sound(main.pickup_sound)
+		2:
+			audio.step_volume()
+			main.play_sound(main.pickup_sound)
+		3:
+			main.button_mapping.mouse_aim = not main.button_mapping.mouse_aim
+			main.button_mapping.save()
+	audio.save()
+
+	var labels := _menu_labels(menu_page)
+	for i in labels.size():
+		menu.options[i] = labels[i]
+	# Menu takes one selection and stops listening; this page is a set of
+	# switches, so it is handed back. See SoundMode, which does the same.
+	menu.selection_made = false
+
+
 func update() -> void:
+	if menu_open:
+		menu.update()
+		# An entry may have closed the menu, or left the mode entirely.
+		if not menu_open:
+			return
+		# Escape backs out a page at a time, and off the first page it resumes,
+		# which is the only reason it does not need an entry of its own.
+		if input.is_escape():
+			if menu_page == MENU_OPTIONS:
+				_open_menu(MENU_MAIN)
+			else:
+				_close_menu()
+		return
+	elif input.is_escape() and not stage_completed:
+		_open_menu(MENU_MAIN)
+		return
+
 	if paused:
 		if input.is_pause():
 			paused = false
-			main.set_music_on(true)
+			main.set_music_paused(false)
 		return
 	elif input.is_pause() and not stage_completed and playing and main.is_song_playing():
 		paused = true
 		main.play_sound(main.pause_sound)
-		main.set_music_on(false)
+		main.set_music_paused(true)
 
 	water_alpha_index += 1
 	if water_alpha_index == WATER_ALPHAS_PERIOD:
@@ -853,3 +992,23 @@ func render() -> void:
 	# world. Skipped while paused, where the system cursor comes back.
 	if playing and not paused and input.is_aiming():
 		main.draw_crosshair(input.aim_position())
+
+	if menu_open:
+		_render_menu()
+
+
+# GameMode is the one mode Main does not pillar-box -- the world fills the
+# frame -- so the menu centres itself the way Main centres everything else.
+# _draw_sprites has popped the camera translation, so this is display space.
+func _render_menu() -> void:
+	main.draw_rect(Rect2(0, 0, Main.SCREEN_WIDTH, Main.SCREEN_HEIGHT),
+		Color(0, 0, 0, 0.72), true)
+	main.translate_graphics(Main.PILLAR_X, Main.PILLAR_Y)
+	# The glyphs are a fixed 32 px wide, so a centred string starts at
+	# (1024 - 32 * length) / 2.
+	if menu_page == MENU_MAIN:
+		main.draw_text("paused", 416, 256, Main.FONT_GRAY)
+	else:
+		main.draw_text("options", 400, 256, Main.FONT_GRAY)
+	menu.render()
+	main.pop_graphics()

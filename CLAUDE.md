@@ -294,10 +294,48 @@ reproduces the original's 125 ms retrigger throttle (`Main.MINIMUM_SOUND_TIME`).
 Song changes are deferred: `request_song` sets `requested_song`, and `_process`
 swaps it.
 
+Three buses, not one. Everything used to play on `Master`, which is why the
+pause key — the only thing that ever silenced anything — muted the effects
+along with the music. `AudioSettings` (`src/core/audio_settings.gd`) adds
+`Music` and `Sfx`, both routed to `Master`, at `_ready` and before the first
+stream loads; `Sfx` and `Song.make_player` name them. The three controls are
+then three separate things: mute one bus, mute the other, set the gain on the
+bus they both feed. It persists to `user://audio.cfg`.
+
+Pause and preference are separate too. `set_music_paused` is what the pause key
+and the in-game menu use; `set_music_on` is the preference. Undoing a pause
+with `set_music_on(true)` — which is what the code did — turns the music back
+on for someone who had switched it off.
+
+`SoundMode` (`Modes.SOUND`, not in the original) is the screen: music, sound,
+volume, done, reached from Options and returning there. It is the one menu mode
+that does not leave when an entry is picked, so its labels carry the state and
+`Menu`'s one-shot `selection_made` latch is released after every toggle. The
+same trick drives the in-game menu's options page.
+
 `HumanInput.snap()` samples level-triggered state once per logic tick; edge
 triggers derive from the previous snap, which is what makes
 `clear_key_pressed_record()` work. `ButtonMapping` persists to
 `user://buttons.cfg`.
+
+### The in-game menu
+
+Escape opens it over the frozen stage — two pages, both inside `GameMode`
+(`_open_menu`, `_render_menu`), because requesting a mode destroys the
+`GameMode` and with it the run. That is what "quit to title" is for; the other
+entries are resume, options and quit game. The options page toggles music,
+sound, volume and mouse aim in place.
+
+Three things worth knowing before touching it:
+
+- It borrows `paused` rather than adding a second frozen state, so the
+  crosshair, the system cursor and the pause key all behave as they do under
+  the pause key.
+- The music keeps playing, unlike under the pause key. The options page can
+  switch the music off, and a switch you cannot hear tells you nothing.
+- Escape no longer leaves fullscreen while a stage is up — `full_screen_toggle_check`
+  ignores it when the mode is a `GameMode`. F12 still toggles the window, and
+  every other screen keeps Escape as the way out of fullscreen.
 
 ### Two frames: SCREEN_* vs DISPLAY_*
 
@@ -443,6 +481,10 @@ intro drop only incidentally — the real gate there is `GameMode.playing`, whic
 Deliberate. Not bugs, and not to be "fixed" back without saying why:
 
 - Controls: WASD movement and mouse aim, gated on `ButtonMapping.mouse_aim`.
+- Sound options — music, effects and a master volume, on three buses where the
+  original had one — under Options → Sound and in the in-game menu.
+- An Escape menu inside a stage: resume, options, quit to title, quit game. The
+  original had no way out of a stage but to die or finish it.
 - `CAMERA_BOUND` is a full frame rather than the original's 224, so the jeep can
   back up about a screen and a half.
 - `FlowField.build` produces shortest paths, which the shipped `dirs-N.dat` do

@@ -17,3 +17,5 @@ const INTRO_MAP := 12
 const LOADING := 13
 # Not in the original: the mouse-aim / classic toggle.
 const CONTROLS := 14
+# Not in the original either: music, effects and volume, under options.
+const SOUND := 15
