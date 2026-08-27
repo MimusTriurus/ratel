@@ -25,12 +25,25 @@
 # "group 0".
 #
 # Painting collision types invalidates dirs-N.dat, the precomputed flow field.
-# The status panel says so, and Rebuild pathing rebuilds it -- but that is a
+# The footer says so, and Map -> Rebuild pathing rebuilds it -- but that is a
 # reverse engineered generator overwriting data that shipped with the port, so
-# it is a deliberate button and not part of Ctrl+S. See FlowField.
+# it is a deliberate menu item and not part of Ctrl+S. See FlowField.
+#
+# The screen is a menu bar, a sidebar, the map and a one-line footer. The menu
+# bar takes what acts on the stage as a whole (which stage, save, check,
+# rebuild) so the sidebar holds only the brushes; the footer takes what used to
+# be the status block and the inspector, both at once on one line. Anything
+# that will not fit on a line gets a window of its own -- the key list on F1,
+# the check report.
 extends Control
 
 const SIDEBAR_WIDTH := 320.0
+# The menu bar across the top and the one-line readout across the bottom. Both
+# are opaque children, so they are drawn over the map rather than beside it --
+# what they cost is the two bands the map cannot use, which is what these are
+# subtracted from in _fit_width, _show_group and the label pass.
+const HEADER_HEIGHT := 30.0
+const FOOTER_HEIGHT := 26.0
 const TILE := 32.0
 const MIN_ZOOM := 0.2
 const MAX_ZOOM := 4.0
@@ -44,6 +57,15 @@ const TOOL_GROUPS := 4
 const TOOL_NAMES: Array[String] = [
 	"Inspect", "Tiles", "Types", "Triggers", "Groups",
 ]
+
+# The layer each tool edits, turned on when the tool is armed. Inspect edits
+# nothing and is not here.
+const TOOL_LAYERS := {
+	TOOL_TILES: "tiles",
+	TOOL_TYPES: "types",
+	TOOL_TRIGGERS: "triggers",
+	TOOL_GROUPS: "groups",
+}
 
 # Where each destructible object looks its group up. It is not a reference: the
 # element reads groups_map at one cell of its own footprint, so a group that does
@@ -81,6 +103,14 @@ const COLOR_GROUP := Color(1.00, 0.75, 0.20)
 const COLOR_HOVER := Color(1.00, 1.00, 1.00, 0.85)
 const COLOR_BRUSH := Color(1.00, 0.90, 0.30)
 const COLOR_WATER_ROW := Color(0.10, 0.16, 0.45)
+const COLOR_TOOL_ACTIVE := Color(1.00, 0.85, 0.30)
+const COLOR_TOOL_IDLE := Color(0.62, 0.64, 0.68)
+
+# The tile grid is drawn twice, dark under light: a stage runs from black rock
+# to white concrete and a single hairline vanishes into one end of that or the
+# other, which is what made the old one-pass 8% white grid barely visible.
+const COLOR_GRID_BACK := Color(0.00, 0.00, 0.00, 0.35)
+const COLOR_GRID_LINE := Color(1.00, 1.00, 1.00, 0.38)
 
 var stage: Stage
 var document: Dictionary = {}   # what the stage was loaded from; carries triggers
@@ -137,18 +167,26 @@ var _dirty := {"tiles": false, "types": false, "triggers": false,
 var _dirs_stale := false
 var _message := ""
 
-var _inspector: Label
-var _status: Label
-var _stage_picker: OptionButton
+# One line along the bottom carries what the sidebar used to spread over a
+# status block and an inspector: the stage, the tool, and whatever is under the
+# cursor. Anything longer than a line -- the key list, the check report -- gets
+# its own window.
+var _footer: Label
+var _help_dialog: AcceptDialog
+var _report_dialog: AcceptDialog
+var _report_label: Label
+var _stage_menu: PopupMenu
+var _view_menu: PopupMenu
+var _layer_items := {}          # layer key -> index into _view_menu
 var _tool_buttons: Array[Button] = []
 var _type_buttons: Array[Button] = []
+var _type_row: HBoxContainer
 var _tile_palette: GridContainer
 var _tile_scroll: ScrollContainer
 var _trigger_list: ItemList
 var _group_panel: VBoxContainer
 var _group_list: ItemList
 var _tile_group := ButtonGroup.new()
-var _layer_boxes := {}
 var _font: Font
 var _font_size := 14
 
@@ -213,8 +251,7 @@ func _load_trigger_meta() -> void:
 func _request_stage(index: int) -> void:
 	if _is_dirty():
 		_message = "unsaved changes: Ctrl+S to save, Ctrl+R to discard"
-		if _stage_picker != null:
-			_stage_picker.select(stage_index)
+		_sync_stage_menu()
 		_update_status()
 		return
 	_load_stage(index)
@@ -244,10 +281,9 @@ func _load_stage(index: int) -> void:
 	_select_group(-1)
 	current_tile = clampi(current_tile, 0, maxi(0, stage.tiles.size() - 1))
 
-	if _stage_picker != null:
-		# select() does not emit item_selected, so the number keys can drive this
-		# without looping back into _load_stage.
-		_stage_picker.select(index)
+	# The menu is set from here rather than the other way round, so the number
+	# keys and the menu agree without either looping back into _load_stage.
+	_sync_stage_menu()
 	_build_tile_palette()
 	_fit_width()
 	_update_status()
@@ -301,13 +337,22 @@ func _view_size() -> Vector2:
 	return viewport.get_visible_rect().size
 
 
-func _fit_width() -> void:
+# What is left of the frame once the sidebar, the menu bar and the footer have
+# taken their bands out of it. Everything that positions the view works in this
+# rectangle rather than in the window.
+func _map_rect() -> Rect2:
 	var view := _view_size()
-	zoom = clampf((view.x - SIDEBAR_WIDTH) / (stage.map_width * TILE),
-		MIN_ZOOM, MAX_ZOOM)
-	view_offset.x = -SIDEBAR_WIDTH / zoom
+	return Rect2(SIDEBAR_WIDTH, HEADER_HEIGHT,
+		maxf(1.0, view.x - SIDEBAR_WIDTH),
+		maxf(1.0, view.y - HEADER_HEIGHT - FOOTER_HEIGHT))
+
+
+func _fit_width() -> void:
+	var rect := _map_rect()
+	zoom = clampf(rect.size.x / (stage.map_width * TILE), MIN_ZOOM, MAX_ZOOM)
+	view_offset.x = -rect.position.x / zoom
 	# Open at the bottom of the map, where the stage starts.
-	view_offset.y = stage.map_height * TILE - view.y / zoom
+	view_offset.y = stage.map_height * TILE - rect.end.y / zoom
 
 
 # --- Input -------------------------------------------------------------------
@@ -383,28 +428,26 @@ func _key(event: InputEventKey) -> void:
 		return
 
 	match event.keycode:
+		KEY_F1:
+			_toggle_help()
 		KEY_DELETE, KEY_BACKSPACE:
 			if tool == TOOL_TRIGGERS:
 				_delete_trigger()
 		KEY_ESCAPE:
-			if selected_trigger >= 0:
+			if _help_dialog != null and _help_dialog.visible:
+				_help_dialog.hide()
+			elif selected_trigger >= 0:
 				selected_trigger = -1
 				queue_redraw()
-			elif _is_dirty():
-				_message = "unsaved changes: Ctrl+S to save, Ctrl+R to discard"
-				_update_status()
 			else:
-				get_tree().quit()
+				_quit()
 		KEY_TAB:
 			_set_tool((tool + 1) % TOOL_NAMES.size())
 		KEY_F:
 			_fit_width()
 			queue_redraw()
 		KEY_H:
-			hard = not hard
-			selected_trigger = -1
-			_update_status()
-			queue_redraw()
+			_set_hard(not hard)
 		KEY_BRACKETLEFT:
 			brush = maxi(1, brush - 1)
 			_update_status()
@@ -420,10 +463,10 @@ func _key(event: InputEventKey) -> void:
 			view_offset.y += 256.0 / zoom
 			queue_redraw()
 		KEY_PAGEUP:
-			view_offset.y -= _view_size().y / zoom
+			view_offset.y -= _map_rect().size.y / zoom
 			queue_redraw()
 		KEY_PAGEDOWN:
-			view_offset.y += _view_size().y / zoom
+			view_offset.y += _map_rect().size.y / zoom
 			queue_redraw()
 		_:
 			if event.keycode >= KEY_1 and event.keycode <= KEY_6:
@@ -927,9 +970,9 @@ func _show_group(index: int) -> void:
 	if index < 0 or index >= stage.groups.size() or stage.groups[index].is_empty():
 		return
 	var cell: Array = stage.groups[index][0]
-	var view := _view_size()
-	view_offset.x = -SIDEBAR_WIDTH / zoom
-	view_offset.y = cell[1] * TILE - view.y / (2.0 * zoom)
+	var rect := _map_rect()
+	view_offset.x = -rect.position.x / zoom
+	view_offset.y = cell[1] * TILE - rect.get_center().y / zoom
 	queue_redraw()
 
 
@@ -1031,15 +1074,18 @@ func _check_stage() -> Array[String]:
 	return problems
 
 
+# The footer is one line, so the report goes to a window of its own and the
+# line only says how the check went.
 func _run_check() -> void:
 	var problems := _check_stage()
-	if problems.is_empty():
-		_message = "checked: nothing wrong"
-	else:
-		_message = "%d problem(s):\n  %s" % [problems.size(),
-			"\n  ".join(problems.slice(0, 6))]
-		if problems.size() > 6:
-			_message += "\n  ... and %d more" % (problems.size() - 6)
+	_message = ("checked: nothing wrong" if problems.is_empty()
+		else "check found %d problem(s), see the report" % problems.size())
+	if _report_dialog != null:
+		_report_label.text = ("Stage %d looks fine." % (stage_index + 1)
+			if problems.is_empty()
+			else "Stage %d, %d problem(s):\n\n  %s"
+				% [stage_index + 1, problems.size(), "\n  ".join(problems)])
+		_report_dialog.popup_centered(Vector2i(900, 520))
 	_update_status()
 
 
@@ -1047,12 +1093,24 @@ func _set_tool(new_tool: int) -> void:
 	tool = new_tool
 	for i in _tool_buttons.size():
 		_tool_buttons[i].set_pressed_no_signal(i == tool)
+	# One palette at a time, and only the one the armed tool actually reads --
+	# the tile grid was on show while the Types brush was painting collision,
+	# which reads as the thing being painted and is not.
 	if _tile_scroll != null:
-		_tile_scroll.visible = tool == TOOL_TILES or tool == TOOL_TYPES 			or tool == TOOL_INSPECT
+		_tile_scroll.visible = tool == TOOL_TILES
+		_type_row.visible = tool == TOOL_TYPES
 		_trigger_list.visible = tool == TOOL_TRIGGERS
 		_group_panel.visible = tool == TOOL_GROUPS
 	if tool != TOOL_TRIGGERS:
 		selected_trigger = -1
+	# Arming a brush turns on the layer it paints. Types was the case that
+	# mattered -- the collision layer is off by default, so painting it was
+	# invisible -- but a tool whose own work is hidden is the same trap in
+	# every case. Only on the switch: turning the layer back off afterwards is
+	# left alone.
+	if TOOL_LAYERS.has(tool) and not layers[TOOL_LAYERS[tool]]:
+		layers[TOOL_LAYERS[tool]] = true
+		_sync_layer_menu()
 	_update_status()
 	queue_redraw()
 
@@ -1169,12 +1227,21 @@ func _draw_grid(first_x: int, first_y: int, last_x: int, last_y: int) -> void:
 	var left := first_x * TILE
 	var right := (last_x + 1) * TILE
 
-	if layers["grid"] and zoom >= 0.5:
-		var thin := Color(1, 1, 1, 0.08)
+	if layers["grid"] and zoom >= 0.35:
+		# Dark backing under a light line, both a fixed number of screen pixels
+		# wide whatever the zoom. See COLOR_GRID_BACK.
+		var back := 3.0 / zoom
+		var line := 1.5 / zoom
 		for x in range(first_x, last_x + 2):
-			draw_line(Vector2(x * TILE, top), Vector2(x * TILE, bottom), thin, 1.0 / zoom)
+			var from := Vector2(x * TILE, top)
+			var to := Vector2(x * TILE, bottom)
+			draw_line(from, to, COLOR_GRID_BACK, back)
+			draw_line(from, to, COLOR_GRID_LINE, line)
 		for y in range(first_y, last_y + 2):
-			draw_line(Vector2(left, y * TILE), Vector2(right, y * TILE), thin, 1.0 / zoom)
+			var from := Vector2(left, y * TILE)
+			var to := Vector2(right, y * TILE)
+			draw_line(from, to, COLOR_GRID_BACK, back)
+			draw_line(from, to, COLOR_GRID_LINE, line)
 
 	if layers["cells"]:
 		var thick := Color(0.4, 0.9, 1.0, 0.25)
@@ -1308,6 +1375,7 @@ func _draw_labels() -> void:
 		return
 
 	var rows: Array = stage.trigger_map[1 if hard else 0]
+	var rect := _map_rect()
 	var top := view_offset.y
 	var bottom := view_offset.y + _view_size().y / zoom
 	var taken: Array[Rect2] = []
@@ -1319,7 +1387,7 @@ func _draw_labels() -> void:
 			if y < top - TILE * 8 or y > bottom:
 				continue
 			var at := (Vector2(t[1], y) - view_offset) * zoom + Vector2(3, -4)
-			if at.x < SIDEBAR_WIDTH:
+			if at.x < rect.position.x or at.y < rect.position.y or at.y > rect.end.y:
 				continue
 
 			var footprint := _footprint(t[0])
@@ -1359,9 +1427,109 @@ func _draw_label(at: Vector2, text: String, color: Color) -> void:
 # --- Sidebar -----------------------------------------------------------------
 
 func _build_ui() -> void:
+	_build_header()
+	_build_sidebar()
+	_build_footer()
+	_build_help_dialog()
+	_build_report_dialog()
+	# Nothing has armed a tool yet, and the palettes are built visible.
+	_set_tool(tool)
+
+
+# Everything that acts on the stage as a whole -- which one is open, saving it,
+# checking it, rebuilding its pathing -- lives in the menu bar. The sidebar is
+# left holding only what a brush needs.
+func _build_header() -> void:
+	var panel := PanelContainer.new()
+	panel.anchor_right = 1.0
+	panel.offset_bottom = HEADER_HEIGHT
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(panel)
+
+	var bar := MenuBar.new()
+	bar.flat = true
+	bar.focus_mode = Control.FOCUS_NONE
+	panel.add_child(bar)
+
+	# A PopupMenu's node name is the title MenuBar shows for it.
+	var file := PopupMenu.new()
+	file.name = "File"
+	file.add_item("Save stage        Ctrl+S", 0)
+	file.add_item("Reload stage      Ctrl+R", 1)
+	file.add_separator()
+	file.add_item("Quit              Esc", 2)
+	file.id_pressed.connect(func(id: int) -> void:
+		if id == 0:
+			_save()
+		elif id == 1:
+			_reload()
+		else:
+			_quit())
+	bar.add_child(file)
+
+	_stage_menu = PopupMenu.new()
+	_stage_menu.name = "Stage"
+	for i in 6:
+		_stage_menu.add_radio_check_item("Stage %d            %d" % [i + 1, i + 1], i)
+	_stage_menu.add_separator()
+	_stage_menu.add_check_item("Hard triggers     H", 10)
+	_stage_menu.id_pressed.connect(func(id: int) -> void:
+		if id == 10:
+			_set_hard(not hard)
+		else:
+			_request_stage(id))
+	bar.add_child(_stage_menu)
+
+	var map := PopupMenu.new()
+	map.name = "Map"
+	map.add_item("Check stage", 0)
+	map.set_item_tooltip(0, "Looks for the mistakes this format hides: a "
+		+ "destructible object whose group does not cover the cell it reads, an "
+		+ "empty group, a tile index the stage does not have.")
+	map.add_item("Rebuild pathing", 1)
+	map.set_item_tooltip(1, "Recomputes dirs-N.dat from the collision grid and "
+		+ "overwrites it. Only needed after editing collision types.")
+	map.id_pressed.connect(func(id: int) -> void:
+		if id == 0:
+			_run_check()
+		else:
+			_rebuild_pathing())
+	bar.add_child(map)
+
+	_view_menu = PopupMenu.new()
+	_view_menu.name = "View"
+	_build_layer_items(_view_menu)
+	_view_menu.add_separator()
+	_view_menu.add_item("Fit width         F", 100)
+	_view_menu.id_pressed.connect(func(id: int) -> void:
+		if id == 100:
+			_fit_width()
+			queue_redraw()
+			return
+		for key in _layer_items:
+			if _layer_items[key] == id:
+				layers[key] = not layers[key]
+				_sync_layer_menu()
+				queue_redraw()
+				return)
+	bar.add_child(_view_menu)
+
+	var help := PopupMenu.new()
+	help.name = "Help"
+	help.add_item("Keys              F1", 0)
+	help.id_pressed.connect(func(_id: int) -> void: _toggle_help())
+	bar.add_child(help)
+
+	_sync_stage_menu()
+	_sync_layer_menu()
+
+
+func _build_sidebar() -> void:
 	var panel := PanelContainer.new()
 	panel.anchor_bottom = 1.0
+	panel.offset_top = HEADER_HEIGHT
 	panel.offset_right = SIDEBAR_WIDTH
+	panel.offset_bottom = -FOOTER_HEIGHT
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(panel)
 
@@ -1376,74 +1544,117 @@ func _build_ui() -> void:
 
 	# Nothing in the sidebar takes focus: the number and arrow keys belong to the
 	# map, and a focused button would eat them.
-	_stage_picker = OptionButton.new()
-	for i in 6:
-		_stage_picker.add_item("Stage %d" % (i + 1), i)
-	_stage_picker.focus_mode = Control.FOCUS_NONE
-	_stage_picker.item_selected.connect(func(i: int) -> void: _request_stage(i))
-	box.add_child(_stage_picker)
-
-	var hard_box := CheckBox.new()
-	hard_box.text = "Hard triggers"
-	hard_box.focus_mode = Control.FOCUS_NONE
-	hard_box.toggled.connect(func(pressed: bool) -> void:
-		hard = pressed
-		# The selection indexes one difficulty's list; it means nothing in the
-		# other one.
-		selected_trigger = -1
-		_update_status()
-		queue_redraw())
-	box.add_child(hard_box)
-
-	box.add_child(HSeparator.new())
 	_build_tools(box)
-	box.add_child(HSeparator.new())
-	_build_layers(box)
-	box.add_child(HSeparator.new())
 
-	var check := Button.new()
-	check.text = "Check stage"
-	check.tooltip_text = ("Looks for the mistakes this format hides: a "
-		+ "destructible object whose group does not cover the cell it reads, an "
-		+ "empty group, a tile index the stage does not have.")
-	check.focus_mode = Control.FOCUS_NONE
-	check.pressed.connect(_run_check)
-	box.add_child(check)
 
-	var rebuild := Button.new()
-	rebuild.text = "Rebuild pathing"
-	rebuild.tooltip_text = ("Recomputes dirs-N.dat from the collision grid and "
-		+ "overwrites it. Only needed after editing collision types.")
-	rebuild.focus_mode = Control.FOCUS_NONE
-	rebuild.pressed.connect(_rebuild_pathing)
-	box.add_child(rebuild)
+# One line, and it stays one line: clip_text rather than wrapping, because a
+# footer that grows with what is under the cursor would move the map out from
+# under it. Anything longer has a window.
+func _build_footer() -> void:
+	var panel := PanelContainer.new()
+	panel.anchor_top = 1.0
+	panel.anchor_right = 1.0
+	panel.anchor_bottom = 1.0
+	panel.offset_top = -FOOTER_HEIGHT
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(panel)
 
-	box.add_child(HSeparator.new())
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_right", 8)
+	panel.add_child(margin)
 
-	_status = Label.new()
-	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	box.add_child(_status)
+	_footer = Label.new()
+	_footer.clip_text = true
+	_footer.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	margin.add_child(_footer)
 
-	box.add_child(HSeparator.new())
 
-	# The help goes above the inspector, not below it: the inspector grows with
-	# whatever is under the cursor, and anything under it gets pushed off the
-	# bottom of the frame.
-	var help := Label.new()
-	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	help.modulate = Color(1, 1, 1, 0.6)
-	help.text = ("LMB paint / place   RMB pan   Alt+LMB pick\n"
-		+ "Shift+LMB rect   Del removes a trigger\n"
-		+ "Tab tool   [ ] brush   Ctrl+Z/Y undo   Ctrl+S save\n"
-		+ "Ctrl+R reload   1-6 stage   H hard   F fit   Esc quit")
-	box.add_child(help)
+func _build_help_dialog() -> void:
+	_help_dialog = AcceptDialog.new()
+	_help_dialog.title = "Keys"
+	_help_dialog.exclusive = false
+	_help_dialog.unresizable = false
 
-	box.add_child(HSeparator.new())
+	var label := Label.new()
+	label.text = ("LMB            paint, place a trigger, add a group cell\n"
+		+ "RMB / MMB      pan\n"
+		+ "Alt+LMB        pick what is under the cursor\n"
+		+ "Shift+LMB      fill a rectangle; on groups, remove a cell\n"
+		+ "Wheel          zoom\n"
+		+ "Delete         remove the selected trigger\n"
+		+ "\n"
+		+ "Tab            next tool\n"
+		+ "[ ]            brush size\n"
+		+ "1 - 6          open a stage\n"
+		+ "H              normal / hard triggers\n"
+		+ "F              fit the map to the frame\n"
+		+ "Up/Down        scroll; PgUp/PgDn a frame at a time\n"
+		+ "\n"
+		+ "Ctrl+Z         undo          Ctrl+Y, Ctrl+Shift+Z  redo\n"
+		+ "Ctrl+S         save          Ctrl+R  reload\n"
+		+ "F1             this window   Esc     back out, then quit")
+	_help_dialog.add_child(label)
+	add_child(_help_dialog)
 
-	_inspector = Label.new()
-	_inspector.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_inspector.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	box.add_child(_inspector)
+
+func _build_report_dialog() -> void:
+	_report_dialog = AcceptDialog.new()
+	_report_dialog.title = "Check stage"
+	_report_dialog.exclusive = false
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_report_dialog.add_child(scroll)
+
+	_report_label = Label.new()
+	_report_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_report_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_report_label)
+	add_child(_report_dialog)
+
+
+func _toggle_help() -> void:
+	if _help_dialog == null:
+		return
+	if _help_dialog.visible:
+		_help_dialog.hide()
+	else:
+		_help_dialog.popup_centered()
+
+
+func _quit() -> void:
+	if _is_dirty():
+		_message = "unsaved changes: Ctrl+S to save, Ctrl+R to discard"
+		_update_status()
+		return
+	get_tree().quit()
+
+
+func _set_hard(value: bool) -> void:
+	hard = value
+	# The selection indexes one difficulty's list; it means nothing in the other.
+	selected_trigger = -1
+	_sync_stage_menu()
+	_update_status()
+	queue_redraw()
+
+
+func _sync_stage_menu() -> void:
+	if _stage_menu == null:
+		return
+	for i in 6:
+		_stage_menu.set_item_checked(_stage_menu.get_item_index(i), i == stage_index)
+	_stage_menu.set_item_checked(_stage_menu.get_item_index(10), hard)
+
+
+func _sync_layer_menu() -> void:
+	if _view_menu == null:
+		return
+	for key in _layer_items:
+		_view_menu.set_item_checked(_view_menu.get_item_index(_layer_items[key]),
+			layers[key])
 
 
 func _build_tools(box: VBoxContainer) -> void:
@@ -1457,12 +1668,20 @@ func _build_tools(box: VBoxContainer) -> void:
 		button.button_pressed = i == tool
 		button.focus_mode = Control.FOCUS_NONE
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# Which tool is armed decides what a click on the map does, so it is
+		# worth more than the pressed look a flat theme gives a toggle button:
+		# the active one is lit, the rest are dimmed.
+		button.add_theme_color_override("font_color", COLOR_TOOL_IDLE)
+		button.add_theme_color_override("font_hover_color", COLOR_HOVER)
+		button.add_theme_color_override("font_pressed_color", COLOR_TOOL_ACTIVE)
+		button.add_theme_color_override("font_hover_pressed_color", COLOR_TOOL_ACTIVE)
 		button.pressed.connect(func() -> void: _set_tool(i))
 		tools.add_child(button)
 		_tool_buttons.append(button)
 	box.add_child(tools)
 
-	var types := HBoxContainer.new()
+	_type_row = HBoxContainer.new()
+	var types := _type_row
 	var type_group := ButtonGroup.new()
 	for t in MapIO.TYPE_NAME.size():
 		var button := Button.new()
@@ -1473,11 +1692,15 @@ func _build_tools(box: VBoxContainer) -> void:
 		button.button_pressed = t == current_type
 		button.focus_mode = Control.FOCUS_NONE
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		# Each type keeps the colour it is painted in on the map. The selected
+		# one is that colour; the rest are the same colour turned down, so the
+		# row says which type the brush is holding.
 		var swatch := TYPE_COLORS[t]
 		swatch.a = 1.0
-		button.add_theme_color_override("font_color", swatch)
+		button.add_theme_color_override("font_color", swatch.darkened(0.45))
 		button.add_theme_color_override("font_pressed_color", swatch)
 		button.add_theme_color_override("font_hover_color", swatch)
+		button.add_theme_color_override("font_hover_pressed_color", swatch)
 		button.pressed.connect(func() -> void:
 			current_type = t
 			_set_tool(TOOL_TYPES))
@@ -1485,11 +1708,13 @@ func _build_tools(box: VBoxContainer) -> void:
 		_type_buttons.append(button)
 	box.add_child(types)
 
-	# The tile grid and the trigger list share one slot: only the palette the
-	# current tool actually uses is on show, which is what keeps the sidebar
-	# inside the frame.
+	# The tile grid, the trigger list and the group panel share one slot: only
+	# the palette the armed tool actually reads is on show. Each takes the whole
+	# sidebar below the buttons -- a hidden child costs a VBoxContainer nothing,
+	# so there is only ever one of them claiming the space.
 	_tile_scroll = ScrollContainer.new()
 	_tile_scroll.custom_minimum_size.y = 205
+	_tile_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tile_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	box.add_child(_tile_scroll)
 
@@ -1500,6 +1725,7 @@ func _build_tools(box: VBoxContainer) -> void:
 
 	_trigger_list = ItemList.new()
 	_trigger_list.custom_minimum_size.y = 205
+	_trigger_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_trigger_list.focus_mode = Control.FOCUS_NONE
 	_trigger_list.visible = false
 	var names := trigger_names.duplicate()
@@ -1514,6 +1740,7 @@ func _build_tools(box: VBoxContainer) -> void:
 
 	_group_panel = VBoxContainer.new()
 	_group_panel.visible = false
+	_group_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(_group_panel)
 
 	var group_buttons := HBoxContainer.new()
@@ -1537,6 +1764,7 @@ func _build_tools(box: VBoxContainer) -> void:
 
 	_group_list = ItemList.new()
 	_group_list.custom_minimum_size.y = 140
+	_group_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_group_list.focus_mode = Control.FOCUS_NONE
 	_group_list.item_selected.connect(func(item: int) -> void:
 		_select_group(item)
@@ -1575,7 +1803,11 @@ func _build_tile_palette() -> void:
 		_tile_palette.add_child(button)
 
 
-func _build_layers(box: VBoxContainer) -> void:
+# The layer toggles, as check items in the View menu. Ids start at 1 so that
+# nothing collides with Fit width.
+func _build_layer_items(menu: PopupMenu) -> void:
+	_layer_items = {}
+	var id := 1
 	for entry in [
 		["tiles", "Tiles"],
 		["overlay", "Top tiles (>= 225)"],
@@ -1585,16 +1817,9 @@ func _build_layers(box: VBoxContainer) -> void:
 		["grid", "Tile grid"],
 		["cells", "Path cells (128 px)"],
 	]:
-		var key: String = entry[0]
-		var check := CheckBox.new()
-		check.text = entry[1]
-		check.focus_mode = Control.FOCUS_NONE
-		check.button_pressed = layers[key]
-		check.toggled.connect(func(pressed: bool) -> void:
-			layers[key] = pressed
-			queue_redraw())
-		_layer_boxes[key] = check
-		box.add_child(check)
+		menu.add_check_item(entry[1], id)
+		_layer_items[entry[0]] = id
+		id += 1
 
 
 func _select_tile_button(index: int) -> void:
@@ -1608,85 +1833,99 @@ func _select_type_button(index: int) -> void:
 		_type_buttons[index].set_pressed_no_signal(true)
 
 
+# The footer is rebuilt whole from both halves whichever of the two call sites
+# asked for it: the left half is the stage and the tool, the right half is
+# whatever the cursor is over. They were a status block and an inspector in the
+# sidebar, and both are wanted at once, so one line carries both.
 func _update_status() -> void:
-	if _status == null or stage == null:
-		return
+	_update_footer()
 
+
+func _update_inspector() -> void:
+	_update_footer()
+
+
+func _update_footer() -> void:
+	if _footer == null or stage == null:
+		return
+	var parts := _status_parts()
+	parts.append_array(_hover_parts())
+	_footer.text = "   |   ".join(parts)
+
+
+func _status_parts() -> Array[String]:
 	var count := 0
 	for row in stage.trigger_map[1 if hard else 0]:
 		count += row.size()
 
-	var lines: Array[String] = []
-	lines.append("Stage %d   %d x %d tiles" % [stage_index + 1, stage.map_width,
+	var parts: Array[String] = []
+	parts.append("Stage %d  %dx%d" % [stage_index + 1, stage.map_width,
 		stage.map_height])
-	lines.append("%d groups, %d %s triggers"
+	parts.append("%d groups, %d %s triggers"
 		% [stage.groups.size(), count, "hard" if hard else "normal"])
-	var detail := ""
+
+	var detail := TOOL_NAMES[tool]
 	match tool:
 		TOOL_TILES:
-			detail = "tile %d   brush %d" % [current_tile, brush]
+			detail += ": tile %d, brush %d" % [current_tile, brush]
 		TOOL_TYPES:
-			detail = "%s   brush %d" % [MapIO.TYPE_NAME[current_type], brush]
+			detail += ": %s, brush %d" % [MapIO.TYPE_NAME[current_type], brush]
 		TOOL_GROUPS:
 			if selected_group >= 0:
-				detail = "group %d, %d cells%s" % [selected_group,
+				detail += ": group %d, %d cells%s" % [selected_group,
 					stage.groups[selected_group].size(),
-					"   painting the after state" if _painting_after() else ""]
+					", painting the after state" if _painting_after() else ""]
 			else:
-				detail = "nothing selected"
+				detail += ": nothing selected"
 		TOOL_TRIGGERS:
-			detail = trigger_names[current_trigger]
+			detail += ": " + trigger_names[current_trigger]
 			if selected_trigger >= 0 and selected_trigger < _triggers().size():
 				var entry: Dictionary = _triggers()[selected_trigger]
-				detail += "   selected: %s (%d, %d)" % [entry["type"],
+				detail += ", selected %s (%d, %d)" % [entry["type"],
 					int(entry["x"]), int(entry["y"])]
-	lines.append("%s   %s" % [TOOL_NAMES[tool], detail])
+	parts.append(detail)
 
 	if _is_dirty():
-		lines.append("* unsaved changes")
+		parts.append("* unsaved")
 	if _dirs_stale:
-		lines.append("* collision changed: dirs-%d.dat is stale" % stage_index)
+		parts.append("* dirs-%d.dat stale" % stage_index)
 	if _message != "":
-		lines.append(_message)
+		parts.append(_message)
+	return parts
 
-	_status.text = "\n".join(lines)
 
-
-func _update_inspector() -> void:
-	if _inspector == null:
-		return
+# What is under the cursor, in the order it is wanted: where, what tile, what
+# collision, what group -- then the triggers standing on the cell and the ones
+# the row fires, which are different questions and the whole reason this editor
+# exists. Counted rather than listed where a list would not fit.
+func _hover_parts() -> Array[String]:
+	var parts: Array[String] = []
 	if hover_tile.x < 0:
-		_inspector.text = ""
-		return
+		return parts
 
 	var x := hover_tile.x
 	var y := hover_tile.y
-	var lines: Array[String] = []
-	lines.append("tile (%d, %d)   px (%d, %d)" % [x, y, x * 32, y * 32])
-
-	if y < stage.map_height - 1:
-		lines.append("tile index: %d" % stage.tile_map[y][x])
-	else:
-		lines.append("tile index: -- (water row)")
+	parts.append("(%d, %d) px (%d, %d) cell (%d, %d)"
+		% [x, y, x * 32, y * 32, x >> 2, y >> 2])
 
 	var t: int = stage.types_map[y][x]
-	lines.append("type: %s" % (MapIO.TYPE_NAME[t] if t < MapIO.TYPE_NAME.size()
-		else str(t)))
-	lines.append("path cell: (%d, %d)" % [x >> 2, y >> 2])
+	var type_name := (MapIO.TYPE_NAME[t] if t < MapIO.TYPE_NAME.size() else str(t))
+	if y < stage.map_height - 1:
+		parts.append("tile %d, %s" % [stage.tile_map[y][x], type_name])
+	else:
+		parts.append("water row, %s" % type_name)
 
 	# groups_map is a byte array, so "no group" and "group 0" read the same.
 	# Only a cell that really is in the group is reported.
 	var group_index: int = stage.groups_map[y][x]
-	var in_group := false
+	var group := "group --"
 	if group_index < stage.groups.size():
 		for cell in stage.groups[group_index]:
 			if cell[0] == x and cell[1] == y:
-				in_group = true
-				lines.append("group %d -> tile %d, %s"
-					% [group_index, cell[2], MapIO.TYPE_NAME[cell[3]]])
+				group = "group %d -> tile %d, %s" % [group_index, cell[2],
+					MapIO.TYPE_NAME[cell[3]]]
 				break
-	if not in_group:
-		lines.append("group: --")
+	parts.append(group)
 
 	var rows: Array = stage.trigger_map[1 if hard else 0]
 	var here: Array[String] = []
@@ -1696,23 +1935,22 @@ func _update_inspector() -> void:
 			var tx: int = trigger[1] >> 5
 			var ty: int = trigger[2] >> 5
 			if x >= tx and x < tx + footprint.x and y >= ty and y < ty + footprint.y:
-				here.append("  %s  %dx%d  fires on row %d"
+				here.append("%s (%dx%d, fires on row %d)"
 					% [trigger_names[trigger[0]], footprint.x, footprint.y, row])
-	if not here.is_empty():
-		lines.append("")
-		lines.append("triggers here:")
-		lines.append_array(here)
+	if here.size() == 1:
+		parts.append("on: " + here[0])
+	elif here.size() > 1:
+		parts.append("on: %d triggers, %s ..." % [here.size(), here[0]])
 
 	var fires: Array[String] = []
 	for trigger in rows[y]:
-		fires.append("  %s at (%d, %d)"
+		fires.append("%s (%d, %d)"
 			% [trigger_names[trigger[0]], trigger[1] >> 5, trigger[2] >> 5])
-	if not fires.is_empty():
-		lines.append("")
-		lines.append("row %d fires:" % y)
-		lines.append_array(fires)
-
-	_inspector.text = "\n".join(lines)
+	if fires.size() == 1:
+		parts.append("row %d fires: %s" % [y, fires[0]])
+	elif fires.size() > 1:
+		parts.append("row %d fires %d: %s" % [y, fires.size(), ", ".join(fires)])
+	return parts
 
 
 # Renders one view to a PNG and quits, so a map can be looked at without a
@@ -1736,14 +1974,15 @@ func _screenshot_mode() -> void:
 		view_offset.x = -SIDEBAR_WIDTH / zoom
 	if args.size() >= 5:
 		view_offset.y = float(args[4]) * TILE
+	# Before the layers, because arming a tool turns its own layer on and the
+	# shot is supposed to show the layers it was asked for.
+	if args.size() >= 7:
+		_set_tool(int(args[6]))
 	if args.size() >= 6:
 		for key in layers:
 			layers[key] = args[5].contains(key)
-			# Keep the sidebar honest: the shot shows the boxes it was taken with.
-			if _layer_boxes.has(key):
-				_layer_boxes[key].set_pressed_no_signal(layers[key])
-	if args.size() >= 7:
-		_set_tool(int(args[6]))
+		# Keep the menu honest: the shot shows the layers it was taken with.
+		_sync_layer_menu()
 	hover_tile = Vector2i(-1, -1)
 	queue_redraw()
 
