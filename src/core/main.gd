@@ -166,7 +166,6 @@ var yeahs: Array[Spr] = []
 var suns: Array[Spr] = []
 var waves: Array[Spr] = []
 var rescue_helicopters: Array[Spr] = []
-var controllers: Array[Spr] = []
 
 var jeep_here: LargeImage
 var title: LargeImage
@@ -267,12 +266,13 @@ func _ready() -> void:
 	input = HumanInput.new(button_mapping)
 
 	sprite_bank = SpriteBank.new(SPRITES)
-	load_progress_bar()
 	load_font()
 
 	konami_code = KonamiCode.new(self)
 	start_player()
-	request_mode(Modes.LOADING)
+	# Everything, here, before the first frame is presented: the window opens on
+	# the title screen. See load_all.
+	load_all()
 
 
 # One logic tick, matching the original's 100 Hz accumulator.
@@ -508,8 +508,6 @@ func request_mode(m: int) -> void:
 			set_mode(InputMode.new())
 		Modes.INTRO_MAP:
 			set_mode(IntroMapMode.new())
-		Modes.LOADING:
-			set_mode(LoadingMode.new())
 		Modes.CONTROLS:
 			set_mode(ControlsMode.new())
 		Modes.SOUND:
@@ -1122,12 +1120,6 @@ func load_font() -> void:
 			font[String.chr(c).to_lower().unicode_at(0)] = s
 
 
-func load_progress_bar() -> void:
-	controllers = _spr_array(2)
-	controllers[0] = sprite_bank.get_sprite("controller-0.png")
-	controllers[1] = sprite_bank.get_sprite("controller-1.png")
-
-
 func load_tiles(index: int, stage: Stage) -> void:
 	var pack := _atlas("tiles-%d" % index)
 	var size: int = TILES[index]
@@ -1612,11 +1604,24 @@ func load_stages() -> void:
 		load_stage(i, stages[i])
 
 
-# --- Incremental loading -----------------------------------------------------
+# --- Loading -----------------------------------------------------------------
 #
-# LoadingMode calls this once per tick and draws the returned progress.
+# One asset group per call, which is how the original had it: jackal.LoadingMode
+# called this once a tick and drew a progress bar over the NES controller while
+# it ran. There is no loading screen now -- load_all runs the lot from _ready,
+# so the window opens on the title screen instead of on a progress bar. It costs
+# about 0.6 s before the first frame, and the split into steps is kept because
+# the last one is what starts the game.
 
-func load_next() -> float:
+const LOAD_STEPS := 42
+
+
+func load_all() -> void:
+	while load_index < LOAD_STEPS:
+		load_next()
+
+
+func load_next() -> void:
 	match load_index:
 		0:
 			boss_intro = Song.make_player(self, MUSIC + "boss_intro.ogg", false)
@@ -1721,4 +1726,3 @@ func load_next() -> float:
 			request_mode(Modes.INTRO)
 
 	load_index += 1
-	return load_index / 42.0

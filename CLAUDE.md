@@ -125,10 +125,14 @@ duck-typed, not an interface: `init/update/render`, plus optional `input_event`
 (`IFadeListener`) and `pan_complete`. `src/modes/` holds title/map/cutscene/menu
 modes; `GameMode` in `src/game/` is the gameplay mode.
 
-Startup is `Main._ready` → `LOADING`. `LoadingMode.update()` calls
-`Main.load_next()` once per tick, which is a giant `match load_index` that loads
-one asset group per tick and returns progress — this is why loading is a mode and
-not a `_ready` block. `CutsceneSequence` shuffles the between-stage cutscenes.
+Startup is `Main._ready` → `load_all()` → `INTRO`, the title screen. Loading
+used to be a mode of its own: `LoadingMode` called `load_next()` once a tick and
+drew a progress bar over an NES controller, because the original did. It is a
+`_ready` block now, so the window opens on the title screen rather than on a
+progress bar — about 0.6 s of work before the first frame. `load_next` is still
+a giant `match load_index` loading one asset group per call, and its last step
+is what requests `INTRO`, which is what ends `load_all`'s loop.
+`CutsceneSequence` shuffles the between-stage cutscenes.
 
 ### Entities
 
@@ -481,6 +485,8 @@ intro drop only incidentally — the real gate there is `GameMode.playing`, whic
 Deliberate. Not bugs, and not to be "fixed" back without saying why:
 
 - Controls: WASD movement and mouse aim, gated on `ButtonMapping.mouse_aim`.
+- No loading screen: `Main.load_all` runs from `_ready`, so the game opens on
+  the title screen. `jackal.LoadingMode` has no counterpart here any more.
 - Sound options — music, effects and a master volume, on three buses where the
   original had one — under Options → Sound and in the in-game menu.
 - An Escape menu inside a stage: resume, options, quit to title, quit game. The

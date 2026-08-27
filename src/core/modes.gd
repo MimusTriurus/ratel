@@ -14,7 +14,10 @@ const DIFFICULTY := 9
 const OPTIONS := 10
 const INPUT := 11
 const INTRO_MAP := 12
-const LOADING := 13
+# 13 was LOADING. The loading screen is gone -- Main.load_all runs before the
+# first frame -- and the numbers are explicit, so the gap costs nothing and
+# renumbering would cost a diff on every constant below it.
+
 # Not in the original: the mouse-aim / classic toggle.
 const CONTROLS := 14
 # Not in the original either: music, effects and volume, under options.
