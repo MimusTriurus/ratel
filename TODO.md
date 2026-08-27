@@ -11,9 +11,6 @@ What is left, in the order it matters.
 
 ## Decisions, not work
 
-- **Merge `json-maps` into `main`.** Eight commits, checks green, the game runs.
-  `git checkout main && git merge --ff-only json-maps`.
-
 - **`dirs-1.dat` and `dirs-4.dat` disagree with their own collision grids.**
   Followed cell by cell they arrive on 38% and 56% of walks, under every
   passability rule tried; the other four manage 86–99%. They were most likely
