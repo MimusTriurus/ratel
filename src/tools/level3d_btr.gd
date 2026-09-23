@@ -37,23 +37,26 @@ extends Node3D
 
 const MODEL_PATH := "res://resources/3d/ratel_btr.glb"
 
-# The model is modelled at 1:1 (5.8 m long); the level is not, and at 1:1 the
-# BTR would be four bunkers long. At half size it is 2.9 m, about one and a
-# half bunkers, which is what a vehicle a little bigger than the jeep reads as
-# against the stage's own props.
-const MODEL_SCALE := 0.5
+# The model is modelled at 1:1 (5.8 m long, 3.5 m over the wheels); the level
+# is not. The scale is the game's jeep's: the hut is 192 px across in the game
+# and its model 3.3 m, so a map pixel is 1.7 cm, and the jeep's 64 x 92 px
+# sprite is 1.10 x 1.58 m. At 0.31 the BTR is the jeep's width, 1.1 m, and
+# 1.8 m long -- 15% longer, being the longer vehicle for its width. It was 0.5
+# once, set by eye against the bunkers, which made it nearly twice the jeep.
+const MODEL_SCALE := 0.31
 
-# The profile row, in level metres (the tank bench's px/s at its board scale,
-# re-read against the BTR's length: MTP cruises at about 2.2 hull lengths per
-# second and reaches it in 0.58 s).
-const TOP_SPEED := 6.0
-const ACCEL := 10.0
+# The profile row, in level metres. Top speed is the jeep's: 2.5 px a tick at
+# 100 ticks a second is 250 px/s, 4.3 m/s. It is reached in the tank bench's
+# 0.58 s (BlenderMCP/godot, MTP's MovementProfile row).
+const TOP_SPEED := 4.3
+const ACCEL := 7.4
 const TURN_RATE := deg_to_rad(110.0)
 const REVERSE_FRACTION := 0.4
 # The bench's CornerFraction is 0.12 for a tank that pivots; a vehicle that has
 # to roll through a corner needs more than that to get round at all.
 const CORNER_FRACTION := 0.35
-const MIN_TURN_RADIUS := 2.2
+# Scaled with the model from the 2.2 m it had at 0.5.
+const MIN_TURN_RADIUS := 1.4
 const TURRET_RATE := deg_to_rad(175.0)
 # Above this much heading error the order slows to the crawl to swing round.
 const SWING_THRESHOLD := deg_to_rad(25.0)

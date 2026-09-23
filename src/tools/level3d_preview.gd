@@ -560,8 +560,9 @@ func _set_destroyed(building: String, destroyed: bool) -> void:
 const BLAST_RADIUS := 1.2
 
 
-func _on_exploded(at: Vector3, rid: RID) -> void:
+func _on_exploded(at: Vector3, rid: RID) -> bool:
 	_shake(SHAKE_PIXELS)
+	var any := false
 	for building in destructibles:
 		var entry: Dictionary = destructibles[building]
 		if entry.destroyed:
@@ -570,6 +571,8 @@ func _on_exploded(at: Vector3, rid: RID) -> void:
 		var near := Vector2(clampf(at.x, box.position.x, box.end.x), clampf(at.z, box.position.y, box.end.y))
 		if entry.rids.has(rid) or near.distance_to(Vector2(at.x, at.z)) <= BLAST_RADIUS:
 			_set_destroyed(building, true)
+			any = true
+	return any
 
 
 # The intact building from above, for the blast radius: what shows on frame 0.

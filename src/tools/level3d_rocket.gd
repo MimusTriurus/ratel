@@ -46,8 +46,9 @@ var mask := 0xFFFFFFFF
 var ground: Callable
 var btr: Level3DBtr
 var aim_point = null        # Vector3 or null
-# `exploded.call(point, rid)` after each explosion; rid is what the rocket hit,
-# or an empty RID when it went off at the end of its flight.
+# `exploded.call(point, rid)` at each explosion, returning whether it destroyed
+# anything; rid is what the rocket hit, or an empty RID when it went off at the
+# end of its flight.
 var exploded: Callable
 
 var yaw := 0.0              # the mount, relative to the hull
@@ -120,10 +121,12 @@ func _ready() -> void:
 	_materials = {
 		"flash": _unshaded(Color(1.0, 0.62, 0.2)),
 		"core": _unshaded(Color(1.0, 0.92, 0.6)),
-		"smoke": _lit(Color(0.33, 0.31, 0.29)),
+		# The Blender materials' base colours are linear; a material's albedo
+		# here is sRGB, and taken as it is J_Soot came out black.
+		"smoke": _lit(Color(0.33, 0.31, 0.29).linear_to_srgb()),
 		"trail": _lit(Color(0.78, 0.78, 0.76)),
 		"splash": _lit(Color(0.92, 0.97, 1.0)),
-		"soot": _lit(Color(0.09, 0.05, 0.02)),
+		"soot": _lit(Color(0.09, 0.05, 0.02).linear_to_srgb()),
 		"chip": _lit(Color(0.25, 0.2, 0.15)),
 	}
 
@@ -263,6 +266,9 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3, rid: RID) -> voi
 	(rocket.node as Node3D).queue_free()
 	var there: Dictionary = ground.call(at.x, at.z)
 	var on_water: bool = there.hit and there.kind == "water" and at.y <= there.height + 0.05
+	# Asked first: a building that goes down brings its own soot, and a crater
+	# of the rocket's on top of it is a second, darker scorch.
+	var destroyed: bool = exploded.call(at, rid) if exploded.is_valid() else false
 	_fireball(at)
 	_light(at)
 	if on_water:
@@ -270,10 +276,8 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3, rid: RID) -> voi
 	else:
 		_smoke(at)
 		_chips(at, normal)
-		if at.y <= there.height + 0.2:
+		if not destroyed and at.y <= there.height + 0.2:
 			_crater(Vector3(at.x, there.height, at.z))
-	if exploded.is_valid():
-		exploded.call(at, rid)
 
 
 func _fireball(at: Vector3) -> void:
