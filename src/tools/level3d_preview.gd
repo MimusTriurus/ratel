@@ -5,7 +5,8 @@
 #
 # Nothing here is part of the game, which stays 2D. The level is modelled in
 # resources/3d/jackal_stage1_lowpoly.blend and comes in as jackal_stage1.glb,
-# exported from Blender (visible objects, modifiers applied, no animation). It
+# exported from Blender (visible objects, modifiers applied, no animation; the
+# buildings that can be destroyed come separately, see _add_destructibles). It
 # is a .glb rather than the .blend itself because project.godot keeps
 # import/blender/enabled off, and the glTF route does not need Blender on the
 # machine that imports it. The BTR is ratel_btr.glb; how it drives is
@@ -33,7 +34,9 @@
 #   W / S, A / D           drive and steer by hand (cancels the order)
 #   mouse                  aims the turret while mouse aim is on
 #   Q / E                  turn the turret by hand; M toggles mouse aim
-#   R                      put the BTR back at the start
+#   R                      put the BTR back at the start, rebuild what was blown up
+#   B                      blow up the building under the cursor (until there
+#                          are rockets to do it)
 #   wheel, arrows          scroll the camera off the BTR; C follows it again
 #   + / -                  zoom
 #   Tab                    top view / tilted view
@@ -43,11 +46,13 @@
 # --headless has no framebuffer to read back):
 #
 #     godot --path . --windowed --resolution 1280x720 src/tools/level3d_preview.tscn \
-#         -- --shot out.png <position 0-1> <zoom> <top|tilt> [<seconds> <x,z> ...]
+#         -- --shot out.png <position 0-1 or x,z> <zoom> <top|tilt> [<seconds> <x,z> ...] \
+#            [--destroy <name>,...]
 #
-# With seconds and waypoints the BTR is sent along them (level coordinates:
-# x across, z up the stage is negative) and the frame is taken that many
-# seconds later, the camera following it.
+# The frame is taken that many seconds later; with waypoints the BTR is sent
+# along them first (level coordinates: x across, z up the stage is negative)
+# and the camera follows it. --destroy sets the named buildings off at the
+# start -- DESTRUCTIBLE_NAMES has the names.
 extends Node3D
 
 const LEVEL_PATH := "res://resources/3d/jackal_stage1.glb"
@@ -113,6 +118,7 @@ func _ready() -> void:
 	level_aabb = _mesh_aabb(level)
 	_cast_both_sides_of_planes(level)
 	_add_collision(level)
+	_add_destructibles()
 
 	_add_environment()
 	_add_lights()
@@ -233,6 +239,10 @@ const SOLID_LAYER := 2
 const GROUND_NAMES: Array[String] = ["Land_Base", "Beach", "Cliff", "Skirt",
 		"Terrain", "Bridge", "Helipad", "Gate_Sill"]
 const WALL_NAMES: Array[String] = ["Wall", "Merlon", "GatePost", "Gate_"]
+# What the gate leaves behind that is not a wall: the rubble, the soot and the
+# blast itself. The stubs at either side are.
+const NOT_WALL_NAMES: Array[String] = ["Gate_Debris", "Gate_Soot", "Gate_Flash",
+		"Gate_Smoke", "Gate_Shard"]
 # A trunk is solid up to about the BTR's roof; above that it leans into the
 # crown, which the hull passes under.
 const TRUNK_REACH := 1.2
@@ -251,6 +261,9 @@ static func _kind_of(object_name: String) -> String:
 	for prefix in GROUND_NAMES:
 		if object_name.begins_with(prefix):
 			return "ground"
+	for prefix in NOT_WALL_NAMES:
+		if object_name.begins_with(prefix):
+			return ""
 	for prefix in WALL_NAMES:
 		if object_name.begins_with(prefix):
 			return "wall"
@@ -342,6 +355,149 @@ func _solid_at(pose: Transform3D, half: Vector3) -> bool:
 	query.transform = pose
 	query.collision_mask = SOLID_LAYER
 	return not get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()
+
+
+# The buildings that can be blown up are not in the stage file: each is its own
+# jackal_dest_<name>.glb, from export_destructibles() in the stage's Blender
+# file, holding all three of its states -- intact, the blast, the ruins -- and
+# one animation between them. glTF has no visibility, so the export folds it into
+# the scale: whatever is hidden at a moment is shrunk to nothing then. Frame 0 of
+# the animation is the intact building and its last frame the ruins, and the
+# building is destroyed by playing it.
+#
+# Collision rides along. Each mesh gets its body as the stage's do, as a child,
+# so a body follows its mesh's animated transform: the gate's leaves stop the
+# BTR until they shrink away, and the stubs left at either side start to when
+# they appear.
+const DESTRUCTIBLE_NAMES: Array[String] = ["Barracks", "BarracksN", "BarracksN2",
+		"BarracksN3", "Hangar_E", "Hangar_N", "Hangar_W", "Gate"]
+const DESTRUCTIBLE_PATH := "res://resources/3d/jackal_dest_%s.glb"
+const DESTRUCTION_ANIMATION := "Scene"
+# How near the cursor B has to be to a building's centre to blow it up.
+const BLOW_UP_REACH := 6.0
+# Longer than any destruction animation (2.6 s).
+const DESTRUCTION_SETTLE := 3.0
+
+# name -> {root, player, centre, destroyed}; centre is where the flash goes off.
+var destructibles := {}
+
+
+func _add_destructibles() -> void:
+	for building in DESTRUCTIBLE_NAMES:
+		var path := DESTRUCTIBLE_PATH % building
+		var scene: PackedScene = load(path)
+		if scene == null:
+			push_error("Cannot load %s -- run export_all() in the stage's Blender file" % path)
+			continue
+		var root := scene.instantiate()
+		root.name = "Dest_" + building
+		add_child(root)
+		var player := root.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		_sharpen_visibility(player.get_animation(DESTRUCTION_ANIMATION))
+		_light_flashes(root, player)
+		var flash := _find_by_prefix(root, FLASH_NAMES)
+		_cast_both_sides_of_planes(root)
+		_add_collision(root)
+		var bodies := []
+		for body in root.find_children("*", "StaticBody3D", true, false):
+			bodies.append([body.get_parent(), body, body.collision_layer])
+		destructibles[building] = {
+			"root": root, "player": player, "destroyed": false, "bodies": bodies,
+			"centre": flash.global_position if flash else _mesh_aabb(root).get_center(),
+		}
+		_set_destroyed(building, false)
+
+
+const FLASH_NAMES: Array[String] = ["Blast_Flash", "Gate_Flash"]
+# J_BlastFlash's emission strength over the destruction, keyed on its node tree
+# in Blender: (frame, strength). Frame 1 is time 0, at 24 fps.
+const FLASH_EMISSION := [[9, 0.0], [10, 14.0], [12, 9.0], [15, 4.0], [18, 0.0]]
+const BLENDER_FPS := 24.0
+
+
+# The flash's glow is animated on its material in Blender, and glTF carries no
+# material animation. It is one material there, shared by every flash, which
+# works only because every building's timeline starts together; here each
+# building gets its own copy and the glow as a track of its own animation. It
+# casts no shadow either: it is a fireball, and the sun's shadow of it on the
+# ground read as a hole.
+func _light_flashes(root: Node, player: AnimationPlayer) -> void:
+	var animation := player.get_animation(DESTRUCTION_ANIMATION)
+	var base := player.get_node(player.root_node)
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		var flash := node as MeshInstance3D
+		if not FLASH_NAMES.any(func(prefix): return flash.name.begins_with(prefix)):
+			continue
+		var material := flash.mesh.surface_get_material(0).duplicate() as StandardMaterial3D
+		material.emission_enabled = true
+		material.emission = material.albedo_color
+		material.emission_energy_multiplier = 0.0
+		flash.material_override = material
+		flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var track := animation.add_track(Animation.TYPE_VALUE)
+		animation.track_set_path(track, NodePath("%s:material_override:emission_energy_multiplier"
+				% base.get_path_to(flash)))
+		for key in FLASH_EMISSION:
+			animation.track_insert_key(track, (key[0] - 1) / BLENDER_FPS, key[1])
+
+
+# Scale at or below this is the export's "hidden".
+const HIDDEN_SCALE := 1e-3
+
+
+# Blender switches visibility from one frame to the next, and the export samples
+# frames, so between a hidden key and a shown one the scale would ramp -- a
+# piece growing out of its origin, which for most of them is the middle of the
+# map, over a 24th of a second. A key just before the later one, holding the
+# earlier value, makes the switch a switch.
+static func _sharpen_visibility(animation: Animation) -> void:
+	for track in animation.get_track_count():
+		if animation.track_get_type(track) != Animation.TYPE_SCALE_3D:
+			continue
+		for i in range(animation.track_get_key_count(track) - 1, 0, -1):
+			var before: Vector3 = animation.track_get_key_value(track, i - 1)
+			var after: Vector3 = animation.track_get_key_value(track, i)
+			if (before.x <= HIDDEN_SCALE) != (after.x <= HIDDEN_SCALE):
+				animation.track_insert_key(track, animation.track_get_key_time(track, i) - 0.001, before)
+
+
+# A hidden piece is shrunk to its origin, and so would its collision be: a wall
+# too small to see but not to hit. Bodies are off while their mesh is hidden.
+func _sync_bodies(entry: Dictionary) -> void:
+	for item in entry.bodies:
+		var mesh: Node3D = item[0]
+		item[1].collision_layer = item[2] if mesh.scale.x > HIDDEN_SCALE else 0
+
+
+static func _find_by_prefix(root: Node, prefixes: Array) -> Node3D:
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		for prefix in prefixes:
+			if node.name.begins_with(prefix):
+				return node
+	return null
+
+
+# Plays the destruction, or puts the building back as it was.
+func _set_destroyed(building: String, destroyed: bool) -> void:
+	var entry: Dictionary = destructibles[building]
+	var player: AnimationPlayer = entry.player
+	entry.destroyed = destroyed
+	player.play(DESTRUCTION_ANIMATION)
+	player.seek(0.0, true)
+	if not destroyed:
+		player.pause()
+	_sync_bodies(entry)
+
+
+func _nearest_destructible(at: Vector3, reach: float) -> String:
+	var best := ""
+	for building in destructibles:
+		var centre: Vector3 = destructibles[building].centre
+		var d := Vector2(centre.x - at.x, centre.z - at.z).length()
+		if d < reach:
+			reach = d
+			best = building
+	return best
 
 
 func _make_markers() -> void:
@@ -438,6 +594,10 @@ func _physics_process(delta: float) -> void:
 	if btr.turret_input != 0.0:
 		mouse_aim = false
 	btr.aim_point = _cursor_on_ground() if mouse_aim else null
+	for building in destructibles:
+		var entry: Dictionary = destructibles[building]
+		if entry.player.is_playing():
+			_sync_bodies(entry)
 	btr.step(delta)
 	_sync_markers()
 
@@ -483,6 +643,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_R:
 				btr.place(START, START_HEADING)
 				following = true
+				for building in destructibles:
+					_set_destroyed(building, false)
+			KEY_B:
+				var at = _cursor_on_ground()
+				if at != null:
+					var building := _nearest_destructible(at, BLOW_UP_REACH)
+					if building != "" and not destructibles[building].destroyed:
+						_set_destroyed(building, true)
 			KEY_ESCAPE:
 				btr.stop()
 	elif event is InputEventMouseButton and event.pressed:
@@ -532,7 +700,12 @@ func _obstacle_map(path: String) -> void:
 			counts[kind] = counts.get(kind, 0) + 1
 			image.set_pixel(px, py, OBSTACLE_COLOURS[kind])
 	image.save_png(path)
-	print("obstacle map %dx%d, %d trunks: %s" % [width, height, _trunks, counts])
+	print("obstacle map %dx%d from %.2f, %.2f, %d trunks: %s" % [width, height,
+			level_aabb.position.x, level_aabb.position.z, _trunks, counts])
+	for building in destructibles:
+		var centre: Vector3 = destructibles[building].centre
+		print("  %s at %.1f, %.1f%s" % [building, centre.x, centre.z,
+				" (destroyed)" if destructibles[building].destroyed else ""])
 	# And the forest the other way round: what the ground under each forest
 	# tree says it is. Anything but "forest" is a tree the BTR drives under.
 	var under := {}
@@ -548,7 +721,17 @@ func _obstacle_map(path: String) -> void:
 
 func _screenshot_mode() -> void:
 	var args := OS.get_cmdline_user_args()
+	var blow_up := args.find("--destroy")
+	if blow_up >= 0:
+		for building in args[blow_up + 1].split(","):
+			_set_destroyed(building, true)
+		args = args.slice(0, blow_up) + args.slice(blow_up + 2)
 	if args.size() >= 2 and args[0] == "--obstacle-map":
+		# Mapped once the ruins have settled, when anything was blown up.
+		if blow_up >= 0:
+			await get_tree().create_timer(DESTRUCTION_SETTLE).timeout
+			await get_tree().physics_frame
+			await get_tree().physics_frame
 		_obstacle_map(args[1])
 		get_tree().quit()
 		return
@@ -556,7 +739,11 @@ func _screenshot_mode() -> void:
 		return
 	if args.size() >= 3:
 		following = false
-		focus.y = lerpf(level_aabb.end.z, level_aabb.position.z, float(args[2]))
+		if args[2].contains(","):
+			var xz := args[2].split(",")
+			focus = Vector2(float(xz[0]), float(xz[1]))
+		else:
+			focus.y = lerpf(level_aabb.end.z, level_aabb.position.z, float(args[2]))
 	if args.size() >= 4:
 		zoom = float(args[3])
 	if args.size() >= 5:
@@ -566,7 +753,7 @@ func _screenshot_mode() -> void:
 		for i in range(6, args.size()):
 			var xz := args[i].split(",")
 			btr.order(Vector3(float(xz[0]), 0.0, float(xz[1])), true)
-		following = true
+			following = true
 		await get_tree().create_timer(float(args[5])).timeout
 
 	# Shadows and the first frame's pipeline compilation need a few frames.
