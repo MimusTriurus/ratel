@@ -32,12 +32,11 @@
 #   W / S, A / D           drive and steer by hand (cancels the order)
 #   mouse                  aims the turret while mouse aim is on
 #   left button (held)     machine gun, level3d_gun.gd
+#   right click            rocket, level3d_rocket.gd
 #   middle click           drive there (shift: add a waypoint)
 #   Esc                    stop
 #   Q / E                  turn the turret by hand; M toggles mouse aim
 #   R                      put the BTR back at the start, rebuild what was blown up
-#   B                      blow up the building under the cursor (until there
-#                          are rockets to do it)
 #   wheel, arrows          scroll the camera off the BTR; C follows it again
 #   + / -                  zoom
 #   Tab                    top view / tilted view
@@ -48,13 +47,14 @@
 #
 #     godot --path . --windowed --resolution 1280x720 src/tools/level3d_preview.tscn \
 #         -- --shot out.png <position 0-1 or x,z> <zoom> <top|tilt> [<seconds> <x,z> ...] \
-#            [--destroy <name>,...] [--fire <x,z>]
+#            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]]
 #
 # The frame is taken that many seconds later; with waypoints the BTR is sent
 # along them first (level coordinates: x across, z up the stage is negative)
 # and the camera follows it. --destroy sets the named buildings off at the
-# start -- DESTRUCTIBLE_NAMES has the names -- and --fire aims at x,z and holds
-# the trigger down from the start.
+# start -- DESTRUCTIBLE_NAMES has the names -- --fire aims at x,z and holds
+# the trigger down from the start, and --rocket aims at x,z and sends one
+# rocket as soon as the launcher has come round, or that many seconds in.
 extends Node3D
 
 const LEVEL_PATH := "res://resources/3d/jackal_stage1.glb"
@@ -95,6 +95,7 @@ var camera: Camera3D
 var sun: DirectionalLight3D
 var btr: Level3DBtr
 var gun: Level3DGun
+var launcher: Level3DLauncher
 var level_aabb: AABB
 var focus := Vector2.ZERO       # x, z the camera is centred on
 var following := true
@@ -103,7 +104,11 @@ var zoom := 1.0
 var tilted := false
 
 var _live := false
-var _forced_aim = null  # --fire's target: aimed at and fired on throughout
+var _forced_aim = null  # --fire's or --rocket's target
+var _hold_fire := false # --fire: the gun's trigger held throughout
+# How much longer a right click waits to be a rocket; see _physics_process.
+var _rocket_wanted := 0.0
+const ROCKET_WAIT := 0.8
 var _kinds := {}        # body RID -> ground kind, see _add_collision
 var _trunks := 0
 var _markers: Array[MeshInstance3D] = []
@@ -138,6 +143,12 @@ func _ready() -> void:
 	gun.hit_kind = _hit_kind
 	gun.mask = GROUND_LAYER | SOLID_LAYER | TARGET_LAYER
 	add_child(gun)
+	launcher = Level3DLauncher.new()
+	launcher.btr = btr
+	launcher.ground = _ground_at
+	launcher.mask = GROUND_LAYER | SOLID_LAYER | TARGET_LAYER
+	launcher.exploded = _on_exploded
+	add_child(launcher)
 	_make_markers()
 
 	camera = Camera3D.new()
@@ -417,12 +428,11 @@ const DESTRUCTIBLE_NAMES: Array[String] = ["Barracks", "BarracksN", "BarracksN2"
 		"BarracksN3", "Hangar_E", "Hangar_N", "Hangar_W", "Gate"]
 const DESTRUCTIBLE_PATH := "res://resources/3d/jackal_dest_%s.glb"
 const DESTRUCTION_ANIMATION := "Scene"
-# How near the cursor B has to be to a building's centre to blow it up.
-const BLOW_UP_REACH := 6.0
 # Longer than any destruction animation (2.6 s).
 const DESTRUCTION_SETTLE := 3.0
 
-# name -> {root, player, centre, destroyed}; centre is where the flash goes off.
+# name -> {root, player, centre, destroyed, bodies, rids, footprint}; centre is
+# where the flash goes off, footprint the intact building's Rect2 in x, z.
 var destructibles := {}
 
 
@@ -444,13 +454,16 @@ func _add_destructibles() -> void:
 		_add_collision(root)
 		_add_targets(root, true)
 		var bodies := []
+		var rids := {}
 		for body in root.find_children("*", "StaticBody3D", true, false):
 			bodies.append([body.get_parent(), body, body.collision_layer])
+			rids[body.get_rid()] = true
 		destructibles[building] = {
 			"root": root, "player": player, "destroyed": false, "bodies": bodies,
-			"centre": flash.global_position if flash else _mesh_aabb(root).get_center(),
+			"rids": rids, "centre": flash.global_position if flash else _mesh_aabb(root).get_center(),
 		}
 		_set_destroyed(building, false)
+		destructibles[building].footprint = _footprint(root)
 
 
 const FLASH_NAMES: Array[String] = ["Blast_Flash", "Gate_Flash"]
@@ -458,6 +471,10 @@ const FLASH_NAMES: Array[String] = ["Blast_Flash", "Gate_Flash"]
 # in Blender: (frame, strength). Frame 1 is time 0, at 24 fps.
 const FLASH_EMISSION := [[9, 0.0], [10, 14.0], [12, 9.0], [15, 4.0], [18, 0.0]]
 const BLENDER_FPS := 24.0
+# F0 in jackal_destruction_lib.py: the frame the intact building goes and the
+# blast begins, as time into the animation.
+const BLAST_FRAME := 10
+const BLAST_START := (BLAST_FRAME - 1) / BLENDER_FPS
 
 
 # The flash's glow is animated on its material in Blender, and glTF carries no
@@ -528,21 +545,46 @@ func _set_destroyed(building: String, destroyed: bool) -> void:
 	var player: AnimationPlayer = entry.player
 	entry.destroyed = destroyed
 	player.play(DESTRUCTION_ANIMATION)
-	player.seek(0.0, true)
+	# Played from the blast, not from frame 1: the frames before it are the
+	# intact building standing, and a rocket that hits it should not be seen to
+	# go off a third of a second before the building does.
+	player.seek(BLAST_START if destroyed else 0.0, true)
 	if not destroyed:
 		player.pause()
 	_sync_bodies(entry)
 
 
-func _nearest_destructible(at: Vector3, reach: float) -> String:
-	var best := ""
+# What a rocket's explosion destroys: the building it hit, and any whose
+# footprint is within BLAST_RADIUS of where it went off -- a rocket that lands
+# at the foot of a wall counts, as Jackal's grenade does.
+const BLAST_RADIUS := 1.2
+
+
+func _on_exploded(at: Vector3, rid: RID) -> void:
+	_shake(SHAKE_PIXELS)
 	for building in destructibles:
-		var centre: Vector3 = destructibles[building].centre
-		var d := Vector2(centre.x - at.x, centre.z - at.z).length()
-		if d < reach:
-			reach = d
-			best = building
-	return best
+		var entry: Dictionary = destructibles[building]
+		if entry.destroyed:
+			continue
+		var box: Rect2 = entry.footprint
+		var near := Vector2(clampf(at.x, box.position.x, box.end.x), clampf(at.z, box.position.y, box.end.y))
+		if entry.rids.has(rid) or near.distance_to(Vector2(at.x, at.z)) <= BLAST_RADIUS:
+			_set_destroyed(building, true)
+
+
+# The intact building from above, for the blast radius: what shows on frame 0.
+func _footprint(root: Node) -> Rect2:
+	var box := Rect2()
+	var first := true
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		if mesh_instance.scale.x <= HIDDEN_SCALE:
+			continue
+		var world := mesh_instance.global_transform * mesh_instance.get_aabb()
+		var flat := Rect2(world.position.x, world.position.z, world.size.x, world.size.z)
+		box = flat if first else box.merge(flat)
+		first = false
+	return box
 
 
 func _make_markers() -> void:
@@ -617,6 +659,33 @@ func _update_camera() -> void:
 		# buy nothing and a single map over the whole depth is sharpest.
 		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
 		sun.directional_shadow_max_distance = TOP_CAMERA_HEIGHT * 2.0
+	_apply_shake(width)
+
+
+# The tank bench's CameraShake.Blast: two sines per axis so it does not read as
+# a pendulum, a (1 - t/T)^2 envelope, over in SHAKE_TIME. In screen pixels,
+# converted through the frame's width, so zoom does not change it.
+const SHAKE_PIXELS := 7.0
+const SHAKE_TIME := 0.55
+var _shake_left := 0.0
+var _shake_pixels := 0.0
+
+
+# A second blast inside the first restarts it, stronger, rather than adding.
+func _shake(pixels: float) -> void:
+	_shake_pixels = maxf(pixels, _shake_pixels if _shake_left > 0.0 else 0.0)
+	_shake_left = SHAKE_TIME
+
+
+func _apply_shake(width: float) -> void:
+	if _shake_left <= 0.0:
+		return
+	var t := SHAKE_TIME - _shake_left
+	var envelope := pow(_shake_left / SHAKE_TIME, 2.0)
+	var metres := _shake_pixels * width / get_viewport().get_visible_rect().size.x * envelope
+	var x := sin(t * TAU * 11.0) * 0.7 + sin(t * TAU * 17.0 + 1.3) * 0.3
+	var y := sin(t * TAU * 13.0 + 0.6) * 0.7 + sin(t * TAU * 19.0 + 2.1) * 0.3
+	camera.position += (camera.basis.x * x + camera.basis.y * y) * metres
 
 
 func _cursor_on_ground():
@@ -647,9 +716,17 @@ func _physics_process(delta: float) -> void:
 		if entry.player.is_playing():
 			_sync_bodies(entry)
 	btr.step(delta)
-	gun.trigger = _forced_aim != null or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	gun.trigger = _hold_fire or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	gun.aim_point = btr.aim_point
 	gun.step(delta)
+	launcher.aim_point = btr.aim_point
+	# A click waits for the mount to come round and the rails to be loaded,
+	# rather than being lost while they are not.
+	if _rocket_wanted > 0.0:
+		_rocket_wanted -= delta
+		if launcher.fire():
+			_rocket_wanted = 0.0
+	launcher.step(delta)
 	_sync_markers()
 
 
@@ -662,6 +739,7 @@ func _process(delta: float) -> void:
 		focus.y -= scroll * SCROLL_SPEED / zoom * delta
 	if following:
 		focus = Vector2(btr.position.x, btr.position.z)
+	_shake_left = maxf(_shake_left - delta, 0.0)
 	_update_camera()
 
 
@@ -696,18 +774,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				following = true
 				for building in destructibles:
 					_set_destroyed(building, false)
-			KEY_B:
-				var at = _cursor_on_ground()
-				if at != null:
-					var building := _nearest_destructible(at, BLOW_UP_REACH)
-					if building != "" and not destructibles[building].destroyed:
-						_set_destroyed(building, true)
+				launcher.clear_craters()
 			KEY_ESCAPE:
 				btr.stop()
 	elif event is InputEventMouseButton and event.pressed:
 		match event.button_index:
-			# The left button is the gun's, read as held in _physics_process; the
-			# right one is kept for the rocket.
+			# The left button is the gun's, read as held in _physics_process.
+			MOUSE_BUTTON_RIGHT:
+				_rocket_wanted = ROCKET_WAIT
 			MOUSE_BUTTON_MIDDLE:
 				var at = _cursor_on_ground()
 				if at != null:
@@ -781,7 +855,18 @@ func _screenshot_mode() -> void:
 	if fire >= 0:
 		var xz := args[fire + 1].split(",")
 		_forced_aim = Vector3(float(xz[0]), 0.0, float(xz[1]))
+		_hold_fire = true
 		args = args.slice(0, fire) + args.slice(fire + 2)
+	var rocket := args.find("--rocket")
+	if rocket >= 0:
+		var at := args[rocket + 1].split("@")
+		var xz := at[0].split(",")
+		_forced_aim = Vector3(float(xz[0]), 0.0, float(xz[1]))
+		if at.size() > 1:
+			get_tree().create_timer(float(at[1])).timeout.connect(func(): _rocket_wanted = INF)
+		else:
+			_rocket_wanted = INF
+		args = args.slice(0, rocket) + args.slice(rocket + 2)
 	if args.size() >= 2 and args[0] == "--obstacle-map":
 		# Mapped once the ruins have settled, when anything was blown up.
 		if blow_up >= 0:

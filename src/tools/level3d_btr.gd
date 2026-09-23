@@ -24,7 +24,8 @@
 #   * The turret has its own traverse rate; unaimed, it comes round to the bow
 #     while the hull is moving and stays where it was left when it is not.
 #   * The gun (level3d_gun.gd) asks it where the muzzle is and kicks the same
-#     pitch spring on every round.
+#     pitch spring on every round; the rocket launcher (level3d_rocket.gd)
+#     turns its own mount on the hull and kicks it harder.
 #
 # One deliberate departure: wheels cannot pivot. The bench's tanks swing round
 # on the spot at the crawl floor; a BTR has to roll to turn, so the crawl is a
@@ -149,6 +150,11 @@ func muzzle_node() -> Node3D:
 
 func muzzle() -> Transform3D:
 	return _bore.global_transform.orthonormalized()
+
+
+# The rocket launcher's mount, on the hull: level3d_rocket.gd turns it.
+func launcher_node() -> Node3D:
+	return _hull.find_child("BTR_LauncherBase", true, false)
 
 
 # A shot's kick into the body spring, signed along the bow: firing ahead
