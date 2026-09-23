@@ -25,14 +25,15 @@
 #
 # The default view is the game's: straight down, orthographic, the frame exactly
 # as wide as the level, 16:9, following the BTR up the stage. Tab switches to a
-# tilted perspective view. The controls are the tank bench's in BlenderMCP/godot
-# where the two overlap -- left click to send the vehicle somewhere, A/D and
-# Q/E for hull and turret, M for mouse aim:
+# tilted perspective view. The controls are the game's -- WASD to drive, the
+# mouse to aim, the left button to fire -- with the tank bench's orders from
+# BlenderMCP/godot moved to the middle button:
 #
-#   left click             drive there (shift: add a waypoint)
-#   right click, Esc       stop
 #   W / S, A / D           drive and steer by hand (cancels the order)
 #   mouse                  aims the turret while mouse aim is on
+#   left button (held)     machine gun, level3d_gun.gd
+#   middle click           drive there (shift: add a waypoint)
+#   Esc                    stop
 #   Q / E                  turn the turret by hand; M toggles mouse aim
 #   R                      put the BTR back at the start, rebuild what was blown up
 #   B                      blow up the building under the cursor (until there
@@ -47,12 +48,13 @@
 #
 #     godot --path . --windowed --resolution 1280x720 src/tools/level3d_preview.tscn \
 #         -- --shot out.png <position 0-1 or x,z> <zoom> <top|tilt> [<seconds> <x,z> ...] \
-#            [--destroy <name>,...]
+#            [--destroy <name>,...] [--fire <x,z>]
 #
 # The frame is taken that many seconds later; with waypoints the BTR is sent
 # along them first (level coordinates: x across, z up the stage is negative)
 # and the camera follows it. --destroy sets the named buildings off at the
-# start -- DESTRUCTIBLE_NAMES has the names.
+# start -- DESTRUCTIBLE_NAMES has the names -- and --fire aims at x,z and holds
+# the trigger down from the start.
 extends Node3D
 
 const LEVEL_PATH := "res://resources/3d/jackal_stage1.glb"
@@ -92,6 +94,7 @@ const ZOOM_STEP := 1.15
 var camera: Camera3D
 var sun: DirectionalLight3D
 var btr: Level3DBtr
+var gun: Level3DGun
 var level_aabb: AABB
 var focus := Vector2.ZERO       # x, z the camera is centred on
 var following := true
@@ -100,6 +103,7 @@ var zoom := 1.0
 var tilted := false
 
 var _live := false
+var _forced_aim = null  # --fire's target: aimed at and fired on throughout
 var _kinds := {}        # body RID -> ground kind, see _add_collision
 var _trunks := 0
 var _markers: Array[MeshInstance3D] = []
@@ -118,6 +122,7 @@ func _ready() -> void:
 	level_aabb = _mesh_aabb(level)
 	_cast_both_sides_of_planes(level)
 	_add_collision(level)
+	_add_targets(level, false)
 	_add_destructibles()
 
 	_add_environment()
@@ -127,6 +132,12 @@ func _ready() -> void:
 	btr.ground = _ground_at
 	btr.solid = _solid_at
 	add_child(btr)
+	gun = Level3DGun.new()
+	gun.btr = btr
+	gun.ground = _ground_at
+	gun.hit_kind = _hit_kind
+	gun.mask = GROUND_LAYER | SOLID_LAYER | TARGET_LAYER
+	add_child(gun)
 	_make_markers()
 
 	camera = Camera3D.new()
@@ -236,6 +247,13 @@ func _cast_both_sides_of_planes(root: Node) -> void:
 # between two ground probes and a crown is not an obstacle at all.
 const GROUND_LAYER := 1
 const SOLID_LAYER := 2
+# A third, for the gun only: what stops a round but not the BTR -- bunkers,
+# sandbags, rocks and the buildings that can be blown up. Kind "building".
+const TARGET_LAYER := 4
+const TARGET_NAMES: Array[String] = ["Bunker", "Sandbag", "Rock"]
+# The parts of a destruction that are not there to be hit: the blast itself and
+# what lies flat or flies.
+const NOT_TARGET_PARTS: Array[String] = ["Blast_", "Flash", "Smoke", "Shard", "Debris", "Soot"]
 const GROUND_NAMES: Array[String] = ["Land_Base", "Beach", "Cliff", "Skirt",
 		"Terrain", "Bridge", "Helipad", "Gate_Sill"]
 const WALL_NAMES: Array[String] = ["Wall", "Merlon", "GatePost", "Gate_"]
@@ -332,7 +350,33 @@ func _add_trunk(palm: MeshInstance3D) -> void:
 	add_child(body)
 	var centre := box.get_center()
 	body.global_position = Vector3(centre.x, base + TRUNK_REACH * 0.5, centre.y)
+	_kinds[body.get_rid()] = "trunk"
 	_trunks += 1
+
+
+# The target layer, on every mesh under `root` that the gun should stop at and
+# the BTR need not: named in TARGET_NAMES, or -- `all` -- any part with no
+# other kind that is not a piece of the blast.
+func _add_targets(root: Node, all: bool) -> void:
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		var object_name := String(mesh_instance.name)
+		if _kind_of(object_name) != "":
+			continue
+		var wanted := TARGET_NAMES.any(func(prefix): return object_name.begins_with(prefix))
+		if all:
+			wanted = not NOT_TARGET_PARTS.any(func(part): return object_name.contains(part))
+		if not wanted:
+			continue
+		mesh_instance.create_trimesh_collision()
+		for child in mesh_instance.get_children():
+			if child is StaticBody3D:
+				child.collision_layer = TARGET_LAYER
+				_kinds[child.get_rid()] = "building"
+
+
+func _hit_kind(rid: RID) -> String:
+	return _kinds.get(rid, "ground")
 
 
 # The top of the ground layer at x, z, and which kind it is.
@@ -398,6 +442,7 @@ func _add_destructibles() -> void:
 		var flash := _find_by_prefix(root, FLASH_NAMES)
 		_cast_both_sides_of_planes(root)
 		_add_collision(root)
+		_add_targets(root, true)
 		var bodies := []
 		for body in root.find_children("*", "StaticBody3D", true, false):
 			bodies.append([body.get_parent(), body, body.collision_layer])
@@ -593,12 +638,18 @@ func _physics_process(delta: float) -> void:
 	btr.turret_input = _axis(KEY_E, KEY_Q)
 	if btr.turret_input != 0.0:
 		mouse_aim = false
-	btr.aim_point = _cursor_on_ground() if mouse_aim else null
+	if _forced_aim != null:
+		btr.aim_point = _forced_aim
+	else:
+		btr.aim_point = _cursor_on_ground() if mouse_aim else null
 	for building in destructibles:
 		var entry: Dictionary = destructibles[building]
 		if entry.player.is_playing():
 			_sync_bodies(entry)
 	btr.step(delta)
+	gun.trigger = _forced_aim != null or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	gun.aim_point = btr.aim_point
+	gun.step(delta)
 	_sync_markers()
 
 
@@ -655,12 +706,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				btr.stop()
 	elif event is InputEventMouseButton and event.pressed:
 		match event.button_index:
-			MOUSE_BUTTON_LEFT:
+			# The left button is the gun's, read as held in _physics_process; the
+			# right one is kept for the rocket.
+			MOUSE_BUTTON_MIDDLE:
 				var at = _cursor_on_ground()
 				if at != null:
 					btr.order(at, event.shift_pressed)
-			MOUSE_BUTTON_RIGHT:
-				btr.stop()
 			MOUSE_BUTTON_WHEEL_UP:
 				following = false
 				focus.y -= 2.0 / zoom
@@ -726,6 +777,11 @@ func _screenshot_mode() -> void:
 		for building in args[blow_up + 1].split(","):
 			_set_destroyed(building, true)
 		args = args.slice(0, blow_up) + args.slice(blow_up + 2)
+	var fire := args.find("--fire")
+	if fire >= 0:
+		var xz := args[fire + 1].split(",")
+		_forced_aim = Vector3(float(xz[0]), 0.0, float(xz[1]))
+		args = args.slice(0, fire) + args.slice(fire + 2)
 	if args.size() >= 2 and args[0] == "--obstacle-map":
 		# Mapped once the ruins have settled, when anything was blown up.
 		if blow_up >= 0:
@@ -753,7 +809,8 @@ func _screenshot_mode() -> void:
 		for i in range(6, args.size()):
 			var xz := args[i].split(",")
 			btr.order(Vector3(float(xz[0]), 0.0, float(xz[1])), true)
-			following = true
+			# A frame given as x,z stays put; one given along the stage follows.
+			following = not args[2].contains(",")
 		await get_tree().create_timer(float(args[5])).timeout
 
 	# Shadows and the first frame's pipeline compilation need a few frames.

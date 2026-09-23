@@ -23,6 +23,8 @@
 #   * The body pitch is BodyPitch's spring, driven by acceleration.
 #   * The turret has its own traverse rate; unaimed, it comes round to the bow
 #     while the hull is moving and stays where it was left when it is not.
+#   * The gun (level3d_gun.gd) asks it where the muzzle is and kicks the same
+#     pitch spring on every round.
 #
 # One deliberate departure: wheels cannot pivot. The bench's tanks swing round
 # on the spot at the crawl floor; a BTR has to roll to turn, so the crawl is a
@@ -104,6 +106,7 @@ var _steer_angle := 0.0
 var _model: Node3D
 var _hull: Node3D
 var _turret_pivot: Node3D
+var _bore: Node3D
 var _hull_rest: Transform3D
 var _turret_rest: Transform3D
 var _wheels: Array[Node3D] = []
@@ -119,6 +122,14 @@ func _ready() -> void:
 	_model.scale = Vector3.ONE * MODEL_SCALE
 	_hull = _model.find_child("BTR_Hull", true, false)
 	_turret_pivot = _model.find_child("BTR_TurretPivot", true, false)
+	# The bore mesh's own axes are the cylinder's, its length along local Y, so
+	# the muzzle is a node of its own: on the turret, where the bore is, facing
+	# the turret's +X, which is where the gun points.
+	var bore := _turret_pivot.find_child("BTR_GunBore", true, false) as Node3D
+	_bore = Node3D.new()
+	_bore.name = "Muzzle"
+	_turret_pivot.add_child(_bore)
+	_bore.position = _turret_pivot.global_transform.affine_inverse() * bore.global_position
 	_hull_rest = _hull.transform
 	_turret_rest = _turret_pivot.transform
 	for side in ["L", "R"]:
@@ -129,6 +140,21 @@ func _ready() -> void:
 			_wheels.append(wheel)
 			_wheel_rest.append(wheel.transform)
 			_front_wheels.append(axle == 0)
+
+
+# The gun's bore: where rounds leave from, its +X the way they go.
+func muzzle_node() -> Node3D:
+	return _bore
+
+
+func muzzle() -> Transform3D:
+	return _bore.global_transform.orthonormalized()
+
+
+# A shot's kick into the body spring, signed along the bow: firing ahead
+# lifts the nose, firing astern dips it, firing abeam does neither.
+func recoil(direction: Vector3, kick: float) -> void:
+	_pitch_velocity -= kick * direction.dot(forward())
 
 
 func top_speed() -> float:
