@@ -19,11 +19,9 @@ config/icon="res://icon.png"
 
 [display]
 
-; Fullscreen: the viewport is exact 16:9, so it scales to fill a 16:9 screen
-; with no letterboxing. Escape or F12 drops back to a window.
-window/size/mode=3
 window/size/viewport_width=2048
 window/size/viewport_height=1152
+window/size/mode=3
 window/size/window_width_override=2048
 window/size/window_height_override=1152
 window/stretch/mode="viewport"
@@ -31,6 +29,10 @@ window/stretch/mode="viewport"
 [dotnet]
 
 project/assembly_name="Jackal"
+
+[filesystem]
+
+import/blender/enabled=false
 
 [physics]
 

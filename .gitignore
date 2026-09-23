@@ -18,3 +18,13 @@
 
 # Python bytecode from tools/
 __pycache__/
+
+# Blender's backup of the previous save, written next to every .blend.
+*.blend1
+
+# Renders of the 3D models: regenerated from the .blend sources whenever the
+# model changes, and several MB of binary a time. The .blend files and the
+# .glb exports the preview scene loads are what is kept.
+/resources/3d/*.png
+/resources/3d/*.png.import
+/resources/3d/*.gif
