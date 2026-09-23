@@ -71,15 +71,15 @@ const LAMP_GAIN := 0.3
 # over the tallest building; the shadow map only has to cover that depth.
 const TOP_CAMERA_HEIGHT := 20.0
 
-# Where the BTR starts: on the beach at the south end, facing up the stage.
-const START := Vector3(0.0, 0.0, 26.0)
+# Where the BTR starts: on the beach at the south end, facing up the stage, with
+# nothing within four metres -- the obstacle map's say, not the eye's. It used
+# to start at x = 0, a turning circle away from a clump of four palms, so every
+# first turn east ended on a trunk.
+const START := Vector3(-7.0, 0.0, 27.0)
 const START_HEADING := PI / 2.0
 # A ray from this high down to this low finds the top surface anywhere.
 const RAY_TOP := 30.0
 const RAY_BOTTOM := -5.0
-# Anything this far over the BTR's wheels is overhead rather than in the way:
-# about its roof at MODEL_SCALE.
-const OVERHEAD := 1.3
 
 const SCROLL_SPEED := 40.0
 const ZOOM_STEP := 1.15
@@ -95,7 +95,8 @@ var zoom := 1.0
 var tilted := false
 
 var _live := false
-var _ocean_body: RID
+var _kinds := {}        # body RID -> ground kind, see _add_collision
+var _trunks := 0
 var _markers: Array[MeshInstance3D] = []
 var _marker_mesh: Mesh
 var _marker_material: StandardMaterial3D
@@ -118,6 +119,7 @@ func _ready() -> void:
 
 	btr = Btr.new()
 	btr.ground = _ground_at
+	btr.solid = _solid_at
 	add_child(btr)
 	_make_markers()
 
@@ -213,38 +215,136 @@ func _cast_both_sides_of_planes(root: Node) -> void:
 				break
 
 
-# Every mesh of the level gets a trimesh body, so one downward ray answers the
-# three questions the BTR asks of the ground: how high it is, whether it is
-# water, and whether what is there is taller than a step. The ocean's body is
-# remembered, because "the first thing the ray hit was the sea" is what water
-# means here -- the land runs on under it, but never above it.
+# What the BTR may not drive into is decided here, by what each object of the
+# level is -- its Blender name -- rather than by how tall it is. Four things
+# stop it: water, palm trunks, the dense forest and walls. Everything else is
+# ground or is not there at all for driving: bunkers, barracks, hangars,
+# sandbags, rocks and the rest get no collision.
+#
+# Two layers, for two kinds of question. The ground layer is what a downward
+# ray finds: its height, and which kind it is -- the sea, the forest floor
+# (the forest is the seven Forest_Floor patches its 3412 trees stand on, 98% of
+# them; a tree is a crown, not something to hit), a wall, or plain ground. The
+# solid layer is what the hull's footprint is tested against: walls, and a
+# cylinder round every palm trunk, since a trunk is thinner than the gap
+# between two ground probes and a crown is not an obstacle at all.
+const GROUND_LAYER := 1
+const SOLID_LAYER := 2
+const GROUND_NAMES: Array[String] = ["Land_Base", "Beach", "Cliff", "Skirt",
+		"Terrain", "Bridge", "Helipad", "Gate_Sill"]
+const WALL_NAMES: Array[String] = ["Wall", "Merlon", "GatePost", "Gate_"]
+# A trunk is solid up to about the BTR's roof; above that it leans into the
+# crown, which the hull passes under.
+const TRUNK_REACH := 1.2
+const TRUNK_FOOT := 0.4
+
+
+static func _kind_of(object_name: String) -> String:
+	if object_name.begins_with("Ocean"):
+		return "water"
+	if object_name.begins_with("Forest_Floor"):
+		return "forest"
+	if object_name.begins_with("Palm"):
+		return "trunk"
+	if object_name == "Sand":
+		return "ground"     # not a prefix: Sandbag is not ground
+	for prefix in GROUND_NAMES:
+		if object_name.begins_with(prefix):
+			return "ground"
+	# A hangar's apron is ground; the hangar is not in the way.
+	if object_name.begins_with("Hangar") and object_name.ends_with("_Pad"):
+		return "ground"
+	for prefix in WALL_NAMES:
+		if object_name.begins_with(prefix):
+			return "wall"
+	return ""
+
+
 func _add_collision(root: Node) -> void:
 	for node in root.find_children("*", "MeshInstance3D", true, false):
 		var mesh_instance := node as MeshInstance3D
+		var kind := _kind_of(mesh_instance.name)
+		if kind == "":
+			continue
+		if kind == "trunk":
+			_add_trunk(mesh_instance)
+			continue
 		mesh_instance.create_trimesh_collision()
-		if mesh_instance.name == "Ocean":
-			for child in mesh_instance.get_children():
-				if child is StaticBody3D:
-					_ocean_body = child.get_rid()
+		for child in mesh_instance.get_children():
+			if child is StaticBody3D:
+				child.collision_layer = GROUND_LAYER | (SOLID_LAYER if kind == "wall" else 0)
+				_kinds[child.get_rid()] = kind
+				# Both sides: the northern terrain's faces are wound downwards,
+				# which its double-sided material hides from the eye and a
+				# one-sided shape does not -- the ray went through the land
+				# and found the sea under it.
+				for shape_owner in child.get_children():
+					if shape_owner is CollisionShape3D:
+						(shape_owner.shape as ConcavePolygonShape3D).backface_collision = true
 
 
-# The top surface at x, z that something standing at `below` could be on or
-# run into: the highest one under below + OVERHEAD. What is higher than that
-# -- a palm's crown, the jungle's canopy -- is over the BTR's roof, not in its
-# way, so the ray is cast again through it until it finds what is underneath.
-func _ground_at(x: float, z: float, below: float) -> Dictionary:
+# A cylinder round the bottom of the trunk: the trunk surface's own vertices
+# below TRUNK_REACH, measured rather than assumed, because palms lean.
+func _add_trunk(palm: MeshInstance3D) -> void:
+	var trunk := PackedVector3Array()
+	var base := INF
+	for surface in palm.mesh.get_surface_count():
+		var material := palm.mesh.surface_get_material(surface)
+		if material == null or not material.resource_name.contains("Trunk"):
+			continue
+		var vertices: PackedVector3Array = palm.mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]
+		for v in vertices:
+			var w := palm.global_transform * v
+			base = minf(base, w.y)
+			trunk.append(w)
+	if trunk.is_empty():
+		push_warning("%s has no trunk surface; it will not stop the BTR" % palm.name)
+		return
+	# Measured at the foot, not over the whole reach: a leaning trunk's lower
+	# metre spans half a metre sideways, and a circle round all of it is a
+	# post twice as thick as the one on screen.
+	var low := PackedVector2Array()
+	for w in trunk:
+		if w.y < base + TRUNK_FOOT:
+			low.append(Vector2(w.x, w.z))
+	var box := Rect2(low[0], Vector2.ZERO)
+	for p in low:
+		box = box.expand(p)
+	var shape := CylinderShape3D.new()
+	shape.radius = maxf(box.size.x, box.size.y) * 0.5
+	shape.height = TRUNK_REACH
+	var body := StaticBody3D.new()
+	body.collision_layer = SOLID_LAYER
+	body.collision_mask = 0
+	var collider := CollisionShape3D.new()
+	collider.shape = shape
+	body.add_child(collider)
+	add_child(body)
+	var centre := box.get_center()
+	body.global_position = Vector3(centre.x, base + TRUNK_REACH * 0.5, centre.y)
+	_trunks += 1
+
+
+# The top of the ground layer at x, z, and which kind it is.
+func _ground_at(x: float, z: float) -> Dictionary:
 	var space := get_world_3d().direct_space_state
-	var query := PhysicsRayQueryParameters3D.create(Vector3(x, RAY_TOP, z), Vector3(x, RAY_BOTTOM, z))
-	var skipped: Array[RID] = []
-	for i in 6:
-		query.exclude = skipped
-		var hit := space.intersect_ray(query)
-		if hit.is_empty():
-			break
-		if hit.position.y <= below + OVERHEAD:
-			return {"height": hit.position.y, "water": hit.rid == _ocean_body, "hit": true}
-		skipped.append(hit.rid)
-	return {"height": 0.0, "water": false, "hit": false}
+	var query := PhysicsRayQueryParameters3D.create(Vector3(x, RAY_TOP, z), Vector3(x, RAY_BOTTOM, z),
+			GROUND_LAYER)
+	var hit := space.intersect_ray(query)
+	if hit.is_empty():
+		return {"height": 0.0, "kind": "", "hit": false}
+	return {"height": hit.position.y, "kind": _kinds.get(hit.rid, "ground"), "hit": true}
+
+
+# Whether a box at `pose` overlaps anything on the solid layer.
+func _solid_at(pose: Transform3D, half: Vector3) -> bool:
+	var shape := BoxShape3D.new()
+	shape.size = half * 2.0
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = shape
+	query.transform = pose
+	query.collision_mask = SOLID_LAYER
+	return not get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()
 
 
 func _make_markers() -> void:
@@ -273,7 +373,7 @@ func _sync_markers() -> void:
 		_markers[i].visible = shown
 		if shown:
 			var at: Vector3 = btr.waypoints[i]
-			var ground: Dictionary = _ground_at(at.x, at.z, btr.position.y)
+			var ground: Dictionary = _ground_at(at.x, at.z)
 			_markers[i].position = Vector3(at.x, ground.height + 0.05, at.z)
 
 
@@ -404,8 +504,57 @@ func _unhandled_input(event: InputEvent) -> void:
 				focus.y += 2.0 / zoom
 
 
+# What the BTR's two questions answer over the whole level, one pixel per
+# OBSTACLE_STEP metres, north up: ground grey, water blue, forest green, walls
+# red, trunks orange, off the level black. Needs no window -- physics runs
+# headless -- so it is the check for _add_collision:
+#
+#     godot --path . --headless src/tools/level3d_preview.tscn -- --obstacle-map out.png
+const OBSTACLE_STEP := 0.25
+const OBSTACLE_COLOURS := {
+	"ground": Color(0.62, 0.58, 0.50), "water": Color(0.15, 0.35, 0.85),
+	"forest": Color(0.10, 0.50, 0.20), "wall": Color(0.85, 0.15, 0.10),
+	"trunk": Color(1.0, 0.55, 0.0), "": Color.BLACK,
+}
+
+
+func _obstacle_map(path: String) -> void:
+	var width := int(level_aabb.size.x / OBSTACLE_STEP)
+	var height := int(level_aabb.size.z / OBSTACLE_STEP)
+	var image := Image.create(width, height, false, Image.FORMAT_RGB8)
+	var cell := Vector3(OBSTACLE_STEP, 2.0, OBSTACLE_STEP) * 0.5
+	var counts := {}
+	for py in height:
+		for px in width:
+			var x := level_aabb.position.x + (px + 0.5) * OBSTACLE_STEP
+			var z := level_aabb.position.z + (py + 0.5) * OBSTACLE_STEP
+			var there := _ground_at(x, z)
+			var kind: String = there.kind if there.hit else ""
+			if kind == "ground" and _solid_at(Transform3D(Basis(), Vector3(x, there.height + 1.0, z)), cell):
+				kind = "trunk"
+			counts[kind] = counts.get(kind, 0) + 1
+			image.set_pixel(px, py, OBSTACLE_COLOURS[kind])
+	image.save_png(path)
+	print("obstacle map %dx%d, %d trunks: %s" % [width, height, _trunks, counts])
+	# And the forest the other way round: what the ground under each forest
+	# tree says it is. Anything but "forest" is a tree the BTR drives under.
+	var under := {}
+	var loose := []
+	for tree in find_children("ForestTree*", "MeshInstance3D", true, false):
+		var at: Vector3 = tree.global_position
+		var kind: String = _ground_at(at.x, at.z).kind
+		under[kind] = under.get(kind, 0) + 1
+		if kind != "forest" and loose.size() < 12:
+			loose.append(Vector2(snappedf(at.x, 0.1), snappedf(at.z, 0.1)))
+	print("ground under forest trees: %s, e.g. %s" % [under, loose])
+
+
 func _screenshot_mode() -> void:
 	var args := OS.get_cmdline_user_args()
+	if args.size() >= 2 and args[0] == "--obstacle-map":
+		_obstacle_map(args[1])
+		get_tree().quit()
+		return
 	if args.size() < 2 or args[0] != "--shot":
 		return
 	if args.size() >= 3:

@@ -16,9 +16,10 @@
 #   * At a bend the speed comes down to a crawl, and the ceiling for a straight
 #     run ends at that crawl rather than at zero. A standing start with the goal
 #     off the nose begins with the turn.
-#   * A slower ground is a cap, approached at the vehicle's own retardation
-#     rather than snapped to; where two caps meet, the lower one, never their
-#     product. Water is the only one here: the BTR swims, at SWIM_FRACTION.
+#   * What it cannot drive into is the scene's to say, not the vehicle's: the
+#     ground is asked what kind it is under the nose (water, forest and walls
+#     stop it) and whether the footprint at the next step overlaps anything
+#     solid (walls, palm trunks). See _add_collision in level3d_preview.gd.
 #   * The body pitch is BodyPitch's spring, driven by acceleration.
 #   * The turret has its own traverse rate; unaimed, it comes round to the bow
 #     while the hull is moving and stays where it was left when it is not.
@@ -50,18 +51,15 @@ const REVERSE_FRACTION := 0.4
 # to roll through a corner needs more than that to get round at all.
 const CORNER_FRACTION := 0.35
 const MIN_TURN_RADIUS := 2.2
-const SWIM_FRACTION := 0.30
 const TURRET_RATE := deg_to_rad(175.0)
 # Above this much heading error the order slows to the crawl to swing round.
 const SWING_THRESHOLD := deg_to_rad(25.0)
 const ARRIVE_RADIUS := 0.3
-# How high a step in the ground ahead the wheels climb; anything taller -- a
-# bunker, a wall, a sandbag, a trunk -- stops the vehicle. Crowns and canopy
-# above the roof are the scene's to leave out; see _ground_at there.
-const STEP_HEIGHT := 0.3
-# How deep the hull sits in the water it is swimming in, in model metres above
-# the wheel contact: about the belt line, which is where a BTR floats.
-const FLOAT_DEPTH := 1.1
+# The ground kinds the wheels may not go on to.
+const IMPASSABLE: Array[String] = ["water", "forest", "wall"]
+# The hull follows the ground's slope, but not across a jump bigger than this
+# between its ends, which is an edge rather than a slope.
+const TILT_STEP := 0.3
 
 # BodyPitch, verbatim: gain in radians at full acceleration, zeta 0.65 at
 # omega 21.9. Positive is nose down.
@@ -73,13 +71,20 @@ const BUMP_JOLT := 1.5
 # In model metres, from the Blender scene.
 const WHEEL_RADIUS := 0.66
 const WHEELBASE := 3.06
-# Where the hull is sampled for the step test, ahead of and beside the origin.
+# Where the ground is sampled, ahead of and beside the origin.
 const NOSE := 3.5
 const HALF_WIDTH := 1.3
+# The hull and wheels as one box, centre and half extents: x from the tail at
+# -2.35 to the nose at 3.47, the wheels' outer faces at +-1.75, the roof at 2.1.
+const FOOTPRINT_CENTRE := Vector3(0.56, 1.05, 0.0)
+const FOOTPRINT_HALF := Vector3(2.91, 0.95, 1.75)
 
-# Asked of the scene: `ground.call(x, z, level)` returns
-# {"height": float, "water": bool, "hit": bool} for the top surface there.
+# Asked of the scene: `ground.call(x, z)` returns
+# {"height": float, "kind": String, "hit": bool} for the top surface there, and
+# `solid.call(transform, half_extents)` whether a box there overlaps anything
+# solid.
 var ground: Callable
+var solid: Callable
 
 var heading := 0.0          # radians, 0 = +X, counter-clockwise from above
 var speed := 0.0            # m/s along the heading, negative in reverse
@@ -91,7 +96,6 @@ var throttle := 0.0         # -1..1 from the keys
 var steer := 0.0            # -1..1 from the keys
 var waypoints: Array[Vector3] = []
 var backing := false
-var in_water := false
 
 var _pitch := 0.0
 var _pitch_velocity := 0.0
@@ -106,9 +110,6 @@ var _wheels: Array[Node3D] = []
 var _wheel_rest: Array[Transform3D] = []
 var _front_wheels: Array[bool] = []
 var _tilt := Basis()
-# The height the wheels are on (or the water surface), which is what the ground
-# is asked about: what is more than a roof above it is overhead, not in the way.
-var _level := 0.0
 
 
 func _ready() -> void:
@@ -131,7 +132,7 @@ func _ready() -> void:
 
 
 func top_speed() -> float:
-	return TOP_SPEED * (SWIM_FRACTION if in_water else 1.0)
+	return TOP_SPEED
 
 
 func corner_speed() -> float:
@@ -151,7 +152,6 @@ func place(at: Vector3, facing: float) -> void:
 	backing = false
 	_pitch = 0.0
 	_pitch_velocity = 0.0
-	_level = at.y
 	_settle(0.0, true)
 	_pose()
 
@@ -293,19 +293,22 @@ func _set_yaw(wanted: float) -> void:
 	_steer_angle = move_toward(_steer_angle, clampf(target, -0.6, 0.6), 3.0 * get_physics_process_delta_time())
 
 
+# Two questions, because the level has two kinds of obstacle. Water and forest
+# are ground the wheels may not go on to, asked of the ground under the leading
+# end and its two corners; walls and trunks are things in the way, asked of the
+# whole footprint at the next step, since a trunk is thinner than the gap
+# between two probes.
 func _blocked(at: Vector3, direction: float) -> bool:
-	var here: Dictionary = ground.call(position.x, position.z, _level)
-	var level: float = here.height
 	var f := forward() * direction
 	var left := Vector3(-sin(heading), 0.0, -cos(heading))
 	for offset in [0.0, HALF_WIDTH, -HALF_WIDTH]:
 		var probe: Vector3 = at + (f * NOSE * 0.5 + left * offset) * MODEL_SCALE
-		var there: Dictionary = ground.call(probe.x, probe.z, _level)
-		if not there.hit:
-			return true     # off the edge of the level
-		if not there.water and there.height > level + STEP_HEIGHT:
+		var there: Dictionary = ground.call(probe.x, probe.z)
+		if not there.hit or there.kind in IMPASSABLE:
 			return true
-	return false
+	var pose := Transform3D(Basis(Vector3.UP, heading), at)
+	return solid.call(pose.translated_local(FOOTPRINT_CENTRE * MODEL_SCALE),
+			FOOTPRINT_HALF * MODEL_SCALE)
 
 
 # ----------------------------------------------------------------------------
@@ -341,35 +344,31 @@ func _update_turret(delta: float) -> void:
 	turret = wrapf(turret + clampf(diff, -budget, budget), -PI, PI)
 
 
-# Sits the vehicle on whatever is under it: the ground's height, tilted to the
-# ground under its four corners, or afloat in the water.
+# Sits the vehicle on the ground under it, tilted to the ground under its ends
+# and sides.
 func _settle(delta: float, snap: bool) -> void:
-	var centre: Dictionary = ground.call(position.x, position.z, _level)
-	in_water = centre.water
-	_level = centre.height
-	var lift := -FLOAT_DEPTH * MODEL_SCALE if in_water else 0.0
-	var target_y: float = centre.height + lift
+	var centre: Dictionary = ground.call(position.x, position.z)
+	var target_y: float = centre.height
 	position.y = target_y if snap else lerpf(position.y, target_y, clampf(delta * 8.0, 0.0, 1.0))
 
 	var f := forward()
 	var left := Vector3(-sin(heading), 0.0, -cos(heading))
 	var half := NOSE * 0.5 * MODEL_SCALE
 	var side := HALF_WIDTH * MODEL_SCALE
-	var hf: Dictionary = ground.call(position.x + f.x * half, position.z + f.z * half, _level)
-	var hb: Dictionary = ground.call(position.x - f.x * half, position.z - f.z * half, _level)
-	var hl: Dictionary = ground.call(position.x + left.x * side, position.z + left.z * side, _level)
-	var hr: Dictionary = ground.call(position.x - left.x * side, position.z - left.z * side, _level)
+	var hf: Dictionary = ground.call(position.x + f.x * half, position.z + f.z * half)
+	var hb: Dictionary = ground.call(position.x - f.x * half, position.z - f.z * half)
+	var hl: Dictionary = ground.call(position.x + left.x * side, position.z + left.z * side)
+	var hr: Dictionary = ground.call(position.x - left.x * side, position.z - left.z * side)
 	var pitch := 0.0
 	var roll := 0.0
-	# Afloat, the hull stays level; on the ground it follows it, but only over
-	# a step it could have climbed, so a wall beside it does not tip it over.
-	if not in_water:
-		var dp: float = hf.height - hb.height
-		var dr: float = hl.height - hr.height
-		if absf(dp) < STEP_HEIGHT:
-			pitch = atan2(dp, half * 2.0)
-		if absf(dr) < STEP_HEIGHT:
-			roll = atan2(dr, side * 2.0)
+	# Only over a jump it could be a slope, so a wall beside the hull does not
+	# tip it over.
+	var dp: float = hf.height - hb.height
+	var dr: float = hl.height - hr.height
+	if absf(dp) < TILT_STEP:
+		pitch = atan2(dp, half * 2.0)
+	if absf(dr) < TILT_STEP:
+		roll = atan2(dr, side * 2.0)
 	var target := Basis(Vector3.UP, heading) * Basis(Vector3(0, 0, 1), pitch) * Basis(Vector3(1, 0, 0), roll)
 	_tilt = target if snap else _tilt.slerp(target, clampf(delta * 8.0, 0.0, 1.0))
 
