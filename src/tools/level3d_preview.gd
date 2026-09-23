@@ -251,9 +251,6 @@ static func _kind_of(object_name: String) -> String:
 	for prefix in GROUND_NAMES:
 		if object_name.begins_with(prefix):
 			return "ground"
-	# A hangar's apron is ground; the hangar is not in the way.
-	if object_name.begins_with("Hangar") and object_name.ends_with("_Pad"):
-		return "ground"
 	for prefix in WALL_NAMES:
 		if object_name.begins_with(prefix):
 			return "wall"
