@@ -274,15 +274,26 @@ func _replace_ocean(level: Node) -> void:
 # faces in the shadow pass, which drops every plane that faces the sun -- their
 # shadows vanish unless both sides cast. Only for those, though: the ground
 # casting both ways shadows itself and comes out dark and striped.
+#
+# Which those are is the foliage's materials to say. It used to be any small
+# mesh with a double-sided material, but Blender exports every material
+# double-sided, so that took in the bunkers, the rocks and every building --
+# and a solid casting both ways shadows itself as the ground did: the hangars'
+# curved roofs came out striped and cut into dark wedges, more or less as the
+# camera, and the shadow map with it, moved. A solid casts its whole
+# silhouette from one side of its faces, provided they are all wound outward.
+# The hangars' were not -- eight of ten faces of each wound inward, all of
+# the ruined shell -- and double-sided casting had been hiding it; they are
+# wound outward in the stage file now.
+const FOLIAGE_MATERIALS: Array[String] = ["Frond", "Leaf"]
+
 func _cast_both_sides_of_planes(root: Node) -> void:
 	for node in root.find_children("*", "MeshInstance3D", true, false):
 		var mesh_instance := node as MeshInstance3D
-		var box := mesh_instance.get_aabb()
-		if box.size.x * box.size.z > 25.0:
-			continue
 		for surface in mesh_instance.mesh.get_surface_count():
 			var material := mesh_instance.mesh.surface_get_material(surface) as BaseMaterial3D
-			if material != null and material.cull_mode == BaseMaterial3D.CULL_DISABLED:
+			if material != null and material.cull_mode == BaseMaterial3D.CULL_DISABLED \
+					and FOLIAGE_MATERIALS.any(func(part): return material.resource_name.contains(part)):
 				mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_DOUBLE_SIDED
 				break
 
