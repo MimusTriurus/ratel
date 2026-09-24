@@ -167,6 +167,7 @@ func _ready() -> void:
 	_replace_ocean(level)
 	level_aabb = _mesh_aabb(level)
 	_cast_both_sides_of_planes(level)
+	_flat_ground_casts_nothing(level)
 	_add_collision(level)
 	_add_targets(level, false)
 	_add_destructibles()
@@ -284,6 +285,23 @@ func _cast_both_sides_of_planes(root: Node) -> void:
 			if material != null and material.cull_mode == BaseMaterial3D.CULL_DISABLED:
 				mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_DOUBLE_SIDED
 				break
+
+
+# The level's flat ground casts no shadow. A flat plane has nothing to shadow
+# but itself, and does even that badly where it meets another: the stage is
+# cut into 30 m pieces, some wound up and some down (Terrain_North to _North3
+# face down, Sand and Terrain_North4 up), and along the edge between a piece
+# that casts and one that does not the caster's edge left a dark line across
+# the whole level -- at z = -105 and at z = -15. The pieces with a drop in them
+# (the river's banks) are not flat and still cast.
+const FLAT := 0.02
+
+func _flat_ground_casts_nothing(root: Node) -> void:
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		var box := mesh_instance.get_aabb()
+		if box.size.x * box.size.z > 25.0 and box.size.y <= FLAT:
+			mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 # The scene's collision, decided by what each object of the level is -- its
