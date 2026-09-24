@@ -41,7 +41,8 @@ func after(clip: String, delta: float) -> void:
 	if clip != _clip:
 		_clip = clip
 		_from = _shown
-		_left = TIME	if _left <= 0.0:
+		_left = TIME
+	if _left <= 0.0:
 		return
 	_left -= delta
 	var w := smoothstep(0.0, 1.0, 1.0 - maxf(_left, 0.0) / TIME)
