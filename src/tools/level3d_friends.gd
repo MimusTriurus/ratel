@@ -138,6 +138,11 @@ class Friend:
 	var brother: Friend
 	var root: Node3D
 	var player: AnimationPlayer
+	var fade: Level3DCrossfade
+	# The clip he is in and where in it, 0..1: set by the tick, sought by the
+	# frame.
+	var clip := ""
+	var phase := 0.0
 	var colour: StandardMaterial3D
 	var dark: StandardMaterial3D
 	var colour_own: Color
@@ -271,6 +276,8 @@ func _spawn(x: float, y: float, type: int, house_count: int = -1) -> Friend:
 	f.root.scale = Vector3.ONE * model.scale
 	add_child(f.root)
 	f.player = f.root.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	# Posed by hand in _process, so that the fade can go on top of it.
+	f.player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	_own_materials(f)
 	friends.append(f)
 	# FriendlySoldier._init
@@ -292,6 +299,7 @@ func _spawn(x: float, y: float, type: int, house_count: int = -1) -> Friend:
 			FriendlySoldierType.HOUSE_LEFT_WAVING, FriendlySoldierType.HOUSE_RIGHT_WAVING:
 				f.state = FriendlySoldier.STATE_WAVING
 	_place(f)
+	f.fade = Level3DCrossfade.new(f.root, f.clip)
 	if verbose:
 		print("prisoner out at %.0f, %.0f" % [x, y])
 	return f
@@ -451,33 +459,35 @@ func solid_boxes(me = null) -> Array[Rect2]:
 func _place(f: Friend) -> void:
 	var at := Level3DMap.to_level(Vector2(f.x, f.y))
 	f.root.position = Vector3(at.x, ground.call(at.x, at.y).height, at.y)
-	var clip := WAVE if f.state == FriendlySoldier.STATE_WAVING else WALK
+	f.clip = WAVE if f.state == FriendlySoldier.STATE_WAVING else WALK
 	var facing := Vector2(f.direction_x, f.direction_y)
-	if clip == WAVE:
+	if f.clip == WAVE:
 		var player: Vector2 = player_position.call()
 		facing = player - at
 	if facing.length_squared() > 1e-6:
 		f.root.rotation.y = atan2(facing.x, facing.y)
-	if f.player.current_animation != clip:
-		f.player.play(clip)
-		f.player.pause()
-	var length := f.player.get_animation(clip).length
-	var phase := float(FriendlySoldier.LEG_FRAMES - 1 - f.leg_frames) / FriendlySoldier.LEG_FRAMES
-	if clip == WALK and model.stride > 0.0:
-		phase = fposmod(f.stride_phase, 1.0)
-	elif clip == WAVE and model.wave_seconds > 0.0:
-		phase = fposmod(f.ticks / (model.wave_seconds * Engine.physics_ticks_per_second), 1.0)
-	f.player.seek(phase * length, true)
+	f.phase = float(FriendlySoldier.LEG_FRAMES - 1 - f.leg_frames) / FriendlySoldier.LEG_FRAMES
+	if f.clip == WALK and model.stride > 0.0:
+		f.phase = fposmod(f.stride_phase, 1.0)
+	elif f.clip == WAVE and model.wave_seconds > 0.0:
+		f.phase = fposmod(f.ticks / (model.wave_seconds * Engine.physics_ticks_per_second), 1.0)
 
 
-# FriendlySoldier.render's colour, a sheet a frame while he flashes.
-func _process(_delta: float) -> void:
+# FriendlySoldier.render's colour, a sheet a frame while he flashes; and his
+# pose, where the tick left it, faded into from the last when the clip changes
+# (Level3DCrossfade).
+func _process(delta: float) -> void:
 	for f in friends:
 		if f.colour_changing:
 			f.colour_index = (f.colour_index + 1) & 3
 		var sheet: Array = SHEETS[f.colour_index]
 		f.colour.albedo_color = sheet[0] if sheet[0] != Color() else f.colour_own
 		f.dark.albedo_color = sheet[1] if sheet[1] != Color() else f.dark_colour
+		f.fade.before()
+		if f.player.assigned_animation != f.clip:
+			f.player.play(f.clip)
+		f.player.seek(f.phase * f.player.get_animation(f.clip).length, true)
+		f.fade.after(f.clip, delta)
 
 
 func _remove(f: Friend) -> void:

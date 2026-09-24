@@ -144,6 +144,9 @@ class Soldier:
 	var delay := 0
 	var root: Node3D
 	var player: AnimationPlayer
+	var fade: Level3DCrossfade
+	# Where the Walk is, 0..1, set by the tick and sought by the frame.
+	var walk_phase := 0.0
 	var brown: StandardMaterial3D
 	var dark: StandardMaterial3D
 	var brown_colour: Color
@@ -231,6 +234,8 @@ func _spawn(x: float, y: float, type: int) -> void:
 	s.player = s.root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	for clip in [WALK, AIM]:
 		s.player.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
+	# Advanced by hand in _process, so that the fade can go on top of it.
+	s.player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	_own_materials(s)
 	soldiers.append(s)
 	var player := Level3DMap.to_map(player_position.call())
@@ -240,6 +245,7 @@ func _spawn(x: float, y: float, type: int) -> void:
 		EnemySoldierType.STATIONARY:
 			_start_aiming(s, player)
 	_place(s)
+	s.fade = Level3DCrossfade.new(s.root, s.player.assigned_animation)
 	if verbose:
 		print("soldier %s appears at %.0f, %.0f" % ["walker" if type == EnemySoldierType.WALKER else "stationary", x, y])
 
@@ -360,7 +366,6 @@ func _start_seeking(s: Soldier, player: Vector2) -> void:
 	s.state = STATE_SEEKING
 	s.walk_steps = 1 + _rng.randi_range(0, EnemySoldier.MAX_WALK_STEPS - 1)
 	s.player.play(WALK)
-	s.player.pause()
 	_target_player(s, player)
 
 
@@ -437,15 +442,13 @@ func _place(s: Soldier) -> void:
 	if s.state == STATE_SEEKING and s.type == EnemySoldierType.WALKER:
 		# The walk advances only on a step taken, as the leg frames do -- or,
 		# for a model with a stride, by the ground the step covered.
-		var length := s.player.get_animation(WALK).length
-		var phase := float(EnemySoldier.LEG_FRAMES - 1 - s.leg_frames) / EnemySoldier.LEG_FRAMES
+		s.walk_phase = float(EnemySoldier.LEG_FRAMES - 1 - s.leg_frames) / EnemySoldier.LEG_FRAMES
 		if model.stride > 0.0:
-			phase = fposmod(s.stride_phase, 1.0)
-		s.player.seek(phase * length, true)
+			s.walk_phase = fposmod(s.stride_phase, 1.0)
 
 
 # Per rendered frame, as EnemySoldier.render counts it.
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	for s in soldiers:
 		s.blink -= 1
 		if s.blink < 0:
@@ -453,6 +456,21 @@ func _process(_delta: float) -> void:
 		var blinking := s.blink < 2 and s.state == STATE_AIMING and s.aiming <= EnemySoldier.AIM_BLINKING
 		s.brown.albedo_color = BLINK_BROWN if blinking else s.brown_colour
 		s.dark.albedo_color = BLINK_DARK if blinking else s.dark_colour
+	for s in soldiers + _corpses:
+		_pose(s, delta)
+
+
+# The frame's pose: the clip, faded into from whatever was on screen when it
+# changed -- walk to aim, aim to walk, the kick back to aim, anything to the
+# fall (Level3DCrossfade). The Walk is sought where the tick left it, the rest
+# played on.
+func _pose(s: Soldier, delta: float) -> void:
+	s.fade.before()
+	if s.player.assigned_animation == WALK:
+		s.player.seek(s.walk_phase * s.player.get_animation(WALK).length, true)
+	else:
+		s.player.advance(delta)
+	s.fade.after(s.player.assigned_animation, delta)
 
 
 # ----------------------------------------------------------------------------
