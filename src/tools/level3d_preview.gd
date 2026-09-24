@@ -37,7 +37,8 @@
 #   Esc                    stop
 #   Q / E                  turn the turret by hand; M toggles mouse aim
 #   R                      put the BTR back at the start, rebuild what was blown up
-#                          and bring the bunkers' guns, the soldiers and the boats back
+#                          and bring the bunkers' guns, the soldiers, the boats and
+#                          the tanks back
 #   wheel, arrows          scroll the camera off the BTR; C follows it again
 #   + / -                  zoom
 #   Tab                    top view / tilted view
@@ -51,13 +52,13 @@
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
 #            [--at <x,z>]
 #
-# The bunkers' guns, the enemy soldiers and the two boats on the river fight
-# back as they do in the game (level3d_guns.gd, level3d_soldiers.gd,
-# level3d_boats.gd, on the game's own map through
-# level3d_map.gd): one round kills the BTR, which comes back where it died
-# after a pause, blinking while it cannot be hit. --immortal lets the enemies'
-# rounds pass it (running into a gun still kills it), and a --shot prints what
-# the enemies do.
+# The bunkers' guns, the enemy soldiers, the two boats on the river and the two
+# brown tanks fight back as they do in the game (level3d_guns.gd,
+# level3d_soldiers.gd, level3d_boats.gd, level3d_tanks.gd, on the game's own
+# map through level3d_map.gd): one round kills the BTR, which comes back where
+# it died after a pause, blinking while it cannot be hit. --immortal lets the
+# enemies' rounds pass it (running into a gun or a tank still kills it), and a
+# --shot prints what the enemies do.
 #
 # The frame is taken that many seconds later; with waypoints the BTR is sent
 # along them first (level coordinates: x across, z up the stage is negative)
@@ -115,6 +116,7 @@ var guns: Level3DGuns
 var soldiers: Level3DSoldiers
 var friends: Level3DFriends
 var boats: Level3DBoats
+var tanks: Level3DTanks
 var map: Level3DMap
 var level_aabb: AABB
 var focus := Vector2.ZERO       # x, z the camera is centred on
@@ -669,9 +671,18 @@ func _add_guns(level: Node) -> void:
 	boats.player_position = guns.player_position
 	boats.scored = guns.scored
 	add_child(boats)
+	tanks = Level3DTanks.new()
+	tanks.map = map
+	tanks.guns = guns
+	tanks.frame = _view_frame
+	tanks.ground = _ground_at
+	tanks.player_position = guns.player_position
+	tanks.scored = guns.scored
+	add_child(tanks)
 	guns.explosion_hit = func(box: Rect2, player: bool):
 		soldiers.explosion_hit(box, player)
 		boats.explosion_hit(box, player)
+		tanks.explosion_hit(box, player)
 	friends = Level3DFriends.new()
 	friends.map = map
 	friends.guns = guns
@@ -686,26 +697,33 @@ func _add_guns(level: Node) -> void:
 	for building in destructibles:
 		centres[building] = destructibles[building].footprint.get_center()
 	friends.bind(centres)
-	# A round stops at the first enemy on its way, gun, soldier or boat; a
-	# missile kills the soldiers it passes and stops at a gun or a boat.
+	# A round stops at the first enemy on its way, gun, soldier, boat or tank;
+	# a missile kills the soldiers it passes and stops at a gun, a boat or a
+	# tank.
 	gun.intercept = func(from: Vector3, to: Vector3):
 		return _nearest([guns.intercept(from, to, PlayerBullet.MARGIN),
 				soldiers.intercept(from, to, PlayerBullet.MARGIN),
-				boats.intercept(from, to, PlayerBullet.MARGIN)])
+				boats.intercept(from, to, PlayerBullet.MARGIN),
+				tanks.intercept(from, to, PlayerBullet.MARGIN)])
 	gun.struck = func(found: Dictionary):
 		if found.has("gun"):
 			guns.bullet_attack(found.gun)
 		elif found.has("boat"):
 			boats.bullet_attack(found)
+		elif found.has("tank"):
+			tanks.bullet_attack(found)
 		else:
 			soldiers.bullet_attack(found)
 	launcher.intercept = func(from: Vector3, to: Vector3):
 		soldiers.sweep(from, to, PlayerMissile.MARGIN)
 		return _nearest([guns.intercept(from, to, PlayerMissile.MARGIN, true),
-				boats.intercept(from, to, PlayerMissile.MARGIN, true)])
+				boats.intercept(from, to, PlayerMissile.MARGIN, true),
+				tanks.intercept(from, to, PlayerMissile.MARGIN, true)])
 	launcher.struck = func(found: Dictionary):
 		if found.has("boat"):
 			boats.attack(found)
+		elif found.has("tank"):
+			tanks.attack(found)
 		else:
 			guns.attack(found.gun)
 	_blast_scene = load(BLAST_PATH)
@@ -982,9 +1000,12 @@ func _physics_process(delta: float) -> void:
 		friends.bump(_player_box())
 		if guns.bump(_player_box(), _invincible > 0):
 			_explode_btr("ran into a gun")
+		elif tanks.bump(_player_box(), _invincible > 0):
+			_explode_btr("ran into a tank")
 	guns.tick()
 	soldiers.tick()
 	boats.tick()
+	tanks.tick()
 	friends.tick()
 	_set_score(_score)
 	_sync_markers()
@@ -1043,6 +1064,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				guns.reset()
 				soldiers.reset()
 				boats.reset()
+				tanks.reset()
 				friends.reset()
 				map.reset()
 				_respawning = 0
@@ -1123,6 +1145,7 @@ func _screenshot_mode() -> void:
 	guns.verbose = args.has("--shot")
 	soldiers.verbose = guns.verbose
 	boats.verbose = guns.verbose
+	tanks.verbose = guns.verbose
 	friends.verbose = guns.verbose
 	var immortal := args.find("--immortal")
 	if immortal >= 0:

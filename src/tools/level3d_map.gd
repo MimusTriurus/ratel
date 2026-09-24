@@ -106,6 +106,12 @@ func is_driveable_box(x1: float, y1: float, x2: float, y2: float) -> bool:
 		and is_driveable(x1, y2) and is_driveable(x2, y1)
 
 
+# GameMode.is_driveable_land: what a tank's sensor will drive on -- not swamp.
+func is_driveable_land(x: float, y: float) -> bool:
+	var t := tile_type(x, y)
+	return t == MapIO.TYPE_EMPTY or t == MapIO.TYPE_CONVEYOR
+
+
 func is_solid(x: float, y: float) -> bool:
 	return tile_type(x, y) == MapIO.TYPE_SOLID
 
@@ -139,6 +145,37 @@ func suggest_direction(x1: float, y1: float, x2: float, y2: float, rng: RandomNu
 		return straight_direction(x1, y1, x2, y2)
 	var angle: float = GameMode.DIRECTION_RADIANS[d] + (rng.randf() - 0.5) * 0.7854
 	return Vector2(cos(angle), sin(angle))
+
+
+# GameMode.suggest_direction without randomness, the tank's call: the flow
+# field's step as Main.create_unit_vector has it, and its angle in degrees, in
+# a Vector3 (x, y, angle).
+func suggest_direction_exact(x1: float, y1: float, x2: float, y2: float) -> Vector3:
+	var d := lookup_direction(x1, y1, x2, y2)
+	var angle: int
+	if d < 0:
+		var a := rad_to_deg(atan2(y2 - y1, x2 - x1))
+		if a < 0:
+			a += 360
+		angle = 45 * int(round(a / 45.0)) % 360
+	else:
+		angle = GameMode.DIRECTION_DEGREES[d]
+	var v := unit_vector(angle)
+	return Vector3(v.x, v.y, angle)
+
+
+# Main.create_unit_vector, the exact table for multiples of 45 degrees.
+static func unit_vector(angle: int) -> Vector2:
+	var s := Main.ISQRT2
+	match posmod(angle, 360):
+		0: return Vector2(1, 0)
+		45: return Vector2(s, s)
+		90: return Vector2(0, 1)
+		135: return Vector2(-s, s)
+		180: return Vector2(-1, 0)
+		225: return Vector2(-s, -s)
+		270: return Vector2(0, -1)
+		_: return Vector2(s, -s)
 
 
 # GameMode.straight_direction: towards the target, to the nearest 45 degrees.
