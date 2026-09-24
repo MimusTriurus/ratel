@@ -1,5 +1,5 @@
 # The enemy soldiers on the 3D stage 1 preview: jackal.EnemySoldier and
-# jackal.DeadEnemySoldier, on jackal_soldier.glb (jackal_units.blend).
+# jackal.DeadEnemySoldier, on jackal_trooper.glb or jackal_soldier.glb (MODELS).
 #
 # Nothing here is part of the game, and all of it is the game's: the soldiers
 # are stage-0.json's SOLDIER_WALKER and SOLDIER_STATIONARY triggers on normal,
@@ -25,6 +25,13 @@
 #     hurt the player. He falls, lies for 182 ticks and fades over 91; the
 #     corpse is 100 points.
 #
+# He is drawn as the trooper of the soldier model sheet (jackal_trooper.glb,
+# jackal_soldier_lowpoly.blend) unless the preview is given --sprite-soldiers,
+# which brings back the figure made from the game's sprite (jackal_soldier.glb,
+# jackal_units.blend). Both are the same soldier to everything above: MODELS
+# says what differs -- the trooper is a 1.8 m man shrunk to the sprite
+# figure's metre, blinks his olive, and walks by the ground he covers.
+#
 # Where this departs from the game, and why:
 #   * The hit and mine boxes are the game's 32 x 60 px, but centred on him
 #     rather than hung 54 px above his feet: that offset is the sprite standing
@@ -36,7 +43,27 @@ class_name Level3DSoldiers
 extends Node3D
 
 const SOLDIER_PATH := "res://resources/3d/jackal_soldier.glb"
+const TROOPER_PATH := "res://resources/3d/jackal_trooper.glb"
 const PX := Level3DMap.PX
+
+# What the two figures need said about them:
+#   scale        to the sprite figure's metre -- what keeps him in proportion
+#                with the BTR and the bunkers (jackal_units.blend)
+#   round_height where his rifle is when he fires, metres, scaled
+#   brown, dark  the materials his blink recolours, as the yellow sheet does
+#                the sprite's brown and black
+#   stride       metres a Walk cycle covers, unscaled, for a walk driven by the
+#                ground covered; 0 steps it by the game's leg frames, which is
+#                right for the sprite figure's two-frame walk and slides the
+#                trooper's feet (his cycle is 0.8 m, the game's 26 ticks 13 px)
+#   loop_pad     seconds the looping clips are short of their repeat: the
+#                trooper's are exported up to the frame before the first again
+const MODELS := {
+	"trooper": {"path": TROOPER_PATH, "scale": 0.55, "round_height": 0.72,
+			"brown": "T_Olive", "dark": "T_OliveDark", "stride": 0.8, "loop_pad": 1.0 / 24.0},
+	"sprite": {"path": SOLDIER_PATH, "scale": 1.0, "round_height": 0.55,
+			"brown": "J_SoldierBrown", "dark": "J_SoldierDark", "stride": 0.0, "loop_pad": 0.0},
+}
 
 # EnemySoldier.init()'s boxes, pixels from his position. Solid is the game's,
 # for walking round each other; hit and mine are the same size, centred.
@@ -51,8 +78,6 @@ const TRIGGER_OFFSET := Vector2(32, 74)
 # this far below the furthest the frame has been is gone.
 const REMOVE_BOUND := 1536.0 + (1152 - 960)
 const CAMERA_BOUND := 1152.0
-# The height his round leaves at: the rifle on the model.
-const ROUND_HEIGHT := 0.55
 # The yellow sheet he blinks: enemy-soldier-yellow.png's colours for the
 # brown and the black of enemy-soldier-brown.png.
 const BLINK_BROWN := Color8(188, 190, 0)
@@ -82,6 +107,8 @@ var scored: Callable
 var more_solids: Callable
 var verbose := false
 
+# MODELS' entry for the figure he is drawn as.
+var model: Dictionary
 var soldiers: Array[Soldier] = []
 var _corpses: Array[Soldier] = []
 var _scene: PackedScene
@@ -102,6 +129,8 @@ class Soldier:
 	var walking := 0
 	var aiming := 0
 	var leg_frames := 0
+	# Walk cycles covered, for a model that walks by its stride.
+	var stride_phase := 0.0
 	var walk_steps := 0
 	var blink := 0
 	var shots := 0
@@ -122,9 +151,18 @@ class Soldier:
 
 func _ready() -> void:
 	_rng.seed = 3
-	_scene = load(SOLDIER_PATH)
+	model = MODELS["sprite" if OS.get_cmdline_user_args().has("--sprite-soldiers") else "trooper"]
+	_scene = load(model.path)
 	if _scene == null:
-		push_error("Cannot load %s -- run export() in jackal_units.blend" % SOLDIER_PATH)
+		push_error("Cannot load %s -- run export() in its .blend" % model.path)
+		return
+	# The clips are the scene's, shared by every soldier: padded once, here.
+	if model.loop_pad > 0.0:
+		var probe := _scene.instantiate()
+		var clips := probe.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		for clip in [WALK, AIM]:
+			clips.get_animation(clip).length += model.loop_pad
+		probe.free()
 	reset()
 
 
@@ -187,6 +225,7 @@ func _spawn(x: float, y: float, type: int) -> void:
 	# EnemySoldier._init on stage 1: one round before he moves on.
 	s.total_shots = 1
 	s.root = _scene.instantiate() as Node3D
+	s.root.scale = Vector3.ONE * model.scale
 	add_child(s.root)
 	s.player = s.root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	for clip in [WALK, AIM]:
@@ -212,10 +251,10 @@ func _own_materials(s: Soldier) -> void:
 			var material := mi.mesh.surface_get_material(surface) as StandardMaterial3D
 			if material == null:
 				continue
-			if material.resource_name == "J_SoldierBrown":
+			if material.resource_name == model.brown:
 				s.brown = material.duplicate()
 				mi.set_surface_override_material(surface, s.brown)
-			elif material.resource_name == "J_SoldierDark":
+			elif material.resource_name == model.dark:
 				s.dark = material.duplicate()
 				mi.set_surface_override_material(surface, s.dark)
 	s.brown_colour = s.brown.albedo_color
@@ -300,7 +339,7 @@ func _aim(s: Soldier, player: Vector2) -> void:
 func _shoot(s: Soldier) -> void:
 	var d := Vector2(s.direction_x, s.direction_y).normalized()
 	guns.enemy_bullet(Level3DMap.to_level(Vector2(s.x, s.y)), d * EnemyBullet.SPEED,
-			EnemySoldier.BULLET_TRAVEL_TIME, ROUND_HEIGHT)
+			EnemySoldier.BULLET_TRAVEL_TIME, model.round_height)
 	s.player.play(SHOOT)
 	s.player.queue(AIM)
 
@@ -352,6 +391,8 @@ func _seek(s: Soldier, player: Vector2) -> void:
 				walkable = false
 				break
 	if walkable:
+		if model.stride > 0.0:
+			s.stride_phase += Vector2(next_x - s.x, next_y - s.y).length() * PX / (model.stride * model.scale)
 		s.x = next_x
 		s.y = next_y
 		s.moved = true
@@ -393,9 +434,12 @@ func _place(s: Soldier) -> void:
 	if s.direction_x != 0.0 or s.direction_y != 0.0:
 		s.root.rotation.y = atan2(s.direction_x, s.direction_y)
 	if s.state == STATE_SEEKING and s.type == EnemySoldierType.WALKER:
-		# The walk advances only on a step taken, as the leg frames do.
+		# The walk advances only on a step taken, as the leg frames do -- or,
+		# for a model with a stride, by the ground the step covered.
 		var length := s.player.get_animation(WALK).length
 		var phase := float(EnemySoldier.LEG_FRAMES - 1 - s.leg_frames) / EnemySoldier.LEG_FRAMES
+		if model.stride > 0.0:
+			phase = fposmod(s.stride_phase, 1.0)
 		s.player.seek(phase * length, true)
 
 

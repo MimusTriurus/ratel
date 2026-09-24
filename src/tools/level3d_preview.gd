@@ -65,6 +65,10 @@
 # the trigger down from the start, and --rocket aims at x,z and sends one
 # rocket as soon as the launcher has come round, or that many seconds in.
 # --at puts the BTR at x,z to begin with instead of at START.
+#
+# The soldiers are the model sheet's trooper; --sprite-soldiers, with or
+# without --shot, draws them as the figure made from the game's sprite
+# (level3d_soldiers.gd, MODELS).
 extends Node3D
 
 const LEVEL_PATH := "res://resources/3d/jackal_stage1.glb"
@@ -1095,6 +1099,10 @@ func _screenshot_mode() -> void:
 	if immortal >= 0:
 		_immortal = true
 		args.remove_at(immortal)
+	# Level3DSoldiers reads it for itself; it is not a waypoint.
+	var sprite_soldiers := args.find("--sprite-soldiers")
+	if sprite_soldiers >= 0:
+		args.remove_at(sprite_soldiers)
 	var start_at := args.find("--at")
 	if start_at >= 0:
 		var xz := args[start_at + 1].split(",")
