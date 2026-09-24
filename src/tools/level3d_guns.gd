@@ -68,7 +68,17 @@ const EXPLOSION_MARGIN := 0.35
 
 # The height a shot flies at: the barrel's axis on the model.
 const ROUND_HEIGHT := 0.83
-const ROUND_RADIUS := 0.06
+# A shot is the game's own sprite, EnemyBullet's white or yellow, turned to
+# the camera at the game's size: 24 px across, a white core in a grey or
+# yellow ring in a black one. A small white ball, as it was, was lost on the
+# sand; the black ring is what makes it read, there as in the game.
+const ROUND_SPRITES := {true: "white-bullet.png", false: "yellow-bullet.png"}
+# The gun's flash. RotatingGun has none -- its second sprite is the barrel run
+# back, nothing more -- but the 3D gun's round leaves from a muzzle that was
+# otherwise dark: a star of fire along the shot for FLASH_TIME, and a wisp.
+const FLASH_TIME := 0.07
+const FLASH_LENGTH := 0.6
+const FLASH_WIDTH := 0.3
 # Where the destruction's blast goes off, and its size: GUN_CENTRE and the
 # scale in jackal_bunker_dest.py.
 const BLAST_HEIGHT := 0.85
@@ -105,8 +115,11 @@ var guns: Array[Gun] = []
 var _shots := []
 var _explosions := []
 var _travels := []
-var _shot_meshes := {}
+var _shot_textures := {}
 var _hit_mesh: SphereMesh
+var _flash_mesh: SphereMesh
+var _flash_core: SphereMesh
+var _wisp_mesh: SphereMesh
 
 
 class Gun:
@@ -139,14 +152,24 @@ func _ready() -> void:
 	_hit_mesh.radius = 1.0
 	_hit_mesh.height = 2.0
 	_hit_mesh.material = _unshaded(Color(1.0, 0.95, 0.7))
-	for white in [true, false]:
-		var mesh := SphereMesh.new()
-		mesh.radial_segments = 6
-		mesh.rings = 3
-		mesh.radius = ROUND_RADIUS
-		mesh.height = ROUND_RADIUS * 2.0
-		mesh.material = _unshaded(Color(1.0, 1.0, 1.0) if white else Color(1.0, 0.85, 0.2))
-		_shot_meshes[white] = mesh
+	var bank := SpriteBank.new(Main.SPRITES)
+	for white in ROUND_SPRITES:
+		var sprite := bank.get_sprite(ROUND_SPRITES[white])
+		var texture := AtlasTexture.new()
+		texture.atlas = sprite.tex
+		texture.region = sprite.region
+		_shot_textures[white] = texture
+	_flash_mesh = _ball(Color(1.0, 0.72, 0.22))
+	_flash_core = _ball(Color(1.0, 0.95, 0.7))
+	_wisp_mesh = SphereMesh.new()
+	_wisp_mesh.radial_segments = 6
+	_wisp_mesh.rings = 3
+	_wisp_mesh.radius = 1.0
+	_wisp_mesh.height = 2.0
+	var wisp := StandardMaterial3D.new()
+	wisp.albedo_color = Color(0.5, 0.48, 0.45)
+	wisp.roughness = 1.0
+	_wisp_mesh.material = wisp
 
 
 # One gun, its model already in the tree and prepared as a destructible is.
@@ -273,15 +296,54 @@ func _fire(gun: Gun) -> void:
 	var a := deg_to_rad(gun.angle)
 	var unit := Vector2(cos(a), sin(a))
 	var speed := EnemyBullet.SPEED * (1.0 if gun.white else RotatingGun.YELLOW_BULLET_SPEED)
-	enemy_bullet(gun.at + unit * MUZZLE * PX, unit * speed, RotatingGun.BULLET_TRAVEL_TIME,
-			ROUND_HEIGHT, gun.white)
+	var muzzle := gun.at + unit * MUZZLE * PX
+	enemy_bullet(muzzle, unit * speed, RotatingGun.BULLET_TRAVEL_TIME, ROUND_HEIGHT, gun.white)
+	_muzzle_flash(Vector3(muzzle.x, ROUND_HEIGHT, muzzle.y), Vector3(unit.x, 0.0, unit.y))
+
+
+# A flash at a gun's muzzle, long along `direction`, for FLASH_TIME: fire
+# round a hot core, the core standing up out of it so that it shows from
+# above. Then a wisp of smoke drifts off where it was.
+func _muzzle_flash(at: Vector3, direction: Vector3) -> void:
+	var along := Basis.looking_at(direction, Vector3.UP)
+	var ahead := at + direction * FLASH_LENGTH * 0.4
+	for layer in [[_flash_mesh, 1.0, 0.0], [_flash_core, 0.6, FLASH_WIDTH * 0.35]]:
+		var node := MeshInstance3D.new()
+		node.mesh = layer[0]
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(node)
+		var size: float = layer[1]
+		# The ball's -Z is looking_at's forward: long that way.
+		var shape := Vector3(FLASH_WIDTH, FLASH_WIDTH, FLASH_LENGTH) * 0.5 * size
+		node.global_transform = Transform3D(along.scaled_local(shape), ahead + Vector3.UP * layer[2])
+		get_tree().create_timer(FLASH_TIME, false, true).timeout.connect(node.queue_free)
+	var wisp := MeshInstance3D.new()
+	wisp.mesh = _wisp_mesh
+	wisp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	wisp.visible = false
+	add_child(wisp)
+	wisp.global_position = ahead
+	wisp.scale = Vector3.ONE * 0.04
+	var tween := wisp.create_tween()
+	tween.tween_interval(FLASH_TIME)
+	tween.tween_callback(wisp.show)
+	tween.set_parallel()
+	tween.tween_property(wisp, "scale", Vector3.ONE * 0.12, 0.15).set_ease(Tween.EASE_OUT)
+	tween.tween_property(wisp, "global_position", ahead + direction * 0.15 + Vector3.UP * 0.3, 0.45)
+	tween.tween_property(wisp, "scale", Vector3.ONE * 0.001, 0.3).set_delay(0.15).set_ease(Tween.EASE_IN)
+	tween.chain().tween_callback(wisp.queue_free)
 
 
 # An EnemyBullet at `at` (level x, z), moving `v` map pixels a tick for
 # `travel` ticks, drawn `height` above the ground: white or yellow.
 func enemy_bullet(at: Vector2, v: Vector2, travel: int, height: float, white := true) -> void:
-	var node := MeshInstance3D.new()
-	node.mesh = _shot_meshes[white]
+	var node := Sprite3D.new()
+	node.texture = _shot_textures[white]
+	node.pixel_size = PX
+	node.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	node.shaded = false
+	node.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+	node.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(node)
 	var shot := {"at": at, "v": v * PX, "travel": travel, "node": node, "height": height}
@@ -319,11 +381,13 @@ func _place_shot(shot: Dictionary) -> void:
 func _drop_shot(i: int, spark: bool) -> void:
 	var shot: Dictionary = _shots[i]
 	_shots.remove_at(i)
-	var node: MeshInstance3D = shot.node
+	(shot.node as Node3D).queue_free()
 	if not spark:
-		node.queue_free()
 		return
+	var node := MeshInstance3D.new()
 	node.mesh = _hit_mesh
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(node)
 	node.position = Vector3(shot.at.x, shot.height, shot.at.y)
 	node.scale = Vector3.ONE * 0.12
 	var tween := node.create_tween()
@@ -541,3 +605,14 @@ static func _unshaded(colour: Color) -> StandardMaterial3D:
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.albedo_color = colour
 	return material
+
+
+# A unit ball, low poly, in one unshaded colour.
+static func _ball(colour: Color) -> SphereMesh:
+	var mesh := SphereMesh.new()
+	mesh.radial_segments = 6
+	mesh.rings = 3
+	mesh.radius = 1.0
+	mesh.height = 2.0
+	mesh.material = _unshaded(colour)
+	return mesh
