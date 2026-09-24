@@ -37,6 +37,7 @@
 #   Esc                    stop
 #   Q / E                  turn the turret by hand; M toggles mouse aim
 #   R                      put the BTR back at the start, rebuild what was blown up
+#                          and bring the bunkers' guns back
 #   wheel, arrows          scroll the camera off the BTR; C follows it again
 #   + / -                  zoom
 #   Tab                    top view / tilted view
@@ -47,7 +48,12 @@
 #
 #     godot --path . --windowed --resolution 1280x720 src/tools/level3d_preview.tscn \
 #         -- --shot out.png <position 0-1 or x,z> <zoom> <top|tilt> [<seconds> <x,z> ...] \
-#            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]]
+#            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
+#
+# The bunkers' guns fight back as they do in the game (level3d_guns.gd): one
+# round kills the BTR, which comes back where it died after a pause, blinking
+# while it cannot be hit. --immortal lets the guns' rounds pass it (running into
+# a gun still kills it), and a --shot prints what the guns do.
 #
 # The frame is taken that many seconds later; with waypoints the BTR is sent
 # along them first (level coordinates: x across, z up the stage is negative)
@@ -96,6 +102,7 @@ var sun: DirectionalLight3D
 var btr: Level3DBtr
 var gun: Level3DGun
 var launcher: Level3DLauncher
+var guns: Level3DGuns
 var level_aabb: AABB
 var focus := Vector2.ZERO       # x, z the camera is centred on
 var following := true
@@ -149,7 +156,9 @@ func _ready() -> void:
 	launcher.mask = GROUND_LAYER | SOLID_LAYER | TARGET_LAYER
 	launcher.exploded = _on_exploded
 	add_child(launcher)
+	_add_guns(level)
 	_make_markers()
+	_make_hud()
 
 	camera = Camera3D.new()
 	add_child(camera)
@@ -466,7 +475,7 @@ func _add_destructibles() -> void:
 		destructibles[building].footprint = _footprint(root)
 
 
-const FLASH_NAMES: Array[String] = ["Blast_Flash", "Gate_Flash"]
+const FLASH_NAMES: Array[String] = ["Blast_Flash", "Gate_Flash", "FX_Blast_Flash"]
 # J_BlastFlash's emission strength over the destruction, keyed on its node tree
 # in Blender: (frame, strength). Frame 1 is time 0, at 24 fps.
 const FLASH_EMISSION := [[9, 0.0], [10, 14.0], [12, 9.0], [15, 4.0], [18, 0.0]]
@@ -562,6 +571,8 @@ const BLAST_RADIUS := 1.2
 
 func _on_exploded(at: Vector3, rid: RID) -> bool:
 	_shake(SHAKE_PIXELS)
+	# The missile's own Explosion, which goes on to hit the guns it grows over.
+	guns.explode(at)
 	var any := false
 	for building in destructibles:
 		var entry: Dictionary = destructibles[building]
@@ -588,6 +599,149 @@ func _footprint(root: Node) -> Rect2:
 		box = flat if first else box.merge(flat)
 		first = false
 	return box
+
+
+# ----------------------------------------------------------------------------
+# The bunkers' guns, and the BTR's dying to them: level3d_guns.gd has the rules.
+#
+# One jackal_dest_BunkerGun.glb (jackal_bunker_dest.py in jackal_assets.blend)
+# on every bunker of the stage, which the stage file has without its gun. The
+# yellow gun is the one YELLOW_GUN of stage-0.json; the rest are GRAY_GUN.
+const GUN_BUNKERS: Array[String] = ["Bunker_0", "Bunker_1", "Bunker_2", "Bunker_3", "Bunker_4",
+		"BunkerN_0", "BunkerN_1", "BunkerN3_0", "BunkerN3_1", "BunkerN3_2", "BunkerN3_3",
+		"BunkerN3_4", "BunkerN3_5", "BunkerN3_6", "BunkerN3_7"]
+const YELLOW_GUN_BUNKER := "BunkerN3_5"
+const BLAST_PATH := "res://resources/3d/jackal_fx_blast.glb"
+# What stops a gun's round, as GameMode.is_solid does: walls and the forest
+# (both solid tiles in the game), and palm trunks.
+const ROUND_STOPPERS: Array[String] = ["wall", "forest"]
+const ROUND_PROBE := Vector3(0.05, 0.05, 0.05)
+
+# Player.update's two counters, in ticks: while `_respawning` the BTR is gone
+# and nothing it does happens; while `_invincible` rounds and mines pass it by.
+var _respawning := 0
+var _invincible := 0
+var _immortal := false  # --immortal: rounds pass the BTR by, for --shot runs
+var _blink := 0
+var _score := 0
+var _score_label: Label
+var _blast_scene: PackedScene
+
+
+func _add_guns(level: Node) -> void:
+	guns = Level3DGuns.new()
+	guns.frame = _view_frame
+	guns.solid = _round_stops
+	guns.player_attack = _attack_player
+	guns.player_position = func(): return Vector2(btr.position.x, btr.position.z)
+	guns.blast = _spawn_blast
+	guns.scored = func(points: int): _set_score(_score + points)
+	add_child(guns)
+	gun.intercept = func(from: Vector3, to: Vector3): return guns.intercept(from, to, PlayerBullet.MARGIN)
+	gun.struck = func(found: Dictionary): guns.bullet_attack(found.gun)
+	launcher.intercept = func(from: Vector3, to: Vector3):
+		return guns.intercept(from, to, PlayerMissile.MARGIN, true)
+	launcher.struck = func(found: Dictionary): guns.attack(found.gun)
+	_blast_scene = load(BLAST_PATH)
+	var scene: PackedScene = load(Level3DGuns.GUN_PATH)
+	if scene == null or _blast_scene == null:
+		push_error("Cannot load the gun or the blast -- run export() in jackal_assets.blend and jackal_fx.blend")
+		return
+	for bunker_name in GUN_BUNKERS:
+		var bunker := level.find_child(bunker_name, true, false) as Node3D
+		if bunker == null:
+			push_warning("No %s in %s; it gets no gun" % [bunker_name, LEVEL_PATH])
+			continue
+		var root := scene.instantiate() as Node3D
+		root.name = "Gun_" + bunker_name
+		add_child(root)
+		root.global_transform = bunker.global_transform
+		var player := root.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		_sharpen_visibility(player.get_animation(DESTRUCTION_ANIMATION))
+		_cast_both_sides_of_planes(root)
+		guns.add(bunker_name, root, player, bunker_name != YELLOW_GUN_BUNKER)
+
+
+# FX_Blast from jackal_fx.blend, played once from its blast frame and gone.
+func _spawn_blast(at: Vector3, size: float) -> void:
+	var root := _blast_scene.instantiate() as Node3D
+	add_child(root)
+	root.global_position = at
+	root.scale = Vector3.ONE * size
+	var player := root.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	_sharpen_visibility(player.get_animation(DESTRUCTION_ANIMATION))
+	_light_flashes(root, player)
+	player.play(DESTRUCTION_ANIMATION)
+	player.seek(BLAST_START, true)
+	get_tree().create_timer(DESTRUCTION_SETTLE).timeout.connect(root.queue_free)
+
+
+# The top view's frame in x, z -- the game's screen, for what is on it.
+func _view_frame() -> Rect2:
+	var width := level_aabb.size.x / zoom
+	var half_height := width * 9.0 / 32.0
+	return Rect2(focus.x - width * 0.5, focus.y - half_height, width, half_height * 2.0)
+
+
+func _round_stops(x: float, z: float) -> bool:
+	var there := _ground_at(x, z)
+	if there.hit and ROUND_STOPPERS.has(there.kind):
+		return true
+	return _solid_at(Transform3D(Basis(), Vector3(x, there.height + Level3DGuns.ROUND_HEIGHT, z)), ROUND_PROBE)
+
+
+# Player.attack: 32 px either side of the player.
+func _attack_player(x: float, z: float) -> bool:
+	if _respawning > 0 or _invincible > 0 or _immortal:
+		return false
+	var half := 32.0 * Level3DGuns.PX
+	if absf(x - btr.position.x) > half or absf(z - btr.position.z) > half:
+		return false
+	_explode_btr("shot")
+	return true
+
+
+# Player.update's box for its mines: 32 px either side, 48 along x when facing
+# east or west and 46 along y when facing north or south. The BTR's heading is
+# not held to eight directions, so the nearest of them decides.
+func _player_box() -> Rect2:
+	var octant := wrapi(int(roundf(btr.heading / (PI / 4.0))), 0, 8)
+	var half := Vector2(32.0, 32.0)
+	if octant == 0 or octant == 4:
+		half.x = 48.0
+	elif octant == 2 or octant == 6:
+		half.y = 46.0
+	half *= Level3DGuns.PX
+	return Rect2(Vector2(btr.position.x, btr.position.z) - half, half * 2.0)
+
+
+# Player.explode: the blast, the BTR gone, and back after RESPAWN_DELAY where
+# it went, invincible. No lives are counted; the preview has no continue.
+func _explode_btr(by: String) -> void:
+	_spawn_blast(btr.position + Vector3.UP * 0.6, 1.0)
+	_shake(SHAKE_PIXELS)
+	btr.stop()
+	btr.visible = false
+	_respawning = Player.RESPAWN_DELAY
+	if guns.verbose:
+		print("BTR destroyed (%s) at %.1f, %.1f" % [by, btr.position.x, btr.position.z])
+
+
+func _make_hud() -> void:
+	var layer := CanvasLayer.new()
+	add_child(layer)
+	_score_label = Label.new()
+	_score_label.position = Vector2(16, 12)
+	_score_label.add_theme_font_size_override("font_size", 22)
+	_score_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_score_label.add_theme_constant_override("outline_size", 6)
+	layer.add_child(_score_label)
+	_set_score(0)
+
+
+func _set_score(score: int) -> void:
+	_score = score
+	_score_label.text = "SCORE %06d" % score
 
 
 func _make_markers() -> void:
@@ -718,8 +872,21 @@ func _physics_process(delta: float) -> void:
 		var entry: Dictionary = destructibles[building]
 		if entry.player.is_playing():
 			_sync_bodies(entry)
-	btr.step(delta)
-	gun.trigger = _hold_fire or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	# Player.update: while respawning the player does nothing at all; the tick
+	# the count runs out it comes back, invincible, and carries on.
+	var gone := false
+	if _respawning > 0:
+		_respawning -= 1
+		if _respawning == 0:
+			btr.visible = true
+			_invincible = Player.INVINCIBLE_DELAY
+			if guns.verbose:
+				print("BTR back, invincible for %d ticks" % _invincible)
+		else:
+			gone = true
+	if not gone:
+		btr.step(delta)
+	gun.trigger = not gone and (_hold_fire or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT))
 	gun.aim_point = btr.aim_point
 	gun.step(delta)
 	launcher.aim_point = btr.aim_point
@@ -727,9 +894,15 @@ func _physics_process(delta: float) -> void:
 	# rather than being lost while they are not.
 	if _rocket_wanted > 0.0:
 		_rocket_wanted -= delta
-		if launcher.fire():
+		if not gone and launcher.fire():
 			_rocket_wanted = 0.0
 	launcher.step(delta)
+	if not gone:
+		if _invincible > 0:
+			_invincible -= 1
+		if guns.bump(_player_box(), _invincible > 0):
+			_explode_btr("ran into a gun")
+	guns.tick()
 	_sync_markers()
 
 
@@ -742,6 +915,11 @@ func _process(delta: float) -> void:
 		focus.y -= scroll * SCROLL_SPEED / zoom * delta
 	if following:
 		focus = Vector2(btr.position.x, btr.position.z)
+	# The game flashes the jeep through four palettes a frame while it is
+	# invincible; the BTR has one, so it blinks.
+	if _respawning == 0:
+		_blink = _blink + 1 if _invincible > 0 else 0
+		btr.visible = _blink % 4 < 2
 	_shake_left = maxf(_shake_left - delta, 0.0)
 	_update_camera()
 
@@ -778,6 +956,11 @@ func _unhandled_input(event: InputEvent) -> void:
 				for building in destructibles:
 					_set_destroyed(building, false)
 				launcher.clear_craters()
+				guns.reset()
+				_respawning = 0
+				_invincible = 0
+				btr.visible = true
+				_set_score(0)
 			KEY_ESCAPE:
 				btr.stop()
 	elif event is InputEventMouseButton and event.pressed:
@@ -849,6 +1032,11 @@ func _obstacle_map(path: String) -> void:
 
 func _screenshot_mode() -> void:
 	var args := OS.get_cmdline_user_args()
+	guns.verbose = args.has("--shot")
+	var immortal := args.find("--immortal")
+	if immortal >= 0:
+		_immortal = true
+		args.remove_at(immortal)
 	var blow_up := args.find("--destroy")
 	if blow_up >= 0:
 		for building in args[blow_up + 1].split(","):

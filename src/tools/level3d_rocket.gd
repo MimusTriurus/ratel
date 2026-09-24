@@ -50,6 +50,11 @@ var aim_point = null        # Vector3 or null
 # anything; rid is what the rocket hit, or an empty RID when it went off at the
 # end of its flight.
 var exploded: Callable
+# `intercept.call(from, to)`: what the rocket's flight meets that is not a body
+# -- the bunkers' guns, Level3DGuns.intercept -- as {"t": 0-1 along from -> to,
+# ...}, or empty. It goes off there, and `struck.call(found)` is told first.
+var intercept: Callable
+var struck: Callable
 
 var yaw := 0.0              # the mount, relative to the hull
 var loaded := true
@@ -224,8 +229,16 @@ func _fly(rocket: Dictionary, delta: float) -> void:
 	var move: float = minf(rocket.speed * delta, rocket.left)
 	var direction: Vector3 = rocket.direction
 	var nose: Vector3 = node.global_position + direction * _nose * rocket.scale
-	var query := PhysicsRayQueryParameters3D.create(nose, nose + direction * (move + 0.05), mask)
+	var reach := nose + direction * (move + 0.05)
+	var query := PhysicsRayQueryParameters3D.create(nose, reach, mask)
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	var found: Dictionary = intercept.call(nose, reach) if intercept.is_valid() else {}
+	if not found.is_empty():
+		var at := nose.lerp(reach, found.t)
+		if hit.is_empty() or nose.distance_to(at) < nose.distance_to(hit.position):
+			struck.call(found)
+			_explode(rocket, at, -direction, RID())
+			return
 	if not hit.is_empty():
 		_explode(rocket, hit.position, hit.normal, hit.rid)
 		return

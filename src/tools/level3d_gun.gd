@@ -3,7 +3,9 @@
 #
 # Nothing here is part of the game. Jackal's gun is what it follows: a stream
 # of rounds with a short reach that chips at buildings without taking them
-# down -- that is the rocket's job, step 3 of docs/level3d-combat-plan.md.
+# down -- that is the rocket's job, step 3 of docs/level3d-combat-plan.md. The
+# bunkers' guns are the exception, as in the game: three rounds each
+# (level3d_guns.gd), found along the round's flight through `intercept`.
 #
 # A round is decided the moment it is fired, by a ray: at this scale a bullet's
 # flight is a few frames at most, and nothing on the stage moves out of the way.
@@ -49,6 +51,12 @@ var ground: Callable
 var btr: Level3DBtr
 var trigger := false
 var aim_point = null        # Vector3 or null
+# `intercept.call(from, to)`: whatever the round's flight meets before the ray
+# does that is not a body -- the bunkers' guns, Level3DGuns.intercept -- as
+# {"t": 0-1 along from -> to, ...}, or empty. `struck.call(found)` when the
+# round gets there.
+var intercept: Callable
+var struck: Callable
 
 var _cooldown := 0.0
 var _rng := RandomNumberGenerator.new()
@@ -137,8 +145,15 @@ func _fire() -> void:
 		point = hit.position
 		normal = hit.normal
 		kind = hit_kind.call(hit.rid)
+	var found := {}
+	if intercept.is_valid():
+		found = intercept.call(from, point)
+		if not found.is_empty():
+			point = from.lerp(point, found.t)
+			normal = -line.normalized()
+			kind = "building"
 
-	_tracer(from, point, kind, normal, line.normalized())
+	_tracer(from, point, kind, normal, line.normalized(), found)
 	# A star at the bore, turned and sized afresh each round so a burst flickers.
 	_flash.visible = true
 	_flash.transform = Transform3D(Basis(Vector3.RIGHT, _rng.randf() * TAU)
@@ -147,7 +162,8 @@ func _fire() -> void:
 	btr.recoil(direction, RECOIL_KICK)
 
 
-func _tracer(from: Vector3, to: Vector3, kind: String, normal: Vector3, travel: Vector3) -> void:
+func _tracer(from: Vector3, to: Vector3, kind: String, normal: Vector3, travel: Vector3,
+		found: Dictionary) -> void:
 	var tracer := _instance(_tracer_mesh)
 	var along := to - from
 	var length := along.length()
@@ -160,7 +176,9 @@ func _tracer(from: Vector3, to: Vector3, kind: String, normal: Vector3, travel: 
 	tween.tween_property(tracer, "global_position", stop, time)
 	tween.tween_callback(func():
 		tracer.queue_free()
-		_impact(to, kind, normal, travel))
+		_impact(to, kind, normal, travel)
+		if not found.is_empty():
+			struck.call(found))
 
 
 # What a round leaves where it lands, by what it landed on.
