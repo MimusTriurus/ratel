@@ -298,24 +298,25 @@ func _fire(gun: Gun) -> void:
 	var speed := EnemyBullet.SPEED * (1.0 if gun.white else RotatingGun.YELLOW_BULLET_SPEED)
 	var muzzle := gun.at + unit * MUZZLE * PX
 	enemy_bullet(muzzle, unit * speed, RotatingGun.BULLET_TRAVEL_TIME, ROUND_HEIGHT, gun.white)
-	_muzzle_flash(Vector3(muzzle.x, ROUND_HEIGHT, muzzle.y), Vector3(unit.x, 0.0, unit.y))
+	muzzle_flash(Vector3(muzzle.x, ROUND_HEIGHT, muzzle.y), Vector3(unit.x, 0.0, unit.y))
 
 
 # A flash at a gun's muzzle, long along `direction`, for FLASH_TIME: fire
 # round a hot core, the core standing up out of it so that it shows from
-# above. Then a wisp of smoke drifts off where it was.
-func _muzzle_flash(at: Vector3, direction: Vector3) -> void:
+# above. Then a wisp of smoke drifts off where it was. `size` scales all of
+# it: 1 is a bunker's gun, the soldiers' rifles are smaller (level3d_soldiers.gd).
+func muzzle_flash(at: Vector3, direction: Vector3, size := 1.0) -> void:
 	var along := Basis.looking_at(direction, Vector3.UP)
-	var ahead := at + direction * FLASH_LENGTH * 0.4
+	var ahead := at + direction * FLASH_LENGTH * 0.4 * size
 	for layer in [[_flash_mesh, 1.0, 0.0], [_flash_core, 0.6, FLASH_WIDTH * 0.35]]:
 		var node := MeshInstance3D.new()
 		node.mesh = layer[0]
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(node)
-		var size: float = layer[1]
+		var part: float = layer[1] * size
 		# The ball's -Z is looking_at's forward: long that way.
-		var shape := Vector3(FLASH_WIDTH, FLASH_WIDTH, FLASH_LENGTH) * 0.5 * size
-		node.global_transform = Transform3D(along.scaled_local(shape), ahead + Vector3.UP * layer[2])
+		var shape := Vector3(FLASH_WIDTH, FLASH_WIDTH, FLASH_LENGTH) * 0.5 * part
+		node.global_transform = Transform3D(along.scaled_local(shape), ahead + Vector3.UP * layer[2] * size)
 		get_tree().create_timer(FLASH_TIME, false, true).timeout.connect(node.queue_free)
 	var wisp := MeshInstance3D.new()
 	wisp.mesh = _wisp_mesh
@@ -323,21 +324,28 @@ func _muzzle_flash(at: Vector3, direction: Vector3) -> void:
 	wisp.visible = false
 	add_child(wisp)
 	wisp.global_position = ahead
-	wisp.scale = Vector3.ONE * 0.04
+	wisp.scale = Vector3.ONE * 0.04 * size
 	var tween := wisp.create_tween()
 	tween.tween_interval(FLASH_TIME)
 	tween.tween_callback(wisp.show)
 	tween.set_parallel()
-	tween.tween_property(wisp, "scale", Vector3.ONE * 0.12, 0.15).set_ease(Tween.EASE_OUT)
-	tween.tween_property(wisp, "global_position", ahead + direction * 0.15 + Vector3.UP * 0.3, 0.45)
+	tween.tween_property(wisp, "scale", Vector3.ONE * 0.12 * size, 0.15).set_ease(Tween.EASE_OUT)
+	tween.tween_property(wisp, "global_position", ahead + (direction * 0.15 + Vector3.UP * 0.3) * size, 0.45)
 	tween.tween_property(wisp, "scale", Vector3.ONE * 0.001, 0.3).set_delay(0.15).set_ease(Tween.EASE_IN)
 	tween.chain().tween_callback(wisp.queue_free)
 
 
 # An EnemyBullet at `at` (level x, z), moving `v` map pixels a tick for
-# `travel` ticks, drawn `height` above the ground: white or yellow.
-func enemy_bullet(at: Vector2, v: Vector2, travel: int, height: float, white := true) -> void:
+# `travel` ticks, drawn `height` above the ground: white or yellow. `behind_flash`
+# keeps it out of sight while a muzzle flash burns where it set off, which a
+# round as big as the game's covers when the flash is a rifle's; it flies all
+# the same.
+func enemy_bullet(at: Vector2, v: Vector2, travel: int, height: float, white := true,
+		behind_flash := false) -> void:
 	var node := Sprite3D.new()
+	if behind_flash:
+		node.visible = false
+		get_tree().create_timer(FLASH_TIME, false, true).timeout.connect(node.show)
 	node.texture = _shot_textures[white]
 	node.pixel_size = PX
 	node.billboard = BaseMaterial3D.BILLBOARD_ENABLED

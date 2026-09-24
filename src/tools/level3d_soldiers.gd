@@ -37,9 +37,12 @@
 #   * The hit and mine boxes are the game's 32 x 60 px, but centred on him
 #     rather than hung 54 px above his feet: that offset is the sprite standing
 #     up the screen, and here he stands up out of it.
-#   * He fires from where he stands, at the player, not from 30 px up the
-#     screen at a point 30 px down it -- the same sprite offset twice.
-#   * He faces the way he walks or aims, not the nearest of four.
+#   * He fires from his rifle's muzzle, where his pose has it, along the line
+#     from where he stands to the player -- not from 30 px up the screen at a
+#     point 30 px down it, the same sprite offset twice. The muzzle is a
+#     third of a metre, some 23 px, out in front of him; and it flashes.
+#   * He faces the way he walks or aims, not the nearest of four, and turns
+#     to it over a few frames rather than in a tick (Level3DCrossfade).
 class_name Level3DSoldiers
 extends Node3D
 
@@ -50,7 +53,6 @@ const PX := Level3DMap.PX
 # What the two figures need said about them:
 #   scale        to the sprite figure's metre -- what keeps him in proportion
 #                with the BTR and the bunkers (jackal_units.blend)
-#   round_height where his rifle is when he fires, metres, scaled
 #   brown, dark  the materials his blink recolours, as the yellow sheet does
 #                the sprite's brown and black
 #   stride       metres a Walk cycle covers, unscaled, for a walk driven by the
@@ -60,9 +62,9 @@ const PX := Level3DMap.PX
 #   loop_pad     seconds the looping clips are short of their repeat: the
 #                trooper's are exported up to the frame before the first again
 const MODELS := {
-	"trooper": {"path": TROOPER_PATH, "scale": 0.55, "round_height": 0.72,
+	"trooper": {"path": TROOPER_PATH, "scale": 0.55,
 			"brown": "T_Uniform", "dark": "T_UniformDark", "stride": 0.8, "loop_pad": 1.0 / 24.0},
-	"sprite": {"path": SOLDIER_PATH, "scale": 1.0, "round_height": 0.55,
+	"sprite": {"path": SOLDIER_PATH, "scale": 1.0,
 			"brown": "J_SoldierBrown", "dark": "J_SoldierDark", "stride": 0.0, "loop_pad": 0.0},
 }
 
@@ -90,6 +92,13 @@ const SHOOT := "Shoot"
 const DEATH := "Death"
 # DeadEnemySoldier: lies, then fades; here it sinks this far into the sand.
 const SINK := 0.3
+# Both figures' rifles are bound whole to this bone, the barrel along its +Y
+# (soldier-pipeline.md, section 5).
+const RIFLE_BONE := "Rifle"
+# The rifle's flash, as a part of a bunker gun's (Level3DGuns.muzzle_flash).
+# The round sets off from the same point and is bigger, so it is kept out of
+# sight until the flash is out (Level3DGuns.enemy_bullet).
+const RIFLE_FLASH := 0.5
 
 const STATE_SEEKING := 0
 const STATE_AIMING := 1
@@ -113,6 +122,9 @@ var model: Dictionary
 var soldiers: Array[Soldier] = []
 var _corpses: Array[Soldier] = []
 var _scene: PackedScene
+# The muzzle, in RIFLE_BONE's space, and that bone: the same in every soldier.
+var _muzzle := Vector3.ZERO
+var _rifle_bone := -1
 var _rng := RandomNumberGenerator.new()
 var _trigger_y := -1
 var _furthest_top := INF
@@ -145,8 +157,10 @@ class Soldier:
 	var root: Node3D
 	var player: AnimationPlayer
 	var fade: Level3DCrossfade
-	# Where the Walk is, 0..1, set by the tick and sought by the frame.
+	# Where the Walk is, 0..1, and the way he faces: set by the tick, drawn by
+	# the frame.
 	var walk_phase := 0.0
+	var yaw := 0.0
 	var brown: StandardMaterial3D
 	var dark: StandardMaterial3D
 	var brown_colour: Color
@@ -160,14 +174,58 @@ func _ready() -> void:
 	if _scene == null:
 		push_error("Cannot load %s -- run export() in its .blend" % model.path)
 		return
+	var probe := _scene.instantiate()
 	# The clips are the scene's, shared by every soldier: padded once, here.
 	if model.loop_pad > 0.0:
-		var probe := _scene.instantiate()
 		var clips := probe.find_child("AnimationPlayer", true, false) as AnimationPlayer
 		for clip in [WALK, AIM]:
 			clips.get_animation(clip).length += model.loop_pad
-		probe.free()
+	_find_muzzle(probe)
+	probe.free()
 	reset()
+
+
+# The tip of the barrel, in RIFLE_BONE's space: the middle of the rifle's
+# vertices that lie furthest out along the bone.
+func _find_muzzle(root: Node) -> void:
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		var skeleton := mi.get_node_or_null(mi.skeleton) as Skeleton3D
+		if mi.skin == null or skeleton == null:
+			continue
+		_rifle_bone = skeleton.find_bone(RIFLE_BONE)
+		var bind := -1
+		for i in mi.skin.get_bind_count():
+			var bound := mi.skin.get_bind_name(i)
+			if bound == RIFLE_BONE or (bound == "" and mi.skin.get_bind_bone(i) == _rifle_bone):
+				bind = i
+		if bind < 0:
+			continue
+		var points := PackedVector3Array()
+		for surface in mi.mesh.get_surface_count():
+			var arrays := mi.mesh.surface_get_arrays(surface)
+			var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			if arrays[Mesh.ARRAY_BONES] == null:
+				continue
+			var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+			var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
+			var per := bones.size() / vertices.size()
+			for v in vertices.size():
+				if bones[v * per] == bind and weights[v * per] > 0.99:
+					points.append(mi.skin.get_bind_pose(bind) * vertices[v])
+		var tip := -INF
+		for p in points:
+			tip = maxf(tip, p.y)
+		var sum := Vector3.ZERO
+		var count := 0
+		for p in points:
+			if p.y > tip - 0.01:
+				sum += p
+				count += 1
+		if count > 0:
+			_muzzle = sum / count
+			return
+	push_warning("%s: no %s bone to fire from" % [model.path, RIFLE_BONE])
 
 
 # No soldiers, and the triggers from the bottom of the map again.
@@ -245,6 +303,7 @@ func _spawn(x: float, y: float, type: int) -> void:
 		EnemySoldierType.STATIONARY:
 			_start_aiming(s, player)
 	_place(s)
+	s.root.rotation.y = s.yaw
 	s.fade = Level3DCrossfade.new(s.root, s.player.assigned_animation)
 	if verbose:
 		print("soldier %s appears at %.0f, %.0f" % ["walker" if type == EnemySoldierType.WALKER else "stationary", x, y])
@@ -345,10 +404,22 @@ func _aim(s: Soldier, player: Vector2) -> void:
 
 func _shoot(s: Soldier) -> void:
 	var d := Vector2(s.direction_x, s.direction_y).normalized()
-	guns.enemy_bullet(Level3DMap.to_level(Vector2(s.x, s.y)), d * EnemyBullet.SPEED,
-			EnemySoldier.BULLET_TRAVEL_TIME, model.round_height)
+	var muzzle := _muzzle_at(s)
+	var local := guns.to_local(muzzle)
+	guns.enemy_bullet(Vector2(local.x, local.z), d * EnemyBullet.SPEED,
+			EnemySoldier.BULLET_TRAVEL_TIME, local.y, true, true)
+	guns.muzzle_flash(muzzle, Vector3(d.x, 0.0, d.y), RIFLE_FLASH)
 	s.player.play(SHOOT)
 	s.player.queue(AIM)
+
+
+# The muzzle where the pose on screen has it, globally: the frame before the
+# shot, which is the Aim.
+func _muzzle_at(s: Soldier) -> Vector3:
+	var skeleton := s.fade.skeleton
+	if _rifle_bone < 0:
+		return skeleton.global_position
+	return skeleton.global_transform * skeleton.get_bone_global_pose(_rifle_bone) * _muzzle
 
 
 func _start_aiming(s: Soldier, player: Vector2) -> void:
@@ -438,7 +509,7 @@ func _place(s: Soldier) -> void:
 	var height: float = ground.call(at.x, at.y).height
 	s.root.position = Vector3(at.x, height, at.y)
 	if s.direction_x != 0.0 or s.direction_y != 0.0:
-		s.root.rotation.y = atan2(s.direction_x, s.direction_y)
+		s.yaw = atan2(s.direction_x, s.direction_y)
 	if s.state == STATE_SEEKING and s.type == EnemySoldierType.WALKER:
 		# The walk advances only on a step taken, as the leg frames do -- or,
 		# for a model with a stride, by the ground the step covered.
@@ -463,8 +534,9 @@ func _process(delta: float) -> void:
 # The frame's pose: the clip, faded into from whatever was on screen when it
 # changed -- walk to aim, aim to walk, the kick back to aim, anything to the
 # fall (Level3DCrossfade). The Walk is sought where the tick left it, the rest
-# played on.
+# played on; and he turns towards the way the tick has him facing.
 func _pose(s: Soldier, delta: float) -> void:
+	Level3DCrossfade.turn(s.root, s.yaw, delta)
 	s.fade.before()
 	if s.player.assigned_animation == WALK:
 		s.player.seek(s.walk_phase * s.player.get_animation(WALK).length, true)

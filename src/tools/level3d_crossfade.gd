@@ -1,5 +1,6 @@
-# A fade between a figure's clips, on its skeleton: the enemy soldiers'
-# (level3d_soldiers.gd) and the prisoners' (level3d_friends.gd).
+# A fade between a figure's clips, on its skeleton, and a turn between its
+# facings: the enemy soldiers' (level3d_soldiers.gd) and the prisoners'
+# (level3d_friends.gd).
 #
 # The sprites had no in-betweens, but a figure that snaps from walk to aim in
 # one frame reads as a glitch rather than as the sprite's economy. The fade
@@ -19,6 +20,15 @@ extends RefCounted
 
 # Seconds a change of clip fades over.
 const TIME := 0.15
+# Radians a second a figure turns to face the way the tick has him facing: a
+# quarter turn in a twelfth of a second, an about-turn in a sixth. The game's
+# direction changes in a tick, which the sprite's four facings hid.
+const TURN_SPEED := TAU * 3.0
+
+
+# The figure's `root` a frame's turn nearer to `yaw`, the short way round.
+static func turn(root: Node3D, yaw: float, delta: float) -> void:
+	root.rotation.y = wrapf(rotate_toward(root.rotation.y, yaw, TURN_SPEED * delta), -PI, PI)
 
 var skeleton: Skeleton3D
 var _clip := ""
