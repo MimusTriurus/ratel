@@ -5,9 +5,13 @@
 # the port rather than restated -- RotatingGun, Enemy, EnemyBullet, Explosion,
 # PlayerBullet, PlayerMissile and Player -- and run the way the game runs them,
 # one logic tick per physics frame at 100 Hz, in the game's own units: degrees,
-# ticks, pixels. Pixels become level metres through PX, the scale
-# level3d_btr.gd sized the BTR by. Map x is level x, map y (down the screen) is
-# level z (south), so an angle means the same thing in both.
+# ticks, pixels. Pixels become level metres through Level3DMap.PX, the scale the
+# level itself is on. Map x is level x, map y (down the screen) is level z
+# (south), so an angle means the same thing in both.
+#
+# Two of the game's elements live here for every enemy, not only the guns:
+# EnemyBullet (enemy_bullet) and Explosion (explode), which the soldiers
+# (level3d_soldiers.gd) fire and die in too.
 #
 # Stage 1 has fifteen: fourteen GRAY_GUN and one YELLOW_GUN in stage-0.json,
 # one on each of the scene's fifteen bunkers (the rows and their order across
@@ -43,9 +47,8 @@ extends Node3D
 const GUN_PATH := "res://resources/3d/jackal_dest_BunkerGun.glb"
 const ANIMATION := "Scene"
 
-# A map pixel in level metres: level3d_btr.gd's scale, the hut's 192 px to its
-# model's 3.3 m.
-const PX := 3.3 / 192.0
+# A map pixel in level metres (Level3DMap).
+const PX := Level3DMap.PX
 
 # RotatingGun.init()'s boxes, in pixels either side of the centre.
 const HIT := 40.0
@@ -84,6 +87,9 @@ var player_attack: Callable
 # `player_position.call()`: the player's x, z.
 var player_position: Callable
 # `blast.call(at, scale)`: an explosion to be seen at `at`.
+# `explosion_hit.call(box)`: an explosion's box this tick, as a Rect2 in x, z,
+# for the other enemies it may kill; `player` is whether it is the player's.
+var explosion_hit: Callable
 var blast: Callable
 # `scored.call(points)`.
 var scored: Callable
@@ -105,6 +111,8 @@ class Gun:
 	var barrel: Node3D
 	var barrel_rest: Vector3
 	var at: Vector2         # level x, z
+	# The bunker's own target bodies, off while the gun is there (see add).
+	var base_bodies: Array = []
 	var white := true
 	var spawned := false
 	var dead := false
@@ -136,7 +144,13 @@ func _ready() -> void:
 
 
 # One gun, its model already in the tree and prepared as a destructible is.
-func add(gun_name: String, root: Node3D, player: AnimationPlayer, white: bool) -> void:
+# `base_bodies` are its bunker's target bodies, [body, layer] pairs: in the
+# game the bunker is empty tiles and a round flies over it to the gun's box,
+# so while the gun stands they are off -- the base's front face is further out
+# than the gun's box reaches, and would take every round. Once it is gone they
+# are on again, and rounds chip at the ruin.
+func add(gun_name: String, root: Node3D, player: AnimationPlayer, white: bool,
+		base_bodies: Array = []) -> void:
 	var gun := Gun.new()
 	gun.name = gun_name
 	gun.root = root
@@ -146,6 +160,7 @@ func add(gun_name: String, root: Node3D, player: AnimationPlayer, white: bool) -
 	gun.turret = root.find_child("Bunker_Turret", true, false)
 	gun.barrel = root.find_child("Bunker_Barrel", true, false)
 	gun.barrel_rest = gun.barrel.position
+	gun.base_bodies = base_bodies
 	guns.append(gun)
 	_reset(gun)
 
@@ -174,6 +189,7 @@ func _reset(gun: Gun) -> void:
 	gun.player.seek(0.0, true)
 	gun.player.pause()
 	_pose(gun)
+	_base_solid(gun, false)
 
 
 # ----------------------------------------------------------------------------
@@ -249,12 +265,18 @@ func _fire(gun: Gun) -> void:
 	var a := deg_to_rad(gun.angle)
 	var unit := Vector2(cos(a), sin(a))
 	var speed := EnemyBullet.SPEED * (1.0 if gun.white else RotatingGun.YELLOW_BULLET_SPEED)
+	enemy_bullet(gun.at + unit * MUZZLE * PX, unit * speed, RotatingGun.BULLET_TRAVEL_TIME,
+			ROUND_HEIGHT, gun.white)
+
+
+# An EnemyBullet at `at` (level x, z), moving `v` map pixels a tick for
+# `travel` ticks, drawn `height` above the ground: white or yellow.
+func enemy_bullet(at: Vector2, v: Vector2, travel: int, height: float, white := true) -> void:
 	var node := MeshInstance3D.new()
-	node.mesh = _shot_meshes[gun.white]
+	node.mesh = _shot_meshes[white]
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(node)
-	var shot := {"at": gun.at + unit * MUZZLE * PX, "v": unit * speed * PX,
-			"travel": RotatingGun.BULLET_TRAVEL_TIME, "node": node}
+	var shot := {"at": at, "v": v * PX, "travel": travel, "node": node, "height": height}
 	_place_shot(shot)
 	_shots.append(shot)
 
@@ -282,7 +304,7 @@ func _update_shots(view: Rect2) -> void:
 
 
 func _place_shot(shot: Dictionary) -> void:
-	(shot.node as Node3D).position = Vector3(shot.at.x, ROUND_HEIGHT, shot.at.y)
+	(shot.node as Node3D).position = Vector3(shot.at.x, shot.height, shot.at.y)
 
 
 # BulletHit where it stopped, a spark that shrinks away.
@@ -294,7 +316,7 @@ func _drop_shot(i: int, spark: bool) -> void:
 		node.queue_free()
 		return
 	node.mesh = _hit_mesh
-	node.position = Vector3(shot.at.x, ROUND_HEIGHT, shot.at.y)
+	node.position = Vector3(shot.at.x, shot.height, shot.at.y)
 	node.scale = Vector3.ONE * 0.12
 	var tween := node.create_tween()
 	tween.tween_property(node, "scale", Vector3.ONE * 0.001, 0.12)
@@ -310,9 +332,14 @@ func _update_explosions(view: Rect2) -> void:
 		var margin: float = e.size * EXPLOSION_MARGIN * PX
 		var box := Rect2(e.at - Vector2(margin, margin), Vector2(margin, margin) * 2.0)
 		if e.damages and view.intersects(box):
-			for gun in guns:
-				if gun.spawned and not gun.dead and box.intersects(_box(gun, HIT)):
-					_destroy(gun, "explosion")
+			# Enemy.attack spares everything from the player's own explosion;
+			# EnemySoldier.attack does not look at where it came from.
+			if not e.player:
+				for gun in guns:
+					if gun.spawned and not gun.dead and box.intersects(_box(gun, HIT)):
+						_destroy(gun, "explosion")
+			if explosion_hit.is_valid():
+				explosion_hit.call(box, e.player)
 		if e.size > EXPLOSION_END:
 			_explosions.remove_at(i)
 
@@ -361,9 +388,20 @@ func attack(i: int) -> void:
 
 
 # An Explosion at `at`: the grenade's or missile's at the end of its flight,
-# which kills what it grows over.
-func explode(at: Vector3) -> void:
-	_explosions.append({"at": Vector2(at.x, at.z), "size": EXPLOSION_START, "damages": true})
+# which kills what it grows over, or with `player` the player's own, which only
+# a soldier dies in.
+func explode(at: Vector3, player := false) -> void:
+	_explosions.append({"at": Vector2(at.x, at.z), "size": EXPLOSION_START, "damages": true, "player": player})
+
+
+# RotatingGun's solid box, 64 px either side: what the soldiers walk round.
+# Level x, z.
+func solid_boxes() -> Array[Rect2]:
+	var boxes: Array[Rect2] = []
+	for gun in guns:
+		if gun.spawned and not gun.dead:
+			boxes.append(_box(gun, 64.0))
+	return boxes
 
 
 # Enemy.bump from Player.update: the player's box against every gun's mine
@@ -385,14 +423,20 @@ func bump(player_box: Rect2, invincible: bool) -> bool:
 func _destroy(gun: Gun, by: String) -> void:
 	gun.dead = true
 	gun.recoil = 0.0
+	_base_solid(gun, true)
 	_pose(gun)
 	gun.player.play(ANIMATION)
 	gun.player.seek(Level3DGuns.blast_start(), true)
-	_explosions.append({"at": gun.at, "size": EXPLOSION_START, "damages": true})
+	_explosions.append({"at": gun.at, "size": EXPLOSION_START, "damages": true, "player": false})
 	blast.call(Vector3(gun.at.x, BLAST_HEIGHT, gun.at.y), BLAST_SCALE)
 	scored.call(POINTS)
 	if verbose:
 		print("gun %s destroyed (%s)" % [gun.name, by])
+
+
+func _base_solid(gun: Gun, on: bool) -> void:
+	for pair in gun.base_bodies:
+		(pair[0] as CollisionObject3D).collision_layer = pair[1] if on else 0
 
 
 # ----------------------------------------------------------------------------

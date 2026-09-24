@@ -37,7 +37,7 @@
 #   Esc                    stop
 #   Q / E                  turn the turret by hand; M toggles mouse aim
 #   R                      put the BTR back at the start, rebuild what was blown up
-#                          and bring the bunkers' guns back
+#                          and bring the bunkers' guns and the soldiers back
 #   wheel, arrows          scroll the camera off the BTR; C follows it again
 #   + / -                  zoom
 #   Tab                    top view / tilted view
@@ -50,10 +50,12 @@
 #         -- --shot out.png <position 0-1 or x,z> <zoom> <top|tilt> [<seconds> <x,z> ...] \
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
 #
-# The bunkers' guns fight back as they do in the game (level3d_guns.gd): one
-# round kills the BTR, which comes back where it died after a pause, blinking
-# while it cannot be hit. --immortal lets the guns' rounds pass it (running into
-# a gun still kills it), and a --shot prints what the guns do.
+# The bunkers' guns and the enemy soldiers fight back as they do in the game
+# (level3d_guns.gd, level3d_soldiers.gd, on the game's own map through
+# level3d_map.gd): one round kills the BTR, which comes back where it died
+# after a pause, blinking while it cannot be hit. --immortal lets the enemies'
+# rounds pass it (running into a gun still kills it), and a --shot prints what
+# the enemies do.
 #
 # The frame is taken that many seconds later; with waypoints the BTR is sent
 # along them first (level coordinates: x across, z up the stage is negative)
@@ -103,6 +105,8 @@ var btr: Level3DBtr
 var gun: Level3DGun
 var launcher: Level3DLauncher
 var guns: Level3DGuns
+var soldiers: Level3DSoldiers
+var map: Level3DMap
 var level_aabb: AABB
 var focus := Vector2.ZERO       # x, z the camera is centred on
 var following := true
@@ -612,10 +616,6 @@ const GUN_BUNKERS: Array[String] = ["Bunker_0", "Bunker_1", "Bunker_2", "Bunker_
 		"BunkerN3_4", "BunkerN3_5", "BunkerN3_6", "BunkerN3_7"]
 const YELLOW_GUN_BUNKER := "BunkerN3_5"
 const BLAST_PATH := "res://resources/3d/jackal_fx_blast.glb"
-# What stops a gun's round, as GameMode.is_solid does: walls and the forest
-# (both solid tiles in the game), and palm trunks.
-const ROUND_STOPPERS: Array[String] = ["wall", "forest"]
-const ROUND_PROBE := Vector3(0.05, 0.05, 0.05)
 
 # Player.update's two counters, in ticks: while `_respawning` the BTR is gone
 # and nothing it does happens; while `_invincible` rounds and mines pass it by.
@@ -629,17 +629,43 @@ var _blast_scene: PackedScene
 
 
 func _add_guns(level: Node) -> void:
+	# The game's own map under the level: what walks, walks on it, and what
+	# stops an enemy's round is its solid tiles (Level3DMap).
+	map = Level3DMap.new()
 	guns = Level3DGuns.new()
 	guns.frame = _view_frame
-	guns.solid = _round_stops
+	guns.solid = func(x: float, z: float):
+		var p := Level3DMap.to_map(Vector2(x, z))
+		return map.is_solid(p.x, p.y)
 	guns.player_attack = _attack_player
 	guns.player_position = func(): return Vector2(btr.position.x, btr.position.z)
 	guns.blast = _spawn_blast
 	guns.scored = func(points: int): _set_score(_score + points)
 	add_child(guns)
-	gun.intercept = func(from: Vector3, to: Vector3): return guns.intercept(from, to, PlayerBullet.MARGIN)
-	gun.struck = func(found: Dictionary): guns.bullet_attack(found.gun)
+	soldiers = Level3DSoldiers.new()
+	soldiers.map = map
+	soldiers.guns = guns
+	soldiers.frame = _view_frame
+	soldiers.ground = _ground_at
+	soldiers.player_position = guns.player_position
+	soldiers.scored = guns.scored
+	add_child(soldiers)
+	guns.explosion_hit = soldiers.explosion_hit
+	# A round stops at the first enemy on its way, gun or soldier; a missile
+	# kills the soldiers it passes and stops at a gun.
+	gun.intercept = func(from: Vector3, to: Vector3):
+		var a: Dictionary = guns.intercept(from, to, PlayerBullet.MARGIN)
+		var b: Dictionary = soldiers.intercept(from, to, PlayerBullet.MARGIN)
+		if b.is_empty() or (not a.is_empty() and a.t <= b.t):
+			return a
+		return b
+	gun.struck = func(found: Dictionary):
+		if found.has("gun"):
+			guns.bullet_attack(found.gun)
+		else:
+			soldiers.bullet_attack(found)
 	launcher.intercept = func(from: Vector3, to: Vector3):
+		soldiers.sweep(from, to, PlayerMissile.MARGIN)
 		return guns.intercept(from, to, PlayerMissile.MARGIN, true)
 	launcher.struck = func(found: Dictionary): guns.attack(found.gun)
 	_blast_scene = load(BLAST_PATH)
@@ -659,7 +685,10 @@ func _add_guns(level: Node) -> void:
 		var player := root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 		_sharpen_visibility(player.get_animation(DESTRUCTION_ANIMATION))
 		_cast_both_sides_of_planes(root)
-		guns.add(bunker_name, root, player, bunker_name != YELLOW_GUN_BUNKER)
+		var base_bodies := []
+		for body in bunker.find_children("*", "StaticBody3D", true, false):
+			base_bodies.append([body, body.collision_layer])
+		guns.add(bunker_name, root, player, bunker_name != YELLOW_GUN_BUNKER, base_bodies)
 
 
 # FX_Blast from jackal_fx.blend, played once from its blast frame and gone.
@@ -681,13 +710,6 @@ func _view_frame() -> Rect2:
 	var width := level_aabb.size.x / zoom
 	var half_height := width * 9.0 / 32.0
 	return Rect2(focus.x - width * 0.5, focus.y - half_height, width, half_height * 2.0)
-
-
-func _round_stops(x: float, z: float) -> bool:
-	var there := _ground_at(x, z)
-	if there.hit and ROUND_STOPPERS.has(there.kind):
-		return true
-	return _solid_at(Transform3D(Basis(), Vector3(x, there.height + Level3DGuns.ROUND_HEIGHT, z)), ROUND_PROBE)
 
 
 # Player.attack: 32 px either side of the player.
@@ -719,6 +741,8 @@ func _player_box() -> Rect2:
 # it went, invincible. No lives are counted; the preview has no continue.
 func _explode_btr(by: String) -> void:
 	_spawn_blast(btr.position + Vector3.UP * 0.6, 1.0)
+	# Its own Explosion, which spares the guns and not the soldiers.
+	guns.explode(btr.position, true)
 	_shake(SHAKE_PIXELS)
 	btr.stop()
 	btr.visible = false
@@ -900,9 +924,12 @@ func _physics_process(delta: float) -> void:
 	if not gone:
 		if _invincible > 0:
 			_invincible -= 1
+		# Soldiers are run over whether or not the BTR is invincible.
+		soldiers.bump(_player_box())
 		if guns.bump(_player_box(), _invincible > 0):
 			_explode_btr("ran into a gun")
 	guns.tick()
+	soldiers.tick()
 	_sync_markers()
 
 
@@ -957,6 +984,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					_set_destroyed(building, false)
 				launcher.clear_craters()
 				guns.reset()
+				soldiers.reset()
 				_respawning = 0
 				_invincible = 0
 				btr.visible = true
@@ -1033,6 +1061,7 @@ func _obstacle_map(path: String) -> void:
 func _screenshot_mode() -> void:
 	var args := OS.get_cmdline_user_args()
 	guns.verbose = args.has("--shot")
+	soldiers.verbose = guns.verbose
 	var immortal := args.find("--immortal")
 	if immortal >= 0:
 		_immortal = true
