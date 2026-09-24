@@ -32,10 +32,14 @@
 #     to the player from here, which the sprite's cannot.
 #   * The game removes it and draws an Explosion. Here the blast is drawn over
 #     it and it plays Death underneath, rolls over and sinks, before it goes.
+#   * The sprite's wake is two frames of white. Here it is foam: a band round
+#     the hull, a bow wave while it is under way, and a wake behind the stern
+#     that spreads and breaks up as it ages (level3d_foam.gdshader).
 class_name Level3DBoats
 extends Node3D
 
 const BOAT_PATH := "res://resources/3d/jackal_boat.glb"
+const FOAM_SHADER := preload("res://src/tools/level3d_foam.gdshader")
 const PX := Level3DMap.PX
 # The model is an 8 m boat; the sprite's hull is some 150 px long, 2.2 m on
 # the level's scale. A little over that, so the turret reads from above.
@@ -64,6 +68,23 @@ const HULL_CLIPS := ["Idle", "Move", "Turn_L", "Turn_R", "Damage", "Death"]
 const HULL_BONES := ["Root", "Motor.R", "Motor.L"]
 const WEAPON_BONES := ["Gun", "Barrel", "Flash"]
 const BLEND := 0.25
+# The foam. The hull's is a quad in the model's metres round its waterline, a
+# hair over the water; the wake is a ribbon in the level's, laid from the
+# stern a point every WAKE_STEP seconds while the boat moves, each point
+# widening at WAKE_SPREAD m/s from WAKE_WIDTH and gone at WAKE_LIFE.
+const FOAM_SIZE := Vector2(8.0, 14.0)
+const FOAM_CENTRE := 0.8
+const FOAM_HEIGHT := 0.02
+const STERN := Vector3(0.0, 0.0, -4.3)
+const WAKE_STEP := 0.08
+const WAKE_LIFE := 2.5
+const WAKE_WIDTH := 0.9
+const WAKE_SPREAD := 0.8
+const WAKE_TAIL := 4
+# How fast the bow wave builds and settles, per second, as the boat gets under
+# way or stops; and how much of Death the hull's foam lasts before it fades.
+const SPEED_CHANGE := 1.2
+const FOAM_OUTLASTS := 0.6
 
 var map: Level3DMap
 var guns: Level3DGuns
@@ -99,6 +120,13 @@ class Boat:
 	var weapon: AnimationPlayer     # Shoot
 	var skeleton: Skeleton3D
 	var turret_bone := -1
+	var foam: ShaderMaterial
+	var wake: MeshInstance3D
+	var wake_mesh: ImmediateMesh
+	var wake_points: Array[Dictionary] = []   # {"at": Vector3, "side": Vector3, "age": s}
+	var wake_clock := 0.0
+	var speed := 0.0                           # 0 at rest, 1 under way, eased
+	var sink_time := 0.0
 
 
 func _ready() -> void:
@@ -132,7 +160,7 @@ func _make_libraries() -> void:
 
 func reset() -> void:
 	for b in boats + _wrecks:
-		b.root.queue_free()
+		_free(b)
 	boats.clear()
 	_wrecks.clear()
 	_trigger_y = map.stage.map_height
@@ -153,7 +181,7 @@ func tick() -> void:
 		_update(b, player)
 		# Enemy.check_bounds, on its hit box: it is not solid.
 		if b.y - HIT > _furthest_top + Level3DSoldiers.CAMERA_BOUND + Level3DSoldiers.REMOVE_BOUND:
-			b.root.queue_free()
+			_free(b)
 			boats.remove_at(i)
 
 
@@ -180,6 +208,7 @@ func _spawn(x: float, y: float) -> void:
 	b.root.rotation.y = atan2(HEADING.x, HEADING.y)
 	add_child(b.root)
 	_split_players(b)
+	_add_foam(b)
 	b.skeleton = b.root.find_child("Skeleton3D", true, false) as Skeleton3D
 	b.turret_bone = b.skeleton.find_bone("Turret")
 	b.player.play(MOVE)
@@ -282,13 +311,99 @@ func _process(delta: float) -> void:
 	for b in boats:
 		b.turret_yaw = rotate_toward(b.turret_yaw, b.aim_yaw, TURRET_TURN * delta)
 		_pose(b, delta)
+		_foam(b, delta, b.movement_delay > 0)
 	for i in range(_wrecks.size() - 1, -1, -1):
 		var b := _wrecks[i]
-		_pose(b, delta)
 		b.sink_left -= delta
-		if b.sink_left <= 0.0:
-			b.root.queue_free()
+		if b.sink_left > 0.0:
+			_pose(b, delta)
+		else:
+			b.root.visible = false
+		# The foam boils while it goes down, fades as it goes under; the wake it
+		# left runs out on its own.
+		var gone := 1.0 - b.sink_left / b.sink_time
+		b.foam.set_shader_parameter("churn", smoothstep(0.0, 0.15, gone))
+		b.foam.set_shader_parameter("strength", 1.0 - smoothstep(FOAM_OUTLASTS, 1.0, gone))
+		_foam(b, delta, false)
+		if b.sink_left <= 0.0 and b.wake_points.is_empty():
+			_free(b)
 			_wrecks.remove_at(i)
+
+
+func _free(b: Boat) -> void:
+	b.root.queue_free()
+	b.wake.queue_free()
+
+
+# ----------------------------------------------------------------------------
+# Foam
+
+func _add_foam(b: Boat) -> void:
+	b.foam = ShaderMaterial.new()
+	b.foam.shader = FOAM_SHADER
+	b.foam.render_priority = 1
+	b.foam.set_shader_parameter("mode", 0)
+	var plane := PlaneMesh.new()
+	plane.size = FOAM_SIZE
+	plane.center_offset = Vector3(0.0, 0.0, FOAM_CENTRE)
+	var ring := MeshInstance3D.new()
+	ring.mesh = plane
+	ring.material_override = b.foam
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ring.position.y = FOAM_HEIGHT / SCALE
+	b.root.add_child(ring)
+	var wake := ShaderMaterial.new()
+	wake.shader = FOAM_SHADER
+	wake.render_priority = 1
+	wake.set_shader_parameter("mode", 1)
+	b.wake_mesh = ImmediateMesh.new()
+	b.wake = MeshInstance3D.new()
+	b.wake.mesh = b.wake_mesh
+	b.wake.material_override = wake
+	b.wake.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(b.wake)
+
+
+# The bow wave eased towards `moving`, the wake laid while it is and aged
+# either way, and the ribbon rebuilt: newest first, from the stern itself
+# while the boat moves, so that it never comes away from the transom.
+func _foam(b: Boat, delta: float, moving: bool) -> void:
+	b.speed = move_toward(b.speed, 1.0 if moving else 0.0, SPEED_CHANGE * delta)
+	b.foam.set_shader_parameter("speed", b.speed)
+	for point in b.wake_points:
+		point.age += delta
+	while not b.wake_points.is_empty() and b.wake_points.back().age >= WAKE_LIFE:
+		b.wake_points.pop_back()
+	var stern := {}
+	if moving:
+		var xf := b.root.global_transform
+		var at := xf * STERN
+		at.y = b.root.global_position.y + FOAM_HEIGHT
+		stern = {"at": at, "side": xf.basis.x.normalized(), "age": 0.0}
+		b.wake_clock -= delta
+		if b.wake_clock <= 0.0:
+			b.wake_clock = WAKE_STEP
+			b.wake_points.push_front(stern.duplicate())
+	var points: Array[Dictionary] = []
+	if not stern.is_empty():
+		points.append(stern)
+	points.append_array(b.wake_points)
+	b.wake_mesh.clear_surfaces()
+	if points.size() < 2:
+		return
+	b.wake_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+	for i in points.size():
+		var point := points[i]
+		var half: float = (WAKE_WIDTH + WAKE_SPREAD * point.age) * 0.5
+		var v: float = point.age / WAKE_LIFE
+		# The last few points fade out, so that a wake younger than WAKE_LIFE --
+		# one that began where the boat appeared -- has no square end.
+		var tail := Color(1, 1, 1, clampf((points.size() - 1 - i) / float(WAKE_TAIL), 0.0, 1.0))
+		for side in [-1.0, 1.0]:
+			b.wake_mesh.surface_set_color(tail)
+			b.wake_mesh.surface_set_uv(Vector2(0.5 + 0.5 * side, v))
+			b.wake_mesh.surface_add_vertex(point.at + point.side * half * side)
+	b.wake_mesh.surface_end()
 
 
 func _pose(b: Boat, delta: float) -> void:
@@ -311,6 +426,7 @@ func _kill(i: int, by: String) -> void:
 	guns.explode(Vector3(at.x, height, at.y))
 	b.player.play(DEATH, 0.05)
 	b.sink_left = b.player.get_animation(DEATH).length
+	b.sink_time = b.sink_left
 	_wrecks.append(b)
 	scored.call(POINTS)
 	if verbose:
