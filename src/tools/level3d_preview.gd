@@ -37,7 +37,7 @@
 #   Esc                    stop
 #   Q / E                  turn the turret by hand; M toggles mouse aim
 #   R                      put the BTR back at the start, rebuild what was blown up
-#                          and bring the bunkers' guns and the soldiers back
+#                          and bring the bunkers' guns, the soldiers and the boats back
 #   wheel, arrows          scroll the camera off the BTR; C follows it again
 #   + / -                  zoom
 #   Tab                    top view / tilted view
@@ -51,8 +51,9 @@
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
 #            [--at <x,z>]
 #
-# The bunkers' guns and the enemy soldiers fight back as they do in the game
-# (level3d_guns.gd, level3d_soldiers.gd, on the game's own map through
+# The bunkers' guns, the enemy soldiers and the two boats on the river fight
+# back as they do in the game (level3d_guns.gd, level3d_soldiers.gd,
+# level3d_boats.gd, on the game's own map through
 # level3d_map.gd): one round kills the BTR, which comes back where it died
 # after a pause, blinking while it cannot be hit. --immortal lets the enemies'
 # rounds pass it (running into a gun still kills it), and a --shot prints what
@@ -113,6 +114,7 @@ var launcher: Level3DLauncher
 var guns: Level3DGuns
 var soldiers: Level3DSoldiers
 var friends: Level3DFriends
+var boats: Level3DBoats
 var map: Level3DMap
 var level_aabb: AABB
 var focus := Vector2.ZERO       # x, z the camera is centred on
@@ -659,7 +661,17 @@ func _add_guns(level: Node) -> void:
 	soldiers.player_position = guns.player_position
 	soldiers.scored = guns.scored
 	add_child(soldiers)
-	guns.explosion_hit = soldiers.explosion_hit
+	boats = Level3DBoats.new()
+	boats.map = map
+	boats.guns = guns
+	boats.frame = _view_frame
+	boats.ground = _ground_at
+	boats.player_position = guns.player_position
+	boats.scored = guns.scored
+	add_child(boats)
+	guns.explosion_hit = func(box: Rect2, player: bool):
+		soldiers.explosion_hit(box, player)
+		boats.explosion_hit(box, player)
 	friends = Level3DFriends.new()
 	friends.map = map
 	friends.guns = guns
@@ -674,23 +686,28 @@ func _add_guns(level: Node) -> void:
 	for building in destructibles:
 		centres[building] = destructibles[building].footprint.get_center()
 	friends.bind(centres)
-	# A round stops at the first enemy on its way, gun or soldier; a missile
-	# kills the soldiers it passes and stops at a gun.
+	# A round stops at the first enemy on its way, gun, soldier or boat; a
+	# missile kills the soldiers it passes and stops at a gun or a boat.
 	gun.intercept = func(from: Vector3, to: Vector3):
-		var a: Dictionary = guns.intercept(from, to, PlayerBullet.MARGIN)
-		var b: Dictionary = soldiers.intercept(from, to, PlayerBullet.MARGIN)
-		if b.is_empty() or (not a.is_empty() and a.t <= b.t):
-			return a
-		return b
+		return _nearest([guns.intercept(from, to, PlayerBullet.MARGIN),
+				soldiers.intercept(from, to, PlayerBullet.MARGIN),
+				boats.intercept(from, to, PlayerBullet.MARGIN)])
 	gun.struck = func(found: Dictionary):
 		if found.has("gun"):
 			guns.bullet_attack(found.gun)
+		elif found.has("boat"):
+			boats.bullet_attack(found)
 		else:
 			soldiers.bullet_attack(found)
 	launcher.intercept = func(from: Vector3, to: Vector3):
 		soldiers.sweep(from, to, PlayerMissile.MARGIN)
-		return guns.intercept(from, to, PlayerMissile.MARGIN, true)
-	launcher.struck = func(found: Dictionary): guns.attack(found.gun)
+		return _nearest([guns.intercept(from, to, PlayerMissile.MARGIN, true),
+				boats.intercept(from, to, PlayerMissile.MARGIN, true)])
+	launcher.struck = func(found: Dictionary):
+		if found.has("boat"):
+			boats.attack(found)
+		else:
+			guns.attack(found.gun)
 	_blast_scene = load(BLAST_PATH)
 	var scene: PackedScene = load(Level3DGuns.GUN_PATH)
 	if scene == null or _blast_scene == null:
@@ -712,6 +729,15 @@ func _add_guns(level: Node) -> void:
 		for body in bunker.find_children("*", "StaticBody3D", true, false):
 			base_bodies.append([body, body.collision_layer])
 		guns.add(bunker_name, root, player, bunker_name != YELLOW_GUN_BUNKER, base_bodies)
+
+
+# Of the enemies' intercepts, the one a weapon meets first: {} for none.
+static func _nearest(found: Array) -> Dictionary:
+	var best := {}
+	for f: Dictionary in found:
+		if not f.is_empty() and (best.is_empty() or f.t < best.t):
+			best = f
+	return best
 
 
 # FX_Blast from jackal_fx.blend, played once from its blast frame and gone.
@@ -958,6 +984,7 @@ func _physics_process(delta: float) -> void:
 			_explode_btr("ran into a gun")
 	guns.tick()
 	soldiers.tick()
+	boats.tick()
 	friends.tick()
 	_set_score(_score)
 	_sync_markers()
@@ -1015,6 +1042,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				launcher.clear_craters()
 				guns.reset()
 				soldiers.reset()
+				boats.reset()
 				friends.reset()
 				map.reset()
 				_respawning = 0
@@ -1094,6 +1122,7 @@ func _screenshot_mode() -> void:
 	var args := OS.get_cmdline_user_args()
 	guns.verbose = args.has("--shot")
 	soldiers.verbose = guns.verbose
+	boats.verbose = guns.verbose
 	friends.verbose = guns.verbose
 	var immortal := args.find("--immortal")
 	if immortal >= 0:
