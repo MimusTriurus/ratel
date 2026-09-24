@@ -101,6 +101,10 @@ const ARRIVE_RADIUS := 0.3
 # The hull follows the ground's slope, but not across a jump bigger than this
 # between its ends, which is an edge rather than a slope.
 const TILT_STEP := 0.3
+# The same where either end is on a ruined bunker's ramp (level3d_preview.gd,
+# _add_bunker_ramp), which is steeper than any slope of the level's: it climbs
+# a bunker's 0.72 m in well under a metre.
+const RAMP_TILT_STEP := 1.0
 
 # BodyPitch, verbatim: gain in radians at full acceleration, zeta 0.65 at
 # omega 21.9. Positive is nose down.
@@ -618,12 +622,12 @@ func _settle(delta: float, snap: bool) -> void:
 	var pitch := 0.0
 	var roll := 0.0
 	# Only over a jump it could be a slope, so a wall beside the hull does not
-	# tip it over.
+	# tip it over. A ramp over a ruined bunker is a slope however steep.
 	var dp: float = hf.height - hb.height
 	var dr: float = hl.height - hr.height
-	if absf(dp) < TILT_STEP:
+	if absf(dp) < (RAMP_TILT_STEP if "ruin" in [hf.kind, hb.kind] else TILT_STEP):
 		pitch = atan2(dp, half * 2.0)
-	if absf(dr) < TILT_STEP:
+	if absf(dr) < (RAMP_TILT_STEP if "ruin" in [hl.kind, hr.kind] else TILT_STEP):
 		roll = atan2(dr, side * 2.0)
 	# Only the slope is eased, in the hull's own axes; the heading is taken as it
 	# is. Eased with it, the hull trailed its heading by an eighth of a second,

@@ -175,7 +175,7 @@ func _ready() -> void:
 	_add_lights()
 
 	btr = Btr.new()
-	btr.ground = _ground_at
+	btr.ground = _hull_ground_at
 	add_child(btr)
 	gun = Level3DGun.new()
 	gun.btr = btr
@@ -303,6 +303,9 @@ const SOLID_LAYER := 2
 # sandbags, rocks and the buildings that can be blown up. Kind "building".
 const TARGET_LAYER := 4
 const TARGET_NAMES: Array[String] = ["Bunker", "Sandbag", "Rock"]
+# A fourth, for the hull only: the ramp over a bunker whose gun is gone
+# (_add_bunker_ramp). Kind "ruin".
+const RAMP_LAYER := 8
 # The parts of a destruction that are not there to be hit: the blast itself and
 # what lies flat or flies.
 const NOT_TARGET_PARTS: Array[String] = ["Blast_", "Flash", "Smoke", "Shard", "Debris", "Soot"]
@@ -432,14 +435,21 @@ func _hit_kind(rid: RID) -> String:
 
 
 # The top of the ground layer at x, z, and which kind it is.
-func _ground_at(x: float, z: float) -> Dictionary:
+func _ground_at(x: float, z: float, mask := GROUND_LAYER) -> Dictionary:
 	var space := get_world_3d().direct_space_state
 	var query := PhysicsRayQueryParameters3D.create(Vector3(x, RAY_TOP, z), Vector3(x, RAY_BOTTOM, z),
-			GROUND_LAYER)
+			mask)
 	var hit := space.intersect_ray(query)
 	if hit.is_empty():
 		return {"height": 0.0, "kind": "", "hit": false}
 	return {"height": hit.position.y, "kind": _kinds.get(hit.rid, "ground"), "hit": true}
+
+
+# What the hull sits on: the ground, and the ramps over the bunkers that have
+# lost their guns. Nothing else asks for the ramps -- a round, a crater or a
+# soldier goes by the ground as it is.
+func _hull_ground_at(x: float, z: float) -> Dictionary:
+	return _ground_at(x, z, GROUND_LAYER | RAMP_LAYER)
 
 
 # Whether a box at `pose` overlaps anything on the solid layer.
@@ -800,7 +810,61 @@ func _add_guns(level: Node) -> void:
 		var base_bodies := []
 		for body in bunker.find_children("*", "StaticBody3D", true, false):
 			base_bodies.append([body, body.collision_layer])
+		# Switched with the ruin's bodies: on once the gun is gone.
+		base_bodies.append([_add_bunker_ramp(bunker), RAMP_LAYER])
 		guns.add(bunker_name, root, player, bunker_name != YELLOW_GUN_BUNKER, base_bodies)
+
+
+# A bunker whose gun is gone is floor in the game -- its cells were empty all
+# along; the gun's own boxes were what kept the jeep off -- so the BTR drives
+# over it, and here it has to climb the concrete to do so, or it runs through
+# it at sand level. What it climbs is not the concrete, whose edge is a step
+# and whose wreck is jagged, but a frustum over it on RAMP_LAYER: its top the
+# bunker's top plate at the height of the wreck's ring, its foot on the ground
+# just far enough out that its slope passes over the slab's edge. Built in the
+# bunker's own axes from its meshes, so it fits a bunker however it is turned.
+const RAMP_TOP := 0.72      # over the wreck's ring, which stands to 0.69
+
+func _add_bunker_ramp(bunker: Node3D) -> StaticBody3D:
+	var into_bunker := bunker.global_transform.affine_inverse()
+	var slab := AABB()
+	var top := AABB()
+	var first := true
+	for node in bunker.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		var box: AABB = into_bunker * mesh_instance.global_transform * mesh_instance.get_aabb()
+		slab = box if first else slab.merge(box)
+		first = false
+		if String(mesh_instance.name).begins_with("Bunker_Top"):
+			top = box
+	var foot := slab.position.y
+	var centre := slab.get_center()
+	var slab_half := Vector2(slab.size.x, slab.size.z) * 0.5
+	var top_half := Vector2(top.size.x, top.size.z) * 0.5 if top.has_volume() else slab_half * 0.64
+	# The slab's own height, without the plate, rivets and slit on it.
+	var slab_height := top.position.y - foot if top.has_volume() else slab.size.y * 0.7
+	var rise := RAMP_TOP
+	# The run out past the slab's edge at which the slope is slab_height high
+	# over that edge, on the slab's longer half.
+	var inset := maxf(slab_half.x - top_half.x, slab_half.y - top_half.y)
+	var run := slab_height * inset / maxf(rise - slab_height, 0.01) + 0.05
+	var points := PackedVector3Array()
+	for corner in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		var c := corner as Vector2
+		points.append(Vector3(centre.x + c.x * (slab_half.x + run), foot, centre.z + c.y * (slab_half.y + run)))
+		points.append(Vector3(centre.x + c.x * top_half.x, foot + rise, centre.z + c.y * top_half.y))
+	var shape := ConvexPolygonShape3D.new()
+	shape.points = points
+	var holder := CollisionShape3D.new()
+	holder.shape = shape
+	var body := StaticBody3D.new()
+	body.name = "Ramp"
+	body.collision_layer = 0
+	body.collision_mask = 0
+	body.add_child(holder)
+	bunker.add_child(body)
+	_kinds[body.get_rid()] = "ruin"
+	return body
 
 
 # Of the enemies' intercepts, the one a weapon meets first: {} for none.
