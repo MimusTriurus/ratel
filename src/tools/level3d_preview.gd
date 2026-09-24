@@ -624,6 +624,16 @@ func _on_exploded(at: Vector3, rid: RID) -> bool:
 	return any
 
 
+# A TravelingExplosion's box this tick (Level3DGuns): the barracks and hangars
+# it overlaps go down, as Hut.attack and House.attack let it. The gate does
+# not: Gate.attack answers the player's weapon only.
+func _on_travel_hit(box: Rect2) -> void:
+	for building in destructibles:
+		var entry: Dictionary = destructibles[building]
+		if not entry.destroyed and building != "Gate" and box.intersects(entry.footprint):
+			_set_destroyed(building, true)
+
+
 # The intact building from above, for the blast radius: what shows on frame 0.
 func _footprint(root: Node) -> Rect2:
 	var box := Rect2()
@@ -768,6 +778,8 @@ func _add_guns(level: Node) -> void:
 			boss.attack(found)
 		else:
 			guns.attack(found.gun)
+	launcher.traveled = guns.travel
+	guns.travel_hit = _on_travel_hit
 	_blast_scene = load(BLAST_PATH)
 	var scene: PackedScene = load(Level3DGuns.GUN_PATH)
 	if scene == null or _blast_scene == null:

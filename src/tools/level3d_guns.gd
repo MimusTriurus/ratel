@@ -9,9 +9,10 @@
 # level itself is on. Map x is level x, map y (down the screen) is level z
 # (south), so an angle means the same thing in both.
 #
-# Two of the game's elements live here for every enemy, not only the guns:
-# EnemyBullet (enemy_bullet) and Explosion (explode), which the soldiers
-# (level3d_soldiers.gd) fire and die in too.
+# Three of the game's elements live here for every enemy, not only the guns:
+# EnemyBullet (enemy_bullet), Explosion (explode), which the soldiers
+# (level3d_soldiers.gd) fire and die in too, and TravelingExplosion (travel),
+# the blasts an upgraded missile throws along the screen's axes.
 #
 # Stage 1 has fifteen: fourteen GRAY_GUN and one YELLOW_GUN in stage-0.json,
 # one on each of the scene's fifteen bunkers (the rows and their order across
@@ -90,6 +91,10 @@ var player_position: Callable
 # `explosion_hit.call(box)`: an explosion's box this tick, as a Rect2 in x, z,
 # for the other enemies it may kill; `player` is whether it is the player's.
 var explosion_hit: Callable
+# `travel_hit.call(box)`: a TravelingExplosion's box this tick, for what it
+# takes down that an Explosion's box does not here -- the preview's barracks
+# and hangars, which are Hut and House (both fall to one).
+var travel_hit: Callable
 var blast: Callable
 # `scored.call(points)`.
 var scored: Callable
@@ -99,6 +104,7 @@ var verbose := false
 var guns: Array[Gun] = []
 var _shots := []
 var _explosions := []
+var _travels := []
 var _shot_meshes := {}
 var _hit_mesh: SphereMesh
 
@@ -173,6 +179,7 @@ func reset() -> void:
 		(shot.node as Node3D).queue_free()
 	_shots.clear()
 	_explosions.clear()
+	_travels.clear()
 
 
 func _reset(gun: Gun) -> void:
@@ -210,6 +217,7 @@ func tick() -> void:
 			_pose(gun)
 	_update_shots(view)
 	_update_explosions(view)
+	_update_travels(view)
 
 
 # RotatingGun.update, line for line.
@@ -344,6 +352,50 @@ func _update_explosions(view: Rect2) -> void:
 			_explosions.remove_at(i)
 
 
+# TravelingExplosion.update: a box that runs VELOCITY a tick along one of the
+# screen's axes for TRAVEL_TIME ticks, shrinking in three steps, and kills any
+# enemy it overlaps while it is in the frame. Nothing stops it: it goes over
+# walls and water alike.
+func _update_travels(view: Rect2) -> void:
+	for i in range(_travels.size() - 1, -1, -1):
+		var e: Dictionary = _travels[i]
+		e.at += e.velocity
+		e.t += 1
+		if e.t > TravelingExplosion.TRAVEL_TIME:
+			_travels.remove_at(i)
+			continue
+		var margin := traveling_margin(e.t) * PX
+		var box := Rect2(e.at - Vector2(margin, margin), Vector2(margin, margin) * 2.0)
+		if not view.intersects(box):
+			continue
+		for gun in guns:
+			if gun.spawned and not gun.dead and box.intersects(_box(gun, HIT)):
+				_destroy(gun, "traveling explosion")
+		if explosion_hit.is_valid():
+			explosion_hit.call(box, false)
+		if travel_hit.is_valid():
+			travel_hit.call(box)
+
+
+# TravelingExplosion's box, in px either side of its centre, `t` ticks out.
+static func traveling_margin(t: int) -> float:
+	if t < TravelingExplosion.PERIOD0:
+		return 28.0 * traveling_scale(t)
+	if t < TravelingExplosion.PERIOD1:
+		return 18.0 * traveling_scale(t)
+	return 16.0 * traveling_scale(t)
+
+
+# TravelingExplosion's drawn scale `t` ticks out: big at once, then smaller in
+# each of its three periods.
+static func traveling_scale(t: int) -> float:
+	if t < TravelingExplosion.PERIOD0:
+		return 2.25 - t * TravelingExplosion.K0
+	if t < TravelingExplosion.PERIOD1:
+		return 1.75 - (t - TravelingExplosion.PERIOD0) * TravelingExplosion.K1
+	return 1.333 - (t - TravelingExplosion.PERIOD1) * TravelingExplosion.K2
+
+
 # ----------------------------------------------------------------------------
 # What the player's weapons ask
 
@@ -392,6 +444,13 @@ func attack(i: int) -> void:
 # a soldier dies in.
 func explode(at: Vector3, player := false) -> void:
 	_explosions.append({"at": Vector2(at.x, at.z), "size": EXPLOSION_START, "damages": true, "player": player})
+
+
+# A TravelingExplosion from `at` along `direction`, one of the screen's axes
+# as a map direction: (+-1, 0) across, (0, +-1) down or up.
+func travel(at: Vector3, direction: Vector2) -> void:
+	_travels.append({"at": Vector2(at.x, at.z), "t": 0,
+			"velocity": direction * TravelingExplosion.VELOCITY * PX})
 
 
 # RotatingGun's solid box, 64 px either side: what the soldiers walk round.

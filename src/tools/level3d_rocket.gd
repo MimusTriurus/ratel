@@ -47,10 +47,15 @@
 # The game re-arms when the explosion it ends in is over, not on a clock --
 # Explosion.update for a grenade and a plain missile, the TravelingExplosion
 # that carries the notifier for an upgraded one -- so here the rails are loaded
-# that long after the rocket goes off, however soon that was. A missile's
-# upgrades do not throw their sideways blasts; only the time they take is
-# kept. The long-range upgrade is not here:
-# BossSuperTank gives it, and stage 1 has none.
+# that long after the rocket goes off, however soon that was. The long-range
+# upgrade is not here: BossSuperTank gives it, and stage 1 has none.
+#
+# Where a round goes off is the game's too, in either mode, and by the weapon:
+# the grenade and the plain missile make one Explosion, growing over what is
+# next to it (Level3DGuns.explode, through `exploded`); the missile's upgrades
+# throw TravelingExplosions from it besides, two across the screen and then
+# four, which run along the ground over walls and water and take down what
+# they pass (`traveled`, _travel).
 class_name Level3DLauncher
 extends Node3D
 
@@ -118,6 +123,11 @@ var exploded: Callable
 # ...}, or empty. It goes off there, and `struck.call(found)` is told first.
 var intercept: Callable
 var struck: Callable
+# `traveled.call(at, direction)`: each TravelingExplosion an upgraded missile
+# throws where it goes off -- PlayerMissile.update's, two across the screen for
+# the first upgrade, and two up and down it as well for the second. The rules
+# are Level3DGuns.travel's; what is seen of them is here (_travel).
+var traveled: Callable
 
 var yaw := 0.0              # the mount, relative to the hull
 var loaded := true
@@ -374,7 +384,8 @@ func _launch() -> void:
 			"speed": speed, "left": (target - start).length(), "smoke": 0.0,
 			"scale": frame.basis.get_scale().x, "classic": classic, "rearm": rearm,
 			"axis": _axis, "nose": _nose, "tail": _tail, "lob": _lob,
-			"stages": stages, "stage_tails": _stage_tails, "dropped": 0}
+			"stages": stages, "stage_tails": _stage_tails, "dropped": 0,
+			"power": missile_power if has_missiles else 0}
 	entry["total"] = entry.left
 	if _lob:
 		# The arc leaves along the tube: a parabola from the muzzle to the
@@ -549,6 +560,77 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3, rid: RID) -> voi
 		# Not on the water, even from a hit above it -- a boat's.
 		if not destroyed and there.kind != "water" and at.y <= there.height + 0.2:
 			_crater(Vector3(at.x, there.height, at.z))
+	# PlayerMissile.update: an upgraded missile throws its blast sideways, and
+	# the second upgrade vertically too.
+	if rocket.power > 0:
+		var ways: Array[Vector2] = [Vector2.LEFT, Vector2.RIGHT]
+		if rocket.power == 2:
+			ways.append_array([Vector2.UP, Vector2.DOWN])
+		for way in ways:
+			if traveled.is_valid():
+				traveled.call(at, way)
+			_travel(Vector3(at.x, there.height if there.hit else at.y, at.z), way)
+
+
+# A TravelingExplosion as it is seen: a ball of fire running along the ground
+# at the game's speed, as big as the game's box and shrinking with it -- the
+# game's sprite is fire, then flash, then smoke, one to each of its periods --
+# and leaving puffs behind it, spray over the water.
+func _travel(at: Vector3, way: Vector2) -> void:
+	# Fire is a flash round a hot core, which reads on the sand where the
+	# flash's orange alone does not; smoke is the flash's ball in J_Smoke.
+	var ball := _instance(_puff_mesh, "flash")
+	var core := _instance(_puff_mesh, "core")
+	var light := OmniLight3D.new()
+	get_parent().add_child(light)
+	light.light_color = Color(1.0, 0.6, 0.25)
+	light.omni_range = 3.0
+	light.omni_attenuation = 2.0
+	var step := Vector3(way.x, 0.0, way.y) * TravelingExplosion.VELOCITY * Level3DMap.PX
+	var life := TravelingExplosion.TRAVEL_TIME / 100.0
+	var last := [-1, 0]     # the period shown, the tick of the last puff
+	var tween := ball.create_tween()
+	tween.tween_method(func(seconds: float):
+		var t := mini(int(seconds * 100.0) + 1, TravelingExplosion.TRAVEL_TIME)
+		var p := at + step * t
+		var there: Dictionary = ground.call(p.x, p.z)
+		var radius := Level3DGuns.traveling_margin(t) * Level3DMap.PX * 0.8
+		p.y = (there.height if there.hit else at.y) + radius * 0.5
+		ball.global_position = p
+		ball.scale = Vector3.ONE * radius
+		core.global_position = p + Vector3.UP * radius * 0.35
+		core.scale = Vector3.ONE * radius * 0.6
+		light.global_position = p + Vector3.UP * 0.5
+		light.light_energy = 3.0 * (1.0 - float(t) / TravelingExplosion.TRAVEL_TIME)
+		var period := 0 if t < TravelingExplosion.PERIOD0 else (1 if t < TravelingExplosion.PERIOD1 else 2)
+		if period != last[0]:
+			last[0] = period
+			ball.material_override = _materials["smoke" if period == 2 else "flash"]
+			core.visible = period < 2
+		if t - last[1] >= 6:
+			last[1] = t
+			_puff(p, radius * 0.8, "splash" if there.hit and there.kind == "water" else "smoke"),
+			0.0, life, life)
+	tween.tween_property(ball, "scale", Vector3.ONE * 0.001, 0.12)
+	tween.tween_callback(func():
+		ball.queue_free()
+		core.queue_free()
+		light.queue_free())
+
+
+# One puff that swells, rises and shrinks away.
+func _puff(at: Vector3, size: float, material: String) -> void:
+	var puff := _instance(_puff_mesh, material)
+	puff.global_position = at
+	puff.scale = Vector3.ONE * size * 0.3
+	var life := _rng.randf_range(0.6, 0.9)
+	var tween := puff.create_tween()
+	tween.set_parallel()
+	tween.tween_property(puff, "scale", Vector3.ONE * size, life * 0.3).set_ease(Tween.EASE_OUT)
+	tween.tween_property(puff, "global_position", at + Vector3.UP * 0.6, life)
+	tween.tween_property(puff, "scale", Vector3.ONE * 0.001, life * 0.7).set_delay(life * 0.3) \
+			.set_ease(Tween.EASE_IN)
+	tween.chain().tween_callback(puff.queue_free)
 
 
 func _fireball(at: Vector3) -> void:
