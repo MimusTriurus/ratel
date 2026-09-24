@@ -21,11 +21,15 @@
 #
 # Where this departs from the game, and why:
 #   * It fires from the muzzle, at the player, not from (-16, +16) px of its
-#     centre, the sprite's gun.
+#     centre, the sprite's gun: the turret stands 1.6 m aft of the model's
+#     centre and the muzzle 2.2 m out from the turret's axis, both scaled.
 #   * The sprite's two frames are the wake; here the clips say what it does --
-#     Move while it drifts, Idle when it holds, Shoot on a round, Damage on a
-#     hit that does not sink it -- and the turret turns to the player, which the
-#     sprite's cannot.
+#     Move while it drifts, Idle when it holds, Damage on a hit that does not
+#     sink it -- and Shoot, the barrel's recoil and the flash, plays over
+#     whichever of them is on, on a player of its own: the clips come in two
+#     layers that key no bone in common (jackal_boat.py), so a round never
+#     starts the hull's motion over. The turret is keyed by no clip; it turns
+#     to the player from here, which the sprite's cannot.
 #   * The game removes it and draws an Explosion. Here the blast is drawn over
 #     it and it plays Death underneath, rolls over and sinks, before it goes.
 class_name Level3DBoats
@@ -41,8 +45,11 @@ const POINTS := 800
 const TRIGGER_OFFSET := Vector2(72, 56)
 # The sprite's heading: down the screen and to the left, the way it drifts.
 const HEADING := Vector2(-1.0, 1.0)
-# The muzzle over the waterline, and the turret's pivot, in the model's metres.
-const MUZZLE_HEIGHT := 2.06
+# The turret's pivot, and the muzzle from it with the barrel run out, in the
+# model's metres and axes (bow +z): jackal_boat.py's TURRET_AT, GUN_AT and the
+# Flash bone, 1.73 m down the barrel.
+const TURRET_PIVOT := Vector3(0.0, 1.35, -1.6)
+const MUZZLE_FROM_TURRET := Vector3(0.0, 0.71, 0.45 + 1.73)
 const TURRET_TURN := 3.0      # rad/s: fast enough to be on the player by its next round
 const BLAST_HEIGHT := 0.4
 const BLAST_SCALE := 0.8
@@ -52,6 +59,10 @@ const SHOOT := "Shoot"
 const DAMAGE := "Damage"
 const DEATH := "Death"
 const LOOPS := ["Idle", "Move", "Turn_L", "Turn_R"]
+const HULL_CLIPS := ["Idle", "Move", "Turn_L", "Turn_R", "Damage", "Death"]
+# The bones of each layer (jackal_boat.py's HULL_BONES and WEAPON_BONES).
+const HULL_BONES := ["Root", "Motor.R", "Motor.L"]
+const WEAPON_BONES := ["Gun", "Barrel", "Flash"]
 const BLEND := 0.25
 
 var map: Level3DMap
@@ -68,6 +79,8 @@ var verbose := false
 var boats: Array[Boat] = []
 var _wrecks: Array[Boat] = []
 var _scene: PackedScene
+var _hull_clips: AnimationLibrary
+var _weapon_clips: AnimationLibrary
 var _trigger_y := -1
 var _furthest_top := INF
 
@@ -82,7 +95,8 @@ class Boat:
 	var aim_yaw := 0.0      # where the player is, the same way
 	var sink_left := 0.0
 	var root: Node3D
-	var player: AnimationPlayer
+	var player: AnimationPlayer     # the hull's clips
+	var weapon: AnimationPlayer     # Shoot
 	var skeleton: Skeleton3D
 	var turret_bone := -1
 
@@ -92,13 +106,28 @@ func _ready() -> void:
 	if _scene == null:
 		push_error("Cannot load %s -- run export() in jackal_boat_lowpoly.blend" % BOAT_PATH)
 		return
-	# The loops come out without their loop mode; shared by every boat, so set once.
-	var probe := _scene.instantiate()
-	var clips := probe.find_child("AnimationPlayer", true, false) as AnimationPlayer
-	for clip in LOOPS:
-		clips.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
-	probe.free()
+	_make_libraries()
 	reset()
+
+
+# The two layers' clips, shared by every boat. The glTF export gives every clip
+# a track for every bone any clip moves, holding it at rest where the clip does
+# not -- so Shoot would pin the hull and Idle the barrel. Each clip keeps only
+# its own layer's bones here.
+func _make_libraries() -> void:
+	var probe := _scene.instantiate()
+	var imported := probe.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	_hull_clips = AnimationLibrary.new()
+	_weapon_clips = AnimationLibrary.new()
+	for clip in HULL_CLIPS + [SHOOT]:
+		var a := imported.get_animation(clip).duplicate() as Animation
+		var keep: Array = WEAPON_BONES if clip == SHOOT else HULL_BONES
+		for i in range(a.get_track_count() - 1, -1, -1):
+			if str(a.track_get_path(i).get_concatenated_subnames()) not in keep:
+				a.remove_track(i)
+		a.loop_mode = Animation.LOOP_LINEAR if clip in LOOPS else Animation.LOOP_NONE
+		(_weapon_clips if clip == SHOOT else _hull_clips).add_animation(clip, a)
+	probe.free()
 
 
 func reset() -> void:
@@ -150,17 +179,43 @@ func _spawn(x: float, y: float) -> void:
 	b.root.scale = Vector3.ONE * SCALE
 	b.root.rotation.y = atan2(HEADING.x, HEADING.y)
 	add_child(b.root)
-	b.player = b.root.find_child("AnimationPlayer", true, false) as AnimationPlayer
-	# Advanced by hand in _process, so that the turret can be turned after the
-	# clip has posed it and before the frame is drawn.
-	b.player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+	_split_players(b)
 	b.skeleton = b.root.find_child("Skeleton3D", true, false) as Skeleton3D
 	b.turret_bone = b.skeleton.find_bone("Turret")
 	b.player.play(MOVE)
+	# On the player from the start: it fires on its first tick.
+	_aim(b, Level3DMap.to_map(player_position.call()))
+	b.turret_yaw = b.aim_yaw
 	boats.append(b)
 	_place(b)
 	if verbose:
 		print("boat appears at %.0f, %.0f" % [x, y])
+
+
+# The imported player split in two, one for each layer's library: a player
+# resets every track its library has, so one that held both would undo the
+# other's. Both are advanced by hand in _process, the turret turned after
+# them, before the frame is drawn.
+func _split_players(b: Boat) -> void:
+	var imported := b.root.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	b.player = imported
+	b.weapon = AnimationPlayer.new()
+	imported.get_parent().add_child(b.weapon)
+	b.weapon.root_node = b.weapon.get_path_to(imported.get_node(imported.root_node))
+	b.player.remove_animation_library("")
+	b.player.add_animation_library("", _hull_clips)
+	b.weapon.add_animation_library("", _weapon_clips)
+	for p in [b.player, b.weapon]:
+		p.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+	# Out of a hit, back to whatever it is doing; blended, as it comes out
+	# from under a knock rather than jumping to the loop's first frame.
+	b.player.animation_finished.connect(func(clip: StringName):
+		if clip == DAMAGE:
+			b.player.play(_base(b), BLEND))
+	# Shoot's last frame is the gun at rest with no flash: held there until
+	# the first round.
+	b.weapon.play(SHOOT)
+	b.weapon.seek(b.weapon.current_animation_length, true)
 
 
 # GreenBoat.update.
@@ -171,24 +226,36 @@ func _update(b: Boat, player: Vector2) -> void:
 		b.y += GreenBoat.SPEED
 		if b.movement_delay == 0:
 			_settle(b, IDLE)
+	_place(b)
+	_aim(b, player)
 	b.bullet_delay -= 1
 	if b.bullet_delay < 0:
 		b.bullet_delay = GreenBoat.BULLET_DELAY
 		_fire(b, player)
+
+
+# Where the turret is to point: the player, as a yaw from the bow.
+func _aim(b: Boat, player: Vector2) -> void:
 	var to := player - Vector2(b.x, b.y)
 	b.aim_yaw = wrapf(atan2(to.x, to.y) - b.root.rotation.y, -PI, PI)
-	_place(b)
+
+
+# The muzzle in level metres, the turret as it is drawn: the round comes out of
+# the barrel, and flies from there at the player.
+func _muzzle(b: Boat) -> Vector3:
+	var local := TURRET_PIVOT + MUZZLE_FROM_TURRET.rotated(Vector3.UP, b.turret_yaw)
+	return b.root.global_transform * local
 
 
 func _fire(b: Boat, player: Vector2) -> void:
-	var at := Level3DMap.to_level(Vector2(b.x, b.y))
-	var d := (player - Vector2(b.x, b.y)).normalized()
-	var height: float = ground.call(at.x, at.y).height + MUZZLE_HEIGHT * SCALE
-	guns.enemy_bullet(at, d * EnemyBullet.SPEED, GreenBoat.BULLET_TRAVEL_TIME, height, true)
-	b.player.play(SHOOT, 0.05)
-	b.player.queue(_base(b))
+	var muzzle := _muzzle(b)
+	var at := Vector2(muzzle.x, muzzle.z)
+	var d := (Level3DMap.to_level(player) - at).normalized()
+	guns.enemy_bullet(at, d * EnemyBullet.SPEED, GreenBoat.BULLET_TRAVEL_TIME, muzzle.y, true)
+	b.weapon.play(SHOOT)
+	b.weapon.seek(0.0, true)
 	if verbose:
-		print("boat fires from %.0f, %.0f" % [b.x, b.y])
+		print("boat fires from %.2f, %.2f, %.2f" % [muzzle.x, muzzle.y, muzzle.z])
 
 
 # What it plays when it is doing nothing else: drifting or holding.
@@ -196,13 +263,11 @@ func _base(b: Boat) -> String:
 	return MOVE if b.movement_delay > 0 else IDLE
 
 
-# Back to `clip` once a one-shot has played out, or at once if a loop is on.
+# Over to `clip` now if a loop is on; a hit plays out first and comes back
+# to _base by itself.
 func _settle(b: Boat, clip: String) -> void:
 	if b.player.current_animation in LOOPS:
 		b.player.play(clip, BLEND)
-	else:
-		b.player.clear_queue()
-		b.player.queue(clip)
 
 
 func _place(b: Boat) -> void:
@@ -228,8 +293,8 @@ func _process(delta: float) -> void:
 
 func _pose(b: Boat, delta: float) -> void:
 	b.player.advance(delta)
-	var q := b.skeleton.get_bone_pose_rotation(b.turret_bone)
-	b.skeleton.set_bone_pose_rotation(b.turret_bone, Quaternion(Vector3.UP, b.turret_yaw) * q)
+	b.weapon.advance(delta)
+	b.skeleton.set_bone_pose_rotation(b.turret_bone, Quaternion(Vector3.UP, b.turret_yaw))
 
 
 # ----------------------------------------------------------------------------
@@ -244,7 +309,6 @@ func _kill(i: int, by: String) -> void:
 	var height: float = ground.call(at.x, at.y).height
 	guns.blast.call(Vector3(at.x, height + BLAST_HEIGHT, at.y), BLAST_SCALE)
 	guns.explode(Vector3(at.x, height, at.y))
-	b.player.clear_queue()
 	b.player.play(DEATH, 0.05)
 	b.sink_left = b.player.get_animation(DEATH).length
 	_wrecks.append(b)
@@ -289,8 +353,6 @@ func bullet_attack(found: Dictionary) -> void:
 		print("boat hit, %d left" % b.bullet_hits)
 	if b.player.current_animation != DAMAGE:
 		b.player.play(DAMAGE, 0.05)
-		b.player.clear_queue()
-		b.player.queue(_base(b))
 
 
 # Enemy.attack from a grenade or missile: gone at once.

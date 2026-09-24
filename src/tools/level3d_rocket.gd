@@ -40,6 +40,10 @@ const TOP_SPEED := 28.0
 const KICK := 0.6
 const SMOKE_EVERY := 0.012
 const CRATERS_KEPT := 40
+# A crater smaller than this is not worth drawing; its rim may stand this far
+# off the height at its centre and still lie flat enough.
+const CRATER_SMALLEST := 0.2
+const CRATER_STEP := 0.06
 
 # What a rocket may hit: the preview's ground, solid and target layers.
 var mask := 0xFFFFFFFF
@@ -289,7 +293,8 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3, rid: RID) -> voi
 	else:
 		_smoke(at)
 		_chips(at, normal)
-		if not destroyed and at.y <= there.height + 0.2:
+		# Not on the water, even from a hit above it -- a boat's.
+		if not destroyed and there.kind != "water" and at.y <= there.height + 0.2:
 			_crater(Vector3(at.x, there.height, at.z))
 
 
@@ -383,18 +388,37 @@ func _chips(at: Vector3, normal: Vector3) -> void:
 
 
 # A scorch on the ground that stays, the stage's soot decal in miniature. The
-# oldest goes when there are too many.
+# oldest goes when there are too many. It is a flat disc, so it is made no
+# bigger than the surface it lies on: shrunk until its rim is all off the
+# water and at the height of its centre -- or there is none, near a bridge's
+# edge or the shore.
 func _crater(at: Vector3) -> void:
+	var size := _rng.randf_range(0.5, 0.65)
+	while not _fits(at, size):
+		size *= 0.85
+		if size < CRATER_SMALLEST:
+			return
 	var crater := _instance(_crater_mesh, "soot")
 	crater.global_position = at + Vector3.UP * 0.008
 	crater.rotation.y = _rng.randf() * TAU
-	var size := _rng.randf_range(0.5, 0.65)
 	crater.scale = Vector3(0.05, 1.0, 0.05)
 	var tween := crater.create_tween()
 	tween.tween_property(crater, "scale", Vector3(size, 1.0, size * 0.85), 0.2).set_ease(Tween.EASE_OUT)
 	_craters.append(crater)
 	while _craters.size() > CRATERS_KEPT:
 		_craters.pop_front().queue_free()
+
+
+# Whether a disc of radius `size` at `at` lies on something other than water
+# all round, within CRATER_STEP of its height: sampled at eight points of the
+# rim.
+func _fits(at: Vector3, size: float) -> bool:
+	for i in 8:
+		var a := TAU * i / 8.0
+		var there: Dictionary = ground.call(at.x + size * cos(a), at.z + size * sin(a))
+		if not there.hit or there.kind == "water" or absf(there.height - at.y) > CRATER_STEP:
+			return false
+	return true
 
 
 func clear_craters() -> void:
