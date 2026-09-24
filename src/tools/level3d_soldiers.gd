@@ -28,9 +28,10 @@
 # He is drawn as the trooper of the soldier model sheet (jackal_trooper.glb,
 # jackal_soldier_lowpoly.blend) unless the preview is given --sprite-soldiers,
 # which brings back the figure made from the game's sprite (jackal_soldier.glb,
-# jackal_units.blend). Both are the same soldier to everything above: MODELS
+# jackal_units.blend). The same flag does the prisoners (level3d_friends.gd).
+# Both are the same soldier to everything above: MODELS
 # says what differs -- the trooper is a 1.8 m man shrunk to the sprite
-# figure's metre, blinks his olive, and walks by the ground he covers.
+# figure's metre, blinks his khaki, and walks by the ground he covers.
 #
 # Where this departs from the game, and why:
 #   * The hit and mine boxes are the game's 32 x 60 px, but centred on him
@@ -60,7 +61,7 @@ const PX := Level3DMap.PX
 #                trooper's are exported up to the frame before the first again
 const MODELS := {
 	"trooper": {"path": TROOPER_PATH, "scale": 0.55, "round_height": 0.72,
-			"brown": "T_Olive", "dark": "T_OliveDark", "stride": 0.8, "loop_pad": 1.0 / 24.0},
+			"brown": "T_Uniform", "dark": "T_UniformDark", "stride": 0.8, "loop_pad": 1.0 / 24.0},
 	"sprite": {"path": SOLDIER_PATH, "scale": 1.0, "round_height": 0.55,
 			"brown": "J_SoldierBrown", "dark": "J_SoldierDark", "stride": 0.0, "loop_pad": 0.0},
 }

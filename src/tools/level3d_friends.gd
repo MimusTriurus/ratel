@@ -1,5 +1,6 @@
 # The prisoners on the 3D stage 1 preview: jackal.FriendlySoldier, and what
-# lets them out -- Hut, House and Help -- on jackal_pow.glb (jackal_units.blend).
+# lets them out -- Hut, House and Help -- on jackal_trooper_pow.glb or
+# jackal_pow.glb (MODELS).
 #
 # Nothing here is part of the game, and the rules are the game's, run as the
 # soldiers' are (level3d_soldiers.gd): in map pixels and ticks on the game's
@@ -25,6 +26,12 @@
 # prisoners out of: Hangar_N and Hangar_W, both HOUSE_RIGHT, were turned round
 # in the stage file for it.
 #
+# He is drawn as the model sheet's trooper in the game's green, unarmed
+# (jackal_trooper_pow.glb, jackal_soldier_lowpoly.blend), unless the preview is
+# given --sprite-soldiers, which brings back the figure made from the sprite
+# (jackal_pow.glb, jackal_units.blend) -- the enemies' flag, the same choice
+# for both. MODELS says what differs, as Level3DSoldiers' does.
+#
 # The rescue helicopter at the landing port, and the 500 points a prisoner is
 # worth there, are not here yet: prisoners are picked up and counted, and go
 # nowhere. The weapon upgrade is counted, not given -- the BTR's rocket is
@@ -33,7 +40,22 @@ class_name Level3DFriends
 extends Node3D
 
 const POW_PATH := "res://resources/3d/jackal_pow.glb"
+const TROOPER_POW_PATH := "res://resources/3d/jackal_trooper_pow.glb"
 const PX := Level3DMap.PX
+
+# As Level3DSoldiers.MODELS: scale to the sprite figure's metre; `colour` the
+# material the weapon carrier's sheets recolour and `dark` the one the yellow
+# sheet does; `stride` metres a Pow_Walk cycle covers, unscaled, 0 to step it
+# by LEG_FRAMES; `wave_seconds` how long a Pow_Wave swing takes, 0 to step it
+# by LEG_FRAMES as the sprite's two waving frames do -- a man waving four
+# times a second is frantic; `loop_pad` what the clips are short of their
+# repeat.
+const MODELS := {
+	"trooper": {"path": TROOPER_POW_PATH, "scale": 0.55, "colour": "F_Uniform", "dark": "F_UniformDark",
+			"stride": 0.8, "wave_seconds": 1.0, "loop_pad": 1.0 / 24.0},
+	"sprite": {"path": POW_PATH, "scale": 1.0, "colour": "J_PowColor", "dark": "J_SoldierDark",
+			"stride": 0.0, "wave_seconds": 0.0, "loop_pad": 0.0},
+}
 
 # FriendlySoldier.init(): a zero-width hit and mine box, 20 px tall -- the
 # player has to drive over his middle. Centred on him here, as the enemy
@@ -51,10 +73,12 @@ const HELP_HEIGHT := 2.2
 const WALK := "Pow_Walk"
 const WAVE := "Pow_Wave"
 
-# FriendlySoldier's colour sheets, green first: what J_PowColor and the black
+# FriendlySoldier's colour sheets, green first: what the colour and the black
 # become as a weapon carrier flashes. Only the yellow sheet changes the black.
+# The green is the model's own (Color() -- the sprite figure's J_PowColor is
+# that green, the trooper's is the same green toned down to cloth).
 const SHEETS := [
-	[Color8(13, 147, 0), Color()],
+	[Color(), Color()],
 	[Color8(153, 78, 0), Color()],
 	[Color8(102, 102, 102), Color()],
 	[Color8(188, 190, 0), Color8(108, 7, 0)],
@@ -83,6 +107,8 @@ var missile_power := 0
 var friends: Array[Friend] = []
 var _helps := []
 var _bound := {}                # destructible name -> map building
+# MODELS' entry for the figure he is drawn as.
+var model: Dictionary
 var _scene: PackedScene
 var _rng := RandomNumberGenerator.new()
 var _furthest_top := INF
@@ -99,6 +125,10 @@ class Friend:
 	var direction_y := 1.0
 	var wandering := 0
 	var leg_frames := 0
+	# Walk cycles covered and ticks gone, for a model that walks by its stride
+	# and waves by the clock.
+	var stride_phase := 0.0
+	var ticks := 0
 	var entry := 0
 	var waving := 0
 	var house_count := 0
@@ -110,14 +140,25 @@ class Friend:
 	var player: AnimationPlayer
 	var colour: StandardMaterial3D
 	var dark: StandardMaterial3D
+	var colour_own: Color
 	var dark_colour: Color
 
 
 func _ready() -> void:
 	_rng.seed = 4
-	_scene = load(POW_PATH)
+	model = MODELS["sprite" if OS.get_cmdline_user_args().has("--sprite-soldiers") else "trooper"]
+	_scene = load(model.path)
 	if _scene == null:
-		push_error("Cannot load %s -- run export_pow() in jackal_units.blend" % POW_PATH)
+		push_error("Cannot load %s -- run its .blend's export" % model.path)
+		return
+	# The clips are the scene's, shared by every prisoner: padded once, here.
+	if model.loop_pad > 0.0:
+		var probe := _scene.instantiate()
+		var clips := probe.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		for clip in [WALK, WAVE]:
+			clips.get_animation(clip).length += model.loop_pad
+			clips.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
+		probe.free()
 
 
 # Each of the level's barracks and hangars to the nearest HUT or HOUSE of the
@@ -227,6 +268,7 @@ func _spawn(x: float, y: float, type: int, house_count: int = -1) -> Friend:
 	f.y = y
 	f.type = type
 	f.root = _scene.instantiate() as Node3D
+	f.root.scale = Vector3.ONE * model.scale
 	add_child(f.root)
 	f.player = f.root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	_own_materials(f)
@@ -262,12 +304,13 @@ func _own_materials(f: Friend) -> void:
 			var material := mi.mesh.surface_get_material(surface) as StandardMaterial3D
 			if material == null:
 				continue
-			if material.resource_name == "J_PowColor":
+			if material.resource_name == model.colour:
 				f.colour = material.duplicate()
 				mi.set_surface_override_material(surface, f.colour)
-			elif material.resource_name == "J_SoldierDark":
+			elif material.resource_name == model.dark:
 				f.dark = material.duplicate()
 				mi.set_surface_override_material(surface, f.dark)
+	f.colour_own = f.colour.albedo_color
 	f.dark_colour = f.dark.albedo_color
 
 
@@ -328,14 +371,14 @@ func _update(f: Friend) -> void:
 				_start_waving(f)
 			elif f.entry < 79:
 				f.y += 2.0
-				_legs(f)
+				_legs(f, 2.0)
 		FriendlySoldier.STATE_ENTRY_LEFT, FriendlySoldier.STATE_ENTRY_RIGHT:
 			f.entry -= 1
 			if f.entry <= 0:
 				_start_waving(f)
 			elif f.entry < 120:
 				f.x += -1.0 if f.state == FriendlySoldier.STATE_ENTRY_LEFT else 1.0
-				_legs(f)
+				_legs(f, 1.0)
 		FriendlySoldier.STATE_WAVING:
 			_legs(f)
 			if f.type == FriendlySoldierType.WEAPON_CARRIER or f.type == FriendlySoldierType.WANDERER \
@@ -347,7 +390,11 @@ func _update(f: Friend) -> void:
 			_wander(f)
 
 
-func _legs(f: Friend) -> void:
+# A leg frame, and for a model that walks by its stride the `step` px it took.
+func _legs(f: Friend, step: float = 0.0) -> void:
+	f.ticks += 1
+	if model.stride > 0.0:
+		f.stride_phase += step * PX / (model.stride * model.scale)
 	if f.leg_frames == 0:
 		f.leg_frames = FriendlySoldier.LEG_FRAMES - 1
 	f.leg_frames -= 1
@@ -367,7 +414,7 @@ func _wander(f: Friend) -> void:
 	if walkable:
 		f.x = next_x
 		f.y = next_y
-		_legs(f)
+		_legs(f, Vector2(f.vx, f.vy).length())
 	else:
 		var d := Level3DMap.suggest_direction_bounce(f.direction_x, f.direction_y, _rng)
 		f.direction_x = d.x
@@ -416,6 +463,10 @@ func _place(f: Friend) -> void:
 		f.player.pause()
 	var length := f.player.get_animation(clip).length
 	var phase := float(FriendlySoldier.LEG_FRAMES - 1 - f.leg_frames) / FriendlySoldier.LEG_FRAMES
+	if clip == WALK and model.stride > 0.0:
+		phase = fposmod(f.stride_phase, 1.0)
+	elif clip == WAVE and model.wave_seconds > 0.0:
+		phase = fposmod(f.ticks / (model.wave_seconds * Engine.physics_ticks_per_second), 1.0)
 	f.player.seek(phase * length, true)
 
 
@@ -425,7 +476,7 @@ func _process(_delta: float) -> void:
 		if f.colour_changing:
 			f.colour_index = (f.colour_index + 1) & 3
 		var sheet: Array = SHEETS[f.colour_index]
-		f.colour.albedo_color = sheet[0]
+		f.colour.albedo_color = sheet[0] if sheet[0] != Color() else f.colour_own
 		f.dark.albedo_color = sheet[1] if sheet[1] != Color() else f.dark_colour
 
 
