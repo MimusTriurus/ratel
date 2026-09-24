@@ -164,6 +164,35 @@ func suggest_direction_exact(x1: float, y1: float, x2: float, y2: float) -> Vect
 	return Vector3(v.x, v.y, angle)
 
 
+# GameMode.suggest_direction_turning without randomness, the boss tank's call:
+# not the flow field's step itself but a turn of 45 degrees from `current`
+# towards it, so that a run never turns it further than that. Off the field
+# it is GameMode.straight_direction, whose angle can come out as 360.
+func suggest_direction_turning(x1: float, y1: float, x2: float, y2: float, current: int) -> Vector3:
+	var d := lookup_direction(x1, y1, x2, y2)
+	if d < 0:
+		var a := rad_to_deg(atan2(y2 - y1, x2 - x1))
+		if a < 0:
+			a += 360
+		var ang := 45 * int(round(a / 45.0))
+		var s := unit_vector(ang)
+		return Vector3(s.x, s.y, ang)
+	var target: int = GameMode.DIRECTION_DEGREES[d]
+	var delta := (target - current + 180) % 360
+	if delta < 0:
+		delta += 180
+	else:
+		delta -= 180
+	if delta != 0:
+		current += -45 if delta < 0 else 45
+		if current < 0:
+			current += 360
+		elif current >= 360:
+			current -= 360
+	var v := unit_vector(current)
+	return Vector3(v.x, v.y, current)
+
+
 # Main.create_unit_vector, the exact table for multiples of 45 degrees.
 static func unit_vector(angle: int) -> Vector2:
 	var s := Main.ISQRT2

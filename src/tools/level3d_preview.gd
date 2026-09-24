@@ -37,8 +37,8 @@
 #   Esc                    stop
 #   Q / E                  turn the turret by hand; M toggles mouse aim
 #   R                      put the BTR back at the start, rebuild what was blown up
-#                          and bring the bunkers' guns, the soldiers, the boats and
-#                          the tanks back
+#                          and bring the bunkers' guns, the soldiers, the boats,
+#                          the tanks and the boss back
 #   wheel, arrows          scroll the camera off the BTR; C follows it again
 #   + / -                  zoom
 #   Tab                    top view / tilted view
@@ -52,10 +52,12 @@
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
 #            [--at <x,z>]
 #
-# The bunkers' guns, the enemy soldiers, the two boats on the river and the two
-# brown tanks fight back as they do in the game (level3d_guns.gd,
-# level3d_soldiers.gd, level3d_boats.gd, level3d_tanks.gd, on the game's own
-# map through level3d_map.gd): one round kills the BTR, which comes back where
+# The bunkers' guns, the enemy soldiers, the two boats on the river, the two
+# brown tanks and the boss's four heavy tanks at the top of the stage fight back
+# as they do in the game (level3d_guns.gd, level3d_soldiers.gd,
+# level3d_boats.gd, level3d_tanks.gd, level3d_boss.gd, on the game's own map
+# through level3d_map.gd); the boss takes the camera to its arena and keeps it
+# there, as the game's does. One round kills the BTR, which comes back where
 # it died after a pause, blinking while it cannot be hit. --immortal lets the
 # enemies' rounds pass it (running into a gun or a tank still kills it), and a
 # --shot prints what the enemies do.
@@ -117,6 +119,7 @@ var soldiers: Level3DSoldiers
 var friends: Level3DFriends
 var boats: Level3DBoats
 var tanks: Level3DTanks
+var boss: Level3DBoss
 var map: Level3DMap
 var level_aabb: AABB
 var focus := Vector2.ZERO       # x, z the camera is centred on
@@ -679,6 +682,16 @@ func _add_guns(level: Node) -> void:
 	tanks.player_position = guns.player_position
 	tanks.scored = guns.scored
 	add_child(tanks)
+	boss = Level3DBoss.new()
+	boss.map = map
+	boss.guns = guns
+	boss.frame = _view_frame
+	boss.ground = _ground_at
+	boss.player_position = guns.player_position
+	boss.scored = guns.scored
+	add_child(boss)
+	# The boss tanks are not in explosion_hit: nothing but the player's own
+	# weapons hurts them (BossBlueTank.attack).
 	guns.explosion_hit = func(box: Rect2, player: bool):
 		soldiers.explosion_hit(box, player)
 		boats.explosion_hit(box, player)
@@ -704,7 +717,8 @@ func _add_guns(level: Node) -> void:
 		return _nearest([guns.intercept(from, to, PlayerBullet.MARGIN),
 				soldiers.intercept(from, to, PlayerBullet.MARGIN),
 				boats.intercept(from, to, PlayerBullet.MARGIN),
-				tanks.intercept(from, to, PlayerBullet.MARGIN)])
+				tanks.intercept(from, to, PlayerBullet.MARGIN),
+				boss.intercept(from, to, PlayerBullet.MARGIN)])
 	gun.struck = func(found: Dictionary):
 		if found.has("gun"):
 			guns.bullet_attack(found.gun)
@@ -712,18 +726,23 @@ func _add_guns(level: Node) -> void:
 			boats.bullet_attack(found)
 		elif found.has("tank"):
 			tanks.bullet_attack(found)
+		elif found.has("boss"):
+			boss.bullet_attack(found)
 		else:
 			soldiers.bullet_attack(found)
 	launcher.intercept = func(from: Vector3, to: Vector3):
 		soldiers.sweep(from, to, PlayerMissile.MARGIN)
 		return _nearest([guns.intercept(from, to, PlayerMissile.MARGIN, true),
 				boats.intercept(from, to, PlayerMissile.MARGIN, true),
-				tanks.intercept(from, to, PlayerMissile.MARGIN, true)])
+				tanks.intercept(from, to, PlayerMissile.MARGIN, true),
+				boss.intercept(from, to, PlayerMissile.MARGIN, true)])
 	launcher.struck = func(found: Dictionary):
 		if found.has("boat"):
 			boats.attack(found)
 		elif found.has("tank"):
 			tanks.attack(found)
+		elif found.has("boss"):
+			boss.attack(found)
 		else:
 			guns.attack(found.gun)
 	_blast_scene = load(BLAST_PATH)
@@ -1002,10 +1021,13 @@ func _physics_process(delta: float) -> void:
 			_explode_btr("ran into a gun")
 		elif tanks.bump(_player_box(), _invincible > 0):
 			_explode_btr("ran into a tank")
+		elif boss.bump(_player_box(), _invincible > 0):
+			_explode_btr("ran into a boss tank")
 	guns.tick()
 	soldiers.tick()
 	boats.tick()
 	tanks.tick()
+	boss.tick()
 	friends.tick()
 	_set_score(_score)
 	_sync_markers()
@@ -1020,6 +1042,11 @@ func _process(delta: float) -> void:
 		focus.y -= scroll * SCROLL_SPEED / zoom * delta
 	if following:
 		focus = Vector2(btr.position.x, btr.position.z)
+	# The boss's pan and the arena after it: the frame's top where the boss
+	# has it, as GameMode's boss_camera_pan and max_camera_y = 0 hold it.
+	var boss_top := boss.camera_top() if boss != null else -1.0
+	if boss_top >= 0.0:
+		focus.y = Level3DMap.to_level(Vector2(0.0, boss_top)).y + level_aabb.size.x / zoom * 9.0 / 32.0
 	# The game flashes the jeep through four palettes a frame while it is
 	# invincible; the BTR has one, so it blinks.
 	if _respawning == 0:
@@ -1065,6 +1092,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				soldiers.reset()
 				boats.reset()
 				tanks.reset()
+				boss.reset()
 				friends.reset()
 				map.reset()
 				_respawning = 0
@@ -1146,6 +1174,7 @@ func _screenshot_mode() -> void:
 	soldiers.verbose = guns.verbose
 	boats.verbose = guns.verbose
 	tanks.verbose = guns.verbose
+	boss.verbose = guns.verbose
 	friends.verbose = guns.verbose
 	var immortal := args.find("--immortal")
 	if immortal >= 0:
