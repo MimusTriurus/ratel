@@ -348,6 +348,10 @@ glTF-клип получает имя сцены, а превью проигры
 `jackal_trooper.glb`) теперь рисует врага в превью вместо этой фигуры; её
 возвращает `--sprite-soldiers`. Как он сделан — `docs/soldier-pipeline.md`.
 
+**Катер по листу модели** (`jackal_boat_lowpoly.blend` → `jackal_boat.glb`)
+ходит по реке как `GreenBoat` — `Level3DBoats`, с пеной и кильватером. Как
+он сделан и что нужно следующему водному юниту — `docs/boat-pipeline.md`.
+
 ## 6. Перенос в Godot
 
 Экспорт — текстовый блок `jackal_export_glb.py` в сцене этапа:
