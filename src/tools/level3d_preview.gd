@@ -49,6 +49,7 @@
 #     godot --path . --windowed --resolution 1280x720 src/tools/level3d_preview.tscn \
 #         -- --shot out.png <position 0-1 or x,z> <zoom> <top|tilt> [<seconds> <x,z> ...] \
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
+#            [--at <x,z>]
 #
 # The bunkers' guns and the enemy soldiers fight back as they do in the game
 # (level3d_guns.gd, level3d_soldiers.gd, on the game's own map through
@@ -63,6 +64,7 @@
 # start -- DESTRUCTIBLE_NAMES has the names -- --fire aims at x,z and holds
 # the trigger down from the start, and --rocket aims at x,z and sends one
 # rocket as soon as the launcher has come round, or that many seconds in.
+# --at puts the BTR at x,z to begin with instead of at START.
 extends Node3D
 
 const LEVEL_PATH := "res://resources/3d/jackal_stage1.glb"
@@ -106,6 +108,7 @@ var gun: Level3DGun
 var launcher: Level3DLauncher
 var guns: Level3DGuns
 var soldiers: Level3DSoldiers
+var friends: Level3DFriends
 var map: Level3DMap
 var level_aabb: AABB
 var focus := Vector2.ZERO       # x, z the camera is centred on
@@ -564,6 +567,8 @@ func _set_destroyed(building: String, destroyed: bool) -> void:
 	player.seek(BLAST_START if destroyed else 0.0, true)
 	if not destroyed:
 		player.pause()
+	elif friends != null:
+		friends.building_destroyed(building)
 	_sync_bodies(entry)
 
 
@@ -651,6 +656,20 @@ func _add_guns(level: Node) -> void:
 	soldiers.scored = guns.scored
 	add_child(soldiers)
 	guns.explosion_hit = soldiers.explosion_hit
+	friends = Level3DFriends.new()
+	friends.map = map
+	friends.guns = guns
+	friends.soldiers = soldiers
+	friends.frame = _view_frame
+	friends.ground = _ground_at
+	friends.player_position = guns.player_position
+	friends.scored = guns.scored
+	add_child(friends)
+	soldiers.more_solids = friends.solid_boxes
+	var centres := {}
+	for building in destructibles:
+		centres[building] = destructibles[building].footprint.get_center()
+	friends.bind(centres)
 	# A round stops at the first enemy on its way, gun or soldier; a missile
 	# kills the soldiers it passes and stops at a gun.
 	gun.intercept = func(from: Vector3, to: Vector3):
@@ -743,6 +762,7 @@ func _explode_btr(by: String) -> void:
 	_spawn_blast(btr.position + Vector3.UP * 0.6, 1.0)
 	# Its own Explosion, which spares the guns and not the soldiers.
 	guns.explode(btr.position, true)
+	friends.player_died(btr.position)
 	_shake(SHAKE_PIXELS)
 	btr.stop()
 	btr.visible = false
@@ -766,6 +786,8 @@ func _make_hud() -> void:
 func _set_score(score: int) -> void:
 	_score = score
 	_score_label.text = "SCORE %06d" % score
+	if friends != null:
+		_score_label.text += "   POW %d   %s" % [friends.pows, friends.weapon_name().to_upper()]
 
 
 func _make_markers() -> void:
@@ -924,12 +946,16 @@ func _physics_process(delta: float) -> void:
 	if not gone:
 		if _invincible > 0:
 			_invincible -= 1
-		# Soldiers are run over whether or not the BTR is invincible.
+		# Soldiers are run over and prisoners picked up whether or not the BTR is
+		# invincible.
 		soldiers.bump(_player_box())
+		friends.bump(_player_box())
 		if guns.bump(_player_box(), _invincible > 0):
 			_explode_btr("ran into a gun")
 	guns.tick()
 	soldiers.tick()
+	friends.tick()
+	_set_score(_score)
 	_sync_markers()
 
 
@@ -985,6 +1011,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				launcher.clear_craters()
 				guns.reset()
 				soldiers.reset()
+				friends.reset()
+				map.reset()
 				_respawning = 0
 				_invincible = 0
 				btr.visible = true
@@ -1062,10 +1090,16 @@ func _screenshot_mode() -> void:
 	var args := OS.get_cmdline_user_args()
 	guns.verbose = args.has("--shot")
 	soldiers.verbose = guns.verbose
+	friends.verbose = guns.verbose
 	var immortal := args.find("--immortal")
 	if immortal >= 0:
 		_immortal = true
 		args.remove_at(immortal)
+	var start_at := args.find("--at")
+	if start_at >= 0:
+		var xz := args[start_at + 1].split(",")
+		btr.place(Vector3(float(xz[0]), 0.0, float(xz[1])), START_HEADING)
+		args = args.slice(0, start_at) + args.slice(start_at + 2)
 	var blow_up := args.find("--destroy")
 	if blow_up >= 0:
 		for building in args[blow_up + 1].split(","):

@@ -32,8 +32,6 @@
 #   * He fires from where he stands, at the player, not from 30 px up the
 #     screen at a point 30 px down it -- the same sprite offset twice.
 #   * He faces the way he walks or aims, not the nearest of four.
-#   * A hut that is blown up stays water on the map, so soldiers still walk
-#     round its ruins; the game rewrites its tiles.
 class_name Level3DSoldiers
 extends Node3D
 
@@ -79,6 +77,9 @@ var ground: Callable
 # `player_position.call()`: the player's level x, z.
 var player_position: Callable
 var scored: Callable
+# `more_solids.call()`: other solid boxes to walk round, map px -- the
+# prisoners' (level3d_friends.gd).
+var more_solids: Callable
 var verbose := false
 
 var soldiers: Array[Soldier] = []
@@ -370,6 +371,16 @@ func _solids(me: Soldier) -> Array[Rect2]:
 	for other in soldiers:
 		if other != me:
 			boxes.append(Rect2(Vector2(other.x, other.y) + SOLID.position, SOLID.size))
+	if more_solids.is_valid():
+		boxes.append_array(more_solids.call())
+	return boxes
+
+
+# The soldiers' own solid boxes, map px, for the prisoners to walk round.
+func solid_boxes() -> Array[Rect2]:
+	var boxes: Array[Rect2] = []
+	for s in soldiers:
+		boxes.append(Rect2(Vector2(s.x, s.y) + SOLID.position, SOLID.size))
 	return boxes
 
 

@@ -14,7 +14,9 @@
 # 99.5% of the tiles the game lets a soldier walk on are ground in the level
 # (the rest forest edge, walls and trunks), and its forest is the level's. So what walks here walks by the game's
 # rules on the game's grid -- GameMode.is_driveable, suggest_direction --
-# and the level is only where it is drawn.
+# and the level is only where it is drawn. The grid is the game's as it plays,
+# not only as it is stored: the POW buildings' footprints are solid until
+# they are blown open, and then their destruction groups rewrite them.
 #
 # PX is also the scale every game distance is converted by, so that a round's
 # reach and a gun's spacing agree. The BTR was sized otherwise, to the jeep
@@ -28,11 +30,56 @@ const PX := 0.014651
 const ORIGIN := Vector2(-15.0121, -135.0312)
 
 var stage := Stage.new()
+# The POW buildings of the stage, as Hut and House find them: {"type" (the
+# Triggers constant), "x", "y" (map px, the trigger's corner), "group" (the
+# destruction group they rewrite)}.
+var buildings: Array = []
+var _pristine: Array = []
+var _triggered := {}
 
 
 func _init() -> void:
 	MapIO.load_stage(STAGE, stage, MapIO.load_trigger_sizes())
 	FlowField.load_into(STAGE, stage)
+	for row in stage.types_map:
+		_pristine.append((row as PackedInt32Array).duplicate())
+	for row in stage.trigger_map[0]:
+		for t in row:
+			match t[0]:
+				Triggers.HUT:
+					buildings.append({"type": t[0], "x": t[1], "y": t[2],
+							"group": stage.groups_map[(t[2] >> 5) + 1][(t[1] >> 5) + 1]})
+				Triggers.HOUSE_LEFT, Triggers.HOUSE_RIGHT:
+					var left: bool = t[0] == Triggers.HOUSE_LEFT
+					buildings.append({"type": t[0], "x": t[1], "y": t[2],
+							"group": stage.groups_map[(t[2] >> 5) + 2][(t[1] >> 5) + (0 if left else 5)]})
+	reset()
+
+
+# The map as the stage starts it. Hut and House make their footprints solid
+# when they are spawned -- 6 x 5 tiles and 6 x 6 -- and here that is done for
+# all of them at once; before its trigger fires the ground under a hut is
+# water, which stops the same walkers and fewer rounds.
+func reset() -> void:
+	for y in stage.types_map.size():
+		stage.types_map[y] = (_pristine[y] as PackedInt32Array).duplicate()
+	_triggered.clear()
+	for b in buildings:
+		var X: int = b.x >> 5
+		var Y: int = b.y >> 5
+		for i in (5 if b.type == Triggers.HUT else 6):
+			for j in 6:
+				stage.types_map[Y + i][X + j] = MapIO.TYPE_SOLID
+
+
+# GameMode.trigger_group: the building is down, and its cells become what the
+# group says -- the ruin's ground, walkable again.
+func trigger_group(index: int) -> void:
+	if _triggered.has(index):
+		return
+	_triggered[index] = true
+	for g in stage.groups[index]:
+		stage.types_map[g[1]][g[0]] = g[3]
 
 
 static func to_level(p: Vector2) -> Vector2:
