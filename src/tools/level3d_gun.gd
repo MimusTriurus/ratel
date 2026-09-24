@@ -26,6 +26,13 @@
 # Effects are low poly and opaque, like the stage: a puff grows and shrinks
 # away instead of fading, which also keeps them out of Compatibility's
 # transparent pass.
+#
+# With the BTR driving classic (level3d_btr.gd) the gun is PlayerBullet's and
+# Player.update's trigger instead: a round the tick the trigger goes down, then
+# one every GUN_ARMED_DELAY ticks while it is held -- tapping is faster than
+# holding, as it is in the game -- each one flying 18 px a tick for 21 ticks,
+# 378 px, whatever it was aimed at, with no spread. It is still decided by the
+# ray when it is fired.
 class_name Level3DGun
 extends Node3D
 
@@ -40,6 +47,10 @@ const TRACER_LENGTH := 0.7
 const TRACER_WIDTH := 0.07
 const FLASH_TIME := 0.05
 const RECOIL_KICK := 0.12
+# PlayerBullet, at the map's PX: it moves VELOCITY a tick and is gone on the
+# tick its count passes TRAVEL_TIME, so it covers TRAVEL_TIME + 1 moves.
+const CLASSIC_RANGE := (PlayerBullet.TRAVEL_TIME + 1) * PlayerBullet.VELOCITY * Level3DMap.PX
+const CLASSIC_TRACER_SPEED := PlayerBullet.VELOCITY * 100.0 * Level3DMap.PX
 
 # What the ray may stop at: the preview's ground, solid and target layers.
 var mask := 0xFFFFFFFF
@@ -59,6 +70,9 @@ var intercept: Callable
 var struck: Callable
 
 var _cooldown := 0.0
+# Player's gun_armed and shoot_released, for the classic trigger.
+var _gun_armed := 0
+var _shoot_released := true
 var _rng := RandomNumberGenerator.new()
 var _flash: MeshInstance3D
 var _flash_left := 0.0
@@ -108,13 +122,27 @@ func _ready() -> void:
 
 
 func step(delta: float) -> void:
-	_cooldown -= delta
-	if trigger:
-		while _cooldown <= 0.0:
-			_fire()
-			_cooldown += FIRE_INTERVAL
+	if btr.classic:
+		# Player.update, one tick of it.
+		if _gun_armed > 0:
+			_gun_armed -= 1
+		if trigger:
+			if _shoot_released or _gun_armed == 0:
+				_fire()
+				_gun_armed = Player.GUN_ARMED_DELAY
+			_shoot_released = false
+		else:
+			_shoot_released = true
+			_gun_armed = 0
+		_cooldown = 0.0
 	else:
-		_cooldown = maxf(_cooldown, 0.0)
+		_cooldown -= delta
+		if trigger:
+			while _cooldown <= 0.0:
+				_fire()
+				_cooldown += FIRE_INTERVAL
+		else:
+			_cooldown = maxf(_cooldown, 0.0)
 	_flash_left -= delta
 	if _flash_left <= 0.0:
 		_flash.visible = false
@@ -124,12 +152,15 @@ func _fire() -> void:
 	var muzzle := btr.muzzle()
 	var from := muzzle.origin
 	var bearing := Vector3(muzzle.basis.x.x, 0.0, muzzle.basis.x.z).normalized()
-	var direction := bearing.rotated(Vector3.UP, _rng.randf_range(-SPREAD, SPREAD))
-	var reach := RANGE
-	if aim_point != null:
-		var to: Vector3 = aim_point - from
-		reach = clampf(Vector2(to.x, to.z).length(), MIN_RANGE, RANGE)
-	reach *= 1.0 + _rng.randf_range(-RANGE_JITTER, RANGE_JITTER)
+	var direction := bearing
+	var reach := CLASSIC_RANGE
+	if not btr.classic:
+		direction = bearing.rotated(Vector3.UP, _rng.randf_range(-SPREAD, SPREAD))
+		reach = RANGE
+		if aim_point != null:
+			var to: Vector3 = aim_point - from
+			reach = clampf(Vector2(to.x, to.z).length(), MIN_RANGE, RANGE)
+		reach *= 1.0 + _rng.randf_range(-RANGE_JITTER, RANGE_JITTER)
 	var landing := from + direction * reach
 	var there: Dictionary = ground.call(landing.x, landing.z)
 	landing.y = there.height
@@ -171,7 +202,8 @@ func _tracer(from: Vector3, to: Vector3, kind: String, normal: Vector3, travel: 
 	var start := from + along.normalized() * TRACER_LENGTH * 0.5
 	var stop := to - along.normalized() * TRACER_LENGTH * 0.5
 	tracer.global_transform = Transform3D(_basis_along(along), start)
-	var time := maxf(length - TRACER_LENGTH, 0.0) / TRACER_SPEED
+	var time := maxf(length - TRACER_LENGTH, 0.0) \
+			/ (CLASSIC_TRACER_SPEED if btr.classic else TRACER_SPEED)
 	var tween := tracer.create_tween()
 	tween.tween_property(tracer, "global_position", stop, time)
 	tween.tween_callback(func():

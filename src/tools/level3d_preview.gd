@@ -27,12 +27,24 @@
 # as wide as the level, 16:9, following the BTR up the stage. Tab switches to a
 # tilted perspective view. The controls are the game's -- WASD to drive, the
 # mouse to aim, the left button to fire -- with the tank bench's orders from
-# BlenderMCP/godot moved to the middle button:
+# BlenderMCP/godot moved to the middle button. WASD drives one of two ways
+# (level3d_btr.gd): classic, the game's jeep, eight directions at its speed,
+# or free, a throttle and a wheel:
 #
-#   W / S, A / D           drive and steer by hand (cancels the order)
-#   mouse                  aims the turret while mouse aim is on
-#   left button (held)     machine gun, level3d_gun.gd
-#   right click            rocket, level3d_rocket.gd
+#   W / A / S / D          classic: up, left, down, right, and the diagonals
+#                          free: drive and steer by hand
+#                          either: cancels the order
+#   V                      classic / free driving, shown by the score
+#   mouse                  aims the turret while mouse aim is on; with it off,
+#                          classic fires the gun up the screen and the rocket
+#                          the way the BTR drives, as the game's jeep does
+#   left button (held), L  machine gun, level3d_gun.gd
+#   right click, P         rocket, level3d_rocket.gd -- L and P are for
+#                          classic driving with the mouse off, under the
+#                          right hand while the left is on WASD. Classic,
+#                          both are the game's weapons: the gun fires on the
+#                          press and slowly while held, and the rocket goes
+#                          while the button is held, one at a time
 #   middle click           drive there (shift: add a waypoint)
 #   Esc                    stop
 #   Q / E                  turn the turret by hand; M toggles mouse aim
@@ -50,7 +62,7 @@
 #     godot --path . --windowed --resolution 1280x720 src/tools/level3d_preview.tscn \
 #         -- --shot out.png <position 0-1 or x,z> <zoom> <top|tilt> [<seconds> <x,z> ...] \
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
-#            [--at <x,z>]
+#            [--at <x,z>] [--free] [--hold <keys>@<from>-<to>[,...]] [--weapon <0-3>]
 #
 # The bunkers' guns, the enemy soldiers, the two boats on the river, the two
 # brown tanks and the boss's four heavy tanks at the top of the stage fight back
@@ -68,7 +80,11 @@
 # start -- DESTRUCTIBLE_NAMES has the names -- --fire aims at x,z and holds
 # the trigger down from the start, and --rocket aims at x,z and sends one
 # rocket as soon as the launcher has come round, or that many seconds in.
-# --at puts the BTR at x,z to begin with instead of at START.
+# --at puts the BTR at x,z to begin with instead of at START. --free drives
+# the free way; --hold holds WASD, L or P down from one second to another, as
+# many spans as are given (wd@0-1.5,a@2-3), which is how the classic keys
+# are checked. --weapon starts with what the prisoners would have given: 0 the
+# grenade, 1 to 3 the missile and its two upgrades.
 #
 # The soldiers are the model sheet's trooper; --sprite-soldiers, with or
 # without --shot, draws them as the figure made from the game's sprite
@@ -160,7 +176,6 @@ func _ready() -> void:
 
 	btr = Btr.new()
 	btr.ground = _ground_at
-	btr.solid = _solid_at
 	add_child(btr)
 	gun = Level3DGun.new()
 	gun.btr = btr
@@ -175,6 +190,7 @@ func _ready() -> void:
 	launcher.exploded = _on_exploded
 	add_child(launcher)
 	_add_guns(level)
+	btr.map = map
 	_make_markers()
 	_make_hud()
 
@@ -270,19 +286,17 @@ func _cast_both_sides_of_planes(root: Node) -> void:
 				break
 
 
-# What the BTR may not drive into is decided here, by what each object of the
-# level is -- its Blender name -- rather than by how tall it is. Four things
-# stop it: water, palm trunks, the dense forest and walls. Everything else is
-# ground or is not there at all for driving: bunkers, barracks, hangars,
-# sandbags, rocks and the rest get no collision.
+# The scene's collision, decided by what each object of the level is -- its
+# Blender name -- rather than by how tall it is. It is not what the BTR drives
+# by any more: that is the game's grid, in both modes (level3d_btr.gd). It is
+# what the hull sits on and what the rounds and rockets hit.
 #
 # Two layers, for two kinds of question. The ground layer is what a downward
 # ray finds: its height, and which kind it is -- the sea, the forest floor
 # (the forest is the seven Forest_Floor patches its 3412 trees stand on, 98% of
 # them; a tree is a crown, not something to hit), a wall, or plain ground. The
-# solid layer is what the hull's footprint is tested against: walls, and a
-# cylinder round every palm trunk, since a trunk is thinner than the gap
-# between two ground probes and a crown is not an obstacle at all.
+# solid layer is what stands up out of it: walls, and a cylinder round every
+# palm trunk, which a round aimed past the palm's crown should still meet.
 const GROUND_LAYER := 1
 const SOLID_LAYER := 2
 # A third, for the gun only: what stops a round but not the BTR -- bunkers,
@@ -580,6 +594,10 @@ func _set_destroyed(building: String, destroyed: bool) -> void:
 		player.pause()
 	elif friends != null:
 		friends.building_destroyed(building)
+	# Gate.attack: the gate's group opens the way on the grid, which is what
+	# the BTR drives by.
+	if destroyed and building == "Gate" and map != null and map.gate_group >= 0:
+		map.trigger_group(map.gate_group)
 	_sync_bodies(entry)
 
 
@@ -642,6 +660,11 @@ var _blink := 0
 var _score := 0
 var _score_label: Label
 var _blast_scene: PackedScene
+# --hold: [key, from tick, to tick], and the ticks since the preview went live.
+var _held: Array = []
+var _ticks := 0
+# Player's fire_released, for the classic rocket button.
+var _fire_released := true
 
 
 func _add_guns(level: Node) -> void:
@@ -855,6 +878,8 @@ func _set_score(score: int) -> void:
 	_score_label.text = "SCORE %06d" % score
 	if friends != null:
 		_score_label.text += "   POW %d   %s" % [friends.pows, friends.weapon_name().to_upper()]
+	if btr != null:
+		_score_label.text += "   %s" % ("CLASSIC" if btr.classic else "FREE")
 
 
 func _make_markers() -> void:
@@ -972,13 +997,37 @@ func _cursor_on_ground():
 func _physics_process(delta: float) -> void:
 	if not _live:
 		return
-	btr.throttle = _axis(KEY_S, KEY_W)
-	btr.steer = _axis(KEY_D, KEY_A)
+	_ticks += 1
+	# P is a press, as a right click is; a held span presses it once. Classic
+	# reads it as held instead, below.
+	if not btr.classic:
+		for h in _held:
+			if h[0] == KEY_P and maxi(h[1], 1) == _ticks:
+				_rocket_wanted = ROCKET_WAIT
+	if btr.classic:
+		btr.key_up = _key(KEY_W)
+		btr.key_down = _key(KEY_S)
+		btr.key_left = _key(KEY_A)
+		btr.key_right = _key(KEY_D)
+		btr.throttle = 0.0
+		btr.steer = 0.0
+	else:
+		btr.key_up = false
+		btr.key_down = false
+		btr.key_left = false
+		btr.key_right = false
+		btr.throttle = float(_key(KEY_W)) - float(_key(KEY_S))
+		btr.steer = float(_key(KEY_A)) - float(_key(KEY_D))
 	btr.turret_input = _axis(KEY_E, KEY_Q)
 	if btr.turret_input != 0.0:
 		mouse_aim = false
+	# Classic without the mouse is the game's without it: the gun up the
+	# screen whatever the jeep does, the grenade the way it drives or faces.
+	var classic_aim := btr.classic and _forced_aim == null and not mouse_aim
 	if _forced_aim != null:
 		btr.aim_point = _forced_aim
+	elif classic_aim:
+		btr.aim_point = btr.position + _game_direction(270.0) * Level3DGun.RANGE
 	else:
 		btr.aim_point = _cursor_on_ground() if mouse_aim else null
 	for building in destructibles:
@@ -999,10 +1048,25 @@ func _physics_process(delta: float) -> void:
 			gone = true
 	if not gone:
 		btr.step(delta)
-	gun.trigger = not gone and (_hold_fire or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT))
+	gun.trigger = not gone and (_hold_fire or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+			or _key(KEY_L))
 	gun.aim_point = btr.aim_point
 	gun.step(delta)
 	launcher.aim_point = btr.aim_point
+	if classic_aim:
+		launcher.aim_point = btr.position \
+				+ _game_direction(btr.classic_fire_angle()) * Level3DLauncher.RANGE
+	launcher.has_missiles = friends.has_missiles
+	launcher.missile_power = friends.missile_power
+	# Player.update's grenade: held, it goes the tick it can, and it has to be
+	# let go of between two. A press while the last one is still in the air is
+	# not lost if the button is still down when it is over.
+	if btr.classic:
+		if _key(KEY_P) or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+			if _fire_released and not gone and launcher.fire():
+				_fire_released = false
+		else:
+			_fire_released = true
 	# A click waits for the mount to come round and the rails to be loaded,
 	# rather than being lost while they are not.
 	if _rocket_wanted > 0.0:
@@ -1056,6 +1120,22 @@ func _process(delta: float) -> void:
 	_update_camera()
 
 
+# A key held on the keyboard or by --hold.
+func _key(key: Key) -> bool:
+	if Input.is_key_pressed(key):
+		return true
+	for h in _held:
+		if h[0] == key and _ticks >= h[1] and _ticks < h[2]:
+			return true
+	return false
+
+
+# A game angle -- 0 east, 90 down the screen -- as a level direction.
+static func _game_direction(degrees: float) -> Vector3:
+	var a := deg_to_rad(degrees)
+	return Vector3(cos(a), 0.0, sin(a))
+
+
 static func _axis(negative: Key, positive: Key) -> float:
 	return (1.0 if Input.is_key_pressed(positive) else 0.0) \
 			- (1.0 if Input.is_key_pressed(negative) else 0.0)
@@ -1082,6 +1162,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				following = true
 			KEY_M:
 				mouse_aim = not mouse_aim
+			KEY_P:
+				if not btr.classic:
+					_rocket_wanted = ROCKET_WAIT
+			KEY_V:
+				btr.classic = not btr.classic
+				_set_score(_score)
 			KEY_R:
 				btr.place(START, START_HEADING)
 				following = true
@@ -1105,7 +1191,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		match event.button_index:
 			# The left button is the gun's, read as held in _physics_process.
 			MOUSE_BUTTON_RIGHT:
-				_rocket_wanted = ROCKET_WAIT
+				if not btr.classic:
+					_rocket_wanted = ROCKET_WAIT
 			MOUSE_BUTTON_MIDDLE:
 				var at = _cursor_on_ground()
 				if at != null:
@@ -1118,9 +1205,11 @@ func _unhandled_input(event: InputEvent) -> void:
 				focus.y += 2.0 / zoom
 
 
-# What the BTR's two questions answer over the whole level, one pixel per
+# What the scene's collision says over the whole level, one pixel per
 # OBSTACLE_STEP metres, north up: ground grey, water blue, forest green, walls
-# red, trunks orange, off the level black. Needs no window -- physics runs
+# red, trunks orange, off the level black. The BTR drove by it once; it drives
+# by the game's grid now (level3d_btr.gd), and this is what the rounds, the
+# rockets and the ground's height go by. Needs no window -- physics runs
 # headless -- so it is the check for _add_collision:
 #
 #     godot --path . --headless src/tools/level3d_preview.tscn -- --obstacle-map out.png
@@ -1184,6 +1273,28 @@ func _screenshot_mode() -> void:
 	var sprite_soldiers := args.find("--sprite-soldiers")
 	if sprite_soldiers >= 0:
 		args.remove_at(sprite_soldiers)
+	var free := args.find("--free")
+	if free >= 0:
+		btr.classic = false
+		args.remove_at(free)
+		_set_score(_score)
+	var hold := args.find("--hold")
+	if hold >= 0:
+		const KEYS := {"w": KEY_W, "a": KEY_A, "s": KEY_S, "d": KEY_D, "l": KEY_L, "p": KEY_P}
+		for span in args[hold + 1].split(","):
+			var at := span.split("@")
+			var times := at[1].split("-")
+			for c in at[0]:
+				_held.append([KEYS[c], _ticks + roundi(float(times[0]) * 100.0),
+						_ticks + roundi(float(times[1]) * 100.0)])
+		args = args.slice(0, hold) + args.slice(hold + 2)
+	var weapon := args.find("--weapon")
+	if weapon >= 0:
+		var level := int(args[weapon + 1])
+		friends.has_missiles = level > 0
+		friends.missile_power = clampi(level - 1, 0, 2)
+		args = args.slice(0, weapon) + args.slice(weapon + 2)
+		_set_score(_score)
 	var start_at := args.find("--at")
 	if start_at >= 0:
 		var xz := args[start_at + 1].split(",")
@@ -1239,7 +1350,12 @@ func _screenshot_mode() -> void:
 			btr.order(Vector3(float(xz[0]), 0.0, float(xz[1])), true)
 			# A frame given as x,z stays put; one given along the stage follows.
 			following = not args[2].contains(",")
+		# So does one driven by --hold.
+		if not _held.is_empty():
+			following = not args[2].contains(",")
 		await get_tree().create_timer(float(args[5])).timeout
+	print("BTR at %.2f, %.2f heading %.1f, %s" % [btr.position.x, btr.position.z,
+			rad_to_deg(btr.heading), "classic" if btr.classic else "free"])
 
 	# Shadows and the first frame's pipeline compilation need a few frames.
 	for i in 8:

@@ -1,8 +1,9 @@
 # The BTR on the 3D stage 1 preview: its model, and how it drives.
 #
 # Nothing here is part of the game. The model is resources/3d/ratel_btr.glb,
-# exported from ratel_btr_lowpoly.blend in its default fit (rail launcher,
-# single gun); the level it drives on is level3d_preview.gd's.
+# exported from ratel_btr_lowpoly.blend with the single gun and all four
+# rocket launcher fits, which level3d_rocket.gd shows one at a time; the level
+# it drives on is level3d_preview.gd's.
 #
 # The driving is the tank bench's in BlenderMCP/godot -- TankTick.AdvanceOrder
 # with a MovementProfile row -- carried from hex legs to free ground:
@@ -16,10 +17,8 @@
 #   * At a bend the speed comes down to a crawl, and the ceiling for a straight
 #     run ends at that crawl rather than at zero. A standing start with the goal
 #     off the nose begins with the turn.
-#   * What it cannot drive into is the scene's to say, not the vehicle's: the
-#     ground is asked what kind it is under the nose (water, forest and walls
-#     stop it) and whether the footprint at the next step overlaps anything
-#     solid (walls, palm trunks). See _add_collision in level3d_preview.gd.
+#   * What it cannot drive into is the game's to say, in either mode: the
+#     jeep's three sensors on the map's collision grid (_blocked).
 #   * The body pitch is BodyPitch's spring, driven by acceleration.
 #   * The turret has its own traverse rate; unaimed, it comes round to the bow
 #     while the hull is moving and stays where it was left when it is not.
@@ -32,6 +31,38 @@
 # target it speeds up to while turning, the yaw rate is capped by the speed over
 # MIN_TURN_RADIUS, and a goal inside the turning circle is reached by backing
 # out of it first -- a three-point turn instead of a pivot.
+#
+# All of that is the free mode. The classic mode, the default, drives by the
+# keys as the game's jeep does, Player.update line for line on the game's map
+# (level3d_map.gd) rather than on the scene:
+#
+#   * The keys are the screen's eight directions, not a throttle and a wheel,
+#     and the BTR goes the way they point at once, at Player.SPEED -- 2.5 px a
+#     tick, 3.66 m/s at the map's PX -- and half that in swamp. No
+#     acceleration, no braking: it stops the tick the keys are let go.
+#   * The hull turns after it, 45 degrees every ANGLE_STEPS ticks and always the
+#     short way round, while the BTR is already moving the new way; letting go
+#     of one half of a diagonal keeps the diagonal for DIAGONAL_DELAY ticks.
+#   * What stops it is the game's three sensors ahead of it, asked of the map's
+#     collision grid.
+#   * The turret, and the rocket launcher's mount with it, come round in a
+#     tick or two rather than at the free mode's traverse rates: the game's
+#     jeep fires the way it is asked to the tick it is asked, and a gun that
+#     lagged would put its rounds somewhere the player did not aim.
+#
+# It is written per tick: the preview's physics runs at the game's 100 Hz. The
+# bottom of the frame does not hold it back, as the game's camera does; the
+# preview's camera follows the BTR wherever it goes. Orders from the middle
+# button are the free mode's in either, at the classic mode's top speed.
+#
+# Both modes stop at the same things, the classic mode's: the grid's solid,
+# shield and water tiles, and the forest, which the grid has as solid. The
+# scene's own collision -- walls, palm trunks, the sea -- used to decide it
+# for the free mode, and the two disagreed where the level's models and the
+# game's tiles do: the free BTR went over the rocks and sandbags, which the
+# grid does not let the jeep on to, and stopped at every palm trunk, which it
+# does. The scene is still asked for the ground's height, to sit and tilt the
+# hull on.
 class_name Level3DBtr
 extends Node3D
 
@@ -49,6 +80,9 @@ const MODEL_SCALE := 0.31
 # 100 ticks a second is 250 px/s, 4.3 m/s. It is reached in the tank bench's
 # 0.58 s (BlenderMCP/godot, MTP's MovementProfile row).
 const TOP_SPEED := 4.3
+# The classic mode's, which is the game's own: Player.SPEED at 100 ticks a
+# second, converted by the map's PX like every other game distance.
+const CLASSIC_SPEED := Player.SPEED * 100.0 * Level3DMap.PX
 const ACCEL := 7.4
 const TURN_RATE := deg_to_rad(110.0)
 const REVERSE_FRACTION := 0.4
@@ -58,11 +92,12 @@ const CORNER_FRACTION := 0.35
 # Scaled with the model from the 2.2 m it had at 0.5.
 const MIN_TURN_RADIUS := 1.4
 const TURRET_RATE := deg_to_rad(175.0)
+# The classic mode's, for the turret and the launcher: half a turn in five
+# ticks, 45 degrees in one or two.
+const CLASSIC_TURRET_RATE := deg_to_rad(3600.0)
 # Above this much heading error the order slows to the crawl to swing round.
 const SWING_THRESHOLD := deg_to_rad(25.0)
 const ARRIVE_RADIUS := 0.3
-# The ground kinds the wheels may not go on to.
-const IMPASSABLE: Array[String] = ["water", "forest", "wall"]
 # The hull follows the ground's slope, but not across a jump bigger than this
 # between its ends, which is an edge rather than a slope.
 const TILT_STEP := 0.3
@@ -77,20 +112,13 @@ const BUMP_JOLT := 1.5
 # In model metres, from the Blender scene.
 const WHEEL_RADIUS := 0.66
 const WHEELBASE := 3.06
-# Where the ground is sampled, ahead of and beside the origin.
+# Where the ground is sampled for the tilt, ahead of and beside the origin.
 const NOSE := 3.5
 const HALF_WIDTH := 1.3
-# The hull and wheels as one box, centre and half extents: x from the tail at
-# -2.35 to the nose at 3.47, the wheels' outer faces at +-1.75, the roof at 2.1.
-const FOOTPRINT_CENTRE := Vector3(0.56, 1.05, 0.0)
-const FOOTPRINT_HALF := Vector3(2.91, 0.95, 1.75)
 
 # Asked of the scene: `ground.call(x, z)` returns
-# {"height": float, "kind": String, "hit": bool} for the top surface there, and
-# `solid.call(transform, half_extents)` whether a box there overlaps anything
-# solid.
+# {"height": float, "kind": String, "hit": bool} for the top surface there.
 var ground: Callable
-var solid: Callable
 
 var heading := 0.0          # radians, 0 = +X, counter-clockwise from above
 var speed := 0.0            # m/s along the heading, negative in reverse
@@ -102,6 +130,26 @@ var throttle := 0.0         # -1..1 from the keys
 var steer := 0.0            # -1..1 from the keys
 var waypoints: Array[Vector3] = []
 var backing := false
+
+# The classic mode: Player's keys, read as up / down / left / right, and its
+# state, in the game's degrees -- 0 east, 90 south, clockwise on the screen.
+# The map is the preview's, asked for the grid.
+var classic := true
+var map: Level3DMap
+var key_up := false
+var key_down := false
+var key_left := false
+var key_right := false
+var angle := 270
+var next_angle := 270
+var display_angle := 270.0
+var angle_velocity := 0.0
+var angle_steps := 0
+var diagonal_delay := 0
+var target_angle := -1
+var last_target_angle := 270
+var fire_angle := 270.0
+var _classic_synced := false
 
 var _pitch := 0.0
 var _pitch_velocity := 0.0
@@ -155,9 +203,10 @@ func muzzle() -> Transform3D:
 	return _bore.global_transform.orthonormalized()
 
 
-# The rocket launcher's mount, on the hull: level3d_rocket.gd turns it.
-func launcher_node() -> Node3D:
-	return _hull.find_child("BTR_LauncherBase", true, false)
+# A rocket launcher's mount, on the hull, by the name of its base:
+# level3d_rocket.gd picks the fit and turns it.
+func launcher_node(base_name: String) -> Node3D:
+	return _hull.find_child(base_name, true, false)
 
 
 # A shot's kick into the body spring, signed along the bow: firing ahead
@@ -167,7 +216,7 @@ func recoil(direction: Vector3, kick: float) -> void:
 
 
 func top_speed() -> float:
-	return TOP_SPEED
+	return CLASSIC_SPEED if classic else TOP_SPEED
 
 
 func corner_speed() -> float:
@@ -187,6 +236,7 @@ func place(at: Vector3, facing: float) -> void:
 	backing = false
 	_pitch = 0.0
 	_pitch_velocity = 0.0
+	_classic_synced = false
 	_settle(0.0, true)
 	_pose()
 
@@ -205,6 +255,32 @@ func stop() -> void:
 
 func step(delta: float) -> void:
 	var before := speed
+	var keys := key_up or key_down or key_left or key_right
+	if classic and (keys or waypoints.is_empty()):
+		if keys:
+			waypoints.clear()
+			backing = false
+		_drive_classic(delta)
+	else:
+		_classic_synced = false
+		_step_free(delta)
+
+	# What the body felt, not which branch ran: signed along the bow, so pulling
+	# away in reverse dips the nose just as braking does.
+	var accel_ratio := clampf((speed - before) / (ACCEL * delta), -1.0, 1.0) if delta > 0.0 else 0.0
+	_update_pitch(accel_ratio, delta)
+	_update_turret(delta)
+	_settle(delta, false)
+	_pose()
+
+
+# Where the grenade would go this tick, as Player.update fires it: the way the
+# keys point, or with none held and the hull not turning, the way it faces.
+func classic_fire_angle() -> float:
+	return float(angle) if target_angle == -1 and angle_steps == 0 else fire_angle
+
+
+func _step_free(delta: float) -> void:
 	if throttle != 0.0 or steer != 0.0:
 		waypoints.clear()
 		_drive_by_keys(delta)
@@ -215,9 +291,9 @@ func step(delta: float) -> void:
 
 	var moved := speed * delta
 	var next := position + forward() * moved
-	if moved != 0.0 and _blocked(next, signf(moved)):
-		# Hit something taller than a step. The hull stops where it is and the
-		# nose takes the knock -- the bench's FallJolt, the other way round.
+	if moved != 0.0 and _blocked(position, signf(moved)):
+		# Hit something. The hull stops where it is and the nose takes the
+		# knock -- the bench's FallJolt, the other way round.
 		_pitch_velocity += BUMP_JOLT * signf(speed)
 		speed = 0.0
 		waypoints.clear()
@@ -228,13 +304,161 @@ func step(delta: float) -> void:
 	heading = wrapf(heading + yaw_rate * delta, -PI, PI)
 	_wheel_spin -= moved / (WHEEL_RADIUS * MODEL_SCALE)
 
-	# What the body felt, not which branch ran: signed along the bow, so pulling
-	# away in reverse dips the nose just as braking does.
-	var accel_ratio := clampf((speed - before) / (ACCEL * delta), -1.0, 1.0) if delta > 0.0 else 0.0
-	_update_pitch(accel_ratio, delta)
-	_update_turret(delta)
-	_settle(delta, false)
-	_pose()
+
+# ----------------------------------------------------------------------------
+# Classic
+
+# Player.update's movement and turn, one tick of it. The position is the map's
+# for the tick, in game pixels; the heading is the display angle's, which is
+# what the game draws the jeep at.
+func _drive_classic(delta: float) -> void:
+	if not _classic_synced:
+		_sync_classic()
+	var from := Level3DMap.to_map(Vector2(position.x, position.z))
+	var p := from
+	var v := 0.5 * Player.SPEED if map.is_swamp(p.x, p.y) else Player.SPEED
+
+	target_angle = -1
+	if key_down and key_right:
+		p = _classic_diagonal(p, 1, 1, v)
+	elif key_down and key_left:
+		p = _classic_diagonal(p, -1, 1, v)
+	elif key_up and key_left:
+		p = _classic_diagonal(p, -1, -1, v)
+	elif key_up and key_right:
+		p = _classic_diagonal(p, 1, -1, v)
+	elif key_right:
+		p = _classic_straight(p, 0, 45, 315, v)
+	elif key_down:
+		p = _classic_straight(p, 90, 45, 135, v)
+	elif key_left:
+		p = _classic_straight(p, 180, 135, 225, v)
+	elif key_up:
+		p = _classic_straight(p, 270, 225, 315, v)
+	else:
+		diagonal_delay = 0
+
+	if angle_steps > 0:
+		angle_steps -= 1
+		if angle_steps == 0:
+			angle = next_angle
+			display_angle = next_angle
+		else:
+			display_angle += angle_velocity
+
+	# Turning always takes the short way round, 45 degrees at a time.
+	if angle_steps == 0 and target_angle != -1 and target_angle != angle:
+		angle_steps = Player.ANGLE_STEPS
+		if target_angle == 0:
+			if angle >= 180:
+				next_angle = angle + 45
+				if next_angle == 360:
+					next_angle = 0
+				angle_velocity = Player.ANGLE_VELOCITY
+			else:
+				next_angle = angle - 45
+				angle_velocity = -Player.ANGLE_VELOCITY
+		elif target_angle == 180:
+			if angle > 180:
+				next_angle = angle - 45
+				angle_velocity = -Player.ANGLE_VELOCITY
+			elif angle == 0:
+				next_angle = 315
+				angle_velocity = -Player.ANGLE_VELOCITY
+			else:
+				next_angle = angle + 45
+				angle_velocity = Player.ANGLE_VELOCITY
+		elif target_angle > 180:
+			if angle < target_angle and angle >= target_angle - 180:
+				next_angle = angle + 45
+				angle_velocity = Player.ANGLE_VELOCITY
+			else:
+				next_angle = angle - 45
+				angle_velocity = -Player.ANGLE_VELOCITY
+		else:
+			if angle > target_angle and angle <= target_angle + 180:
+				next_angle = angle - 45
+				angle_velocity = -Player.ANGLE_VELOCITY
+			else:
+				next_angle = angle + 45
+				angle_velocity = Player.ANGLE_VELOCITY
+		if next_angle == -45:
+			next_angle = 315
+		elif next_angle == 360:
+			next_angle = 0
+
+	var moved := (p - from) * Level3DMap.PX
+	position.x += moved.x
+	position.z += moved.y
+	speed = moved.length() / delta if delta > 0.0 else 0.0
+	yaw_rate = 0.0
+	# The game's angles run clockwise on a screen whose y points down the
+	# stage; the heading runs counter-clockwise from above.
+	heading = wrapf(-deg_to_rad(display_angle), -PI, PI)
+	_wheel_spin -= moved.length() / (WHEEL_RADIUS * MODEL_SCALE)
+	# The front wheels show the turn while there is one; clockwise is to the
+	# right, which is a negative wheel angle.
+	var wheels := -0.35 * signf(angle_velocity) if angle_steps > 0 and speed > 0.0 else 0.0
+	_steer_angle = move_toward(_steer_angle, wheels, 3.0 * delta)
+
+
+# The four diagonal branches of Player.update: the diagonal sensors mirrored
+# into the quadrant, and the move if all three are on driveable ground.
+func _classic_diagonal(p: Vector2, dx: int, dy: int, v: float) -> Vector2:
+	var a := 45 if dx > 0 and dy > 0 else 135 if dy > 0 else 225 if dx < 0 else 315
+	fire_angle = a
+	target_angle = a
+	last_target_angle = a
+	diagonal_delay = Player.DIAGONAL_DELAY
+	if map.is_driveable(p.x + dx * Player.SENSOR_D_X0, p.y + dy * Player.SENSOR_D_Y0) \
+			and map.is_driveable(p.x + dx * Player.SENSOR_D_X1, p.y + dy * Player.SENSOR_D_Y1) \
+			and map.is_driveable(p.x + dx * Player.SENSOR_D_X2, p.y + dy * Player.SENSOR_D_Y2):
+		p += Vector2(dx, dy) * v
+	return p
+
+
+# The four axis branches: unless one half of a diagonal was just let go of, in
+# which case the diagonal is kept for a few ticks without moving, the sensor
+# SENSOR_X + SPEED ahead and SENSOR_Y either side of it.
+func _classic_straight(p: Vector2, a: int, keep_a: int, keep_b: int, v: float) -> Vector2:
+	fire_angle = a
+	if (last_target_angle == keep_a or last_target_angle == keep_b) and diagonal_delay > 0:
+		diagonal_delay -= 1
+		return p
+	target_angle = a
+	last_target_angle = a
+	diagonal_delay = 0
+	var d := Level3DMap.unit_vector(a)
+	var ahead := p + d * (Player.SENSOR_X + Player.SPEED)
+	var side := Vector2(-d.y, d.x) * Player.SENSOR_Y
+	if map.is_driveable(ahead.x, ahead.y) \
+			and map.is_driveable(ahead.x - side.x, ahead.y - side.y) \
+			and map.is_driveable(ahead.x + side.x, ahead.y + side.y):
+		p += d * v
+	return p
+
+
+# Into the game's eight directions from wherever the free mode, an order or a
+# placing left the hull: the nearest of them, turned into over one step of the
+# game's own turn rather than snapped to.
+func _sync_classic() -> void:
+	var current := -rad_to_deg(heading)
+	var nearest := posmod(45 * roundi(current / 45.0), 360)
+	var off := wrapf(nearest - current, -180.0, 180.0)
+	angle = nearest
+	next_angle = nearest
+	last_target_angle = nearest
+	fire_angle = nearest
+	target_angle = -1
+	diagonal_delay = 0
+	if absf(off) < 0.01:
+		display_angle = nearest
+		angle_steps = 0
+	else:
+		display_angle = nearest - off
+		angle_velocity = off / Player.ANGLE_STEPS
+		angle_steps = Player.ANGLE_STEPS
+	_classic_synced = true
 
 
 # ----------------------------------------------------------------------------
@@ -328,22 +552,19 @@ func _set_yaw(wanted: float) -> void:
 	_steer_angle = move_toward(_steer_angle, clampf(target, -0.6, 0.6), 3.0 * get_physics_process_delta_time())
 
 
-# Two questions, because the level has two kinds of obstacle. Water and forest
-# are ground the wheels may not go on to, asked of the ground under the leading
-# end and its two corners; walls and trunks are things in the way, asked of the
-# whole footprint at the next step, since a trunk is thinner than the gap
-# between two probes.
+# The free mode's question, the classic mode's rule: Player.update's three
+# sensors, SENSOR_X + SPEED ahead of where it is and SENSOR_Y either side,
+# turned to the heading rather than to one of eight directions -- on one of
+# them they are the game's own -- and behind it when it is reversing, on the
+# map's grid.
 func _blocked(at: Vector3, direction: float) -> bool:
-	var f := forward() * direction
-	var left := Vector3(-sin(heading), 0.0, -cos(heading))
-	for offset in [0.0, HALF_WIDTH, -HALF_WIDTH]:
-		var probe: Vector3 = at + (f * NOSE * 0.5 + left * offset) * MODEL_SCALE
-		var there: Dictionary = ground.call(probe.x, probe.z)
-		if not there.hit or there.kind in IMPASSABLE:
-			return true
-	var pose := Transform3D(Basis(Vector3.UP, heading), at)
-	return solid.call(pose.translated_local(FOOTPRINT_CENTRE * MODEL_SCALE),
-			FOOTPRINT_HALF * MODEL_SCALE)
+	var p := Level3DMap.to_map(Vector2(at.x, at.z))
+	var f := Vector2(cos(heading), -sin(heading)) * direction
+	var side := Vector2(-f.y, f.x) * Player.SENSOR_Y
+	var ahead := p + f * (Player.SENSOR_X + Player.SPEED)
+	return not (map.is_driveable(ahead.x, ahead.y)
+			and map.is_driveable(ahead.x - side.x, ahead.y - side.y)
+			and map.is_driveable(ahead.x + side.x, ahead.y + side.y))
 
 
 # ----------------------------------------------------------------------------
@@ -362,7 +583,7 @@ func _update_pitch(accel_ratio: float, delta: float) -> void:
 # Neither: stowed to the bow while moving, left alone while standing -- the
 # bench's UpdateTurret.
 func _update_turret(delta: float) -> void:
-	var budget := TURRET_RATE * delta
+	var budget := (CLASSIC_TURRET_RATE if classic else TURRET_RATE) * delta
 	if turret_input != 0.0:
 		turret = wrapf(turret + turret_input * budget, -PI, PI)
 		return
@@ -404,12 +625,16 @@ func _settle(delta: float, snap: bool) -> void:
 		pitch = atan2(dp, half * 2.0)
 	if absf(dr) < TILT_STEP:
 		roll = atan2(dr, side * 2.0)
-	var target := Basis(Vector3.UP, heading) * Basis(Vector3(0, 0, 1), pitch) * Basis(Vector3(1, 0, 0), roll)
+	# Only the slope is eased, in the hull's own axes; the heading is taken as it
+	# is. Eased with it, the hull trailed its heading by an eighth of a second,
+	# which a classic 45 degree step turned into a launcher 16 degrees off the
+	# way the rocket was fired.
+	var target := Basis(Vector3(0, 0, 1), pitch) * Basis(Vector3(1, 0, 0), roll)
 	_tilt = target if snap else _tilt.slerp(target, clampf(delta * 8.0, 0.0, 1.0))
 
 
 func _pose() -> void:
-	basis = _tilt
+	basis = Basis(Vector3.UP, heading) * _tilt
 	# Nose down is positive in the spring; a rotation about +Z lifts +X.
 	_hull.transform = Transform3D(Basis(Vector3(0, 0, 1), -_pitch) * _hull_rest.basis, _hull_rest.origin)
 	_turret_pivot.transform = Transform3D(Basis(Vector3.UP, turret) * _turret_rest.basis, _turret_rest.origin)
