@@ -562,7 +562,8 @@ intro drop only incidentally — the real gate there is `GameMode.playing`, whic
   panes. How, and the line widths, are in `docs/cel-shading.md`; the
   per-kind pipelines are `docs/soldier-pipeline.md`, `docs/boat-pipeline.md`
   and `docs/level3d-pipeline.md`. Only the jeep, the BTR, the Chinook,
-  the model-sheet soldiers, the boat and the two tanks are done so far.
+  the model-sheet soldiers, the boat, the two tanks and the bunker with its
+  gun are done so far.
 
 ## Known deviations from the original
 
