@@ -121,6 +121,9 @@ const WATER_GAIN_COMPATIBILITY := 1.1
 # The top camera sits this far above the ground, which is as low as it can go
 # over the tallest building; the shadow map only has to cover that depth.
 const TOP_CAMERA_HEIGHT := 20.0
+# Where the sea was cut off west when the level was built (level3d-pipeline.md,
+# section 2), and the frame's west edge still; the water goes on past it.
+const SEA_WEST := -27.0
 
 # Where the BTR starts: on the beach at the south end, facing up the stage, with
 # nothing within four metres -- the obstacle map's say, not the eye's. It used
@@ -179,7 +182,14 @@ func _ready() -> void:
 	var level := scene.instantiate()
 	add_child(level)
 	_replace_ocean(level)
-	level_aabb = _mesh_aabb(level)
+	# The level goes on past its edges, forest, beach and sea, for the tilted
+	# camera to look over (jackal_level_edges.py); the frame stays where the
+	# level was: at the map's end north, as the game's does at row 0, at the
+	# sea's old edge west, and at the land's east, leaving out the strip past
+	# it, Beyond_*, and the sea, which runs under that strip.
+	level_aabb = _mesh_aabb(level, ["Beyond", "Ocean"])
+	var corner := Vector3(SEA_WEST, level_aabb.position.y, maxf(level_aabb.position.z, Level3DMap.ORIGIN.y))
+	level_aabb = AABB(corner, level_aabb.end - corner)
 	_cast_both_sides_of_planes(level)
 	_flat_ground_casts_nothing(level)
 	_add_collision(level)
@@ -1115,11 +1125,13 @@ func _sync_markers() -> void:
 			_markers[i].position = Vector3(at.x, ground.height + 0.05, at.z)
 
 
-func _mesh_aabb(root: Node) -> AABB:
+func _mesh_aabb(root: Node, leave_out: Array[String] = []) -> AABB:
 	var result := AABB()
 	var first := true
 	for node in root.find_children("*", "MeshInstance3D", true, false):
 		var mesh_instance := node as MeshInstance3D
+		if leave_out.any(func(prefix: String) -> bool: return mesh_instance.name.begins_with(prefix)):
+			continue
 		var box := mesh_instance.global_transform * mesh_instance.get_aabb()
 		result = box if first else result.merge(box)
 		first = false
