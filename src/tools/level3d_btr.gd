@@ -119,6 +119,11 @@ const WHEELBASE := 3.06
 # Where the ground is sampled for the tilt, ahead of and beside the origin.
 const NOSE := 3.5
 const HALF_WIDTH := 1.3
+# What it covers from above, hull and wheels, along the heading and across it:
+# what runs over whatever lies on the ground (push_out).
+const BODY_BACK := -2.45
+const BODY_FRONT := 3.74
+const BODY_HALF_WIDTH := 1.83
 
 # Asked of the scene: `ground.call(x, z)` returns
 # {"height": float, "kind": String, "hit": bool} for the top surface there.
@@ -229,6 +234,30 @@ func corner_speed() -> float:
 
 func forward() -> Vector3:
 	return Vector3(cos(heading), 0.0, -sin(heading))
+
+
+# How far, and which way, level point `p` has to go to be `margin` metres clear
+# of what the BTR covers: out through the nearest side, or `sideways`, the
+# nearer of the two flanks. Zero when it is clear.
+func push_out(p: Vector3, margin := 0.0, sideways := false) -> Vector3:
+	var d := p - global_position
+	var ahead := forward()
+	var side := Vector3(sin(heading), 0.0, cos(heading))
+	var along := d.dot(ahead)
+	var across := d.dot(side)
+	var back := BODY_BACK * MODEL_SCALE - margin
+	var front := BODY_FRONT * MODEL_SCALE + margin
+	var half := BODY_HALF_WIDTH * MODEL_SCALE + margin
+	if along <= back or along >= front or absf(across) >= half:
+		return Vector3.ZERO
+	var ways := [side * (half - across), -side * (half + across)]
+	if not sideways:
+		ways += [ahead * (front - along), -ahead * (along - back)]
+	var best: Vector3 = ways[0]
+	for way in ways:
+		if (way as Vector3).length() < best.length():
+			best = way
+	return best
 
 
 func place(at: Vector3, facing: float) -> void:

@@ -41,6 +41,10 @@
 #     from where he stands to the player -- not from 30 px up the screen at a
 #     point 30 px down it, the same sprite offset twice. The muzzle is a
 #     third of a metre, some 23 px, out in front of him; and it flashes.
+#   * He is run over when the BTR's body reaches his feet as well as when the
+#     game's box meets his (bump): the BTR is bigger than the jeep. He is
+#     knocked out past its flank to fall, and flattened if it then drives over
+#     him where he lies (KNOCK_*, CRUSH).
 #   * He faces the way he walks or aims, not the nearest of four, and turns
 #     to it over a few frames rather than in a tick (Level3DCrossfade).
 class_name Level3DSoldiers
@@ -92,6 +96,24 @@ const SHOOT := "Shoot"
 const DEATH := "Death"
 # DeadEnemySoldier: lies, then fades; here it sinks this far into the sand.
 const SINK := 0.3
+# Run over, he is knocked clear before he falls: the game draws the player over
+# the corpse, and here a fall under the BTR would stand up through its hull. He
+# goes out through the nearer of its flanks (Level3DBtr.push_out) -- not ahead
+# of it, where it would be on him again in a twentieth of a second -- to
+# KNOCK_CLEAR beyond, over KNOCK_TIME, turned to face it -- both figures fall on
+# their backs -- and falls KNOCK_SPEED times as fast as a shot man.
+const KNOCK_CLEAR := 0.1
+const KNOCK_TIME := 0.25
+const KNOCK_SPEED := 2.0
+# A corpse the BTR then drives over, however he died, is flattened to this much
+# of his height over CRUSH_TIME, and stays so: the trooper lies 0.31 m high, the
+# sprite figure 0.24, and the lowest of the BTR's belly, its differentials, is
+# 0.15 m off the ground. It is run over when the BTR covers any of his bones.
+const CRUSH := 0.35
+const CRUSH_TIME := 0.06
+# The BTR's body reaching this far from where he stands runs him over as well
+# as the game's box does (bump).
+const BODY_REACH := 0.1
 # Both figures' rifles are bound whole to this bone, the barrel along its +Y
 # (soldier-pipeline.md, section 5).
 const RIFLE_BONE := "Rifle"
@@ -112,6 +134,10 @@ var ground: Callable
 # `player_position.call()`: the player's level x, z.
 var player_position: Callable
 var scored: Callable
+# `run_over.call(p, margin, sideways)`: the way out from under the BTR for
+# level point `p`, `margin` metres clear of it, through a flank only if
+# `sideways`; zero when the BTR is not over it (Level3DBtr.push_out).
+var run_over: Callable
 # `more_solids.call()`: other solid boxes to walk round, map px -- the
 # prisoners' (level3d_friends.gd).
 var more_solids: Callable
@@ -154,6 +180,13 @@ class Soldier:
 	var dead := false
 	var fading := false
 	var delay := 0
+	# Knocked clear by the BTR: where he fell from, how far, and for how long
+	# yet; then how much of his height he has left, CRUSH once run over.
+	var fell_at := Vector3.ZERO
+	var knock := Vector3.ZERO
+	var knock_left := 0.0
+	var height := 1.0
+	var crushed := false
 	var root: Node3D
 	var player: AnimationPlayer
 	var fade: Level3DCrossfade
@@ -529,6 +562,45 @@ func _process(delta: float) -> void:
 		s.dark.albedo_color = BLINK_DARK if blinking else s.dark_colour
 	for s in soldiers + _corpses:
 		_pose(s, delta)
+	for s in _corpses:
+		_lie(s, delta)
+
+
+# A corpse's frame: knocked clear, if the BTR ran him over, then flattened if
+# it drives over him where he lies.
+func _lie(s: Soldier, delta: float) -> void:
+	if s.knock_left > 0.0:
+		s.knock_left = maxf(s.knock_left - delta, 0.0)
+		var t := 1.0 - s.knock_left / KNOCK_TIME
+		var at := s.fell_at + s.knock * (1.0 - (1.0 - t) * (1.0 - t))
+		at.y = ground.call(at.x, at.z).height
+		s.root.position = at
+		if s.knock_left == 0.0:
+			# Where he lies, for the ground he sinks into (_update_corpse).
+			var p := Level3DMap.to_map(Vector2(at.x, at.z))
+			s.x = p.x
+			s.y = p.y
+		return
+	if not s.crushed and _under_btr(s):
+		s.crushed = true
+	if s.crushed and s.height > CRUSH:
+		s.height = maxf(CRUSH, s.height - (1.0 - CRUSH) / CRUSH_TIME * delta)
+		s.root.scale.y = model.scale * s.height
+
+
+# Whether the BTR is over any of his bones. The elbows' pole targets are not
+# his: they stand out to either side of him.
+func _under_btr(s: Soldier) -> bool:
+	if not run_over.is_valid():
+		return false
+	var skeleton := s.fade.skeleton
+	for bone in skeleton.get_bone_count():
+		if skeleton.get_bone_name(bone).begins_with("Pole"):
+			continue
+		var at := skeleton.global_transform * skeleton.get_bone_global_pose(bone).origin
+		if run_over.call(at, 0.0, false) != Vector3.ZERO:
+			return true
+	return false
 
 
 # The frame's pose: the clip, faded into from whatever was on screen when it
@@ -548,15 +620,23 @@ func _pose(s: Soldier, delta: float) -> void:
 # ----------------------------------------------------------------------------
 # Dying
 
-# EnemySoldier.do_remove + DeadEnemySoldier.
-func _kill(i: int, by: String) -> void:
+# EnemySoldier.do_remove + DeadEnemySoldier. `knock`, from the BTR running him
+# over, is how far he goes to be clear of it (KNOCK_CLEAR).
+func _kill(i: int, by: String, knock := Vector3.ZERO) -> void:
 	var s := soldiers[i]
 	soldiers.remove_at(i)
 	s.dead = true
 	s.delay = DeadEnemySoldier.PRE_FADE_DELAY
 	s.brown.albedo_color = s.brown_colour
 	s.dark.albedo_color = s.dark_colour
-	s.player.play(DEATH)
+	if knock == Vector3.ZERO:
+		s.player.play(DEATH)
+	else:
+		s.player.play(DEATH, -1.0, KNOCK_SPEED)
+		s.fell_at = s.root.position
+		s.knock = knock
+		s.knock_left = KNOCK_TIME
+		s.yaw = atan2(-knock.x, -knock.z)
 	_corpses.append(s)
 	scored.call(POINTS)
 	if verbose:
@@ -623,7 +703,23 @@ func explosion_hit(box: Rect2, player: bool) -> void:
 
 
 # EnemySoldier.bump: the player ran him over. He dies; the player does not.
+# The BTR is bigger than the game's jeep, and its body further forward of its
+# middle, so it runs him over when its body reaches his feet as well as when
+# the game's box meets his: by the box alone he stood a fifth of a metre inside
+# the bow before he died. He is knocked out from under the BTR, or, where the
+# box has him and the body does not, away from its middle by KNOCK_CLEAR.
 func bump(player_box: Rect2) -> void:
 	for i in range(soldiers.size() - 1, -1, -1):
-		if player_box.intersects(_hit_box(soldiers[i], 0.0)):
-			_kill(i, "run over")
+		var s := soldiers[i]
+		var at := s.root.global_position
+		var covered: bool = run_over.is_valid() and run_over.call(at, BODY_REACH, false) != Vector3.ZERO
+		if not covered and not player_box.intersects(_hit_box(s, 0.0)):
+			continue
+		var knock := Vector3.ZERO
+		if run_over.is_valid():
+			knock = run_over.call(at, KNOCK_CLEAR, true)
+		if knock == Vector3.ZERO:
+			var away := Vector2(at.x, at.z) - player_box.get_center()
+			away = away.normalized() if away.length_squared() > 1e-6 else Vector2.DOWN
+			knock = Vector3(away.x, 0.0, away.y) * KNOCK_CLEAR
+		_kill(i, "run over", knock)

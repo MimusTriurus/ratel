@@ -737,6 +737,8 @@ func _add_guns(level: Node) -> void:
 	soldiers.ground = _ground_at
 	soldiers.player_position = guns.player_position
 	soldiers.scored = guns.scored
+	soldiers.run_over = func(p: Vector3, margin: float, sideways: bool) -> Vector3:
+		return Vector3.ZERO if _respawning > 0 else btr.push_out(p, margin, sideways)
 	add_child(soldiers)
 	boats = Level3DBoats.new()
 	boats.map = map
