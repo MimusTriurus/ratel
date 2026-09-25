@@ -304,13 +304,19 @@ func _cast_both_sides_of_planes(root: Node) -> void:
 # that casts and one that does not the caster's edge left a dark line across
 # the whole level -- at z = -105 and at z = -15. The pieces with a drop in them
 # (the river's banks) are not flat and still cast.
+#
+# Nor does the slab under it all, Land_Base and Land_Base_North. It is buried
+# -- Land_Base's top is 1 cm under the sand -- so it has nothing to shadow, but
+# the edge of its shadow came up through the bias as a thin dashed line along
+# the one seam it ends at, z = -15, across sand, beach and all.
 const FLAT := 0.02
 
 func _flat_ground_casts_nothing(root: Node) -> void:
 	for node in root.find_children("*", "MeshInstance3D", true, false):
 		var mesh_instance := node as MeshInstance3D
 		var box := mesh_instance.get_aabb()
-		if box.size.x * box.size.z > 25.0 and box.size.y <= FLAT:
+		if box.size.x * box.size.z > 25.0 and box.size.y <= FLAT \
+				or mesh_instance.name.begins_with("Land_Base"):
 			mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
@@ -323,7 +329,7 @@ func _flat_ground_casts_nothing(root: Node) -> void:
 #
 # Two layers, for two kinds of question. The ground layer is what a downward
 # ray finds: its height, and which kind it is -- the sea, the forest floor
-# (the forest is the seven Forest_Floor patches its 3412 trees stand on, 98% of
+# (the forest is the eight Forest_Floor patches its 3678 trees stand on, 98% of
 # them; a tree is a crown, not something to hit), a wall, or plain ground. The
 # solid layer is what stands up out of it: walls, and a cylinder round every
 # palm trunk, which a round aimed past the palm's crown should still meet.

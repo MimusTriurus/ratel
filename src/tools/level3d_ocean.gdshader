@@ -158,7 +158,10 @@ void fragment() {
 
 	// The bottom, where there is one. Near the beach the land runs on under the
 	// water and the depth buffer has it; out at sea it holds the far plane, and
-	// the thickness is then large enough that none of it shows.
+	// the thickness is then large enough that none of it shows. The slab under
+	// the north, Land_Base_North, is sunk to 0.88 m under the surface so that it
+	// is lost too: at 0.28 m a sixth of its earth came through, and it ends at
+	// z = -15 and x = -15, which drew both as edges across the river's mouth.
 	// Compatibility's clip space is OpenGL's, -1..1 in depth; the others' is 0..1.
 	float raw = texture(zbuf, SCREEN_UV).x;
 #if CURRENT_RENDERER == RENDERER_COMPATIBILITY
