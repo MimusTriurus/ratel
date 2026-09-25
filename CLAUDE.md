@@ -563,8 +563,8 @@ intro drop only incidentally — the real gate there is `GameMode.playing`, whic
   per-kind pipelines are `docs/soldier-pipeline.md`, `docs/boat-pipeline.md`
   and `docs/level3d-pipeline.md`. Only the jeep, the BTR, the Chinook,
   the model-sheet soldiers, the boat, the two tanks, the bunker with its
-  gun, and the stage's buildings, walls, vegetation and rocks are done so
-  far.
+  gun, and the stage's buildings, walls, vegetation, rocks, sandbags and
+  pads are done so far.
 
 ## Known deviations from the original
 
