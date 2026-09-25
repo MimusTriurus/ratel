@@ -562,8 +562,8 @@ intro drop only incidentally — the real gate there is `GameMode.playing`, whic
   panes. How, and the line widths, are in `docs/cel-shading.md`; the
   per-kind pipelines are `docs/soldier-pipeline.md`, `docs/boat-pipeline.md`
   and `docs/level3d-pipeline.md`. Only the jeep, the BTR, the Chinook,
-  the Little Bird (`jackal_littlebird_lowpoly.blend`, not yet used by the
-  preview), the model-sheet soldiers, the boat, the two tanks, the bunker with its
+  the Little Bird (`jackal_littlebird_lowpoly.blend`, the preview's rescue
+  helicopter, `level3d_rescue.gd`), the model-sheet soldiers, the boat, the two tanks, the bunker with its
   gun, and all of stage 1 are done; only the sprite soldier
   (`jackal_units.blend`, `--sprite-soldiers`) is left. The 3D preview lights
   every material two-tone (`_toon` in `level3d_preview.gd`), the terrain's

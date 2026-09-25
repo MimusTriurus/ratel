@@ -65,7 +65,7 @@
 #         -- --shot out.png <position 0-1 or x,z> <zoom> <top|tilt> [<seconds> <x,z> ...] \
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
 #            [--at <x,z>] [--free] [--hold <keys>@<from>-<to>[,...]] [--weapon <0-3>]
-#            [--intro]
+#            [--intro] [--pows <n>]
 #
 # The bunkers' guns, the enemy soldiers, the two boats on the river, the two
 # brown tanks and the boss's four heavy tanks at the top of the stage fight back
@@ -87,7 +87,13 @@
 # the free way; --hold holds WASD, L or P down from one second to another, as
 # many spans as are given (wd@0-1.5,a@2-3), which is how the classic keys
 # are checked. --weapon starts with what the prisoners would have given: 0 the
-# grenade, 1 to 3 the missile and its two upgrades.
+# grenade, 1 to 3 the missile and its two upgrades. --pows starts with that
+# many prisoners aboard, for the rescue helicopter.
+#
+# The prisoners the BTR picks up go home by helicopter, as the game's do: one
+# flies up the stage on row 161 and lands on the Helipad, and the prisoners
+# get off by it and walk aboard while the BTR waits east of it
+# (level3d_rescue.gd).
 #
 # The stage opens as the game's does: a Chinook flies the BTR in, backs it out
 # down its ramp and flies off, and only then is it the player's, at
@@ -146,6 +152,7 @@ var launcher: Level3DLauncher
 var guns: Level3DGuns
 var soldiers: Level3DSoldiers
 var friends: Level3DFriends
+var rescue: Level3DRescue
 var boats: Level3DBoats
 var tanks: Level3DTanks
 var boss: Level3DBoss
@@ -885,6 +892,14 @@ func _add_guns(level: Node) -> void:
 	friends.player_position = guns.player_position
 	friends.scored = guns.scored
 	add_child(friends)
+	rescue = Level3DRescue.new()
+	rescue.map = map
+	rescue.friends = friends
+	rescue.frame = _view_frame
+	rescue.ground = _ground_at
+	rescue.player_position = guns.player_position
+	rescue.scored = guns.scored
+	add_child(rescue)
 	soldiers.more_solids = friends.solid_boxes
 	var centres := {}
 	for building in destructibles:
@@ -1318,6 +1333,7 @@ func _physics_process(delta: float) -> void:
 	tanks.tick()
 	boss.tick()
 	friends.tick()
+	rescue.tick()
 	_set_score(_score)
 	_sync_markers()
 
@@ -1336,6 +1352,7 @@ func _process(delta: float) -> void:
 	var boss_top := boss.camera_top() if boss != null else -1.0
 	if boss_top >= 0.0:
 		focus.y = Level3DMap.to_level(Vector2(0.0, boss_top)).y + level_aabb.size.x / zoom * 9.0 / 32.0
+	rescue.enlarge = not tilted
 	# The game flashes the jeep through four palettes a frame while it is
 	# invincible; the BTR has one, so it blinks.
 	if chinook != null:
@@ -1412,6 +1429,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				tanks.reset()
 				boss.reset()
 				friends.reset()
+				rescue.reset()
 				map.reset()
 				_respawning = 0
 				_invincible = 0
@@ -1499,6 +1517,7 @@ func _screenshot_mode() -> void:
 	tanks.verbose = guns.verbose
 	boss.verbose = guns.verbose
 	friends.verbose = guns.verbose
+	rescue.verbose = guns.verbose
 	var intro := args.find("--intro")
 	if intro >= 0:
 		args.remove_at(intro)
@@ -1533,6 +1552,12 @@ func _screenshot_mode() -> void:
 		friends.has_missiles = level > 0
 		friends.missile_power = clampi(level - 1, 0, 2)
 		args = args.slice(0, weapon) + args.slice(weapon + 2)
+		_set_score(_score)
+	var aboard := args.find("--pows")
+	if aboard >= 0:
+		friends.pows = int(args[aboard + 1])
+		friends.releaseable_pows = friends.pows
+		args = args.slice(0, aboard) + args.slice(aboard + 2)
 		_set_score(_score)
 	var start_at := args.find("--at")
 	if start_at >= 0:

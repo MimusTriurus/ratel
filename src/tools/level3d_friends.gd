@@ -21,6 +21,9 @@
 #     aboard; die with more than one aboard and some of them scatter again.
 #   * Both buildings' footprints are solid until they are blown open, and then
 #     their tiles become the ruin's (Level3DMap.trigger_group).
+#   * At the landing port the rescue helicopter lets them off one at a time
+#     (level3d_rescue.gd), and each walks straight to it, through anything,
+#     and cannot be picked up again on the way. The last one off flashes.
 #
 # The level's hangars are broken open on the side the game lets their
 # prisoners out of: Hangar_N and Hangar_W, both HOUSE_RIGHT, were turned round
@@ -32,10 +35,8 @@
 # (jackal_pow.glb, jackal_units.blend) -- the enemies' flag, the same choice
 # for both. MODELS says what differs, as Level3DSoldiers' does.
 #
-# The rescue helicopter at the landing port, and the 500 points a prisoner is
-# worth there, are not here yet: prisoners are picked up and counted, and go
-# nowhere. The weapon upgrade is counted, not given -- the BTR's rocket is
-# what it is.
+# The weapon upgrade, from a weapon carrier or from the rescues that give one,
+# goes to the launcher as the game's missile and its two upgrades.
 class_name Level3DFriends
 extends Node3D
 
@@ -136,6 +137,9 @@ class Friend:
 	var colour_changing := false
 	var colour_index := 0
 	var brother: Friend
+	# Walking to the helicopter: the x he stops at, and what he tells it.
+	var helicopter_x := 0.0
+	var arrived: Callable
 	var root: Node3D
 	var player: AnimationPlayer
 	var fade: Level3DCrossfade
@@ -268,7 +272,7 @@ func _update_help(h: Dictionary) -> bool:
 # ----------------------------------------------------------------------------
 # The prisoners
 
-func _spawn(x: float, y: float, type: int, house_count: int = -1) -> Friend:
+func _spawn(x: float, y: float, type: int, house_count: int = -1, helicopter_x := NAN) -> Friend:
 	var f := Friend.new()
 	f.x = x
 	f.y = y
@@ -282,7 +286,14 @@ func _spawn(x: float, y: float, type: int, house_count: int = -1) -> Friend:
 	_own_materials(f)
 	friends.append(f)
 	# FriendlySoldier._init
-	if house_count < 0:
+	if not is_nan(helicopter_x):
+		f.state = FriendlySoldier.STATE_WALKING_TO_HELICOPTER
+		f.helicopter_x = helicopter_x
+		f.direction_x = -1.0 if x > helicopter_x else 1.0
+		f.direction_y = 0.0
+		f.vx = f.direction_x * FriendlySoldier.WALK_SPEED
+		f.vy = 0.0
+	elif house_count < 0:
 		f.colour_changing = type == FriendlySoldierType.WEAPON_CARRIER_WANDERER
 		_start_wandering(f)
 	else:
@@ -305,6 +316,22 @@ func _spawn(x: float, y: float, type: int, house_count: int = -1) -> Friend:
 	if verbose:
 		print("prisoner out at %.0f, %.0f" % [x, y])
 	return f
+
+
+# FriendlySoldier.to_helicopter: one let off at x, y, walking straight across
+# to the helicopter's x, flashing if he is the last aboard; `arrived` is
+# called when he gets there.
+func deliver(x: float, y: float, helicopter_x: float, flashing: bool, arrived: Callable) -> void:
+	var f := _spawn(x, y, FriendlySoldierType.WALKING_TO_HELICOPTER, -1, helicopter_x)
+	f.colour_changing = flashing
+	f.arrived = arrived
+
+
+# Player.drop_off_pow.
+func drop_off_pow() -> void:
+	pows -= 1
+	if pows < releaseable_pows:
+		releaseable_pows = pows
 
 
 func _own_materials(f: Friend) -> void:
@@ -366,6 +393,8 @@ func tick() -> void:
 	for i in range(friends.size() - 1, -1, -1):
 		var f := friends[i]
 		_update(f)
+		if not friends.has(f):
+			continue    # at the helicopter
 		_place(f)
 		# Enemy.check_bounds
 		if f.y + SOLID.position.y > _furthest_top + Level3DSoldiers.CAMERA_BOUND + Level3DSoldiers.REMOVE_BOUND:
@@ -398,6 +427,13 @@ func _update(f: Friend) -> void:
 					_start_wandering(f)
 		FriendlySoldier.STATE_WANDERING:
 			_wander(f)
+		FriendlySoldier.STATE_WALKING_TO_HELICOPTER:
+			# FriendlySoldier._walk_to_helicopter.
+			f.x += f.vx
+			_legs(f, absf(f.vx))
+			if (f.vx < 0 and f.x <= f.helicopter_x) or (f.vx > 0 and f.x >= f.helicopter_x):
+				_remove(f)
+				f.arrived.call()
 
 
 # A leg frame, and for a model that walks by its stride the `step` px it took.
@@ -502,6 +538,8 @@ func _remove(f: Friend) -> void:
 # the player is gone (respawning), which the preview sees to.
 func bump(player_box: Rect2) -> void:
 	for f in friends.duplicate():
+		if f.type == FriendlySoldierType.WALKING_TO_HELICOPTER:
+			continue
 		var box := Rect2(Vector2(f.x, f.y) + MINE.position, MINE.size)
 		var level := Rect2(Level3DMap.to_level(box.position), box.size * PX)
 		if not player_box.intersects(level, true):
@@ -510,7 +548,7 @@ func bump(player_box: Rect2) -> void:
 		if f.type == FriendlySoldierType.WEAPON_CARRIER or f.type == FriendlySoldierType.WEAPON_CARRIER_WANDERER:
 			# Player.pick_up_flashing_soldier
 			pows += 1
-			_upgrade_weapon()
+			upgrade_weapon()
 		else:
 			# Player.collect_pow
 			pows += 1
@@ -521,12 +559,16 @@ func bump(player_box: Rect2) -> void:
 			print("prisoner picked up: %d aboard, weapon %s" % [pows, weapon_name()])
 
 
-# Main.upgrade_weapon, without the Konami code.
-func _upgrade_weapon() -> void:
-	if has_missiles:
-		missile_power = mini(missile_power + 1, 2)
-	else:
+# Main.upgrade_weapon, without the Konami code: whether there was anything to
+# upgrade, which is when the game plays its sound.
+func upgrade_weapon() -> bool:
+	if not has_missiles:
 		has_missiles = true
+		return true
+	if missile_power < 2:
+		missile_power += 1
+		return true
+	return false
 
 
 func weapon_name() -> String:
