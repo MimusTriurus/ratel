@@ -39,7 +39,7 @@
 #
 # Effects are low poly and opaque, as the gun's are and the stage's
 # destruction is: J_BlastFlash's colour for the fireball, J_Smoke's for the
-# smoke, J_Soot's for the crater.
+# smoke; the crater is its own (Level3DFx.crater_mesh).
 #
 # With the BTR driving classic (level3d_btr.gd) the flight and the reload are
 # the game's weapon's, Grenade or PlayerMissile by what the prisoners have
@@ -74,7 +74,11 @@ const CRATERS_KEPT := 40
 # A crater smaller than this is not worth drawing; its rim may stand this far
 # off the height at its centre and still lie flat enough.
 const CRATER_SMALLEST := 0.2
+# Hit again and again, a crater grows to this and no bigger (_crater).
+const CRATER_BIGGEST := 1.1
 const CRATER_STEP := 0.06
+const MASK_SHADER := preload("res://src/tools/level3d_crater_mask.gdshader")
+const BOWL_SHADER := preload("res://src/tools/level3d_crater_bowl.gdshader")
 # Grenade and PlayerMissile at the map's PX. Each is gone on the tick its count
 # passes TRAVEL_TIME, so it flies TRAVEL_TIME + 1 moves.
 const GRENADE_SPEED := Grenade.VELOCITY * 100.0 * Level3DMap.PX
@@ -185,10 +189,11 @@ var _lob := false
 var _stages := []               # a staged round's parts, stage by stage
 var _stage_tails := []          # each stage's tail, centre-relative, pivot units
 var _rockets := []
-var _craters: Array[Node3D] = []
+var _craters := []              # {"node", "centre", "size"}, oldest first
+var _crater_meshes: Array[Dictionary] = []   # Level3DFx.crater_mesh, a few of them
 var _rng := RandomNumberGenerator.new()
-var _puff_mesh: SphereMesh
-var _chip_mesh: BoxMesh
+var _puff_mesh: ArrayMesh
+var _chip_mesh: ArrayMesh
 var _flame_mesh: SphereMesh
 var _crater_mesh: CylinderMesh
 var _materials := {}
@@ -200,13 +205,8 @@ func _ready() -> void:
 		_mounts.append(_read_fit(entry))
 	_refit()
 
-	_puff_mesh = SphereMesh.new()
-	_puff_mesh.radial_segments = 6
-	_puff_mesh.rings = 3
-	_puff_mesh.radius = 1.0
-	_puff_mesh.height = 2.0
-	_chip_mesh = BoxMesh.new()
-	_chip_mesh.size = Vector3.ONE
+	_puff_mesh = Level3DFx.ball(1, 0.12, 3)
+	_chip_mesh = Level3DFx.ball(0, 0.25, 4)
 	_flame_mesh = SphereMesh.new()
 	_flame_mesh.radial_segments = 5
 	_flame_mesh.rings = 2
@@ -218,6 +218,8 @@ func _ready() -> void:
 	_crater_mesh.height = 0.01
 	_crater_mesh.radial_segments = 9
 	_crater_mesh.rings = 1
+	for i in 4:
+		_crater_meshes.append(Level3DFx.crater_mesh(10 + i))
 	_materials = {
 		"flash": _unshaded(Color(1.0, 0.62, 0.2)),
 		"core": _unshaded(Color(1.0, 0.92, 0.6)),
@@ -226,7 +228,11 @@ func _ready() -> void:
 		"smoke": _lit(Color(0.33, 0.31, 0.29).linear_to_srgb()),
 		"trail": _lit(Color(0.78, 0.78, 0.76)),
 		"splash": _lit(Color(0.92, 0.97, 1.0)),
-		"soot": _lit(Color(0.09, 0.05, 0.02).linear_to_srgb()),
+		"rim": _painted(),
+		"mask": _crater_pass(MASK_SHADER, 10),
+		"bowl": _crater_pass(BOWL_SHADER, 11),
+		# Darker than the sand, or only their lines show on it.
+		"rim_clod": _lit(Level3DFx.RIM_SAND.lerp(Level3DFx.RIM_SCORCHED, 0.6)),
 		"chip": _lit(Color(0.25, 0.2, 0.15)),
 		# The stage's own shadows, on sand and on water.
 		"blob": _unshaded(Color(0.24, 0.15, 0.03)),
@@ -829,7 +835,8 @@ func _column(at: Vector3) -> void:
 func _chips(at: Vector3, normal: Vector3) -> void:
 	for i in 10:
 		var chip := _instance(_chip_mesh, "chip")
-		var size := _rng.randf_range(0.05, 0.1)
+		# Half a unit box's 0.05 to 0.1: the chip is a ball of radius 1.
+		var size := _rng.randf_range(0.025, 0.05)
 		chip.scale = Vector3(size, size * 0.6, size * 1.3)
 		var out := (normal + Vector3(_rng.randf_range(-1, 1), _rng.randf_range(0.3, 1.2),
 				_rng.randf_range(-1, 1))).normalized()
@@ -847,26 +854,104 @@ func _chips(at: Vector3, normal: Vector3) -> void:
 		tween.tween_callback(chip.queue_free)
 
 
-# A scorch on the ground that stays, the stage's soot decal in miniature. The
-# oldest goes when there are too many. It is a flat disc, so it is made no
-# bigger than the surface it lies on: shrunk until its rim is all off the
-# water and at the height of its centre -- or there is none, near a bridge's
-# edge or the shore.
+# A crater that stays: a ring of thrown-up sand round a scorched hole, clods
+# beyond it (Level3DFx.crater_mesh), and a shape the vehicles feel (crater_height).
+# The oldest goes when there are too many. It lies on flat ground, so it is
+# made no bigger than the surface it lies on: shrunk until its rim is all off
+# the water and at the height of its centre -- or there is none, near a
+# bridge's edge or the shore.
+#
+# Nor does one lie over another. Two that overlapped showed each rim standing
+# over the other's hole, and each bowl drawn through the other's rim -- the
+# stencil is one mark for all of them. A round that lands in a crater makes
+# that one bigger instead, up to CRATER_BIGGEST, its middle drawn a little
+# towards the new hit; one that lands beside a crater makes a smaller one, no
+# further out than the other's foot -- or, too small for that, the other
+# bigger.
 func _crater(at: Vector3) -> void:
-	var size := _rng.randf_range(0.5, 0.65)
+	var centre := Vector2(at.x, at.z)
+	var size := _rng.randf_range(0.6, 0.8)
+	var grown := -1         # the crater this one replaces
+	var nearest := -1
+	for i in _craters.size():
+		var gap: float = centre.distance_to(_craters[i].centre) - _craters[i].size
+		if gap < 0.0:
+			grown = i
+			break
+		if gap < size:
+			size = gap
+			nearest = i
+	if grown < 0 and size < CRATER_SMALLEST and nearest >= 0:
+		grown = nearest
+	var start := size * 0.1
+	if grown >= 0:
+		var old: Dictionary = _craters[grown]
+		centre = old.centre.lerp(centre, 0.3)
+		start = old.size
+		size = minf(old.size * 1.15, CRATER_BIGGEST)
+		# Clear of the others still, now that its middle has moved.
+		for i in _craters.size():
+			if i != grown:
+				size = minf(size, centre.distance_to(_craters[i].centre) - _craters[i].size)
+		if size <= old.size:
+			return
+		var there: Dictionary = ground.call(centre.x, centre.y)
+		at = Vector3(centre.x, there.height, centre.y)
 	while not _fits(at, size):
 		size *= 0.85
-		if size < CRATER_SMALLEST:
+		if size < CRATER_SMALLEST or (grown >= 0 and size <= start):
 			return
-	var crater := _instance(_crater_mesh, "soot")
-	crater.global_position = at + Vector3.UP * 0.008
+	if grown >= 0:
+		(_craters[grown].node as Node3D).queue_free()
+		_craters.remove_at(grown)
+	var crater := Node3D.new()
+	get_parent().add_child(crater)
+	crater.global_position = at + Vector3.UP * 0.006
 	crater.rotation.y = _rng.randf() * TAU
-	crater.scale = Vector3(0.05, 1.0, 0.05)
+	var meshes: Dictionary = _crater_meshes[_rng.randi() % _crater_meshes.size()]
+	_part(crater, meshes.mask, "mask")
+	_part(crater, meshes.bowl, "bowl")
+	# The rim casts, so that its shadow falls into the hole.
+	_part(crater, meshes.rim, "rim").cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	# Clods thrown clear of it, and not into the next one's hole.
+	for i in _rng.randi_range(4, 6):
+		var a := _rng.randf() * TAU
+		var way := Vector3(cos(a), 0.0, sin(a)) * _rng.randf_range(1.05, 1.5)
+		var lands := centre + Vector2(way.x, way.z).rotated(-crater.rotation.y) * size
+		if _craters.any(func(other): return lands.distance_to(other.centre) < other.size):
+			continue
+		var clod := _part(crater, _chip_mesh, "rim_clod")
+		var radius := _rng.randf_range(0.05, 0.08)
+		# Sunk a little way, not so far that only its line shows.
+		clod.position = way + Vector3.UP * radius * 0.4
+		clod.scale = Vector3.ONE * radius
+		clod.rotation = Vector3(_rng.randf(), _rng.randf(), _rng.randf()) * TAU
+	crater.scale = Vector3.ONE * start
 	var tween := crater.create_tween()
-	tween.tween_property(crater, "scale", Vector3(size, 1.0, size * 0.85), 0.2).set_ease(Tween.EASE_OUT)
-	_craters.append(crater)
+	tween.tween_property(crater, "scale", Vector3.ONE * size, 0.2).set_ease(Tween.EASE_OUT)
+	_craters.append({"node": crater, "centre": centre, "size": size})
 	while _craters.size() > CRATERS_KEPT:
-		_craters.pop_front().queue_free()
+		(_craters.pop_front().node as Node3D).queue_free()
+
+
+# A crater's part: the material on first, for the preview's _toon.
+func _part(crater: Node3D, mesh: Mesh, material: String) -> MeshInstance3D:
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.material_override = _materials[material]
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	crater.add_child(node)
+	return node
+
+
+# How much the craters raise or lower the ground at x, z, for what drives
+# over them: their rims and the bowls inside (Level3DFx.crater_height).
+func crater_height(x: float, z: float) -> float:
+	var at := Vector2(x, z)
+	var height := 0.0
+	for crater in _craters:
+		height += Level3DFx.crater_height(crater.centre, crater.size, at)
+	return height
 
 
 # Whether a disc of radius `size` at `at` lies on something other than water
@@ -883,7 +968,7 @@ func _fits(at: Vector3, size: float) -> bool:
 
 func clear_craters() -> void:
 	for crater in _craters:
-		crater.queue_free()
+		(crater.node as Node3D).queue_free()
 	_craters.clear()
 
 
@@ -905,11 +990,31 @@ static func _unshaded(colour: Color) -> StandardMaterial3D:
 	return material
 
 
+# Coloured by its mesh's vertices, the crater's rim, and drawn round.
+static func _painted() -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.vertex_color_use_as_albedo = true
+	material.vertex_color_is_srgb = true
+	material.roughness = 1.0
+	return Level3DFx.contour(material)
+
+
+# The crater's opening and its bowl, both in the transparent pass, where the
+# stencil can be read, the opening first: `order` is their render_priority,
+# after everything else there.
+static func _crater_pass(shader: Shader, order: int) -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	material.render_priority = order
+	return material
+
+
 static func _lit(colour: Color) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
 	material.albedo_color = colour
 	material.roughness = 1.0
-	return material
+	# What is lit is drawn round, as the models are; what glows is not.
+	return Level3DFx.contour(material)
 
 
 # The exhaust, long along the rocket's axis whichever way the model runs.

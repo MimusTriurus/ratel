@@ -633,9 +633,14 @@ func _ground_at(x: float, z: float, mask := GROUND_LAYER) -> Dictionary:
 
 # What the hull sits on: the ground, and the ramps over the bunkers that have
 # lost their guns. Nothing else asks for the ramps -- a round, a crater or a
-# soldier goes by the ground as it is.
+# soldier goes by the ground as it is. And the craters the rockets have left,
+# their rims and bowls (Level3DLauncher.crater_height), which the hull's five
+# samples of the ground turn into its pitch, roll and sinking.
 func _hull_ground_at(x: float, z: float) -> Dictionary:
-	return _ground_at(x, z, GROUND_LAYER | RAMP_LAYER)
+	var there := _ground_at(x, z, GROUND_LAYER | RAMP_LAYER)
+	if there.hit and there.kind != "water" and launcher != null:
+		there.height += launcher.crater_height(x, z)
+	return there
 
 
 # Whether a box at `pose` overlaps anything on the solid layer.

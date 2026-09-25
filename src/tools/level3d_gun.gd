@@ -34,7 +34,8 @@
 #
 # Effects are low poly and opaque, like the stage: a puff grows and shrinks
 # away instead of fading, which also keeps them out of Compatibility's
-# transparent pass.
+# transparent pass. They are cel-shaded as the models are, faceted and drawn
+# round (level3d_fx.gd).
 #
 # With the BTR driving classic (level3d_btr.gd) the gun is PlayerBullet's and
 # Player.update's trigger instead: a round the tick the trigger goes down, then
@@ -88,8 +89,8 @@ var _rng := RandomNumberGenerator.new()
 var _flash: MeshInstance3D
 var _flash_left := 0.0
 var _round_texture: AtlasTexture
-var _puff_mesh: SphereMesh
-var _chip_mesh: BoxMesh
+var _puff_mesh: ArrayMesh
+var _chip_mesh: ArrayMesh
 var _materials := {}
 
 
@@ -114,15 +115,12 @@ func _ready() -> void:
 	_flash.visible = false
 	btr.muzzle_node().add_child(_flash)
 
-	_puff_mesh = SphereMesh.new()
-	_puff_mesh.radial_segments = 6
-	_puff_mesh.rings = 3
-	_puff_mesh.radius = 1.0
-	_puff_mesh.height = 2.0
-	_chip_mesh = BoxMesh.new()
-	_chip_mesh.size = Vector3.ONE
+	_puff_mesh = Level3DFx.ball(1, 0.12, 1)
+	_chip_mesh = Level3DFx.ball(0, 0.25, 2)
 	_materials = {
 		"dust": _lit(Color(0.93, 0.76, 0.48)),
+		# The sand's own orange, darker: what the round digs out.
+		"clod": _lit(Color(0.82, 0.52, 0.2)),
 		"leaves": _lit(Color(0.22, 0.45, 0.16)),
 		"wood": _lit(Color(0.36, 0.24, 0.13)),
 		"stone": _lit(Color(0.62, 0.62, 0.60)),
@@ -263,14 +261,77 @@ func _impact(at: Vector3, kind: String, normal: Vector3, travel: Vector3) -> voi
 			_chips(at, normal, travel, "stone", 3)
 			_puffs(at, "stone", 1, 0.15, 0.25)
 		_:
-			_puffs(at, "dust", 3, 0.18, 0.40)
+			_dust(at, travel)
+
+
+# A round in the sand, which is not smoke and does not rise: clods kicked up
+# and back towards the gun, a cloud that swells low over the hole and settles
+# back into it, and grains flung out and falling.
+func _dust(at: Vector3, travel: Vector3) -> void:
+	var back := Vector3(-travel.x, 0.0, -travel.z).normalized()
+	var gravity := Vector3.DOWN * 9.8
+	# Out to the sides as much as up: seen from above, sand thrown straight up
+	# only sits on the cloud.
+	for i in 5:
+		var clod := _instance(_puff_mesh, "clod")
+		var angle := _rng.randf_range(-PI, PI) * 0.8
+		var side_way := back.rotated(Vector3.UP, angle)
+		var out := (Vector3.UP * _rng.randf_range(0.7, 1.1) + side_way).normalized()
+		var velocity := out * _rng.randf_range(1.8, 2.6)
+		var size := _rng.randf_range(0.016, 0.026)
+		var life := _rng.randf_range(0.28, 0.36)
+		var tween := clod.create_tween()
+		tween.tween_method(func(t: float):
+			var v := velocity + gravity * t
+			var p := at + velocity * t + gravity * 0.5 * t * t
+			var shrink := clampf(2.0 - 2.0 * t / life, 0.0, 1.0)
+			# Long along the way it flies, a streak of sand.
+			var along := v.normalized()
+			var side := along.cross(Vector3.UP if absf(along.y) < 0.99 else Vector3.RIGHT).normalized()
+			clod.global_transform = Transform3D(
+					Basis(side, along, side.cross(along)).scaled(Vector3(1.0, 1.7, 1.0) * size * shrink), p),
+				0.0, life, life)
+		tween.tween_callback(clod.queue_free)
+	# A cluster, not a ball: each puff from a little way off the hole, going
+	# its own way.
+	for i in 4:
+		var puff := _instance(_puff_mesh, "dust")
+		var way := back.rotated(Vector3.UP, TAU * (i + _rng.randf_range(-0.3, 0.3)) / 4.0)
+		var start := way * _rng.randf_range(0.03, 0.07)
+		var drift := start + back * 0.06 + way * _rng.randf_range(0.08, 0.14)
+		var peak := _rng.randf_range(0.08, 0.13)
+		var life := _rng.randf_range(0.45, 0.6)
+		var spin := _rng.randf() * TAU
+		var tween := puff.create_tween()
+		tween.tween_method(func(t: float):
+			var k := t / life
+			# Swells in the first eighth, then shrinks away; sits on the
+			# ground as it goes, so that it settles as it shrinks.
+			var size := peak * (1.0 - pow(1.0 - minf(k * 8.0, 1.0), 3.0)) * (1.0 - pow(maxf(k - 0.125, 0.0) / 0.875, 2.0))
+			var p := at + start.lerp(drift, 1.0 - pow(1.0 - k, 2.0))
+			p.y = at.y + size * 0.5
+			puff.global_transform = Transform3D(Basis(Vector3.UP, spin).scaled(Vector3(1.0, 0.75, 1.0) * maxf(size, 0.001)), p),
+			0.0, life, life)
+		tween.tween_callback(puff.queue_free)
+	for i in 4:
+		var grain := _instance(_chip_mesh, "clod")
+		var out := (Vector3.UP * _rng.randf_range(0.6, 1.2) + back * 0.3
+				+ Vector3(_rng.randf_range(-1, 1), 0.0, _rng.randf_range(-1, 1))).normalized()
+		var velocity := out * _rng.randf_range(1.5, 2.8)
+		grain.scale = Vector3.ONE * _rng.randf_range(0.01, 0.016)
+		var life := _rng.randf_range(0.25, 0.35)
+		var tween := grain.create_tween()
+		tween.tween_method(func(t: float):
+			var p := at + velocity * t + gravity * 0.5 * t * t
+			p.y = maxf(p.y, at.y + 0.01)
+			grain.global_position = p, 0.0, life, life)
+		tween.tween_callback(grain.queue_free)
 
 
 # A few low-poly balls that swell and shrink away, rising a little.
 func _puffs(at: Vector3, material: String, count: int, size: float, life: float) -> void:
 	for i in count:
-		var puff := _instance(_puff_mesh)
-		puff.material_override = _materials[material]
+		var puff := _instance(_puff_mesh, material)
 		var offset := Vector3(_rng.randf_range(-1, 1), 0.0, _rng.randf_range(-1, 1)) * size
 		puff.global_position = at + offset
 		puff.scale = Vector3.ONE * size * 0.3
@@ -289,9 +350,9 @@ func _puffs(at: Vector3, material: String, count: int, size: float, life: float)
 func _chips(at: Vector3, normal: Vector3, travel: Vector3, material: String, count: int) -> void:
 	var bounce := (travel - 2.0 * travel.dot(normal) * normal).normalized()
 	for i in count:
-		var chip := _instance(_chip_mesh)
-		chip.material_override = _materials[material]
-		var size := _rng.randf_range(0.03, 0.06)
+		var chip := _instance(_chip_mesh, material)
+		# Half a unit box's 0.03 to 0.06: the chip is a ball of radius 1.
+		var size := _rng.randf_range(0.015, 0.03)
 		chip.scale = Vector3.ONE * size
 		chip.global_position = at + normal * 0.03
 		var out := (bounce + normal + Vector3(_rng.randf_range(-0.6, 0.6), _rng.randf_range(0.2, 0.9),
@@ -304,9 +365,12 @@ func _chips(at: Vector3, normal: Vector3, travel: Vector3, material: String, cou
 		tween.tween_callback(chip.queue_free)
 
 
-func _instance(mesh: Mesh) -> MeshInstance3D:
+# The material goes on before the node enters the tree, where the preview's
+# _toon gives it its two-tone light.
+func _instance(mesh: Mesh, material: String) -> MeshInstance3D:
 	var node := MeshInstance3D.new()
 	node.mesh = mesh
+	node.material_override = _materials[material]
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	get_parent().add_child(node)
 	return node
@@ -323,4 +387,5 @@ static func _lit(colour: Color) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
 	material.albedo_color = colour
 	material.roughness = 1.0
-	return material
+	# What is lit is drawn round, as the models are; what glows is not.
+	return Level3DFx.contour(material)
