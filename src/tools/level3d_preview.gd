@@ -900,6 +900,7 @@ func _add_guns(level: Node) -> void:
 	rescue.player_position = guns.player_position
 	rescue.scored = guns.scored
 	add_child(rescue)
+	rescue.bind_lamps(level)
 	soldiers.more_solids = friends.solid_boxes
 	var centres := {}
 	for building in destructibles:

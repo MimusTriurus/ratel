@@ -18,8 +18,19 @@
 #     the player has gone on 512 px north, it waits 182 ticks, revs up for 91,
 #     lifts off over 114, speeds up north for 45, banks right through 45
 #     degrees and on round another 225 on a 192 px circle, and flies off south.
+#   * The port's lamps pulse, red and blue half a period apart: LandingPort's
+#     ALPHAS, 0.5 + sin(pi i / 91) / 2 over 182 ticks, the glow sprite over the
+#     dim lamp at that alpha. Here that alpha takes the lamps' emission from
+#     LAMP_DIM to LAMP_LIT (bind_lamps).
 #
 # What is not the original's, and why:
+#
+#   * The lamps' Blender clip is not what runs. jackal_assets.blend keys
+#     J_LightRed's and J_LightBlue's emission strength, on and off every 8
+#     frames at 24 fps, and glTF carries no material animation: the level's
+#     glb has them stuck where the export left them, red dim and blue lit. So
+#     the preview drives them itself, by the original's rule rather than the
+#     clip's, between the clip's two strengths.
 #
 #   * It arrives. The original's FRIENDLY_HELICOPTER_LANDING, on row 161 of
 #     stage 1, sends one up the screen from under it, north and off the top;
@@ -117,6 +128,19 @@ var _sound: AudioStreamPlayer
 var _pickup_sound: AudioStreamPlayer
 var _upgrade_sound: AudioStreamPlayer
 
+# The port's lamps: the level's two materials, one for every red lamp and one
+# for every blue, and LandingPort's two indices into ALPHAS.
+const LAMP_DIM := 0.25
+const LAMP_LIT := 3.0
+# J_LightRed's and J_LightBlue's Emission Color in Blender, linear; the glb's
+# has the strength it was exported at multiplied in.
+const RED_GLOW := Color(1.0, 0.01, 0.005)
+const BLUE_GLOW := Color(0.042, 0.262, 1.0)
+var _red_lamp: StandardMaterial3D
+var _blue_lamp: StandardMaterial3D
+var _red_index := 0
+var _blue_index := 91
+
 
 func _ready() -> void:
 	var scene: PackedScene = load(MODEL_PATH)
@@ -170,6 +194,40 @@ func _find_port() -> void:
 			_port_row = row
 
 
+# The level's port lamps, by their materials: every lamp of a colour shares one,
+# so one write lights them all, as the original draws them all at one alpha.
+func bind_lamps(level: Node) -> void:
+	for node in level.find_children("*", "MeshInstance3D", true, false):
+		var mesh := (node as MeshInstance3D).mesh
+		for surface in mesh.get_surface_count():
+			var material := mesh.surface_get_material(surface) as StandardMaterial3D
+			if material == null:
+				continue
+			match material.resource_name:
+				"J_LightRed":
+					_red_lamp = material
+				"J_LightBlue":
+					_blue_lamp = material
+	for pair in [[_red_lamp, RED_GLOW], [_blue_lamp, BLUE_GLOW]]:
+		if pair[0] == null:
+			push_error("No %s in the level -- the port's lamps will not pulse" % (
+					"J_LightRed" if pair[1] == RED_GLOW else "J_LightBlue"))
+			continue
+		(pair[0] as StandardMaterial3D).emission_enabled = true
+		(pair[0] as StandardMaterial3D).emission = (pair[1] as Color).linear_to_srgb()
+	_pulse_lamps()
+
+
+# LandingPort.update and its _draw_red / _draw_blue.
+func _pulse_lamps() -> void:
+	_red_index = (_red_index + 1) % LandingPort.ALPHAS.size()
+	_blue_index = (_blue_index + 1) % LandingPort.ALPHAS.size()
+	if _red_lamp != null:
+		_red_lamp.emission_energy_multiplier = lerpf(LAMP_DIM, LAMP_LIT, LandingPort.ALPHAS[_red_index])
+	if _blue_lamp != null:
+		_blue_lamp.emission_energy_multiplier = lerpf(LAMP_DIM, LAMP_LIT, LandingPort.ALPHAS[_blue_index])
+
+
 func reset() -> void:
 	state = NONE
 	rescued = 0
@@ -189,6 +247,7 @@ func tick() -> void:
 	if is_nan(_pad_height):
 		var at := Level3DMap.to_level(pad)
 		_pad_height = ground.call(at.x, at.y).height
+	_pulse_lamps()
 	var view: Rect2 = frame.call()
 	_process_triggers(Level3DMap.to_map(view.position).y, view)
 	# Flown off, it is GONE: FriendlyHelicopter removes itself, and only R
