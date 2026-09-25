@@ -5,6 +5,10 @@
 #
 # "classic" rather than "keyboard": the keyboard drives the jeep either way,
 # what changes is how the weapons are aimed.
+#
+# The third entry, turbo (ButtonMapping.turbo), is a switch rather than a
+# choice: it toggles in place, as SoundMode's entries do, and the screen is
+# left by picking one of the other two.
 class_name ControlsMode
 extends RefCounted
 
@@ -15,6 +19,7 @@ const STATE_DONE := 3
 
 const MOUSE := 0
 const CLASSIC := 1
+const TURBO := 2
 
 var main: Main
 var input: HumanInput
@@ -30,7 +35,7 @@ func init(p_main: Main) -> void:
 
 	menu = Menu.new(448, 512, p_main,
 		MOUSE if p_main.button_mapping.mouse_aim else CLASSIC,
-		Menu.ICON_JEEP, self, ["mouse", "classic"])
+		Menu.ICON_JEEP, self, ["mouse", "classic", _turbo_label()])
 
 	p_main.start_fade(false, self)
 
@@ -51,6 +56,14 @@ func selection_changed(_index: int) -> void:
 
 
 func option_selected(p_index: int) -> void:
+	if p_index == TURBO:
+		main.button_mapping.turbo = not main.button_mapping.turbo
+		main.button_mapping.save()
+		main.play_sound(main.pickup_sound)
+		menu.options[TURBO] = _turbo_label()
+		# Menu takes one selection and stops listening; see SoundMode.
+		menu.selection_made = false
+		return
 	chosen = true
 	selected_index = p_index
 	main.play_sound(main.explode_sound2)
@@ -78,8 +91,15 @@ func render() -> void:
 	if menu.selected_index == MOUSE:
 		main.draw_text("aim mouse, lmb gun, rmb throw", 48, 736,
 			Main.FONT_ORANGE_GRAY)
+	elif menu.selected_index == TURBO:
+		main.draw_text("hold gun for rapid fire", 144, 736,
+			Main.FONT_ORANGE_GRAY)
 	else:
 		main.draw_text("gun fires north, wasd aims", 96, 736,
 			Main.FONT_ORANGE_GRAY)
 
 	menu.render()
+
+
+func _turbo_label() -> String:
+	return "turbo %s" % ("on" if main.button_mapping.turbo else "off")

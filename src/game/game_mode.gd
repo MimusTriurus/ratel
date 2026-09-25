@@ -771,6 +771,7 @@ func _menu_labels(page: int) -> Array:
 		"sound %s" % ("on" if audio.sound_on else "off"),
 		"volume %d" % audio.volume,
 		"controls %s" % ("mouse" if main.button_mapping.mouse_aim else "classic"),
+		"turbo %s" % ("on" if main.button_mapping.turbo else "off"),
 		"back",
 	]
 
@@ -829,7 +830,7 @@ func option_selected(index: int) -> void:
 				_quit_game()
 		return
 
-	if index == 4:
+	if index == 5:
 		_open_menu(MENU_MAIN)
 		return
 
@@ -848,6 +849,9 @@ func option_selected(index: int) -> void:
 			main.play_sound(main.pickup_sound)
 		3:
 			main.button_mapping.mouse_aim = not main.button_mapping.mouse_aim
+			main.button_mapping.save()
+		4:
+			main.button_mapping.turbo = not main.button_mapping.turbo
 			main.button_mapping.save()
 	audio.save()
 

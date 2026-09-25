@@ -43,8 +43,9 @@
 #                          classic driving with the mouse off, under the
 #                          right hand while the left is on WASD. Classic,
 #                          both are the game's weapons: the gun fires on the
-#                          press and slowly while held, and the rocket goes
-#                          while the button is held, one at a time
+#                          press and, held, slowly or at turbo's rate (T
+#                          toggles; the game's setting to start with), and the
+#                          rocket goes while the button is held, one at a time
 #   middle click           drive there (shift: add a waypoint)
 #   Esc                    stop
 #   Q / E                  turn the turret by hand; M toggles mouse aim
@@ -191,6 +192,10 @@ func _ready() -> void:
 	gun.btr = btr
 	gun.ground = _ground_at
 	gun.surface = _surface_at
+	# The game's own switch, as the game last saved it.
+	var mapping := ButtonMapping.new()
+	mapping.load_saved()
+	gun.turbo = mapping.turbo
 	add_child(gun)
 	launcher = Level3DLauncher.new()
 	launcher.btr = btr
@@ -1322,6 +1327,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				following = true
 			KEY_M:
 				mouse_aim = not mouse_aim
+			KEY_T:
+				gun.turbo = not gun.turbo
 			KEY_P:
 				if not btr.classic:
 					_rocket_wanted = ROCKET_WAIT

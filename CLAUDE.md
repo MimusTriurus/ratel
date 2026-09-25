@@ -573,6 +573,11 @@ Deliberate. Not bugs, and not to be "fixed" back without saying why:
 - At most `Player.MAX_BULLETS` (3) machine-gun rounds in flight. The original
   fires on every press with no cap, so a turbo pad got a round per press; three
   is above what hand tapping reaches and holds turbo to about 14 a second.
+- Turbo, on by default (`ButtonMapping.turbo`, Options → Controls and the
+  in-game options): a held gun fires every `Player.TURBO_DELAY` (7) ticks
+  rather than every `GUN_ARMED_DELAY` (45), which is exactly the cap's rate.
+  Mouse aiming means holding LMB, and the original's two rounds a second read
+  as a broken gun. Off gives the original trigger back.
 - `FlowField.build` produces shortest paths, which the shipped `dirs-N.dat` do
   not always contain. Only stages whose collision grid is edited get rebuilt, so
   this only bites where it has to.

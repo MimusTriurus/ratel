@@ -42,6 +42,8 @@
 # holding, as it is in the game -- each one flying 18 px a tick for 21 ticks,
 # 378 px, whatever it was aimed at, with no spread, and no more than
 # Player.MAX_BULLETS of them in flight. It is still decided when it is fired.
+# With `turbo` (ButtonMapping.turbo, on by default) a held trigger fires every
+# Player.TURBO_DELAY ticks instead of every GUN_ARMED_DELAY, as the game's.
 class_name Level3DGun
 extends Node3D
 
@@ -67,6 +69,7 @@ var ground: Callable
 var surface: Callable
 var btr: Level3DBtr
 var trigger := false
+var turbo := true
 var aim_point = null        # Vector3 or null
 # `intercept.call(from, to)`: the first enemy on the round's flight before the
 # grid stops it -- a bunker's gun, a soldier, a boat or a tank -- as {"t": 0-1
@@ -136,7 +139,7 @@ func step(delta: float) -> void:
 		if trigger:
 			if (_shoot_released or _gun_armed == 0) and _in_flight < Player.MAX_BULLETS:
 				_fire()
-				_gun_armed = Player.GUN_ARMED_DELAY
+				_gun_armed = Player.TURBO_DELAY if turbo else Player.GUN_ARMED_DELAY
 			_shoot_released = false
 		else:
 			_shoot_released = true

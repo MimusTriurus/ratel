@@ -15,6 +15,11 @@ const GUN_ARMED_DELAY := 45
 # 14 a second. A round that strikes close is gone sooner, so point blank fires
 # faster, as NES shooters with a bullet cap did.
 const MAX_BULLETS := 3
+# ButtonMapping.turbo: held, the gun fires every this many ticks instead of
+# every GUN_ARMED_DELAY, as a turbo pad pressing 14 times a second would. A
+# round lives 21 ticks, so this is exactly MAX_BULLETS in flight: turbo fires
+# as fast as the cap lets it and no faster.
+const TURBO_DELAY := 7
 const RESPAWN_DELAY := 91 * 2
 const INVINCIBLE_DELAY := 91 * 3
 
@@ -386,7 +391,7 @@ func update() -> void:
 	if input.is_gun():
 		if (shoot_released or gun_armed == 0) and live_bullets() < MAX_BULLETS:
 			PlayerBullet.new(x, y, aim_angle if aiming else 270.0)
-			gun_armed = GUN_ARMED_DELAY
+			gun_armed = TURBO_DELAY if main.button_mapping.turbo else GUN_ARMED_DELAY
 		shoot_released = false
 	else:
 		shoot_released = true

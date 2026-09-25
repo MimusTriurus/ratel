@@ -20,6 +20,13 @@ var gun_key_mapped: bool
 # the gun always fires north and the grenade follows the jeep.
 var mouse_aim: bool = true
 
+# Turbo: holding the gun fires as a turbo pad would, a round every
+# Player.TURBO_DELAY ticks, where the original fires one every GUN_ARMED_DELAY
+# (45) and wants the button tapped for more. On by default, because mouse
+# aiming means holding LMB, and two rounds a second read as a broken gun.
+# Player.MAX_BULLETS still caps what is in flight.
+var turbo: bool = true
+
 const SAVE_PATH := "user://buttons.cfg"
 
 # Every persisted field. InputMode snapshots the mapping on entry and restores
@@ -38,6 +45,7 @@ func copy_from(o: ButtonMapping) -> void:
 	controller_grenade = o.controller_grenade
 	controller_gun = o.controller_gun
 	mouse_aim = o.mouse_aim
+	turbo = o.turbo
 
 
 func duplicate_mapping() -> ButtonMapping:
@@ -64,6 +72,7 @@ func save() -> void:
 	cfg.set_value("pad", "grenade", controller_grenade)
 	cfg.set_value("pad", "gun", controller_gun)
 	cfg.set_value("mouse", "aim", mouse_aim)
+	cfg.set_value("gun", "turbo", turbo)
 	cfg.save(SAVE_PATH)
 
 
@@ -83,3 +92,4 @@ func load_saved() -> void:
 	controller_grenade = cfg.get_value("pad", "grenade", controller_grenade)
 	controller_gun = cfg.get_value("pad", "gun", controller_gun)
 	mouse_aim = cfg.get_value("mouse", "aim", mouse_aim)
+	turbo = cfg.get_value("gun", "turbo", turbo)
