@@ -91,9 +91,10 @@ const TRAVELING_EXPLOSION_TIME := (TravelingExplosion.TRAVEL_TIME + 1) / 100.0
 # it. What it has is at the tube, a flash and a cough of smoke as it goes
 # (_mortar_blast), and on the ground under it a spot (_place_blob) that it
 # climbs away from and comes back down to -- the arc seen from above, which the
-# game's Grenade shows by swelling as it rises. The spot stands in for its
-# shadow, which is off. It noses up and down a little as it flies, for the
-# game's spinning sprite: a bomb steadied by fins does not spin.
+# game's Grenade shows by swelling as it rises, as the bomb here does too
+# (BOMB_PEAK). The spot stands in for its shadow, which is off. It noses up
+# and down a little as it flies, for the game's spinning sprite: a bomb
+# steadied by fins does not spin.
 const BLOB_RADIUS := 0.2
 const BLOB_SHRINK := 0.7        # per metre above the ground
 # No smaller than this, or straight under a high bomb it hides behind it.
@@ -103,6 +104,19 @@ const WOBBLE := deg_to_rad(7.0)
 const WOBBLE_RATE := 15.0       # radians a second
 # A spent stage falls away for this long before it is gone.
 const STAGE_FALL := 0.7
+# How big a round is drawn once it is off the mount. The model's are true to
+# the vehicle and too small to follow from the game's camera: the bomb is
+# 0.14 m across where the game's grenade is drawn 0.39 to 0.64 m, and the
+# light missile 0.43 by 0.11 m where the game's is 0.64 by 0.35. So a bomb
+# swells to BOMB_PEAK its size at the top of its arc and comes back down to
+# its own, Grenade's parabola -- 0.6 to 1 and back, of its sprite -- with
+# the peak at about the game's size. The game's missile does not swell, but
+# here one would be lost: a rocket grows to ROCKET_GROWTH in its first
+# ROCKET_GROW_TIME and flies at that. Both start from the model's size, so
+# the round leaves the mount as the one that sat on it.
+const BOMB_PEAK := 3.0
+const ROCKET_GROWTH := 2.0
+const ROCKET_GROW_TIME := 0.3
 
 # The fits, by weapon level: 0 the grenade, 1 the missile, 2 and 3 its
 # upgrades. Each is the base the mount turns on the hull, the pivot its tube
@@ -409,7 +423,7 @@ func _launch() -> void:
 	var run := Vector2(target.x - start.x, target.z - start.z).length()
 	var rise := heading.y / maxf(Vector2(heading.x, heading.z).length(), 0.01)
 	var entry := {"node": rocket, "flame": flame, "direction": heading,
-			"speed": speed, "smoke": 0.0,
+			"speed": speed, "smoke": 0.0, "age": 0.0, "grow": 1.0,
 			"scale": frame.basis.get_scale().x, "classic": classic, "rearm": rearm,
 			"axis": _axis, "nose": _nose, "tail": _tail, "lob": _lob,
 			"stages": stages, "stage_tails": _stage_tails, "dropped": 0,
@@ -428,6 +442,7 @@ func _launch() -> void:
 
 
 func _fly(rocket: Dictionary, delta: float) -> void:
+	rocket.age += delta
 	var step: float = rocket.speed * delta
 	if not rocket.lob and not rocket.classic:
 		rocket.speed = minf(rocket.speed + THRUST * delta, TOP_SPEED)
@@ -454,7 +469,7 @@ func _fly(rocket: Dictionary, delta: float) -> void:
 		rocket.smoke += delta
 		while rocket.smoke >= SMOKE_EVERY:
 			rocket.smoke -= SMOKE_EVERY
-			_trail(node.global_position + direction * rocket.tail * rocket.scale)
+			_trail(node.global_position + direction * rocket.tail * _size(rocket))
 		# A staged round burns its stages out in equal shares of the way.
 		var stages: Array = rocket.stages
 		while rocket.dropped < stages.size() - 1 \
@@ -471,8 +486,8 @@ func _fly(rocket: Dictionary, delta: float) -> void:
 # the classic rocket's, which is what keeps its timing the game's.
 func _advance(rocket: Dictionary, gone: float) -> bool:
 	var node: Node3D = rocket.node
-	var nose: Vector3 = node.global_position + rocket.direction * rocket.nose * rocket.scale
-	var next_nose: Vector3 = _arc(rocket, gone) + _arc_tangent(rocket, gone) * rocket.nose * rocket.scale
+	var nose: Vector3 = node.global_position + rocket.direction * rocket.nose * _size(rocket)
+	var next_nose: Vector3 = _arc(rocket, gone) + _arc_tangent(rocket, gone) * rocket.nose * _size(rocket)
 	if _sweep(rocket, nose, next_nose + (next_nose - nose).normalized() * 0.05):
 		return false
 	_place_on_arc(rocket, gone)
@@ -497,9 +512,20 @@ func _arc_tangent(rocket: Dictionary, gone: float) -> Vector3:
 	return (chord + Vector3.UP * rocket.hump * slope).normalized()
 
 
-# The round turned from the line it sat on to its path's; a bomb nods as well,
-# and has its spot on the ground.
+# The model's scale times how much the round has grown, for its lengths.
+func _size(rocket: Dictionary) -> float:
+	return rocket.scale * rocket.grow
+
+
+# The round turned from the line it sat on to its path's, at its size for how
+# far it has gone (BOMB_PEAK, ROCKET_GROWTH); a bomb nods as well, and has its
+# spot on the ground.
 func _place_on_arc(rocket: Dictionary, gone: float) -> void:
+	if rocket.lob:
+		var s: float = gone / rocket.run if rocket.run > 0.0 else 1.0
+		rocket.grow = 1.0 + (BOMB_PEAK - 1.0) * 4.0 * s * (1.0 - s)
+	else:
+		rocket.grow = 1.0 + (ROCKET_GROWTH - 1.0) * smoothstep(0.0, ROCKET_GROW_TIME, rocket.age)
 	var ahead := _arc_tangent(rocket, gone)
 	var heading: Vector3 = rocket.heading
 	var turn := Quaternion(heading, ahead) if heading.cross(ahead).length() > 1e-5 else Quaternion()
@@ -508,7 +534,7 @@ func _place_on_arc(rocket: Dictionary, gone: float) -> void:
 		var nod := WOBBLE * sin(gone / rocket.speed * WOBBLE_RATE)
 		turn = Quaternion(side.normalized(), nod) * turn
 	var at := _arc(rocket, gone)
-	(rocket.node as Node3D).global_transform = Transform3D(Basis(turn) * rocket.basis, at)
+	(rocket.node as Node3D).global_transform = Transform3D(Basis(turn) * rocket.basis * rocket.grow, at)
 	rocket.gone = gone
 	rocket.direction = ahead
 	if rocket.lob:
