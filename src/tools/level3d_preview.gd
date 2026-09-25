@@ -107,16 +107,13 @@ const Btr := preload("res://src/tools/level3d_btr.gd")
 # From the Blender scene: J_Sun points along this (Blender axes), strength 3.
 const SUN_DIRECTION_BLENDER := Vector3(0.4265, -0.5212, -0.7392)
 const SUN_STRENGTH := 3.0
-# The scene's default point light, left in and rendered with.
-const POINT_LIGHT_BLENDER := Vector3(4.076, 1.005, 5.904)
-const POINT_LIGHT_WATTS := 1000.0
 # Linear world colour and strength.
 const WORLD_COLOR := Color(0.342, 0.552, 1.0)
 const WORLD_STRENGTH := 0.12
 
 const SUN_GAIN_COMPATIBILITY := 0.85
 const SUN_GAIN_FORWARD := 1.75
-const LAMP_GAIN := 0.3
+const WATER_GAIN_COMPATIBILITY := 1.1
 # The top camera sits this far above the ground, which is as low as it can go
 # over the tallest building; the shadow map only has to cover that depth.
 const TOP_CAMERA_HEIGHT := 20.0
@@ -168,6 +165,9 @@ var _marker_material: StandardMaterial3D
 
 
 func _ready() -> void:
+	# Before anything is added: every mesh from here on, the level's and every
+	# unit's, spawned now or later, is lit in two tones (_toon).
+	get_tree().node_added.connect(_toon)
 	var scene: PackedScene = load(LEVEL_PATH)
 	if scene == null:
 		push_error("Cannot load %s -- open the project in the editor once so it is imported" % LEVEL_PATH)
@@ -277,19 +277,17 @@ func _add_lights() -> void:
 	# measured rather than derived: sand at the start of the stage matched
 	# against the same frame rendered in Blender.
 	var gain := SUN_GAIN_COMPATIBILITY if _is_compatibility() else SUN_GAIN_FORWARD
+	# Measured with Lambert light, under which the sand took the sun times
+	# N.L, the sun's height; _toon's lit side takes all of it, so the same
+	# sand wants the sun that much weaker.
+	gain *= -SUN_DIRECTION_BLENDER.z
 	sun.light_energy = SUN_STRENGTH / PI * gain
 	sun.shadow_enabled = true
 
-	# Only a faint warm spot over the start area in Blender, and its shadows
-	# there are lost under the sun's; here they come out as long radial streaks,
-	# so the lamp casts none.
-	var lamp := OmniLight3D.new()
-	add_child(lamp)
-	lamp.position = _from_blender(POINT_LIGHT_BLENDER)
-	lamp.light_energy = POINT_LIGHT_WATTS / (4.0 * PI * PI) * LAMP_GAIN
-	# Godot's omni falloff is 1 / d^attenuation; Blender's is inverse square.
-	lamp.omni_attenuation = 2.0
-	lamp.omni_range = 60.0
+	# No lamp. The Blender scene's default point light is still in it, and
+	# was rendered with here as a faint warm spot over the start area; but a
+	# point light falls off with distance, which is a gradient across the sand,
+	# and the two-tone light (_toon) is there to have none.
 
 
 func _replace_ocean(level: Node) -> void:
@@ -299,10 +297,54 @@ func _replace_ocean(level: Node) -> void:
 		return
 	var water := ShaderMaterial.new()
 	water.shader = OCEAN_SHADER
+	# The sun _add_lights weakened for the two-tone light, given back to the
+	# water, which is still Lambert: all of it under Forward+, where the water
+	# is as bright as it was at 1 / N.L; Compatibility's, measured the same way,
+	# needs less.
+	water.set_shader_parameter("sun_gain", WATER_GAIN_COMPATIBILITY if _is_compatibility()
+			else 1.0 / -SUN_DIRECTION_BLENDER.z)
 	ocean.material_override = water
 	# The water is drawn in the transparent pass, because it reads the screen;
 	# it casts nothing either way.
 	ocean.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+# Two-tone light, docs/cel-shading.md, section 5: a face is lit or it is not,
+# with no gradient between. DIFFUSE_TOON steps N.L at zero, over a band as
+# wide as the roughness, so the roughness goes down to TOON_EDGE -- at the
+# glb's 0.5 to 1 the step is as soft as Lambert. The low roughness would turn
+# every sunlit face into a highlight, the sand included (the camera looks
+# down, the half vector is 20 degrees off the ground's normal), so there is no
+# specular and no reflection -- the background's, which at that roughness is
+# a sheen on every face -- and no metal, which trades diffuse for reflection.
+#
+# Not the contour's material, black whatever the light; not what glows, the
+# flashes, the fire and the lamps; not a ShaderMaterial, the water and the
+# boat's wake, whose light is their shaders' own. Materials are the glbs'
+# shared resources, so each is changed once, and the copies the soldiers and
+# prisoners make of theirs to blink are made after this and keep it.
+const TOON_EDGE := 0.02
+
+func _toon(node: Node) -> void:
+	var mesh_instance := node as MeshInstance3D
+	if mesh_instance == null:
+		return
+	var materials: Array[Material] = [mesh_instance.material_override]
+	if mesh_instance.mesh != null:
+		for surface in mesh_instance.mesh.get_surface_count():
+			materials.append(mesh_instance.mesh.surface_get_material(surface))
+			materials.append(mesh_instance.get_surface_override_material(surface))
+	for material in materials:
+		var base := material as BaseMaterial3D
+		if base == null or base.diffuse_mode == BaseMaterial3D.DIFFUSE_TOON \
+				or base.shading_mode != BaseMaterial3D.SHADING_MODE_PER_PIXEL \
+				or base.emission_enabled or base.resource_name.ends_with("Contour"):
+			continue
+		base.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+		base.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+		base.roughness = TOON_EDGE
+		base.metallic = 0.0
+		base.metallic_specular = 0.0
 
 
 # Palm fronds and the like are single planes, and Compatibility culls front

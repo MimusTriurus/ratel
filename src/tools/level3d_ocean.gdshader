@@ -60,6 +60,11 @@ uniform vec3 foam_colour : source_color = vec3(0.95, 0.97, 1.0);
 uniform float clarity = 0.15;
 uniform float refraction = 14.0;
 
+// The water is lit as it always was, by Lambert, while every material round it
+// is two-tone and the sun weakened to match (level3d_preview.gd, _toon); this
+// gives the water the sun it had back.
+uniform float sun_gain = 1.0;
+
 varying vec3 world;
 varying float shore;
 varying float open_sea;
@@ -193,7 +198,7 @@ void fragment() {
 	float foam = clamp(max(surf, surge * 0.8), 0.0, 1.0) * shred(world.xz, t)
 			* mix(flecks, 1.0, 0.25);
 
-	ALBEDO = mix(body * (1.0 - seen), foam_colour, foam);
+	ALBEDO = mix(body * (1.0 - seen), foam_colour, foam) * sun_gain;
 	EMISSION = bottom * seen * (1.0 - foam);
 	ROUGHNESS = mix(roughness_open, roughness_foam, foam);
 	SPECULAR = 0.3;
