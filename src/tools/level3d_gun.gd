@@ -280,8 +280,7 @@ func _dust(at: Vector3, travel: Vector3) -> void:
 		var velocity := out * _rng.randf_range(1.8, 2.6)
 		var size := _rng.randf_range(0.016, 0.026)
 		var life := _rng.randf_range(0.28, 0.36)
-		var tween := clod.create_tween()
-		tween.tween_method(func(t: float):
+		var fly := func(t: float):
 			var v := velocity + gravity * t
 			var p := at + velocity * t + gravity * 0.5 * t * t
 			var shrink := clampf(2.0 - 2.0 * t / life, 0.0, 1.0)
@@ -289,9 +288,8 @@ func _dust(at: Vector3, travel: Vector3) -> void:
 			var along := v.normalized()
 			var side := along.cross(Vector3.UP if absf(along.y) < 0.99 else Vector3.RIGHT).normalized()
 			clod.global_transform = Transform3D(
-					Basis(side, along, side.cross(along)).scaled(Vector3(1.0, 1.7, 1.0) * size * shrink), p),
-				0.0, life, life)
-		tween.tween_callback(clod.queue_free)
+					Basis(side, along, side.cross(along)).scaled(Vector3(1.0, 1.7, 1.0) * size * shrink), p)
+		_start(clod, fly, life)
 	# A cluster, not a ball: each puff from a little way off the hole, going
 	# its own way.
 	for i in 4:
@@ -302,17 +300,15 @@ func _dust(at: Vector3, travel: Vector3) -> void:
 		var peak := _rng.randf_range(0.08, 0.13)
 		var life := _rng.randf_range(0.45, 0.6)
 		var spin := _rng.randf() * TAU
-		var tween := puff.create_tween()
-		tween.tween_method(func(t: float):
+		var swell := func(t: float):
 			var k := t / life
 			# Swells in the first eighth, then shrinks away; sits on the
 			# ground as it goes, so that it settles as it shrinks.
 			var size := peak * (1.0 - pow(1.0 - minf(k * 8.0, 1.0), 3.0)) * (1.0 - pow(maxf(k - 0.125, 0.0) / 0.875, 2.0))
 			var p := at + start.lerp(drift, 1.0 - pow(1.0 - k, 2.0))
 			p.y = at.y + size * 0.5
-			puff.global_transform = Transform3D(Basis(Vector3.UP, spin).scaled(Vector3(1.0, 0.75, 1.0) * maxf(size, 0.001)), p),
-			0.0, life, life)
-		tween.tween_callback(puff.queue_free)
+			puff.global_transform = Transform3D(Basis(Vector3.UP, spin).scaled(Vector3(1.0, 0.75, 1.0) * maxf(size, 0.001)), p)
+		_start(puff, swell, life)
 	for i in 4:
 		var grain := _instance(_chip_mesh, "clod")
 		var out := (Vector3.UP * _rng.randf_range(0.6, 1.2) + back * 0.3
@@ -320,12 +316,21 @@ func _dust(at: Vector3, travel: Vector3) -> void:
 		var velocity := out * _rng.randf_range(1.5, 2.8)
 		grain.scale = Vector3.ONE * _rng.randf_range(0.01, 0.016)
 		var life := _rng.randf_range(0.25, 0.35)
-		var tween := grain.create_tween()
-		tween.tween_method(func(t: float):
+		var fall := func(t: float):
 			var p := at + velocity * t + gravity * 0.5 * t * t
 			p.y = maxf(p.y, at.y + 0.01)
-			grain.global_position = p, 0.0, life, life)
-		tween.tween_callback(grain.queue_free)
+			grain.global_position = p
+		_start(grain, fall, life)
+
+
+# Runs `move` over `life` seconds, then frees the node -- and once now: a
+# tween's first step is the next frame, and until then the node would be drawn
+# as it was made, a ball a metre across at the middle of the map, once a round.
+func _start(node: Node3D, move: Callable, life: float) -> void:
+	move.call(0.0)
+	var tween := node.create_tween()
+	tween.tween_method(move, 0.0, life, life)
+	tween.tween_callback(node.queue_free)
 
 
 # A few low-poly balls that swell and shrink away, rising a little.

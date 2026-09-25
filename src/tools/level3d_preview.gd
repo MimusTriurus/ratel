@@ -226,6 +226,8 @@ func _ready() -> void:
 	_flat_ground_casts_nothing(level)
 	_add_collision(level)
 	_add_targets(level, false)
+	# Last: it adds meshes of its own, which want no collision.
+	_holed_ground(level)
 	_add_destructibles()
 
 	_add_environment()
@@ -250,6 +252,8 @@ func _ready() -> void:
 	launcher.exploded = _on_exploded
 	add_child(launcher)
 	_add_guns(level)
+	launcher.hole_materials = _hole_materials
+	launcher.hole_materials.append(tracks.material())
 	btr.map = map
 	_make_markers()
 	_make_hud()
@@ -438,6 +442,57 @@ func _cast_both_sides_of_planes(root: Node) -> void:
 					and FOLIAGE_MATERIALS.any(func(part): return material.resource_name.contains(part)):
 				mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_DOUBLE_SIDED
 				break
+
+
+# The ground, drawn by level3d_ground.gdshader rather than by the glb's
+# materials, so that the craters are holes in it (level3d_holes.gdshaderinc):
+# every surface in one of GROUND_MATERIALS, one shader material to each,
+# taking its colour. What is painted on the ground has to let the holes
+# through as well, or it would lie over them in the air: the beach's band
+# lines and the hangars' pads' dashes, in J_Black. The launcher is told of
+# all of them (Level3DLauncher.hole_materials), and the tyre marks'.
+const GROUND_MATERIALS: Array[String] = ["J_Sand", "J_BeachBrown", "J_BeachGreen", "J_ForestFloor",
+		"J_Earth", "J_RiverBed"]
+const PAINTED_ON_GROUND: Array[String] = ["Shore_Lines", "HangarPad_Dash"]
+const GROUND_SHADER := preload("res://src/tools/level3d_ground.gdshader")
+var _hole_materials: Array[ShaderMaterial] = []
+
+#
+# A shader that discards is drawn into the shadow map another way than an
+# opaque one, and the ground that casts -- the pieces with the river's banks
+# in them -- came out shadowing itself, rippled with acne all over the north
+# of the stage. So what is holed casts nothing, and a copy of it with the
+# glb's own materials, seen by nothing but the sun, casts in its place: the
+# shadows as they were. They have no holes: a crater's bowl in one of those
+# pieces -- the green beach band, the forest's north-west, the river beyond
+# the east -- lies in its shadow, darker than one in the sand.
+func _holed_ground(root: Node) -> void:
+	var made := {}
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		var painted := PAINTED_ON_GROUND.any(func(prefix): return mesh_instance.name.begins_with(prefix))
+		var holed_any := false
+		for surface in mesh_instance.mesh.get_surface_count():
+			var material := mesh_instance.mesh.surface_get_material(surface) as BaseMaterial3D
+			if material == null:
+				continue
+			var called := material.resource_name
+			if not (called in GROUND_MATERIALS or painted and called == "J_Black"):
+				continue
+			if not made.has(called):
+				var holed := ShaderMaterial.new()
+				holed.shader = GROUND_SHADER
+				holed.set_shader_parameter("albedo", material.albedo_color)
+				made[called] = holed
+				_hole_materials.append(holed)
+			mesh_instance.set_surface_override_material(surface, made[called])
+			holed_any = true
+		if holed_any and mesh_instance.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+			var caster := MeshInstance3D.new()
+			caster.mesh = mesh_instance.mesh
+			caster.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+			mesh_instance.add_child(caster)
+			mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 # The level's flat ground casts no shadow. A flat plane has nothing to shadow
@@ -633,11 +688,21 @@ func _ground_at(x: float, z: float, mask := GROUND_LAYER) -> Dictionary:
 
 # What the hull sits on: the ground, and the ramps over the bunkers that have
 # lost their guns. Nothing else asks for the ramps -- a round, a crater or a
-# soldier goes by the ground as it is. And the craters the rockets have left,
-# their rims and bowls (Level3DLauncher.crater_height), which the hull's five
-# samples of the ground turn into its pitch, roll and sinking.
+# soldier goes by the ground as it is. And the craters the rockets and the
+# buildings have left, their rims and bowls (Level3DLauncher.crater_height),
+# which the hull's five samples of the ground turn into its pitch, roll and
+# sinking.
 func _hull_ground_at(x: float, z: float) -> Dictionary:
-	var there := _ground_at(x, z, GROUND_LAYER | RAMP_LAYER)
+	return _with_craters(_ground_at(x, z, GROUND_LAYER | RAMP_LAYER), x, z)
+
+
+# What the soldiers and the prisoners walk on: the ground and the craters in
+# it, so that they go down into a hole rather than across it on nothing.
+func _walker_ground_at(x: float, z: float) -> Dictionary:
+	return _with_craters(_ground_at(x, z), x, z)
+
+
+func _with_craters(there: Dictionary, x: float, z: float) -> Dictionary:
 	if there.hit and there.kind != "water" and launcher != null:
 		there.height += launcher.crater_height(x, z)
 	return there
@@ -798,6 +863,50 @@ func _set_destroyed(building: String, destroyed: bool) -> void:
 	if destroyed and building == "Gate" and map != null and map.gate_group >= 0:
 		map.trigger_group(map.gate_group)
 	_sync_bodies(entry)
+	_ruin_craters(building, destroyed)
+
+
+# Where a building's blast scorched the ground -- its *_D_Soot, the gate's
+# Gate_Soot_0 and _1, flat ovals on the ground -- there is a crater instead,
+# as a rocket leaves (Level3DLauncher.make_crater): its outer foot
+# RUIN_CRATER_REACH past the scorch's edge, oval as the scorch is, as high and
+# deep as a round crater as wide as the oval is narrow. It is the scorch's
+# child, so that the destruction's animation shows it when it shows the
+# scorch, and the scorch itself is drawn no more. Made the first time the
+# building goes down; the launcher is told of it every time, so that the
+# hull feels it and no round's crater lies over it, and told when the
+# building is put back.
+const RUIN_SOOT_NAMES: Array[String] = ["_D_Soot", "Gate_Soot"]
+const RUIN_CRATER_REACH := 1.1
+
+func _ruin_craters(building: String, destroyed: bool) -> void:
+	if launcher == null:
+		return
+	if not destroyed:
+		launcher.remove_ruin_craters(building)
+		return
+	var entry: Dictionary = destructibles[building]
+	for node in entry.root.find_children("*", "MeshInstance3D", true, false):
+		var soot := node as MeshInstance3D
+		if not RUIN_SOOT_NAMES.any(func(part): return part in soot.name):
+			continue
+		var box := soot.get_aabb()
+		var radii := Vector2(box.size.x, box.size.z) * 0.5 * RUIN_CRATER_REACH
+		var height := minf(radii.x, radii.y)
+		var crater: Node3D = soot.get_meta("crater") if soot.has_meta("crater") else null
+		if crater == null:
+			crater = launcher.make_crater(soot)
+			crater.position = Vector3(box.get_center().x, 0.0, box.get_center().z)
+			crater.scale = Vector3(radii.x, height, radii.y)
+			# On no layer the camera or the sun sees; its children are.
+			soot.layers = 0
+			soot.set_meta("crater", crater)
+		# Where it will be once shown: the scorch is still shrunk to nothing.
+		var world := (soot.get_parent() as Node3D).global_transform \
+				* Transform3D(soot.basis.orthonormalized(), soot.position) \
+				* Transform3D(Basis(), crater.position)
+		launcher.add_ruin_crater(building, crater, Vector2(world.origin.x, world.origin.z), radii,
+				world.basis.get_euler().y, height)
 
 
 # What a rocket's explosion destroys: any building whose footprint is within
@@ -894,7 +1003,7 @@ func _add_guns(level: Node) -> void:
 	soldiers.map = map
 	soldiers.guns = guns
 	soldiers.frame = _view_frame
-	soldiers.ground = _ground_at
+	soldiers.ground = _walker_ground_at
 	soldiers.player_position = guns.player_position
 	soldiers.scored = guns.scored
 	soldiers.run_over = func(p: Vector3, margin: float, sideways: bool) -> Vector3:
@@ -942,7 +1051,7 @@ func _add_guns(level: Node) -> void:
 	friends.guns = guns
 	friends.soldiers = soldiers
 	friends.frame = _view_frame
-	friends.ground = _ground_at
+	friends.ground = _walker_ground_at
 	friends.player_position = guns.player_position
 	friends.scored = guns.scored
 	add_child(friends)

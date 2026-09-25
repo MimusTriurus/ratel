@@ -11,6 +11,9 @@
 shader_type spatial;
 render_mode blend_mul, unshaded, cull_disabled, depth_draw_never, shadows_disabled;
 
+// Not over a crater's hole, where the ground they lie on is gone.
+#include "res://src/tools/level3d_holes.gdshaderinc"
+
 uniform float now = 0.0;
 uniform float hold = 1.667;
 uniform float fade = 5.0;
@@ -20,13 +23,18 @@ uniform vec3 tint : source_color = vec3(0.62, 0.5, 0.4);
 
 varying float age;
 varying float tread;
+varying vec3 world;
 
 void vertex() {
 	age = now - UV2.x;
 	tread = UV2.y;
+	world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 void fragment() {
+	if (in_crater_hole(world.xz)) {
+		discard;
+	}
 	float life = 1.0 - clamp((age - hold) / fade, 0.0, 1.0);
 	float across = abs(UV.x * 2.0 - 1.0);
 	float edge = 1.0 - smoothstep(0.75, 1.0, across);

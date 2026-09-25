@@ -77,6 +77,12 @@ func _ready() -> void:
 	_material.set_shader_parameter("fade", FADE)
 
 
+# The one material every chunk draws with, for what tells it where the
+# craters' holes are (Level3DLauncher.hole_materials).
+func material() -> ShaderMaterial:
+	return _material
+
+
 func reset() -> void:
 	_trails.clear()
 	for c in _chunks:

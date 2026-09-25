@@ -45,7 +45,7 @@ static func contour(material: BaseMaterial3D, extent := 1.0) -> BaseMaterial3D:
 	return material
 
 
-# A crater, radius 1 to the foot of its rim (level3d_rocket.gd, _crater): three
+# A crater, radius 1 to the foot of its rim (level3d_rocket.gd, _crater): two
 # meshes off one ring, the rim's inner foot, so that they meet.
 #
 # The rim is thrown-up sand in a ring -- up from the hole's edge at RIM_IN to a
@@ -58,12 +58,13 @@ static func contour(material: BaseMaterial3D, extent := 1.0) -> BaseMaterial3D:
 # as their sharp edges are -- the line that draws the ring from above.
 #
 # The hole goes on down below the ground, a bowl BOWL_DEPTH deep, scorched
-# down to its floor. The ground cannot be cut, and Compatibility has no
-# decals, so the bowl is drawn through it: the mask, the opening, marks the
-# stencil, and the bowl is drawn where it is marked and nowhere else
-# (level3d_crater_mask.gdshader, level3d_crater_bowl.gdshader).
+# down to its floor. The ground has a hole in it there: its shader does not
+# draw inside the rim's inner foot (level3d_holes.gdshaderinc), which is why
+# that foot, unlike the rest of the crater, is a regular RIM_SEGMENTS-gon of
+# radius RIM_IN -- the shader draws the same one. The bowl is then plain
+# geometry, seen as anything is, and whatever stands in it is too.
 #
-# `crater_height` gives vehicles the same shape.
+# `crater_profile` gives what goes over it the same shape.
 const RIM_IN := 0.5
 const RIM_TOP := 0.62
 const RIM_OUT := 1.0
@@ -81,7 +82,7 @@ const RIM_BLACK := Color(0.0, 0.0, 0.0)
 const SOOT := Color(0.2, 0.13, 0.07)
 
 
-# {"rim", "mask", "bowl"}.
+# {"rim", "bowl"}.
 static func crater_mesh(seed: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
@@ -99,10 +100,11 @@ static func crater_mesh(seed: int) -> Dictionary:
 		var way := Vector3(cos(a), 0.0, sin(a))
 		var crest := RIM_TOP * rng.randf_range(0.95, 1.05)
 		var height := RIM_HEIGHT * rng.randf_range(0.75, 1.25)
-		var inner := RIM_IN * rng.randf_range(0.93, 1.05)
+		var inner := RIM_IN
 		crest_in.append(way * crest + Vector3.UP * height)
 		crest_out.append(way * (crest + RIM_LINE) + Vector3.UP * (height - RIM_LINE * 0.3))
-		foot.append(way * inner)
+		var even := TAU * i / RIM_SEGMENTS
+		foot.append(Vector3(cos(even), 0.0, sin(even)) * inner)
 		# The wall goes on down as steep as the rim's inner face, then
 		# rounds into the floor.
 		wall.append(way * inner * 0.72 + Vector3.DOWN * BOWL_DEPTH * rng.randf_range(0.6, 0.75))
@@ -111,7 +113,6 @@ static func crater_mesh(seed: int) -> Dictionary:
 	var bottom := Vector3.DOWN * BOWL_DEPTH
 	return {
 		"rim": _bands([foot, crest_in, crest_out, outer], [RIM_SCORCHED, RIM_BLACK, RIM_SAND]),
-		"mask": _fan(Vector3.ZERO, foot, RIM_BLACK).commit(),
 		# The floor only a shade darker than the walls: in soot it read as a
 		# black hole through the middle.
 		"bowl": _bands([floor_edge, wall, foot], [RIM_SCORCHED.lerp(SOOT, 0.15), RIM_SCORCHED],
@@ -163,18 +164,18 @@ static func _face_up(st: SurfaceTool, a: Array, b: Array, c: Array) -> void:
 		st.add_vertex(corner[0])
 
 
-# How far a crater of radius `size` at `centre` (x, z) raises or lowers the
-# ground at `at`: RIM_HEIGHT on the crest, falling smoothly to nothing at
-# either foot, and a bowl BOWL_DEPTH deep inside.
-static func crater_height(centre: Vector2, size: float, at: Vector2) -> float:
-	var d := centre.distance_to(at) / size
+# How far the unit crater raises or lowers the ground `d` out from its middle
+# (1 is the outer foot): RIM_HEIGHT on the crest, falling smoothly to nothing
+# at either foot, and a bowl BOWL_DEPTH deep inside. Times the crater's
+# height scale; `d` is measured in its radii, which for an oval one are two.
+static func crater_profile(d: float) -> float:
 	if d >= RIM_OUT:
 		return 0.0
 	if d >= RIM_TOP:
-		return size * RIM_HEIGHT * smoothstep(RIM_OUT, RIM_TOP, d)
+		return RIM_HEIGHT * smoothstep(RIM_OUT, RIM_TOP, d)
 	if d >= RIM_IN:
-		return size * RIM_HEIGHT * smoothstep(RIM_IN, RIM_TOP, d)
-	return -size * BOWL_DEPTH * (1.0 - (d / RIM_IN) * (d / RIM_IN))
+		return RIM_HEIGHT * smoothstep(RIM_IN, RIM_TOP, d)
+	return -BOWL_DEPTH * (1.0 - (d / RIM_IN) * (d / RIM_IN))
 
 
 # A ball of radius about 1: an icosahedron split `subdivisions` times, each

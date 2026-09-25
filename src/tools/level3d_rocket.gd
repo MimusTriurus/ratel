@@ -77,8 +77,6 @@ const CRATER_SMALLEST := 0.2
 # Hit again and again, a crater grows to this and no bigger (_crater).
 const CRATER_BIGGEST := 1.1
 const CRATER_STEP := 0.06
-const MASK_SHADER := preload("res://src/tools/level3d_crater_mask.gdshader")
-const BOWL_SHADER := preload("res://src/tools/level3d_crater_bowl.gdshader")
 # Grenade and PlayerMissile at the map's PX. Each is gone on the tick its count
 # passes TRAVEL_TIME, so it flies TRAVEL_TIME + 1 moves.
 const GRENADE_SPEED := Grenade.VELOCITY * 100.0 * Level3DMap.PX
@@ -189,7 +187,7 @@ var _lob := false
 var _stages := []               # a staged round's parts, stage by stage
 var _stage_tails := []          # each stage's tail, centre-relative, pivot units
 var _rockets := []
-var _craters := []              # {"node", "centre", "size"}, oldest first
+var _craters := []              # see _crater, oldest first
 var _crater_meshes: Array[Dictionary] = []   # Level3DFx.crater_mesh, a few of them
 var _rng := RandomNumberGenerator.new()
 var _puff_mesh: ArrayMesh
@@ -228,9 +226,8 @@ func _ready() -> void:
 		"smoke": _lit(Color(0.33, 0.31, 0.29).linear_to_srgb()),
 		"trail": _lit(Color(0.78, 0.78, 0.76)),
 		"splash": _lit(Color(0.92, 0.97, 1.0)),
-		"rim": _painted(),
-		"mask": _crater_pass(MASK_SHADER, 10),
-		"bowl": _crater_pass(BOWL_SHADER, 11),
+		"rim": _painted(true),
+		"bowl": _painted(false),
 		# Darker than the sand, or only their lines show on it.
 		"rim_clod": _lit(Level3DFx.RIM_SAND.lerp(Level3DFx.RIM_SCORCHED, 0.6)),
 		"chip": _lit(Color(0.25, 0.2, 0.15)),
@@ -694,8 +691,7 @@ func _travel(at: Vector3, way: Vector2) -> void:
 	var step := Vector3(way.x, 0.0, way.y) * TravelingExplosion.VELOCITY * Level3DMap.PX
 	var life := TravelingExplosion.TRAVEL_TIME / 100.0
 	var last := [-1, 0]     # the period shown, the tick of the last puff
-	var tween := ball.create_tween()
-	tween.tween_method(func(seconds: float):
+	var run := func(seconds: float):
 		var t := mini(int(seconds * 100.0) + 1, TravelingExplosion.TRAVEL_TIME)
 		var p := at + step * t
 		var there: Dictionary = ground.call(p.x, p.z)
@@ -714,8 +710,12 @@ func _travel(at: Vector3, way: Vector2) -> void:
 			core.visible = period < 2
 		if t - last[1] >= 6:
 			last[1] = t
-			_puff(p, radius * 0.8, "splash" if there.hit and there.kind == "water" else "smoke"),
-			0.0, life, life)
+			_puff(p, radius * 0.8, "splash" if there.hit and there.kind == "water" else "smoke")
+	# Placed now, not on the tween's first step, the next frame: until then
+	# the ball would be a metre across at the middle of the map.
+	run.call(0.0)
+	var tween := ball.create_tween()
+	tween.tween_method(run, 0.0, life, life)
 	tween.tween_property(ball, "scale", Vector3.ONE * 0.001, 0.12)
 	tween.tween_callback(func():
 		ball.queue_free()
@@ -844,12 +844,15 @@ func _chips(at: Vector3, normal: Vector3) -> void:
 		var spin := Vector3(_rng.randf_range(-15, 15), _rng.randf_range(-15, 15), _rng.randf_range(-15, 15))
 		var floor_y: float = ground.call(at.x, at.z).height
 		var life := _rng.randf_range(0.5, 0.8)
-		var tween := chip.create_tween()
-		tween.tween_method(func(t: float):
+		var fly := func(t: float):
 			var p := at + velocity * t + Vector3.DOWN * 4.9 * t * t
 			p.y = maxf(p.y, floor_y + 0.02)
 			chip.global_position = p
-			chip.rotation = spin * t, 0.0, life, life)
+			chip.rotation = spin * t
+		# Placed now, not at the middle of the map until the next frame.
+		fly.call(0.0)
+		var tween := chip.create_tween()
+		tween.tween_method(fly, 0.0, life, life)
 		tween.tween_property(chip, "scale", Vector3.ONE * 0.001, 0.3)
 		tween.tween_callback(chip.queue_free)
 
@@ -867,33 +870,43 @@ func _chips(at: Vector3, normal: Vector3) -> void:
 # that one bigger instead, up to CRATER_BIGGEST, its middle drawn a little
 # towards the new hit; one that lands beside a crater makes a smaller one, no
 # further out than the other's foot -- or, too small for that, the other
-# bigger.
+# bigger. The craters a building leaves (add_ruin_crater) are fixed: a round
+# that lands in one, or too close to have room, leaves none of its own.
+#
+# A crater is {"node", "centre", "radii", "angle", "height", "ruin"}: centre
+# in x, z; radii its outer foot's along its own x and z, which are the same
+# but for a ruin's; angle its turn about y; height its scale up; ruin the
+# building it belongs to, or "" for a round's.
 func _crater(at: Vector3) -> void:
 	var centre := Vector2(at.x, at.z)
 	var size := _rng.randf_range(0.6, 0.8)
 	var grown := -1         # the crater this one replaces
 	var nearest := -1
 	for i in _craters.size():
-		var gap: float = centre.distance_to(_craters[i].centre) - _craters[i].size
+		var gap: float = centre.distance_to(_craters[i].centre) - _foot(_craters[i], centre)
 		if gap < 0.0:
+			if _craters[i].ruin != "":
+				return
 			grown = i
 			break
 		if gap < size:
 			size = gap
 			nearest = i
 	if grown < 0 and size < CRATER_SMALLEST and nearest >= 0:
+		if _craters[nearest].ruin != "":
+			return
 		grown = nearest
 	var start := size * 0.1
 	if grown >= 0:
 		var old: Dictionary = _craters[grown]
 		centre = old.centre.lerp(centre, 0.3)
-		start = old.size
-		size = minf(old.size * 1.15, CRATER_BIGGEST)
+		start = old.height
+		size = minf(old.height * 1.15, CRATER_BIGGEST)
 		# Clear of the others still, now that its middle has moved.
 		for i in _craters.size():
 			if i != grown:
-				size = minf(size, centre.distance_to(_craters[i].centre) - _craters[i].size)
-		if size <= old.size:
+				size = minf(size, centre.distance_to(_craters[i].centre) - _foot(_craters[i], centre))
+		if size <= old.height:
 			return
 		var there: Dictionary = ground.call(centre.x, centre.y)
 		at = Vector3(centre.x, there.height, centre.y)
@@ -904,21 +917,15 @@ func _crater(at: Vector3) -> void:
 	if grown >= 0:
 		(_craters[grown].node as Node3D).queue_free()
 		_craters.remove_at(grown)
-	var crater := Node3D.new()
-	get_parent().add_child(crater)
+	var crater := make_crater(get_parent())
 	crater.global_position = at + Vector3.UP * 0.006
 	crater.rotation.y = _rng.randf() * TAU
-	var meshes: Dictionary = _crater_meshes[_rng.randi() % _crater_meshes.size()]
-	_part(crater, meshes.mask, "mask")
-	_part(crater, meshes.bowl, "bowl")
-	# The rim casts, so that its shadow falls into the hole.
-	_part(crater, meshes.rim, "rim").cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	# Clods thrown clear of it, and not into the next one's hole.
 	for i in _rng.randi_range(4, 6):
 		var a := _rng.randf() * TAU
 		var way := Vector3(cos(a), 0.0, sin(a)) * _rng.randf_range(1.05, 1.5)
 		var lands := centre + Vector2(way.x, way.z).rotated(-crater.rotation.y) * size
-		if _craters.any(func(other): return lands.distance_to(other.centre) < other.size):
+		if _craters.any(func(other): return _spread(other, lands) < 1.0):
 			continue
 		var clod := _part(crater, _chip_mesh, "rim_clod")
 		var radius := _rng.randf_range(0.05, 0.08)
@@ -929,9 +936,83 @@ func _crater(at: Vector3) -> void:
 	crater.scale = Vector3.ONE * start
 	var tween := crater.create_tween()
 	tween.tween_property(crater, "scale", Vector3.ONE * size, 0.2).set_ease(Tween.EASE_OUT)
-	_craters.append({"node": crater, "centre": centre, "size": size})
-	while _craters.size() > CRATERS_KEPT:
-		(_craters.pop_front().node as Node3D).queue_free()
+	_craters.append({"node": crater, "centre": centre, "radii": Vector2(size, size),
+			"angle": crater.rotation.y, "height": size, "ruin": ""})
+	var rounds := _craters.filter(func(c): return c.ruin == "")
+	if rounds.size() > CRATERS_KEPT:
+		(rounds[0].node as Node3D).queue_free()
+		_craters.erase(rounds[0])
+
+
+# A unit crater's parts under `parent`: its opening, its bowl and its rim
+# (Level3DFx.crater_mesh), one of a few of them, picked at random.
+func make_crater(parent: Node) -> Node3D:
+	var crater := Node3D.new()
+	parent.add_child(crater)
+	var meshes: Dictionary = _crater_meshes[_rng.randi() % _crater_meshes.size()]
+	_part(crater, meshes.bowl, "bowl")
+	# The rim casts, so that its shadow falls into the hole.
+	_part(crater, meshes.rim, "rim").cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	return crater
+
+
+# The materials that let the craters' holes through (level3d_holes.gdshaderinc)
+# -- the ground's, the tyre marks', the lines painted on the ground -- which
+# the preview hands over. Told every frame, from the craters' nodes as they
+# are then: a round's crater growing in, a building's shrunk to nothing until
+# the destruction shows it.
+var hole_materials: Array[ShaderMaterial] = []
+var _holes_told := PackedFloat32Array()
+const HOLES := 64                # level3d_holes.gdshaderinc's
+
+
+func _process(_delta: float) -> void:
+	var places := PackedVector4Array()
+	var sizes := PackedVector2Array()
+	var told := PackedFloat32Array()
+	for crater in _craters:
+		var node: Node3D = crater.node
+		if places.size() == HOLES or not is_instance_valid(node) or not node.is_inside_tree():
+			continue
+		var axes := node.global_transform.basis
+		var across := axes.x.length()
+		var along := axes.z.length()
+		if across < 1e-3 or along < 1e-3:
+			continue
+		var origin := node.global_transform.origin
+		# Its turn about y, as its local x lies in the world.
+		var place := Vector4(origin.x, origin.z, axes.x.x / across, -axes.x.z / across)
+		places.append(place)
+		sizes.append(Vector2(across, along))
+		told.append_array([place.x, place.y, place.z, place.w, across, along])
+	if told == _holes_told:
+		return
+	_holes_told = told
+	var count := places.size()
+	places.resize(HOLES)
+	sizes.resize(HOLES)
+	for material in hole_materials:
+		material.set_shader_parameter("crater_count", count)
+		material.set_shader_parameter("crater_place", places)
+		material.set_shader_parameter("crater_size", sizes)
+
+
+# A building's crater, which the preview makes where its blast scorched the
+# ground: it stays until the building is put back (remove_ruin_craters), no
+# round grows it, and the rounds' craters it lands over are gone.
+func add_ruin_crater(ruin: String, node: Node3D, centre: Vector2, radii: Vector2, angle: float,
+		height: float) -> void:
+	var crater := {"node": node, "centre": centre, "radii": radii, "angle": angle,
+			"height": height, "ruin": ruin}
+	for other in _craters.duplicate():
+		if other.ruin == "" and centre.distance_to(other.centre) < other.radii.x + _foot(crater, other.centre):
+			(other.node as Node3D).queue_free()
+			_craters.erase(other)
+	_craters.append(crater)
+
+
+func remove_ruin_craters(ruin: String) -> void:
+	_craters = _craters.filter(func(c): return c.ruin != ruin)
 
 
 # A crater's part: the material on first, for the preview's _toon.
@@ -944,13 +1025,29 @@ func _part(crater: Node3D, mesh: Mesh, material: String) -> MeshInstance3D:
 	return node
 
 
-# How much the craters raise or lower the ground at x, z, for what drives
-# over them: their rims and the bowls inside (Level3DFx.crater_height).
+# How far out from its middle `at` is, in the crater's radii: 1 on its outer
+# foot, whichever way.
+static func _spread(crater: Dictionary, at: Vector2) -> float:
+	var local: Vector2 = (at - crater.centre).rotated(crater.angle) / crater.radii
+	return local.length()
+
+
+# How far the crater's outer foot is from its middle, the way `towards` lies.
+static func _foot(crater: Dictionary, towards: Vector2) -> float:
+	var way: Vector2 = (towards - crater.centre).rotated(crater.angle)
+	if way.length_squared() < 1e-8:
+		return minf(crater.radii.x, crater.radii.y)
+	way = way.normalized() / crater.radii
+	return 1.0 / way.length()
+
+
+# How much the craters raise or lower the ground at x, z, for what goes over
+# them: their rims and the bowls inside (Level3DFx.crater_profile).
 func crater_height(x: float, z: float) -> float:
 	var at := Vector2(x, z)
 	var height := 0.0
 	for crater in _craters:
-		height += Level3DFx.crater_height(crater.centre, crater.size, at)
+		height += Level3DFx.crater_profile(_spread(crater, at)) * crater.height
 	return height
 
 
@@ -966,10 +1063,12 @@ func _fits(at: Vector3, size: float) -> bool:
 	return true
 
 
+# The rounds' craters; a building's go when it is put back.
 func clear_craters() -> void:
 	for crater in _craters:
-		(crater.node as Node3D).queue_free()
-	_craters.clear()
+		if crater.ruin == "":
+			(crater.node as Node3D).queue_free()
+	_craters = _craters.filter(func(c): return c.ruin != "")
 
 
 # ----------------------------------------------------------------------------
@@ -990,23 +1089,14 @@ static func _unshaded(colour: Color) -> StandardMaterial3D:
 	return material
 
 
-# Coloured by its mesh's vertices, the crater's rim, and drawn round.
-static func _painted() -> StandardMaterial3D:
+# Coloured by its mesh's vertices, the crater's rim and bowl; the rim is
+# drawn round, the bowl is seen through the ground and is not.
+static func _painted(outlined: bool) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
 	material.vertex_color_use_as_albedo = true
 	material.vertex_color_is_srgb = true
 	material.roughness = 1.0
-	return Level3DFx.contour(material)
-
-
-# The crater's opening and its bowl, both in the transparent pass, where the
-# stencil can be read, the opening first: `order` is their render_priority,
-# after everything else there.
-static func _crater_pass(shader: Shader, order: int) -> ShaderMaterial:
-	var material := ShaderMaterial.new()
-	material.shader = shader
-	material.render_priority = order
-	return material
+	return Level3DFx.contour(material) if outlined else material
 
 
 static func _lit(colour: Color) -> StandardMaterial3D:
