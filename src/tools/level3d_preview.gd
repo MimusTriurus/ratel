@@ -90,6 +90,9 @@
 # grenade, 1 to 3 the missile and its two upgrades. --pows starts with that
 # many prisoners aboard, for the rescue helicopter.
 #
+# The BTR's rear wheels and the tanks' tracks leave marks on the ground that
+# fade in under seven seconds (level3d_tracks.gd); the game leaves none.
+#
 # The prisoners the BTR picks up go home by helicopter, as the game's do: one
 # flies up the stage on row 161 and lands on the Helipad, and the prisoners
 # get off by it and walk aboard while the BTR waits east of it
@@ -153,6 +156,7 @@ var guns: Level3DGuns
 var soldiers: Level3DSoldiers
 var friends: Level3DFriends
 var rescue: Level3DRescue
+var tracks: Level3DTracks
 var boats: Level3DBoats
 var tanks: Level3DTanks
 var boss: Level3DBoss
@@ -877,6 +881,11 @@ func _add_guns(level: Node) -> void:
 	boss.player_position = guns.player_position
 	boss.scored = guns.scored
 	add_child(boss)
+	# What their wheels and tracks leave behind, and the player's.
+	tracks = Level3DTracks.new()
+	tracks.ground = _ground_at
+	tracks.sources = [btr.wheel_tracks, tanks.track_contacts, boss.track_contacts]
+	add_child(tracks)
 	# The boss tanks are not in explosion_hit: nothing but the player's own
 	# weapons hurts them (BossBlueTank.attack).
 	guns.explosion_hit = func(box: Rect2, player: bool):
@@ -1333,6 +1342,7 @@ func _physics_process(delta: float) -> void:
 	boats.tick()
 	tanks.tick()
 	boss.tick()
+	tracks.tick()
 	friends.tick()
 	rescue.tick()
 	_set_score(_score)
@@ -1429,6 +1439,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				boats.reset()
 				tanks.reset()
 				boss.reset()
+				tracks.reset()
 				friends.reset()
 				rescue.reset()
 				map.reset()

@@ -74,6 +74,10 @@ const BLAST_SCALE := 1.1 * GROWN
 # from the middle a track runs (TRACK_X).
 const TRACK_TRAVEL := 0.763
 const TRACK_X := 1.36
+# A track's width and the pads in one loop of Tracks (TRACK_STEPS), as
+# Level3DTanks': the marks it leaves, in model metres.
+const TRACK_WIDTH := 0.8
+const TRACK_PADS := 2.0
 # The medium tank's five layers under the same names, and the damage layer.
 # The glTF export gives every clip a track for every bone any clip moves, so
 # each layer's clips are cut down to its own bones.
@@ -235,6 +239,19 @@ static func _still(skeleton: Skeleton3D, prefix: String, layer: String, shown: A
 		a.track_set_path(t, path)
 		a.scale_track_insert_key(t, 0.0, Vector3.ONE if keep else Vector3.ONE * 0.001)
 	return a
+
+
+# Level3DTracks' contacts: the middle of where each track touches, both sides
+# of every tank still running. A wreck leaves none, and does not move.
+func track_contacts() -> Array:
+	var contacts := []
+	for t in tanks:
+		var across := t.root.basis.x.normalized() * TRACK_X * SCALE
+		for side in [-1, 1]:
+			contacts.append({"key": "%d:%d" % [t.root.get_instance_id(), side],
+					"at": t.root.position + across * side, "width": TRACK_WIDTH * SCALE,
+					"pitch": TRACK_TRAVEL / TRACK_PADS * SCALE, "tread": 1.0})
+	return contacts
 
 
 func reset() -> void:

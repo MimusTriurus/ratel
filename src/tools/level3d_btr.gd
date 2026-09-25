@@ -181,6 +181,8 @@ const RAMP_TILT_STEP := 1.0
 # The body spring's (VEHICLES' pitch) knock on running into something at
 # TOP_SPEED, rad/s; less for slower. Positive pitch is nose down.
 const BUMP_JOLT := 1.5
+# How far along a tyre's mark its lugs repeat, level metres.
+const TYRE_PITCH := 0.08
 
 # Asked of the scene: `ground.call(x, z)` returns
 # {"height": float, "kind": String, "hit": bool} for the top surface there.
@@ -236,6 +238,8 @@ var _turret_rest: Transform3D
 var _wheels: Array[Node3D] = []
 var _wheel_rest: Array[Transform3D] = []
 var _front_wheels: Array[bool] = []
+var _rear_wheels: Array[bool] = []
+var _tyre_width := 0.0         # level metres, for the marks it leaves
 var _tilt := Basis()
 # The model's own forward and the axis across it that pitches the nose down
 # and rolls the wheels forward, in its parent's space: VEHICLES' facing.
@@ -286,6 +290,8 @@ func _ready() -> void:
 			_wheels.append(wheel)
 			_wheel_rest.append(wheel.transform)
 			_front_wheels.append(axle == 0)
+			_rear_wheels.append(axle == vehicle.axles - 1)
+	_tyre_width = _narrowest(_wheels[0]) if not _wheels.is_empty() else 0.0
 	for i in vehicle.aerials.size():
 		var links: Array[Node3D] = []
 		var rests: Array[Transform3D] = []
@@ -372,6 +378,35 @@ func rear_axle() -> float:
 
 func _wheel_radius() -> float:
 	return vehicle.wheel_radius * model_scale
+
+
+# Level3DTracks' contacts: where the rear wheels touch the ground, a mark
+# each. The ones ahead run in them going straight, and two marks laid over
+# each other would come out darker than one. None while it is gone.
+func wheel_tracks() -> Array:
+	var contacts := []
+	if not visible:
+		return contacts
+	for i in _wheels.size():
+		if _rear_wheels[i]:
+			contacts.append({"key": "wheel%d" % i,
+					"at": _wheels[i].global_position - Vector3.UP * _wheel_radius(),
+					"width": _tyre_width, "pitch": TYRE_PITCH, "tread": 0.0})
+	return contacts
+
+
+# A wheel's narrowest extent, level metres: its tyre's width, while it
+# stands square to the axes, as it does before it has moved.
+static func _narrowest(wheel: Node3D) -> float:
+	var meshes: Array = wheel.find_children("*", "MeshInstance3D", true, false)
+	if wheel is MeshInstance3D:
+		meshes.append(wheel)
+	var box := AABB()
+	for i in meshes.size():
+		var m := meshes[i] as MeshInstance3D
+		var b := m.global_transform * m.get_aabb()
+		box = b if i == 0 else box.merge(b)
+	return minf(box.size.x, minf(box.size.y, box.size.z))
 
 
 func place(at: Vector3, facing: float) -> void:
