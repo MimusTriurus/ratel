@@ -95,6 +95,10 @@
 # without it, at START, unless --intro is given, when the seconds count from
 # the Chinook's arrival.
 #
+# The vehicle is the jeep; --btr, with or without --shot, drives the BTR
+# instead (level3d_btr.gd, VEHICLES): the same driving, stiffer springs and
+# no aerials.
+#
 # The soldiers are the model sheet's trooper; --sprite-soldiers, with or
 # without --shot, draws them as the figure made from the game's sprite
 # (level3d_soldiers.gd, MODELS).
@@ -1490,10 +1494,12 @@ func _screenshot_mode() -> void:
 	if immortal >= 0:
 		_immortal = true
 		args.remove_at(immortal)
-	# Level3DSoldiers reads it for itself; it is not a waypoint.
-	var sprite_soldiers := args.find("--sprite-soldiers")
-	if sprite_soldiers >= 0:
-		args.remove_at(sprite_soldiers)
+	# Level3DSoldiers and Level3DBtr read these for themselves; they are not
+	# waypoints.
+	for own in ["--sprite-soldiers", "--btr"]:
+		var at := args.find(own)
+		if at >= 0:
+			args.remove_at(at)
 	var free := args.find("--free")
 	if free >= 0:
 		btr.classic = false

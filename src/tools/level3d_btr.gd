@@ -63,10 +63,25 @@
 # grid does not let the jeep on to, and stopped at every palm trunk, which it
 # does. The scene is still asked for the ground's height, to sit and tilt the
 # hull on.
+#
+# The same code drives the jeep, the default -- --btr for the BTR --
+# resources/3d/jackal_jeep.glb,
+# built from jackal_jeep_lowpoly.blend with the BTR's part names, Jeep_ for
+# BTR_, so the gun and the launchers read it the same way. VEHICLES says what
+# differs. The jeep is also livelier, which the BTR keeps out of:
+#
+#   * Its body rolls out of a turn as well as pitching to the throttle, on a
+#     softer spring than the BTR's -- the roll taken off the heading's turn,
+#     which the classic mode's 45 degree steps turn fast enough to show.
+#   * It rumbles while it drives, as the game's sprite does: Player.RUMBLE's
+#     1.6 px, 0.74 rad a frame, here up and down on its wheels. Standing, its
+#     engine keeps it shivering a little.
+#   * Its two whip aerials bend: each a chain of links (aerials() in the
+#     builder) on a spring of its own, pushed by the hull's acceleration --
+#     the change of its velocity, so the classic mode's starts, stops and
+#     turns in a tick kick them -- and dragged by the hull's tilt.
 class_name Level3DBtr
 extends Node3D
-
-const MODEL_PATH := "res://resources/3d/ratel_btr.glb"
 
 # The model is modelled at 1:1 (5.8 m long, 3.5 m over the wheels); the level
 # is not. The scale is the game's jeep's: the hut is 192 px across in the game
@@ -74,7 +89,69 @@ const MODEL_PATH := "res://resources/3d/ratel_btr.glb"
 # sprite is 1.10 x 1.58 m. At 0.31 the BTR is the jeep's width, 1.1 m, and
 # 1.8 m long -- 15% longer, being the longer vehicle for its width. It was 0.5
 # once, set by eye against the bunkers, which made it nearly twice the jeep.
+# The Chinook is at this scale too, whichever vehicle it carries.
 const MODEL_SCALE := 0.31
+
+# What differs between the two, in each model's own metres and axes:
+#   path, prefix   the glb, and the prefix of its part names
+#   scale          model to level. The jeep's is its sprite's: jackal_jeep.py
+#                  makes 92 x 64 px 3.6 x 2.5 m, and 92 px is 1.35 m
+#   facing         the model's yaw to face +X, the heading's zero: the BTR is
+#                  modelled along +X, the jeep along Godot's +Z
+#   axles          wheel pairs, <prefix>Wheel_L1.., the first one steering
+#   wheel_radius, wheelbase
+#   nose, half_width   where the ground is sampled for the tilt: ahead of and
+#                  behind the origin by half the nose, and beside it
+#   body           what it covers from above, hull and wheels: back, front
+#                  (along the heading) and half its width (push_out)
+#   ramp_axles     the front and rear axles, along the heading: what it rides
+#                  the Chinook's ramp by
+#   pitch, roll    each spring's gain (radians at full acceleration, or at
+#                  ROLL_FULL of sideways acceleration), stiffness, damping
+#   kick           rad/s into the pitch spring for every m/s the speed changes
+#                  in a tick: the classic mode's starts and stops are a tick
+#                  long, which the gain alone, held for one tick, never shows
+#   rumble, idle   the driving rumble's height, level metres, and the idle
+#                  shiver's
+#   aerials        the aerial chains' names, without the prefix and link
+#   spare_fits     launcher fits the model has and the game's four weapons do
+#                  not use (level3d_rocket.gd's FITS): hidden
+const VEHICLES := {
+	"btr": {"path": "res://resources/3d/ratel_btr.glb", "prefix": "BTR_", "scale": MODEL_SCALE,
+			"facing": 0.0, "axles": 3, "wheel_radius": 0.66, "wheelbase": 3.06,
+			"nose": 3.5, "half_width": 1.3, "body": [-2.45, 3.74, 1.83], "ramp_axles": [2.25, -1.52],
+			# BodyPitch, verbatim: zeta 0.65 at omega 21.9.
+			"pitch": [0.030, 480.0, 28.5], "roll": [0.0, 480.0, 28.5], "kick": 0.0,
+			"rumble": 0.0, "idle": 0.0, "aerials": []},
+	"jeep": {"path": "res://resources/3d/jackal_jeep.glb", "prefix": "Jeep_", "scale": 0.375,
+			"facing": PI / 2.0, "axles": 2, "wheel_radius": 0.44, "wheelbase": 2.3,
+			"nose": 2.3, "half_width": 1.0, "body": [-1.97, 2.01, 1.33], "ramp_axles": [1.2, -1.1],
+			# Softer than the BTR's and less damped, zeta 0.45 at omega 16: a
+			# light vehicle on long travel.
+			"pitch": [0.045, 256.0, 14.4], "roll": [0.07, 256.0, 14.4], "kick": 0.25,
+			"rumble": 1.6 * Level3DMap.PX, "idle": 0.003, "aerials": ["AerialL", "AerialR"],
+			"spare_fits": ["GradBase", "TubeLauncherBase"]},
+}
+# Sideways acceleration, m/s^2, that leans the body over by all its roll gain:
+# the free mode's tightest turn at its top speed.
+const ROLL_FULL := 8.0
+# Player.RUMBLE's step, radians a rendered frame at the game's 60.
+const RUMBLE_RATE := 0.74 * 60.0
+const RUMBLE_FADE := 0.15
+# The idle shiver: two frequencies, Hz, that do not beat into a pattern, and
+# the roll that goes with it, radians.
+const IDLE_HZ := [11.0, 17.3]
+const IDLE_ROLL := 0.01
+# The aerials' spring: omega, rad/s, for each of the two -- a little apart, so
+# they do not sway in step -- and zeta; how hard acceleration pushes them,
+# rad/s^2 per m/s^2; and the most acceleration that counts, which the classic
+# mode's changes of velocity in a tick would otherwise make infinite.
+const AERIAL_OMEGA := [15.0, 16.5]
+const AERIAL_ZETA := 0.12
+const AERIAL_PUSH := 4.6
+const AERIAL_ACCEL_MAX := 60.0
+# How much of the bend each link takes, foot to tip.
+const AERIAL_SHARES := [0.25, 0.35, 0.4]
 
 # The profile row, in level metres. Top speed is the jeep's: 2.5 px a tick at
 # 100 ticks a second is 250 px/s, 4.3 m/s. It is reached in the tank bench's
@@ -106,24 +183,9 @@ const TILT_STEP := 0.3
 # a bunker's 0.72 m in well under a metre.
 const RAMP_TILT_STEP := 1.0
 
-# BodyPitch, verbatim: gain in radians at full acceleration, zeta 0.65 at
-# omega 21.9. Positive is nose down.
-const PITCH_GAIN := 0.030
-const PITCH_STIFFNESS := 480.0
-const PITCH_DAMPING := 28.5
+# The body spring's (VEHICLES' pitch) knock on running into something at
+# TOP_SPEED, rad/s; less for slower. Positive pitch is nose down.
 const BUMP_JOLT := 1.5
-
-# In model metres, from the Blender scene.
-const WHEEL_RADIUS := 0.66
-const WHEELBASE := 3.06
-# Where the ground is sampled for the tilt, ahead of and beside the origin.
-const NOSE := 3.5
-const HALF_WIDTH := 1.3
-# What it covers from above, hull and wheels, along the heading and across it:
-# what runs over whatever lies on the ground (push_out).
-const BODY_BACK := -2.45
-const BODY_FRONT := 3.74
-const BODY_HALF_WIDTH := 1.83
 
 # Asked of the scene: `ground.call(x, z)` returns
 # {"height": float, "kind": String, "hit": bool} for the top surface there.
@@ -160,8 +222,14 @@ var last_target_angle := 270
 var fire_angle := 270.0
 var _classic_synced := false
 
+# VEHICLES' entry for the one driven, and what it scales to in the level.
+var vehicle: Dictionary
+var model_scale: float
+
 var _pitch := 0.0
 var _pitch_velocity := 0.0
+var _roll := 0.0
+var _roll_velocity := 0.0
 var _wheel_spin := 0.0
 var _steer_angle := 0.0
 var _model: Node3D
@@ -174,33 +242,67 @@ var _wheels: Array[Node3D] = []
 var _wheel_rest: Array[Transform3D] = []
 var _front_wheels: Array[bool] = []
 var _tilt := Basis()
+# The model's own forward and the axis across it that pitches the nose down
+# and rolls the wheels forward, in its parent's space: VEHICLES' facing.
+var _ahead := Vector3.RIGHT
+var _across := Vector3.BACK
+# The rumble's phase, the shiver's clock, and the last tick's velocity, for
+# what the aerials feel.
+var _rumble := 0.0
+var _rumble_level := 0.0
+var _clock := 0.0
+var _velocity := Vector3.ZERO
+# Each aerial: its links and their rests, and its spring's two angles --
+# pitch and roll, as the body's -- with their rates.
+var _aerials := []
 
 
 func _ready() -> void:
-	var scene: PackedScene = load(MODEL_PATH)
+	vehicle = VEHICLES["btr" if OS.get_cmdline_user_args().has("--btr") else "jeep"]
+	model_scale = vehicle.scale
+	var prefix: String = vehicle.prefix
+	var scene: PackedScene = load(vehicle.path)
 	_model = scene.instantiate()
 	add_child(_model)
-	_model.scale = Vector3.ONE * MODEL_SCALE
-	_hull = _model.find_child("BTR_Hull", true, false)
-	_turret_pivot = _model.find_child("BTR_TurretPivot", true, false)
+	_model.transform = Transform3D(Basis(Vector3.UP, vehicle.facing).scaled(Vector3.ONE * model_scale), Vector3.ZERO)
+	_hull = _model.find_child(prefix + "Hull", true, false)
+	_ahead = Basis(Vector3.UP, -vehicle.facing) * Vector3.RIGHT
+	_across = Vector3.UP.cross(_ahead)
+	_turret_pivot = _model.find_child(prefix + "TurretPivot", true, false)
 	# The bore mesh's own axes are the cylinder's, its length along local Y, so
 	# the muzzle is a node of its own: on the turret, where the bore is, facing
-	# the turret's +X, which is where the gun points.
-	var bore := _turret_pivot.find_child("BTR_GunBore", true, false) as Node3D
+	# the way the gun points, which is the model's forward, as its +X.
+	var bore := _turret_pivot.find_child(prefix + "GunBore", true, false) as Node3D
 	_bore = Node3D.new()
 	_bore.name = "Muzzle"
 	_turret_pivot.add_child(_bore)
 	_bore.position = _turret_pivot.global_transform.affine_inverse() * bore.global_position
+	_bore.basis = Basis(Vector3.UP, -vehicle.facing)
+	for spare in vehicle.get("spare_fits", []):
+		var fit := _hull.find_child(prefix + spare, true, false) as Node3D
+		if fit != null:
+			fit.visible = false
 	_hull_rest = _hull.transform
 	_turret_rest = _turret_pivot.transform
 	for side in ["L", "R"]:
-		for axle in 3:
-			var wheel := _model.find_child("BTR_Wheel_%s%d" % [side, axle + 1], true, false) as Node3D
+		for axle in vehicle.axles:
+			var wheel := _model.find_child("%sWheel_%s%d" % [prefix, side, axle + 1], true, false) as Node3D
 			if wheel == null:
 				continue
 			_wheels.append(wheel)
 			_wheel_rest.append(wheel.transform)
 			_front_wheels.append(axle == 0)
+	for i in vehicle.aerials.size():
+		var links: Array[Node3D] = []
+		var rests: Array[Transform3D] = []
+		for k in AERIAL_SHARES.size():
+			var link := _hull.find_child("%s%s%d" % [prefix, vehicle.aerials[i], k], true, false) as Node3D
+			if link == null:
+				break
+			links.append(link)
+			rests.append(link.transform)
+		_aerials.append({"links": links, "rests": rests, "omega": AERIAL_OMEGA[i % AERIAL_OMEGA.size()],
+				"angle": Vector2.ZERO, "rate": Vector2.ZERO})
 
 
 # The gun's bore: where rounds leave from, its +X the way they go.
@@ -245,9 +347,9 @@ func push_out(p: Vector3, margin := 0.0, sideways := false) -> Vector3:
 	var side := Vector3(sin(heading), 0.0, cos(heading))
 	var along := d.dot(ahead)
 	var across := d.dot(side)
-	var back := BODY_BACK * MODEL_SCALE - margin
-	var front := BODY_FRONT * MODEL_SCALE + margin
-	var half := BODY_HALF_WIDTH * MODEL_SCALE + margin
+	var back: float = vehicle.body[0] * model_scale - margin
+	var front := body_front() + margin
+	var half: float = vehicle.body[2] * model_scale + margin
 	if along <= back or along >= front or absf(across) >= half:
 		return Vector3.ZERO
 	var ways := [side * (half - across), -side * (half + across)]
@@ -260,6 +362,24 @@ func push_out(p: Vector3, margin := 0.0, sideways := false) -> Vector3:
 	return best
 
 
+# How far its front is ahead of its origin, level metres.
+func body_front() -> float:
+	return vehicle.body[1] * model_scale
+
+
+# Its front and rear axles, level metres along the heading from its origin.
+func front_axle() -> float:
+	return vehicle.ramp_axles[0] * model_scale
+
+
+func rear_axle() -> float:
+	return vehicle.ramp_axles[1] * model_scale
+
+
+func _wheel_radius() -> float:
+	return vehicle.wheel_radius * model_scale
+
+
 func place(at: Vector3, facing: float) -> void:
 	position = at
 	heading = facing
@@ -269,6 +389,12 @@ func place(at: Vector3, facing: float) -> void:
 	backing = false
 	_pitch = 0.0
 	_pitch_velocity = 0.0
+	_roll = 0.0
+	_roll_velocity = 0.0
+	_velocity = Vector3.ZERO
+	for aerial in _aerials:
+		aerial.angle = Vector2.ZERO
+		aerial.rate = Vector2.ZERO
 	_classic_synced = false
 	_settle(0.0, true)
 	_pose()
@@ -278,7 +404,7 @@ func place(at: Vector3, facing: float) -> void:
 # it is, which way it faces and how far its nose is up, the wheels turning by
 # how far it went. None of the driving runs.
 func carry(at: Vector3, facing: float, nose_up: float) -> void:
-	_wheel_spin -= (at - position).dot(forward()) / (WHEEL_RADIUS * MODEL_SCALE)
+	_wheel_spin -= (at - position).dot(forward()) / _wheel_radius()
 	position = at
 	heading = facing
 	speed = 0.0
@@ -286,6 +412,7 @@ func carry(at: Vector3, facing: float, nose_up: float) -> void:
 	waypoints.clear()
 	backing = false
 	_classic_synced = false
+	_velocity = Vector3.ZERO
 	_tilt = Basis(Vector3(0, 0, 1), nose_up)
 	_pose()
 
@@ -304,6 +431,8 @@ func stop() -> void:
 
 func step(delta: float) -> void:
 	var before := speed
+	var was := position
+	var heading_was := heading
 	var keys := key_up or key_down or key_left or key_right
 	if classic and (keys or waypoints.is_empty()):
 		if keys:
@@ -317,9 +446,15 @@ func step(delta: float) -> void:
 	# What the body felt, not which branch ran: signed along the bow, so pulling
 	# away in reverse dips the nose just as braking does.
 	var accel_ratio := clampf((speed - before) / (ACCEL * delta), -1.0, 1.0) if delta > 0.0 else 0.0
+	_pitch_velocity -= vehicle.kick * (speed - before)
 	_update_pitch(accel_ratio, delta)
+	if delta > 0.0:
+		var moved := position - was
+		_update_roll(speed * wrapf(heading - heading_was, -PI, PI) / delta, delta)
+		_update_aerials(Vector3(moved.x, 0.0, moved.z) / delta, delta)
 	_update_turret(delta)
 	_settle(delta, false)
+	_update_engine(keys or absf(speed) > 0.05, delta)
 	_pose()
 
 
@@ -342,8 +477,12 @@ func _step_free(delta: float) -> void:
 	var next := position + forward() * moved
 	if moved != 0.0 and _blocked(position, signf(moved)):
 		# Hit something. The hull stops where it is and the nose takes the
-		# knock -- the bench's FallJolt, the other way round.
-		_pitch_velocity += BUMP_JOLT * signf(speed)
+		# knock -- the bench's FallJolt, the other way round -- as hard as it
+		# was going: a key held against the wall runs into it again every
+		# tick from a standstill, and a whole jolt each time held the nose
+		# down 34 degrees. The kick in step() takes the same stop, so this is
+		# only what it leaves of the knock.
+		_pitch_velocity += (BUMP_JOLT / TOP_SPEED - vehicle.kick) * speed
 		speed = 0.0
 		waypoints.clear()
 		backing = false
@@ -351,7 +490,7 @@ func _step_free(delta: float) -> void:
 	else:
 		position = next
 	heading = wrapf(heading + yaw_rate * delta, -PI, PI)
-	_wheel_spin -= moved / (WHEEL_RADIUS * MODEL_SCALE)
+	_wheel_spin -= moved / _wheel_radius()
 
 
 # ----------------------------------------------------------------------------
@@ -444,7 +583,7 @@ func _drive_classic(delta: float) -> void:
 	# The game's angles run clockwise on a screen whose y points down the
 	# stage; the heading runs counter-clockwise from above.
 	heading = wrapf(-deg_to_rad(display_angle), -PI, PI)
-	_wheel_spin -= moved.length() / (WHEEL_RADIUS * MODEL_SCALE)
+	_wheel_spin -= moved.length() / _wheel_radius()
 	# The front wheels show the turn while there is one; clockwise is to the
 	# right, which is a negative wheel angle.
 	var wheels := -0.35 * signf(angle_velocity) if angle_steps > 0 and speed > 0.0 else 0.0
@@ -597,7 +736,7 @@ func _set_yaw(wanted: float) -> void:
 	# A reversing vehicle's yaw goes the other way for the same wheel angle, so
 	# the wheel angle is what is kept in the sign above, and the steering shown
 	# on the front axle follows it.
-	var target := atan(WHEELBASE * MODEL_SCALE * yaw_rate / speed) if absf(speed) > 0.05 else 0.0
+	var target := atan(vehicle.wheelbase * model_scale * yaw_rate / speed) if absf(speed) > 0.05 else 0.0
 	_steer_angle = move_toward(_steer_angle, clampf(target, -0.6, 0.6), 3.0 * get_physics_process_delta_time())
 
 
@@ -622,9 +761,70 @@ func _blocked(at: Vector3, direction: float) -> bool:
 func _update_pitch(accel_ratio: float, delta: float) -> void:
 	if delta <= 0.0:
 		return
-	var target := -PITCH_GAIN * clampf(accel_ratio, -1.0, 1.0)
-	_pitch_velocity += (-PITCH_STIFFNESS * (_pitch - target) - PITCH_DAMPING * _pitch_velocity) * delta
+	var spring: Array = vehicle.pitch
+	var target: float = -spring[0] * clampf(accel_ratio, -1.0, 1.0)
+	_pitch_velocity += (-spring[1] * (_pitch - target) - spring[2] * _pitch_velocity) * delta
 	_pitch += _pitch_velocity * delta
+
+
+# The body leaning out of a turn: `sideways`, m/s^2, positive turning left,
+# rolls it to the right, which is positive.
+func _update_roll(sideways: float, delta: float) -> void:
+	var spring: Array = vehicle.roll
+	if spring[0] == 0.0:
+		return
+	var target: float = spring[0] * clampf(sideways / ROLL_FULL, -1.0, 1.0)
+	_roll_velocity += (-spring[1] * (_roll - target) - spring[2] * _roll_velocity) * delta
+	_roll += _roll_velocity * delta
+
+
+# The rumble's phase and how much of it there is, and the shiver's clock. The
+# game's sprite stops wherever its rumble was when the jeep stops, a pixel or
+# so off; a hull stopped in the air reads as stuck, so the rumble dies away
+# over RUMBLE_FADE instead, and comes up as quickly.
+func _update_engine(driving: bool, delta: float) -> void:
+	_clock += delta
+	_rumble_level = move_toward(_rumble_level, 1.0 if driving else 0.0, delta / RUMBLE_FADE)
+	if _rumble_level > 0.0:
+		_rumble = fmod(_rumble + RUMBLE_RATE * delta, TAU)
+
+
+# The hull's height off its rest and its extra roll: the rumble and the shiver.
+func _engine_shake() -> Vector2:
+	var idle: float = vehicle.idle
+	var shiver := sin(TAU * IDLE_HZ[0] * _clock) * 0.6 + sin(TAU * IDLE_HZ[1] * _clock) * 0.4
+	var height: float = vehicle.rumble * _rumble_level * sin(_rumble) + idle * shiver
+	var roll := IDLE_ROLL * sin(TAU * IDLE_HZ[0] * 1.19 * _clock + 1.0) if idle > 0.0 else 0.0
+	return Vector2(height, roll)
+
+
+# Each aerial's spring: its tilt, pitch and roll as the body's, pulled towards
+# the hull's -- the body springs' and the shiver's -- and pushed the other way
+# by the hull's acceleration, along it and across it. What it is bent by is
+# how far its tilt is off the hull's.
+func _update_aerials(velocity: Vector3, delta: float) -> void:
+	if _aerials.is_empty():
+		_velocity = velocity
+		return
+	var accel := (velocity - _velocity) / delta
+	_velocity = velocity
+	if accel.length() > AERIAL_ACCEL_MAX:
+		accel = accel.normalized() * AERIAL_ACCEL_MAX
+	var ahead := forward()
+	var left := Vector3(-sin(heading), 0.0, -cos(heading))
+	# Speeding up tips it back, nose-up; turning left, to the right.
+	var push := Vector2(-accel.dot(ahead), accel.dot(left)) * AERIAL_PUSH
+	var hull := _hull_tilt()
+	for aerial in _aerials:
+		var omega: float = aerial.omega
+		var off: Vector2 = aerial.angle - hull
+		aerial.rate += (-omega * omega * off - 2.0 * AERIAL_ZETA * omega * aerial.rate + push) * delta
+		aerial.angle += aerial.rate * delta
+
+
+# The hull's pitch and roll off the vehicle's: the springs and the shiver.
+func _hull_tilt() -> Vector2:
+	return Vector2(_pitch, _roll + _engine_shake().y)
 
 
 # The turret's one writer. Aimed: it turns towards the aim point at its own
@@ -658,8 +858,8 @@ func _settle(delta: float, snap: bool) -> void:
 
 	var f := forward()
 	var left := Vector3(-sin(heading), 0.0, -cos(heading))
-	var half := NOSE * 0.5 * MODEL_SCALE
-	var side := HALF_WIDTH * MODEL_SCALE
+	var half: float = vehicle.nose * 0.5 * model_scale
+	var side: float = vehicle.half_width * model_scale
 	var hf: Dictionary = ground.call(position.x + f.x * half, position.z + f.z * half)
 	var hb: Dictionary = ground.call(position.x - f.x * half, position.z - f.z * half)
 	var hl: Dictionary = ground.call(position.x + left.x * side, position.z + left.z * side)
@@ -682,12 +882,28 @@ func _settle(delta: float, snap: bool) -> void:
 	_tilt = target if snap else _tilt.slerp(target, clampf(delta * 8.0, 0.0, 1.0))
 
 
+# The model's parts, in its own axes (_ahead, _across). Nose down is positive
+# pitch, about _across; right side down is positive roll, about _ahead; and a
+# wheel rolls forward about _across as the nose goes down.
 func _pose() -> void:
 	basis = Basis(Vector3.UP, heading) * _tilt
-	# Nose down is positive in the spring; a rotation about +Z lifts +X.
-	_hull.transform = Transform3D(Basis(Vector3(0, 0, 1), -_pitch) * _hull_rest.basis, _hull_rest.origin)
+	var hull := _hull_tilt()
+	var shake := _engine_shake()
+	# The rumble is the model's height, and the model is scaled: taken back out.
+	var lift := Vector3.UP * shake.x / model_scale
+	_hull.transform = Transform3D(Basis(_ahead, hull.y) * Basis(_across, hull.x) * _hull_rest.basis,
+			_hull_rest.origin + lift)
 	_turret_pivot.transform = Transform3D(Basis(Vector3.UP, turret) * _turret_rest.basis, _turret_rest.origin)
 	for i in _wheels.size():
 		var rest := _wheel_rest[i]
 		var steer_basis := Basis(Vector3.UP, _steer_angle) if _front_wheels[i] else Basis()
-		_wheels[i].transform = Transform3D(steer_basis * Basis(Vector3(0, 0, 1), _wheel_spin) * rest.basis, rest.origin)
+		_wheels[i].transform = Transform3D(steer_basis * Basis(_across, -_wheel_spin) * rest.basis, rest.origin)
+	# Each link takes its share of the bend, in the hull's axes, which are the
+	# model's: the links are parented down the chain to it.
+	for aerial in _aerials:
+		var bend: Vector2 = aerial.angle - hull
+		for k in aerial.links.size():
+			var rest: Transform3D = aerial.rests[k]
+			var share: float = AERIAL_SHARES[k]
+			aerial.links[k].transform = Transform3D(
+					Basis(_ahead, bend.y * share) * Basis(_across, bend.x * share) * rest.basis, rest.origin)

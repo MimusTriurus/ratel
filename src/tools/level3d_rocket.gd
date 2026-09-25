@@ -22,7 +22,7 @@
 # stages, and drops the two spent ones on the way.
 #
 # Unlike a round, a rocket is slow enough to be seen, so it is flown rather than
-# decided: each physics step it moves along its line, and the segment it
+# decided: each physics step it moves along its path, and the segment it
 # covered is asked for the enemies in the way. What stops it on the ground is
 # the game's to say, on the map's collision grid (Level3DMap), as it is for the
 # gun and the BTR's driving: a missile goes off over the first solid or shield
@@ -221,7 +221,12 @@ func _ready() -> void:
 
 
 # One of FITS off the model: its nodes, and the round's middle, axis and ends.
-func _read_fit(entry: Dictionary) -> Dictionary:
+# FITS names the BTR's parts; the jeep's are the same with its own prefix.
+func _read_fit(fit_entry: Dictionary) -> Dictionary:
+	var entry := {}
+	for key in fit_entry:
+		var value = fit_entry[key]
+		entry[key] = btr.vehicle.prefix + value.trim_prefix("BTR_") if value is String else value
 	var base := btr.launcher_node(entry.base)
 	var pivot := base.find_child(entry.pivot, true, false) as Node3D
 	var prefix: String = entry.round
@@ -355,13 +360,12 @@ func _launch() -> void:
 		var to: Vector3 = aim_point - start
 		reach = clampf(Vector2(to.x, to.z).length(), MIN_RANGE, RANGE)
 	var target := start + flat * reach
-	# Classic flies level, as the game's weapons fly flat, and goes off on the
-	# ground under the end of it (_fly). Dropping on to the ground instead, the
-	# nose met it a tenth of the distance short. A bomb comes down on the
-	# ground either way: that is what a lob is.
+	# Classic comes back to the height it left at, as the game's weapons fly
+	# flat, and goes off on the ground under the end of it (_fly). Dropping on
+	# to the ground instead, the nose met it a tenth of the distance short. A
+	# bomb comes down on the ground either way: that is what a lob is.
 	if _lob or not classic:
 		target.y = ground.call(target.x, target.z).height
-	var direction := (target - start).normalized()
 
 	# The model's parts, re-hung on a node of their own about the round's
 	# middle, then turned from the mount's line on to the flight's.
@@ -379,8 +383,6 @@ func _launch() -> void:
 		stages.append(own.map(func(part): return copies[part]))
 	var flame: MeshInstance3D = null
 	if not _lob:
-		var turn := Quaternion(heading, direction) if heading.cross(direction).length() > 1e-5 else Quaternion()
-		rocket.global_transform = Transform3D(Basis(turn) * frame.basis, start)
 		flame = MeshInstance3D.new()
 		flame.mesh = _flame_mesh
 		flame.material_override = _materials.core
@@ -396,113 +398,121 @@ func _launch() -> void:
 		rearm = TRAVELING_EXPLOSION_TIME if has_missiles and missile_power > 0 else EXPLOSION_TIME
 	if _lob:
 		speed = GRENADE_SPEED
-	var entry := {"node": rocket, "flame": flame, "direction": direction,
-			"speed": speed, "left": (target - start).length(), "smoke": 0.0,
+	# Either leaves along its rails or its tube, whatever they point at -- the
+	# mount's own elevation, and the hull's pitch and roll under it -- and
+	# comes down on the target: the line to it with a hump over it (_arc),
+	# as big as makes the slope at the start the rails'. A rocket's hump is
+	# over by the end, so it arrives along that line; a bomb's is a
+	# parabola's, and comes down as steeply as it went up. A round whose
+	# rails point below the line would dip under it, into the ground; it
+	# takes the line instead.
+	var run := Vector2(target.x - start.x, target.z - start.z).length()
+	var rise := heading.y / maxf(Vector2(heading.x, heading.z).length(), 0.01)
+	var entry := {"node": rocket, "flame": flame, "direction": heading,
+			"speed": speed, "smoke": 0.0,
 			"scale": frame.basis.get_scale().x, "classic": classic, "rearm": rearm,
 			"axis": _axis, "nose": _nose, "tail": _tail, "lob": _lob,
 			"stages": stages, "stage_tails": _stage_tails, "dropped": 0,
-			"power": missile_power if has_missiles else 0}
-	entry["total"] = entry.left
+			"power": missile_power if has_missiles else 0,
+			"from": start, "to": target, "run": run, "gone": 0.0,
+			"hump": maxf(run * rise - (target.y - start.y), 0.0),
+			"heading": heading, "basis": frame.basis}
 	if _lob:
 		for copy in copies.values():
 			(copy as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		entry["blob"] = _instance(_crater_mesh, "blob")
 		_mortar_blast(start + heading * _nose * entry.scale, heading)
-		# The arc leaves along the tube: a parabola from the muzzle to the
-		# ground whose rise over its run, at the start, is the tube's
-		# elevation -- near enough, the two ends not being level.
-		var run := Vector2(target.x - start.x, target.z - start.z).length()
-		var elevation := asin(clampf(heading.y, 0.0, 0.99))
-		entry.merge({"from": start, "to": target, "run": run, "gone": 0.0,
-				"apex": run * tan(elevation) / 4.0, "heading": heading, "basis": frame.basis})
-		_place_on_arc(entry, 0.0)
+	_place_on_arc(entry, 0.0)
 	_rockets.append(entry)
-	btr.recoil(direction, KICK)
+	btr.recoil(heading, KICK)
 
 
 func _fly(rocket: Dictionary, delta: float) -> void:
-	if rocket.lob:
-		_fly_lob(rocket, delta)
+	var step: float = rocket.speed * delta
+	if not rocket.lob and not rocket.classic:
+		rocket.speed = minf(rocket.speed + THRUST * delta, TOP_SPEED)
+		# A motor's speed is along the path; a round out of steep rails
+		# covers little ground to begin with.
+		step *= Vector2(rocket.direction.x, rocket.direction.z).length()
+	if not _advance(rocket, minf(rocket.gone + step, rocket.run)):
 		return
 	var node: Node3D = rocket.node
-	if not rocket.classic:
-		rocket.speed = minf(rocket.speed + THRUST * delta, TOP_SPEED)
-	var move: float = minf(rocket.speed * delta, rocket.left)
 	var direction: Vector3 = rocket.direction
-	var nose: Vector3 = node.global_position + direction * rocket.nose * rocket.scale
-	if _sweep(rocket, nose, nose + direction * (move + 0.05)):
-		return
-	node.global_position += direction * move
-	rocket.left -= move
-	# PlayerMissile.update: off on the tick it is over a solid or shield tile.
-	var over := Level3DMap.to_map(Vector2(node.global_position.x, node.global_position.z))
-	if btr.map.is_missile_target(over.x, over.y):
-		var at := node.global_position
-		var top: Dictionary = surface.call(at.x, at.z)
-		if top.hit:
-			at.y = minf(at.y, top.height)
-		_explode(rocket, at, -direction)
-		return
-	var flame: MeshInstance3D = rocket.flame
-	_stretch_flame(flame, rocket.axis, _rng.randf_range(0.16, 0.3))
-	rocket.smoke += delta
-	while rocket.smoke >= SMOKE_EVERY:
-		rocket.smoke -= SMOKE_EVERY
-		_trail(node.global_position + direction * rocket.tail * rocket.scale)
-	# A staged round burns its stages out in equal shares of the way.
-	var stages: Array = rocket.stages
-	while rocket.dropped < stages.size() - 1 \
-			and rocket.total - rocket.left >= rocket.total * (rocket.dropped + 1) / stages.size():
-		_drop_stage(rocket)
-	if rocket.left <= 0.001:
+	if not rocket.lob:
+		# PlayerMissile.update: off on the tick it is over a solid or shield
+		# tile.
+		var over := Level3DMap.to_map(Vector2(node.global_position.x, node.global_position.z))
+		if btr.map.is_missile_target(over.x, over.y):
+			var at := node.global_position
+			var top: Dictionary = surface.call(at.x, at.z)
+			if top.hit:
+				at.y = minf(at.y, top.height)
+			_explode(rocket, at, -direction)
+			return
+		var flame: MeshInstance3D = rocket.flame
+		_stretch_flame(flame, rocket.axis, _rng.randf_range(0.16, 0.3))
+		rocket.smoke += delta
+		while rocket.smoke >= SMOKE_EVERY:
+			rocket.smoke -= SMOKE_EVERY
+			_trail(node.global_position + direction * rocket.tail * rocket.scale)
+		# A staged round burns its stages out in equal shares of the way.
+		var stages: Array = rocket.stages
+		while rocket.dropped < stages.size() - 1 \
+				and rocket.gone >= rocket.run * (rocket.dropped + 1) / stages.size():
+			_drop_stage(rocket)
+	if rocket.gone >= rocket.run - 0.001:
 		var there: Dictionary = ground.call(node.global_position.x, node.global_position.z)
-		var at := Vector3(node.global_position.x, there.height, node.global_position.z)
-		_explode(rocket, at, Vector3.UP)
+		_explode(rocket, Vector3(node.global_position.x, there.height, node.global_position.z), Vector3.UP)
 
 
-# A bomb: along its arc at a steady speed over the ground, nose first, and
-# swept along the chord of each step's piece of it.
-func _fly_lob(rocket: Dictionary, delta: float) -> void:
+# Along its path to `gone`, metres over the ground, nose first, sweeping the
+# chord its nose covers. False if that ran into something, which has set it
+# off. A bomb's speed is over the ground, as a thrown thing's is, and so is
+# the classic rocket's, which is what keeps its timing the game's.
+func _advance(rocket: Dictionary, gone: float) -> bool:
 	var node: Node3D = rocket.node
 	var nose: Vector3 = node.global_position + rocket.direction * rocket.nose * rocket.scale
-	var gone: float = minf(rocket.gone + rocket.speed * delta, rocket.run)
-	var next := _arc(rocket, gone)
-	var ahead := _arc_tangent(rocket, gone)
-	var next_nose: Vector3 = next + ahead * rocket.nose * rocket.scale
+	var next_nose: Vector3 = _arc(rocket, gone) + _arc_tangent(rocket, gone) * rocket.nose * rocket.scale
 	if _sweep(rocket, nose, next_nose + (next_nose - nose).normalized() * 0.05):
-		return
+		return false
 	_place_on_arc(rocket, gone)
-	if gone >= rocket.run - 0.001:
-		var there: Dictionary = ground.call(next.x, next.z)
-		_explode(rocket, Vector3(next.x, there.height, next.z), Vector3.UP)
+	return true
 
 
+# The path, `gone` metres over the ground from the start: the line to the
+# target with the hump over it -- s(1 - s)^2 for a rocket, level again by the
+# end, s(1 - s) for a bomb -- scaled so that at the start it rises as the
+# rails did.
 func _arc(rocket: Dictionary, gone: float) -> Vector3:
 	var s: float = gone / rocket.run if rocket.run > 0.0 else 1.0
 	var at: Vector3 = (rocket.from as Vector3).lerp(rocket.to, s)
-	at.y += 4.0 * rocket.apex * s * (1.0 - s)
+	at.y += rocket.hump * s * (1.0 - s) * (1.0 if rocket.lob else 1.0 - s)
 	return at
 
 
 func _arc_tangent(rocket: Dictionary, gone: float) -> Vector3:
 	var s: float = gone / rocket.run if rocket.run > 0.0 else 1.0
 	var chord: Vector3 = rocket.to - rocket.from
-	return (chord + Vector3.UP * 4.0 * rocket.apex * (1.0 - 2.0 * s)).normalized()
+	var slope: float = 1.0 - 2.0 * s if rocket.lob else (1.0 - s) * (1.0 - 3.0 * s)
+	return (chord + Vector3.UP * rocket.hump * slope).normalized()
 
 
+# The round turned from the line it sat on to its path's; a bomb nods as well,
+# and has its spot on the ground.
 func _place_on_arc(rocket: Dictionary, gone: float) -> void:
 	var ahead := _arc_tangent(rocket, gone)
 	var heading: Vector3 = rocket.heading
 	var turn := Quaternion(heading, ahead) if heading.cross(ahead).length() > 1e-5 else Quaternion()
 	var side := ahead.cross(Vector3.UP)
-	if side.length() > 1e-5:
+	if rocket.lob and side.length() > 1e-5:
 		var nod := WOBBLE * sin(gone / rocket.speed * WOBBLE_RATE)
 		turn = Quaternion(side.normalized(), nod) * turn
 	var at := _arc(rocket, gone)
 	(rocket.node as Node3D).global_transform = Transform3D(Basis(turn) * rocket.basis, at)
 	rocket.gone = gone
 	rocket.direction = ahead
-	_place_blob(rocket.blob, at)
+	if rocket.lob:
+		_place_blob(rocket.blob, at)
 
 
 # The spot under a bomb: on the ground below it, smaller the higher it is.

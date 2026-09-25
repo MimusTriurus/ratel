@@ -51,10 +51,8 @@ const FLOOR := 1.0              # the cabin floor, and the hinge's height
 const RAMP_LEN := 4.6
 const CABIN_HALF_WIDTH := 1.9   # CABIN_W
 const MODEL_HEIGHT := 7.6       # the rear rotor's top, over the wheels
-# The BTR's axles, in its own model metres (ratel_btr_lowpoly.blend's
-# BTR_Axle0 and BTR_Axle2): what it rides on the ramp by.
-const BTR_FRONT_AXLE := 2.25
-const BTR_REAR_AXLE := -1.52
+# The vehicle rides the ramp by its axles, which it knows (Level3DBtr's
+# VEHICLES, ramp_axles), as it knows its bow (body_front).
 
 const ALTITUDE := 7.4
 # The original's arcs: their radius and where the first is centred.
@@ -103,16 +101,16 @@ var _shift := 0.0
 # How far the Chinook sets down north of the original's spot, in px: the
 # original's jeep ends FINAL_Y - 294 px behind it, the BTR has to back as far
 # as clear_back() before it starts the same diagonal.
-static func landing_shift() -> float:
+func landing_shift() -> float:
 	return IntroPlayer.FINAL_Y - IntroPlayer.DIAGONAL_TIME * Player.SPEED - clear_back() \
 			- ARC_LANDING.y
 
 
-# In px behind the Chinook's origin: where the BTR's origin is when its bow
+# In px behind the Chinook's origin: where the vehicle's origin is when its bow
 # is clear of the lowered ramp's lip.
-static func clear_back() -> float:
+func clear_back() -> float:
 	var lip := (HINGE_BACK + RAMP_LEN * cos(_ramp_down())) * MODEL_SCALE
-	return (lip + Level3DBtr.BODY_FRONT * MODEL_SCALE + 0.1) / PX
+	return (lip + btr.body_front() + 0.1) / PX
 
 
 # The ramp's angle when it is down, its lip on the ground: jackal_chinook.py's
@@ -329,12 +327,12 @@ func _pose_unit() -> void:
 	var heading := deg_to_rad(-unit_angle)
 	var ahead := Vector3(cos(heading), 0.0, -sin(heading))
 	var centre := Vector3(at.x, 0.0, at.y)
-	var front := centre + ahead * BTR_FRONT_AXLE * MODEL_SCALE
-	var rear := centre + ahead * BTR_REAR_AXLE * MODEL_SCALE
+	var front := centre + ahead * btr.front_axle()
+	var rear := centre + ahead * btr.rear_axle()
 	var hf := _surface(front)
 	var hr := _surface(rear)
-	var span := (BTR_FRONT_AXLE - BTR_REAR_AXLE) * MODEL_SCALE
-	centre.y = hr + (hf - hr) * (-BTR_REAR_AXLE * MODEL_SCALE) / span
+	var span := btr.front_axle() - btr.rear_axle()
+	centre.y = hr + (hf - hr) * -btr.rear_axle() / span
 	btr.carry(centre, heading, atan2(hf - hr, span))
 
 
