@@ -696,17 +696,40 @@ func _puff(at: Vector3, size: float, material: String) -> void:
 	tween.chain().tween_callback(puff.queue_free)
 
 
+# Explosion as it is seen: the game draws its sprite `size` px across while the
+# box that kills is 0.35 of that either side, so what it shows is what it hits.
+# The ball is the same, on the same curve and clock as Level3DGuns' box --
+# from EXPLOSION_START by GROW_RATE a tick until past EXPLOSION_END -- and
+# stepped with the physics ticks, so the two do not drift apart. It used to
+# swell to 0.9 m in a twelfth of a second and be gone in 0.28, when the box
+# was a quarter of that and only half grown: an enemy inside the fire lived,
+# and one walking in after it was out died of nothing to be seen. The hot core
+# is there for the game's first two frames and goes on the third, from 80 px,
+# where its fire breaks up into holes.
 func _fireball(at: Vector3) -> void:
-	for layer in [["flash", 0.9, 0.28], ["core", 0.55, 0.18]]:
-		var ball := _instance(_puff_mesh, layer[0])
+	var ball := _instance(_puff_mesh, "flash")
+	var core := _instance(_puff_mesh, "core")
+	var place := func(size: float):
+		var radius := size * 0.5 * Level3DMap.PX
+		ball.scale = Vector3.ONE * radius
 		ball.global_position = at + Vector3.UP * 0.2
-		ball.scale = Vector3.ONE * 0.1
-		var peak: float = layer[1]
-		var life: float = layer[2]
-		var tween := ball.create_tween()
-		tween.tween_property(ball, "scale", Vector3.ONE * peak, life * 0.3).set_ease(Tween.EASE_OUT)
-		tween.tween_property(ball, "scale", Vector3.ONE * 0.001, life * 0.7).set_ease(Tween.EASE_IN)
-		tween.tween_callback(ball.queue_free)
+		core.visible = size < 80.0
+		core.scale = Vector3.ONE * radius * 0.6
+		# High enough to stand out of the flash's top, or from above it is not
+		# there, and the flash's orange alone is lost on the sand.
+		core.global_position = at + Vector3.UP * (0.2 + radius * 0.6)
+	place.call(Level3DGuns.EXPLOSION_START)
+	var life := EXPLOSION_TIME
+	var tween := ball.create_tween()
+	tween.set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
+	tween.tween_method(func(seconds: float):
+		var ticks := int(seconds * 100.0) + 1
+		place.call(minf(Level3DGuns.EXPLOSION_START * pow(Explosion.GROW_RATE, ticks),
+				Level3DGuns.EXPLOSION_END)),
+		0.0, life, life)
+	tween.tween_callback(core.queue_free)
+	tween.tween_property(ball, "scale", Vector3.ONE * 0.001, 0.08)
+	tween.tween_callback(ball.queue_free)
 
 
 # Blast_Light's curve, shortened: the stage's destruction lights 700 W for a
@@ -725,15 +748,18 @@ func _light(at: Vector3) -> void:
 	tween.tween_callback(light.queue_free)
 
 
+# What the fire leaves. It rises once the fireball is nearly done and from
+# inside it: puffs starting at once and spread 0.45 m hid the fire and stood
+# as far out as the old fireball did, the same lie about the reach.
 func _smoke(at: Vector3) -> void:
 	for i in 7:
 		var puff := _instance(_puff_mesh, "smoke")
-		var offset := Vector3(_rng.randf_range(-1, 1), 0.0, _rng.randf_range(-1, 1)) * 0.45
+		var offset := Vector3(_rng.randf_range(-1, 1), 0.0, _rng.randf_range(-1, 1)) * 0.3
 		puff.global_position = at + offset + Vector3.UP * 0.1
-		puff.scale = Vector3.ONE * 0.08
+		puff.scale = Vector3.ONE * 0.001
 		var size := _rng.randf_range(0.28, 0.42)
 		var life := _rng.randf_range(0.9, 1.3)
-		var delay := _rng.randf_range(0.03, 0.12)
+		var delay := EXPLOSION_TIME * _rng.randf_range(0.7, 0.95)
 		var tween := puff.create_tween()
 		tween.set_parallel()
 		tween.tween_property(puff, "scale", Vector3.ONE * size, life * 0.3).set_delay(delay).set_ease(Tween.EASE_OUT)
