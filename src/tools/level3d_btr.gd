@@ -74,8 +74,8 @@
 #     softer spring than the BTR's -- the roll taken off the heading's turn,
 #     which the classic mode's 45 degree steps turn fast enough to show.
 #   * It rumbles while it drives, as the game's sprite does: Player.RUMBLE's
-#     1.6 px, 0.74 rad a frame, here up and down on its wheels. Standing, its
-#     engine keeps it shivering a little.
+#     1.6 px, 0.74 rad a frame, here up and down on its wheels, and dies
+#     away when it stops: standing, it stands still.
 #   * Its two whip aerials bend: each a chain of links (aerials() in the
 #     builder) on a spring of its own, pushed by the hull's acceleration --
 #     the change of its velocity, so the classic mode's starts, stops and
@@ -111,8 +111,7 @@ const MODEL_SCALE := 0.31
 #   kick           rad/s into the pitch spring for every m/s the speed changes
 #                  in a tick: the classic mode's starts and stops are a tick
 #                  long, which the gain alone, held for one tick, never shows
-#   rumble, idle   the driving rumble's height, level metres, and the idle
-#                  shiver's
+#   rumble         the driving rumble's height, level metres
 #   aerials        the aerial chains' names, without the prefix and link
 #   spare_fits     launcher fits the model has and the game's four weapons do
 #                  not use (level3d_rocket.gd's FITS): hidden
@@ -122,14 +121,14 @@ const VEHICLES := {
 			"nose": 3.5, "half_width": 1.3, "body": [-2.45, 3.74, 1.83], "ramp_axles": [2.25, -1.52],
 			# BodyPitch, verbatim: zeta 0.65 at omega 21.9.
 			"pitch": [0.030, 480.0, 28.5], "roll": [0.0, 480.0, 28.5], "kick": 0.0,
-			"rumble": 0.0, "idle": 0.0, "aerials": []},
+			"rumble": 0.0, "aerials": []},
 	"jeep": {"path": "res://resources/3d/jackal_jeep.glb", "prefix": "Jeep_", "scale": 0.375,
 			"facing": PI / 2.0, "axles": 2, "wheel_radius": 0.44, "wheelbase": 2.3,
 			"nose": 2.3, "half_width": 1.0, "body": [-1.97, 2.01, 1.33], "ramp_axles": [1.2, -1.1],
 			# Softer than the BTR's and less damped, zeta 0.45 at omega 16: a
 			# light vehicle on long travel.
 			"pitch": [0.045, 256.0, 14.4], "roll": [0.07, 256.0, 14.4], "kick": 0.25,
-			"rumble": 1.6 * Level3DMap.PX, "idle": 0.003, "aerials": ["AerialL", "AerialR"],
+			"rumble": 1.6 * Level3DMap.PX, "aerials": ["AerialL", "AerialR"],
 			"spare_fits": ["GradBase", "TubeLauncherBase"]},
 }
 # Sideways acceleration, m/s^2, that leans the body over by all its roll gain:
@@ -138,10 +137,6 @@ const ROLL_FULL := 8.0
 # Player.RUMBLE's step, radians a rendered frame at the game's 60.
 const RUMBLE_RATE := 0.74 * 60.0
 const RUMBLE_FADE := 0.15
-# The idle shiver: two frequencies, Hz, that do not beat into a pattern, and
-# the roll that goes with it, radians.
-const IDLE_HZ := [11.0, 17.3]
-const IDLE_ROLL := 0.01
 # The aerials' spring: omega, rad/s, for each of the two -- a little apart, so
 # they do not sway in step -- and zeta; how hard acceleration pushes them,
 # rad/s^2 per m/s^2; and the most acceleration that counts, which the classic
@@ -246,11 +241,10 @@ var _tilt := Basis()
 # and rolls the wheels forward, in its parent's space: VEHICLES' facing.
 var _ahead := Vector3.RIGHT
 var _across := Vector3.BACK
-# The rumble's phase, the shiver's clock, and the last tick's velocity, for
-# what the aerials feel.
+# The rumble's phase and how much of it there is, and the last tick's
+# velocity, for what the aerials feel.
 var _rumble := 0.0
 var _rumble_level := 0.0
-var _clock := 0.0
 var _velocity := Vector3.ZERO
 # Each aerial: its links and their rests, and its spring's two angles --
 # pitch and roll, as the body's -- with their rates.
@@ -778,28 +772,23 @@ func _update_roll(sideways: float, delta: float) -> void:
 	_roll += _roll_velocity * delta
 
 
-# The rumble's phase and how much of it there is, and the shiver's clock. The
+# The rumble's phase and how much of it there is. The
 # game's sprite stops wherever its rumble was when the jeep stops, a pixel or
 # so off; a hull stopped in the air reads as stuck, so the rumble dies away
 # over RUMBLE_FADE instead, and comes up as quickly.
 func _update_engine(driving: bool, delta: float) -> void:
-	_clock += delta
 	_rumble_level = move_toward(_rumble_level, 1.0 if driving else 0.0, delta / RUMBLE_FADE)
 	if _rumble_level > 0.0:
 		_rumble = fmod(_rumble + RUMBLE_RATE * delta, TAU)
 
 
-# The hull's height off its rest and its extra roll: the rumble and the shiver.
-func _engine_shake() -> Vector2:
-	var idle: float = vehicle.idle
-	var shiver := sin(TAU * IDLE_HZ[0] * _clock) * 0.6 + sin(TAU * IDLE_HZ[1] * _clock) * 0.4
-	var height: float = vehicle.rumble * _rumble_level * sin(_rumble) + idle * shiver
-	var roll := IDLE_ROLL * sin(TAU * IDLE_HZ[0] * 1.19 * _clock + 1.0) if idle > 0.0 else 0.0
-	return Vector2(height, roll)
+# The hull's height off its rest: the rumble.
+func _rumble_height() -> float:
+	return vehicle.rumble * _rumble_level * sin(_rumble)
 
 
 # Each aerial's spring: its tilt, pitch and roll as the body's, pulled towards
-# the hull's -- the body springs' and the shiver's -- and pushed the other way
+# the hull's -- the body springs' -- and pushed the other way
 # by the hull's acceleration, along it and across it. What it is bent by is
 # how far its tilt is off the hull's.
 func _update_aerials(velocity: Vector3, delta: float) -> void:
@@ -822,9 +811,9 @@ func _update_aerials(velocity: Vector3, delta: float) -> void:
 		aerial.angle += aerial.rate * delta
 
 
-# The hull's pitch and roll off the vehicle's: the springs and the shiver.
+# The hull's pitch and roll off the vehicle's: the springs.
 func _hull_tilt() -> Vector2:
-	return Vector2(_pitch, _roll + _engine_shake().y)
+	return Vector2(_pitch, _roll)
 
 
 # The turret's one writer. Aimed: it turns towards the aim point at its own
@@ -888,9 +877,8 @@ func _settle(delta: float, snap: bool) -> void:
 func _pose() -> void:
 	basis = Basis(Vector3.UP, heading) * _tilt
 	var hull := _hull_tilt()
-	var shake := _engine_shake()
 	# The rumble is the model's height, and the model is scaled: taken back out.
-	var lift := Vector3.UP * shake.x / model_scale
+	var lift := Vector3.UP * _rumble_height() / model_scale
 	_hull.transform = Transform3D(Basis(_ahead, hull.y) * Basis(_across, hull.x) * _hull_rest.basis,
 			_hull_rest.origin + lift)
 	_turret_pivot.transform = Transform3D(Basis(Vector3.UP, turret) * _turret_rest.basis, _turret_rest.origin)
