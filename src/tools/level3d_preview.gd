@@ -387,6 +387,10 @@ func _cast_both_sides_of_planes(root: Node) -> void:
 # -- Land_Base's top is 1 cm under the sand -- so it has nothing to shadow, but
 # the edge of its shadow came up through the bias as a thin dashed line along
 # the one seam it ends at, z = -15, across sand, beach and all.
+#
+# Nor do the black lines along the beach's bands, Shore_Lines (jackal_cel.py,
+# shore_lines): 3 mm over the ground, and not flat by FLAT only because the
+# green band slopes 4 cm to the cliff.
 const FLAT := 0.02
 
 func _flat_ground_casts_nothing(root: Node) -> void:
@@ -394,7 +398,7 @@ func _flat_ground_casts_nothing(root: Node) -> void:
 		var mesh_instance := node as MeshInstance3D
 		var box := mesh_instance.get_aabb()
 		if box.size.x * box.size.z > 25.0 and box.size.y <= FLAT \
-				or mesh_instance.name.begins_with("Land_Base"):
+				or mesh_instance.name.begins_with("Land_Base") 				or mesh_instance.name == "Shore_Lines":
 			mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
