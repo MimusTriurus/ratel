@@ -70,7 +70,7 @@ const UPGRADES: Array[int] = [3, 8, 13, 18]
 const POINTS := 500
 
 enum { NONE, INCOMING, BRAKING, DESCENDING, REVVING_DOWN, PICK_UP, REVVING_UP, LIFTING_OFF,
-		ACCELERATING, TURNING, FLYING_AWAY }
+		ACCELERATING, TURNING, FLYING_AWAY, GONE }
 
 var map: Level3DMap
 var friends: Level3DFriends
@@ -191,7 +191,9 @@ func tick() -> void:
 		_pad_height = ground.call(at.x, at.y).height
 	var view: Rect2 = frame.call()
 	_process_triggers(Level3DMap.to_map(view.position).y, view)
-	if state == NONE:
+	# Flown off, it is GONE: FriendlyHelicopter removes itself, and only R
+	# (reset) takes the stage's rows again, which would send it back up.
+	if state == NONE or state == GONE:
 		return
 	rotor_speed = clampf(rotor_speed, SLOW_ROTOR, FAST_ROTOR)
 	if state >= ACCELERATING or state <= BRAKING:
@@ -259,7 +261,9 @@ func tick() -> void:
 			if y > Level3DMap.to_map(view.end).y + 128:
 				if verbose:
 					print("rescue helicopter gone, %d rescued" % rescued)
-				reset()
+				_enter(GONE)
+				_sound.stop()
+				visible = false
 				return
 	_pose()
 
