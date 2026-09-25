@@ -556,6 +556,12 @@ intro drop only incidentally — the real gate there is `GameMode.playing`, whic
   stable identity, and excluding them breaks references on clone.
 - `.gitattributes` forces LF everywhere, including the working tree on Windows.
 - `.godot/` is ignored; it is regenerated on open.
+- 3D models (`resources/3d/`, built by the scripts inside each `.blend`) are
+  cel-shaded, and a model without it is not finished: black chamfers on sharp
+  edges, an inverted-hull contour round every part, black seals round flat
+  panes. How, and the line widths, are in `docs/cel-shading.md`; the
+  per-kind pipelines are `docs/soldier-pipeline.md`, `docs/boat-pipeline.md`
+  and `docs/level3d-pipeline.md`. Only the jeep is done so far.
 
 ## Known deviations from the original
 
