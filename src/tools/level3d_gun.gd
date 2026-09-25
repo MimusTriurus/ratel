@@ -232,6 +232,9 @@ func _round(from: Vector3, to: Vector3, kind: String, normal: Vector3, travel: V
 	node.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 	node.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Over everything: Level3DGuns.ROUND_PRIORITY.
+	node.no_depth_test = true
+	node.render_priority = Level3DGuns.ROUND_PRIORITY
 	get_parent().add_child(node)
 	node.global_position = from
 	_in_flight += 1

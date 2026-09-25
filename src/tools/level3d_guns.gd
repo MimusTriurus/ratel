@@ -73,6 +73,12 @@ const ROUND_HEIGHT := 0.83
 # yellow ring in a black one. A small white ball, as it was, was lost on the
 # sand; the black ring is what makes it read, there as in the game.
 const ROUND_SPRITES := {true: "white-bullet.png", false: "yellow-bullet.png"}
+# Rounds, the enemies' and the player's, are drawn over everything, as the
+# game draws them over the stage: at the height they fly they went through a
+# ruin or a wall they passed, and the height does not decide what they hit.
+# Last in the transparent pass, after the water and the boats' wakes (1).
+const ROUND_PRIORITY := 10
+
 # The gun's flash. RotatingGun has none -- its second sprite is the barrel run
 # back, nothing more -- but the 3D gun's round leaves from a muzzle that was
 # otherwise dark: a star of fire along the shot for FLASH_TIME, and a wisp.
@@ -353,6 +359,8 @@ func enemy_bullet(at: Vector2, v: Vector2, travel: int, height: float, white := 
 	node.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 	node.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.no_depth_test = true
+	node.render_priority = ROUND_PRIORITY
 	add_child(node)
 	var shot := {"at": at, "v": v * PX, "travel": travel, "node": node, "height": height}
 	_place_shot(shot)
