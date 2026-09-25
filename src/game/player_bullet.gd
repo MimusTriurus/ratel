@@ -10,6 +10,8 @@ const DISTANCE := 360.0
 const TRAVEL_TIME := 20
 const VELOCITY := DISTANCE / TRAVEL_TIME
 const MARGIN := 16.0
+# The draw layer, which Player.live_bullets counts the rounds in flight on.
+const LAYER := 4
 
 var vx: float
 var vy: float
@@ -30,7 +32,7 @@ func _init(p_x: float, p_y: float, p_angle: float = 270.0) -> void:
 
 
 func init() -> void:
-	layer = 4
+	layer = LAYER
 	main.play_sound_always(main.machine_gun_sound)
 
 

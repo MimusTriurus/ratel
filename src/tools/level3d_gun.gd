@@ -17,8 +17,13 @@
 # answers for -- solid or shield -- on the map's collision grid
 # (Level3DMap). The scene is asked only what is there to be seen: how high the
 # round strikes, and whether it is a wall, a trunk, a building, the ground or
-# the sea, for the impact. The tracer then flies there at a speed the eye can
+# the sea, for the impact. The round then flies there at a speed the eye can
 # follow, and the impact is shown when it arrives.
+#
+# The round is PlayerBullet's sprite, yellow-bullet.png -- the one EnemyBullet
+# draws yellow, as the game's player and gunners fire the same round -- turned
+# to the camera at the game's size, as Level3DGuns draws the enemies'. It used
+# to be a glowing streak, a tracer the game never had.
 #
 # From the tank bench (BlenderMCP/godot, docs/combat.md), the two things it
 # settled for the cannon: recoil is an impulse into the body spring, not a
@@ -35,8 +40,8 @@
 # Player.update's trigger instead: a round the tick the trigger goes down, then
 # one every GUN_ARMED_DELAY ticks while it is held -- tapping is faster than
 # holding, as it is in the game -- each one flying 18 px a tick for 21 ticks,
-# 378 px, whatever it was aimed at, with no spread. It is still decided when it
-# is fired.
+# 378 px, whatever it was aimed at, with no spread, and no more than
+# Player.MAX_BULLETS of them in flight. It is still decided when it is fired.
 class_name Level3DGun
 extends Node3D
 
@@ -46,15 +51,14 @@ const SPREAD := deg_to_rad(2.0)
 const RANGE := 12.0
 const MIN_RANGE := 1.5
 const RANGE_JITTER := 0.05
-const TRACER_SPEED := 70.0
-const TRACER_LENGTH := 0.7
-const TRACER_WIDTH := 0.07
+const ROUND_SPEED := 70.0
+const ROUND_SPRITE := "yellow-bullet.png"
 const FLASH_TIME := 0.05
 const RECOIL_KICK := 0.12
 # PlayerBullet, at the map's PX: it moves VELOCITY a tick and is gone on the
 # tick its count passes TRAVEL_TIME, so it covers TRAVEL_TIME + 1 moves.
 const CLASSIC_RANGE := (PlayerBullet.TRAVEL_TIME + 1) * PlayerBullet.VELOCITY * Level3DMap.PX
-const CLASSIC_TRACER_SPEED := PlayerBullet.VELOCITY * 100.0 * Level3DMap.PX
+const CLASSIC_ROUND_SPEED := PlayerBullet.VELOCITY * 100.0 * Level3DMap.PX
 
 # `ground.call(x, z)` as the BTR has it; `surface.call(x, z)` the same over
 # everything that stands on the ground as well -- walls, trunks, buildings --
@@ -75,11 +79,12 @@ var _cooldown := 0.0
 # Player's gun_armed and shoot_released, for the classic trigger.
 var _gun_armed := 0
 var _shoot_released := true
+# Rounds still flying, for Player.MAX_BULLETS.
+var _in_flight := 0
 var _rng := RandomNumberGenerator.new()
 var _flash: MeshInstance3D
 var _flash_left := 0.0
-var _tracer_mesh: BoxMesh
-var _tracer_material: StandardMaterial3D
+var _round_texture: AtlasTexture
 var _puff_mesh: SphereMesh
 var _chip_mesh: BoxMesh
 var _materials := {}
@@ -88,10 +93,10 @@ var _materials := {}
 func _ready() -> void:
 	# Seeded, so a --shot of a burst is the same burst every time.
 	_rng.seed = 1
-	_tracer_mesh = BoxMesh.new()
-	_tracer_mesh.size = Vector3(TRACER_LENGTH, TRACER_WIDTH, TRACER_WIDTH)
-	_tracer_material = _unshaded(Color(1.0, 0.85, 0.35))
-	_tracer_mesh.material = _tracer_material
+	var sprite := SpriteBank.new(Main.SPRITES).get_sprite(ROUND_SPRITE)
+	_round_texture = AtlasTexture.new()
+	_round_texture.atlas = sprite.tex
+	_round_texture.region = sprite.region
 
 	var star := SphereMesh.new()
 	star.radial_segments = 5
@@ -129,7 +134,7 @@ func step(delta: float) -> void:
 		if _gun_armed > 0:
 			_gun_armed -= 1
 		if trigger:
-			if _shoot_released or _gun_armed == 0:
+			if (_shoot_released or _gun_armed == 0) and _in_flight < Player.MAX_BULLETS:
 				_fire()
 				_gun_armed = Player.GUN_ARMED_DELAY
 			_shoot_released = false
@@ -190,7 +195,7 @@ func _fire() -> void:
 			normal = -line.normalized()
 			kind = "building"
 
-	_tracer(from, point, kind, normal, line.normalized(), found)
+	_round(from, point, kind, normal, line.normalized(), found)
 	# A star at the bore, turned and sized afresh each round so a burst flickers.
 	_flash.visible = true
 	_flash.transform = Transform3D(Basis(Vector3.RIGHT, _rng.randf() * TAU)
@@ -213,21 +218,26 @@ func _grid_stop(from: Vector3, direction: Vector3, reach: float) -> float:
 	return -1.0
 
 
-func _tracer(from: Vector3, to: Vector3, kind: String, normal: Vector3, travel: Vector3,
+func _round(from: Vector3, to: Vector3, kind: String, normal: Vector3, travel: Vector3,
 		found: Dictionary) -> void:
-	var tracer := _instance(_tracer_mesh)
-	var along := to - from
-	var length := along.length()
-	# The streak's back end leaves the muzzle, its front end stops at the hit.
-	var start := from + along.normalized() * TRACER_LENGTH * 0.5
-	var stop := to - along.normalized() * TRACER_LENGTH * 0.5
-	tracer.global_transform = Transform3D(_basis_along(along), start)
-	var time := maxf(length - TRACER_LENGTH, 0.0) \
-			/ (CLASSIC_TRACER_SPEED if btr.classic else TRACER_SPEED)
-	var tween := tracer.create_tween()
-	tween.tween_property(tracer, "global_position", stop, time)
+	# Drawn as Level3DGuns.enemy_bullet draws the enemies' rounds.
+	var node := Sprite3D.new()
+	node.texture = _round_texture
+	node.pixel_size = Level3DMap.PX
+	node.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	node.shaded = false
+	node.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+	node.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	get_parent().add_child(node)
+	node.global_position = from
+	_in_flight += 1
+	var time := from.distance_to(to) / (CLASSIC_ROUND_SPEED if btr.classic else ROUND_SPEED)
+	var tween := node.create_tween()
+	tween.tween_property(node, "global_position", to, time)
 	tween.tween_callback(func():
-		tracer.queue_free()
+		node.queue_free()
+		_in_flight -= 1
 		_impact(to, kind, normal, travel)
 		if not found.is_empty():
 			struck.call(found))
@@ -294,13 +304,6 @@ func _instance(mesh: Mesh) -> MeshInstance3D:
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	get_parent().add_child(node)
 	return node
-
-
-static func _basis_along(direction: Vector3) -> Basis:
-	var x := direction.normalized()
-	var up := Vector3.UP if absf(x.y) < 0.99 else Vector3.FORWARD
-	var z := x.cross(up).normalized()
-	return Basis(x, z.cross(x), z)
 
 
 static func _unshaded(colour: Color) -> StandardMaterial3D:

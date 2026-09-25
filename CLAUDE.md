@@ -570,6 +570,9 @@ Deliberate. Not bugs, and not to be "fixed" back without saying why:
   original had no way out of a stage but to die or finish it.
 - `CAMERA_BOUND` is a full frame rather than the original's 224, so the jeep can
   back up about a screen and a half.
+- At most `Player.MAX_BULLETS` (3) machine-gun rounds in flight. The original
+  fires on every press with no cap, so a turbo pad got a round per press; three
+  is above what hand tapping reaches and holds turbo to about 14 a second.
 - `FlowField.build` produces shortest paths, which the shipped `dirs-N.dat` do
   not always contain. Only stages whose collision grid is edited get rebuilt, so
   this only bites where it has to.

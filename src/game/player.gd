@@ -7,6 +7,14 @@ const ANGLE_STEPS := 8
 const ANGLE_VELOCITY := 45.0 / ANGLE_STEPS
 const DIAGONAL_DELAY := 4
 const GUN_ARMED_DELAY := 45
+# Not in the original, which fires a round on every press with nothing to stop
+# it: a turbo pad pressing 30 times a second got 30 rounds a second, against
+# the 2.2 of holding the button. At most this many rounds are in flight. A
+# round lives TRAVEL_TIME + 1 ticks, 0.21 s, so hand tapping -- 8 to 10 a
+# second, about two in flight -- never meets the cap, and turbo tops out near
+# 14 a second. A round that strikes close is gone sooner, so point blank fires
+# faster, as NES shooters with a bullet cap did.
+const MAX_BULLETS := 3
 const RESPAWN_DELAY := 91 * 2
 const INVINCIBLE_DELAY := 91 * 3
 
@@ -376,7 +384,7 @@ func update() -> void:
 	if gun_armed > 0:
 		gun_armed -= 1
 	if input.is_gun():
-		if shoot_released or gun_armed == 0:
+		if (shoot_released or gun_armed == 0) and live_bullets() < MAX_BULLETS:
 			PlayerBullet.new(x, y, aim_angle if aiming else 270.0)
 			gun_armed = GUN_ARMED_DELAY
 		shoot_released = false
@@ -401,6 +409,17 @@ func update() -> void:
 
 # The rumble and invincibility flash advance once per rendered frame, exactly
 # as in the original's render().
+# The player's rounds still flying: PlayerBullet's layer, read off GameMode
+# rather than kept here, so nothing that takes a round away can leave a count
+# behind.
+func live_bullets() -> int:
+	var n := 0
+	for e in game_mode.elements[PlayerBullet.LAYER]:
+		if e is PlayerBullet and not e.remove:
+			n += 1
+	return n
+
+
 func render() -> void:
 	if respawning != 0:
 		return
