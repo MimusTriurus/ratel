@@ -23,11 +23,13 @@
 # glTF; level3d_ocean.gdshader stands in for it, fed by the shore distance the
 # export bakes into the ocean's vertex colours.
 #
-# The default view is the game's: straight down, orthographic, the frame exactly
-# as wide as the level, 16:9, following the BTR up the stage. Tab switches to a
-# tilted perspective view. The controls are the game's -- WASD to drive, the
-# mouse to aim, the left button to fire -- with the tank bench's orders from
-# BlenderMCP/godot moved to the middle button. WASD drives one of two ways
+# The default view is a tilted perspective one, following the BTR up the
+# stage; Tab switches to the game's, straight down, orthographic, the frame
+# exactly as wide as the level, 16:9. The controls are the game's -- WASD to
+# drive, the left button or L to fire the gun up the screen, the right button
+# or P for the rocket, as the game's jeep does; M hands the aim to the mouse --
+# with the tank bench's orders from BlenderMCP/godot moved to the middle
+# button. WASD drives one of two ways
 # (level3d_btr.gd): classic, the game's jeep, eight directions at its speed,
 # or free, a throttle and a wheel:
 #
@@ -55,7 +57,7 @@
 #   Space                  skip the Chinook: the BTR is simply there
 #   wheel, arrows          scroll the camera off the BTR; C follows it again
 #   + / -                  zoom
-#   Tab                    top view / tilted view
+#   Tab                    tilted view / top view
 #   Home / End             start / end of the level
 #
 # Like the map editor it can render one view and quit (a real window is needed,
@@ -165,9 +167,9 @@ var chinook: Level3DChinook     # while it is flying the BTR in
 var level_aabb: AABB
 var focus := Vector2.ZERO       # x, z the camera is centred on
 var following := true
-var mouse_aim := true
+var mouse_aim := false  # M; off, classic fires as the game's jeep does
 var zoom := 1.0
-var tilted := false
+var tilted := true      # Tab; the top view is the game's
 
 var _live := false
 var _forced_aim = null  # --fire's or --rocket's target
