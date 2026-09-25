@@ -13,8 +13,9 @@
 # level3d_btr.gd.
 #
 # The light is Blender's: the same sun direction, the scene's leftover 1000 W
-# point light over the start area, the world colour as ambient light, and a
-# linear tonemapper because the view transform was Standard. Strengths could
+# point light over the start area, the world colour as ambient light (on the
+# water still; everything else has a grey one, the two-tone shadows' SHADE),
+# and a linear tonemapper because the view transform was Standard. Strengths could
 # not simply be converted -- Forward+ and Compatibility disagree with each
 # other by about a factor of two -- so the sun's gain per renderer was measured
 # against the same frame rendered in Blender (sand at the start of the stage).
@@ -125,10 +126,28 @@ const SUN_STRENGTH := 3.0
 # Linear world colour and strength.
 const WORLD_COLOR := Color(0.342, 0.552, 1.0)
 const WORLD_STRENGTH := 0.12
+# What a face in shadow keeps of a lit face's light, linear: the ambient, the
+# only light there is in shadow. Blender's world, 0.12 of a blue sky, left the
+# shadows at a fifth of the lit colour on screen, nearly black, and the black
+# lines drawn across them lost; a cel shade is more like 55 to 60%, which is
+# 0.3 linear. The world colour stays the background's.
+const SHADE := 0.3
 
 const SUN_GAIN_COMPATIBILITY := 0.85
 const SUN_GAIN_FORWARD := 1.75
-const WATER_GAIN_COMPATIBILITY := 1.1
+# The water's sun and glint, given back what SHADE took of the sun
+# (_replace_ocean). Measured, as the mean colour of the sea in the opening
+# frame against the one before SHADE: the glint is not linear in F0, and
+# Compatibility's sun share is not the water's.
+const WATER_GAIN_COMPATIBILITY := 2.7
+const WATER_GLINT_COMPATIBILITY := 1.8
+const WATER_GLINT_FORWARD := 1.2
+# What is left of the sun once the ambient is SHADE, for a lit face to stay
+# its colour. Forward+ adds the two as it should and leaves 1 - SHADE;
+# Compatibility adds more of the ambient on a lit face than it does in
+# shadow, and this is measured there: sand, palm leaves and the hangars'
+# roofs back at their colours from before, 245,151,0 now 255,149,0.
+const SUN_SHARE_COMPATIBILITY := 0.34
 # The top camera sits this far above the ground, which is as low as it can go
 # over the tallest building; the shadow map only has to cover that depth.
 const TOP_CAMERA_HEIGHT := 20.0
@@ -286,9 +305,11 @@ func _add_environment() -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = (WORLD_COLOR * WORLD_STRENGTH).linear_to_srgb()
+	# The shadow side's light, and all of it: grey, since the sky's blue would
+	# be lost on the sand anyway, which has none to reflect.
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = WORLD_COLOR.linear_to_srgb()
-	env.ambient_light_energy = WORLD_STRENGTH
+	env.ambient_light_color = Color.WHITE
+	env.ambient_light_energy = SHADE
 	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
 	var world := WorldEnvironment.new()
 	world.environment = env
@@ -308,8 +329,16 @@ func _add_lights() -> void:
 	# N.L, the sun's height; _toon's lit side takes all of it, so the same
 	# sand wants the sun that much weaker.
 	gain *= -SUN_DIRECTION_BLENDER.z
+	# At that gain a lit face takes about its own colour, which the ambient's
+	# SHADE is now part of, so the sun gives up that much.
+	gain *= SUN_SHARE_COMPATIBILITY if _is_compatibility() else 1.0 - SHADE
 	sun.light_energy = SUN_STRENGTH / PI * gain
 	sun.shadow_enabled = true
+	# A shadow's edge is a line, not a blur: no filtering, docs/cel-shading.md.
+	RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_HARD)
+	# Without the blur the map's texels show as steps along it; twice the
+	# default halves them.
+	RenderingServer.directional_shadow_atlas_set_size(8192, true)
 
 	# No lamp. The Blender scene's default point light is still in it, and
 	# was rendered with here as a faint warm spot over the start area; but a
@@ -327,9 +356,18 @@ func _replace_ocean(level: Node) -> void:
 	# The sun _add_lights weakened for the two-tone light, given back to the
 	# water, which is still Lambert: all of it under Forward+, where the water
 	# is as bright as it was at 1 / N.L; Compatibility's, measured the same way,
-	# needs less.
-	water.set_shader_parameter("sun_gain", WATER_GAIN_COMPATIBILITY if _is_compatibility()
-			else 1.0 / -SUN_DIRECTION_BLENDER.z)
+	# needs less. And what SHADE took of the sun on top of that, in both the
+	# light and the glint. The ambient the water takes is not SHADE's grey but
+	# the Blender world it was calibrated under, which the shader adds for
+	# itself.
+	if _is_compatibility():
+		water.set_shader_parameter("sun_gain", WATER_GAIN_COMPATIBILITY)
+		water.set_shader_parameter("glint_gain", WATER_GLINT_COMPATIBILITY)
+	else:
+		water.set_shader_parameter("sun_gain", 1.0 / -SUN_DIRECTION_BLENDER.z / (1.0 - SHADE))
+		water.set_shader_parameter("glint_gain", WATER_GLINT_FORWARD)
+	water.set_shader_parameter("sky", Vector3(WORLD_COLOR.r, WORLD_COLOR.g, WORLD_COLOR.b)
+			* WORLD_STRENGTH)
 	ocean.material_override = water
 	# The water is drawn in the transparent pass, because it reads the screen;
 	# it casts nothing either way.
@@ -1188,7 +1226,9 @@ func _update_camera() -> void:
 		camera.near = 0.5
 		camera.far = 1000.0
 		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-		sun.directional_shadow_max_distance = 250.0
+		# The top of the frame is 1.21 distances away along its ray; the map
+		# spread over more than that is only coarser, stepped at the edges.
+		sun.directional_shadow_max_distance = distance * 1.4
 	else:
 		camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 		camera.keep_aspect = Camera3D.KEEP_WIDTH

@@ -20,7 +20,7 @@
 // of it. The bottom seen through the shallows is already lit, so it goes in as
 // emission and not as albedo, which would light it twice.
 shader_type spatial;
-render_mode cull_disabled, depth_draw_always;
+render_mode cull_disabled, depth_draw_always, ambient_light_disabled;
 
 uniform sampler2D screen : hint_screen_texture, filter_linear_mipmap;
 uniform sampler2D zbuf : hint_depth_texture, filter_linear;
@@ -64,6 +64,15 @@ uniform float refraction = 14.0;
 // is two-tone and the sun weakened to match (level3d_preview.gd, _toon); this
 // gives the water the sun it had back.
 uniform float sun_gain = 1.0;
+// Nor does it take the scene's ambient, a grey raised for the two-tone
+// shadows (SHADE there), but the Blender world's blue it always had: added
+// here, as the ambient would have been, to what the sun lights.
+uniform vec3 sky = vec3(0.041, 0.066, 0.12);
+// And the sun's glint on the swell, which sun_gain does not reach: SHADE
+// weakened the sun under it too. F0 rather than a gain on the light, which a
+// shader cannot have without writing all of light(); the camera looks down,
+// where the reflectance is about F0, so it scales the glint about as far.
+uniform float glint_gain = 1.0;
 
 varying vec3 world;
 varying float shore;
@@ -198,9 +207,10 @@ void fragment() {
 	float foam = clamp(max(surf, surge * 0.8), 0.0, 1.0) * shred(world.xz, t)
 			* mix(flecks, 1.0, 0.25);
 
-	ALBEDO = mix(body * (1.0 - seen), foam_colour, foam) * sun_gain;
-	EMISSION = bottom * seen * (1.0 - foam);
+	vec3 albedo = mix(body * (1.0 - seen), foam_colour, foam);
+	ALBEDO = albedo * sun_gain;
+	EMISSION = bottom * seen * (1.0 - foam) + albedo * sky;
 	ROUGHNESS = mix(roughness_open, roughness_foam, foam);
-	SPECULAR = 0.3;
+	SPECULAR = min(0.3 * glint_gain, 1.0);
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
 }
