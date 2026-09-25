@@ -48,9 +48,10 @@
 #   middle click           drive there (shift: add a waypoint)
 #   Esc                    stop
 #   Q / E                  turn the turret by hand; M toggles mouse aim
-#   R                      put the BTR back at the start, rebuild what was blown up
+#   R                      fly the BTR in again, rebuild what was blown up
 #                          and bring the bunkers' guns, the soldiers, the boats,
 #                          the tanks and the boss back
+#   Space                  skip the Chinook: the BTR is simply there
 #   wheel, arrows          scroll the camera off the BTR; C follows it again
 #   + / -                  zoom
 #   Tab                    top view / tilted view
@@ -63,6 +64,7 @@
 #         -- --shot out.png <position 0-1 or x,z> <zoom> <top|tilt> [<seconds> <x,z> ...] \
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
 #            [--at <x,z>] [--free] [--hold <keys>@<from>-<to>[,...]] [--weapon <0-3>]
+#            [--intro]
 #
 # The bunkers' guns, the enemy soldiers, the two boats on the river, the two
 # brown tanks and the boss's four heavy tanks at the top of the stage fight back
@@ -85,6 +87,12 @@
 # many spans as are given (wd@0-1.5,a@2-3), which is how the classic keys
 # are checked. --weapon starts with what the prisoners would have given: 0 the
 # grenade, 1 to 3 the missile and its two upgrades.
+#
+# The stage opens as the game's does: a Chinook flies the BTR in, backs it out
+# down its ramp and flies off, and only then is it the player's, at
+# IntroPlayer's spot rather than START (level3d_chinook.gd). A --shot starts
+# without it, at START, unless --intro is given, when the seconds count from
+# the Chinook's arrival.
 #
 # The soldiers are the model sheet's trooper; --sprite-soldiers, with or
 # without --shot, draws them as the figure made from the game's sprite
@@ -137,6 +145,7 @@ var boats: Level3DBoats
 var tanks: Level3DTanks
 var boss: Level3DBoss
 var map: Level3DMap
+var chinook: Level3DChinook     # while it is flying the BTR in
 var level_aabb: AABB
 var focus := Vector2.ZERO       # x, z the camera is centred on
 var following := true
@@ -207,7 +216,29 @@ func _ready() -> void:
 	_update_camera()
 	_live = true
 
+	var args := OS.get_cmdline_user_args()
+	if args.has("--intro") or not (args.has("--shot") or args.has("--obstacle-map")):
+		_start_intro()
 	_screenshot_mode()
+
+
+# The Chinook's run, from the top: Triggers.CHINOOK, which the stage fires on
+# its first row. Nothing is the player's until it is over.
+func _start_intro() -> void:
+	if chinook != null:
+		chinook.queue_free()
+	chinook = Level3DChinook.new()
+	chinook.ground = _ground_at
+	chinook.btr = btr
+	chinook.enlarge = not tilted
+	chinook.finished = func():
+		chinook = null
+		following = true
+		# Player.make_invincible.
+		_invincible = Player.INVINCIBLE_DELAY
+		_blink = 0
+	add_child(chinook)
+	following = true
 
 
 static func _is_compatibility() -> bool:
@@ -746,7 +777,9 @@ func _add_guns(level: Node) -> void:
 	soldiers.player_position = guns.player_position
 	soldiers.scored = guns.scored
 	soldiers.run_over = func(p: Vector3, margin: float, sideways: bool) -> Vector3:
-		return Vector3.ZERO if _respawning > 0 else btr.push_out(p, margin, sideways)
+		if _respawning > 0 or chinook != null:
+			return Vector3.ZERO
+		return btr.push_out(p, margin, sideways)
 	add_child(soldiers)
 	boats = Level3DBoats.new()
 	boats.map = map
@@ -938,7 +971,7 @@ func _view_frame() -> Rect2:
 
 # Player.attack: 32 px either side of the player.
 func _attack_player(x: float, z: float) -> bool:
-	if _respawning > 0 or _invincible > 0 or _immortal:
+	if _respawning > 0 or _invincible > 0 or _immortal or chinook != null:
 		return false
 	var half := 32.0 * Level3DGuns.PX
 	if absf(x - btr.position.x) > half or absf(z - btr.position.z) > half:
@@ -1042,6 +1075,11 @@ func _update_camera() -> void:
 	var width := level_aabb.size.x / zoom
 	var half_width := width * 0.5
 	var half_height := width * 9.0 / 32.0
+	# Over the Chinook while it comes in: it is drawn at the original's scale
+	# for its height, which takes it well above the usual 20 m.
+	var height := TOP_CAMERA_HEIGHT
+	if chinook != null:
+		height = maxf(height, chinook.top() + 1.0)
 	# The frame stays on the level: at zoom 1 it is exactly the level's width,
 	# so x is pinned to the middle, as the game's camera_x is.
 	focus.x = clampf(focus.x, level_aabb.position.x + half_width, level_aabb.end.x - half_width)
@@ -1061,14 +1099,14 @@ func _update_camera() -> void:
 		camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 		camera.keep_aspect = Camera3D.KEEP_WIDTH
 		camera.size = width
-		camera.position = Vector3(focus.x, TOP_CAMERA_HEIGHT, focus.y)
+		camera.position = Vector3(focus.x, height, focus.y)
 		camera.rotation = Vector3(-PI / 2.0, 0.0, 0.0)
 		camera.near = 1.0
-		camera.far = TOP_CAMERA_HEIGHT * 2.0
+		camera.far = height + TOP_CAMERA_HEIGHT
 		# Straight down, every ground point is at the same depth, so cascades
 		# buy nothing and a single map over the whole depth is sharpest.
 		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
-		sun.directional_shadow_max_distance = TOP_CAMERA_HEIGHT * 2.0
+		sun.directional_shadow_max_distance = height + TOP_CAMERA_HEIGHT
 	_apply_shake(width)
 
 
@@ -1152,7 +1190,12 @@ func _physics_process(delta: float) -> void:
 	# Player.update: while respawning the player does nothing at all; the tick
 	# the count runs out it comes back, invincible, and carries on.
 	var gone := false
-	if _respawning > 0:
+	# The Chinook's run: Chinook sets GameMode.playing false, and the player
+	# is not updated until it is over.
+	if chinook != null:
+		chinook.tick()
+		gone = chinook != null
+	elif _respawning > 0:
 		_respawning -= 1
 		if _respawning == 0:
 			btr.visible = true
@@ -1228,7 +1271,9 @@ func _process(delta: float) -> void:
 		focus.y = Level3DMap.to_level(Vector2(0.0, boss_top)).y + level_aabb.size.x / zoom * 9.0 / 32.0
 	# The game flashes the jeep through four palettes a frame while it is
 	# invincible; the BTR has one, so it blinks.
-	if _respawning == 0:
+	if chinook != null:
+		chinook.enlarge = not tilted
+	elif _respawning == 0:
 		_blink = _blink + 1 if _invincible > 0 else 0
 		btr.visible = _blink % 4 < 2
 	_shake_left = maxf(_shake_left - delta, 0.0)
@@ -1283,6 +1328,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_V:
 				btr.classic = not btr.classic
 				_set_score(_score)
+			KEY_SPACE:
+				if chinook != null:
+					chinook.skip()
 			KEY_R:
 				btr.place(START, START_HEADING)
 				following = true
@@ -1300,6 +1348,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_invincible = 0
 				btr.visible = true
 				_set_score(0)
+				_start_intro()
 			KEY_ESCAPE:
 				btr.stop()
 	elif event is InputEventMouseButton and event.pressed:
@@ -1381,6 +1430,9 @@ func _screenshot_mode() -> void:
 	tanks.verbose = guns.verbose
 	boss.verbose = guns.verbose
 	friends.verbose = guns.verbose
+	var intro := args.find("--intro")
+	if intro >= 0:
+		args.remove_at(intro)
 	var immortal := args.find("--immortal")
 	if immortal >= 0:
 		_immortal = true

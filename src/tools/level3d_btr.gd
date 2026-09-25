@@ -274,6 +274,22 @@ func place(at: Vector3, facing: float) -> void:
 	_pose()
 
 
+# Posed from outside, while the Chinook unloads it (level3d_chinook.gd): where
+# it is, which way it faces and how far its nose is up, the wheels turning by
+# how far it went. None of the driving runs.
+func carry(at: Vector3, facing: float, nose_up: float) -> void:
+	_wheel_spin -= (at - position).dot(forward()) / (WHEEL_RADIUS * MODEL_SCALE)
+	position = at
+	heading = facing
+	speed = 0.0
+	yaw_rate = 0.0
+	waypoints.clear()
+	backing = false
+	_classic_synced = false
+	_tilt = Basis(Vector3(0, 0, 1), nose_up)
+	_pose()
+
+
 func order(to: Vector3, append: bool) -> void:
 	if not append:
 		waypoints.clear()
