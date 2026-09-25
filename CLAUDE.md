@@ -561,8 +561,8 @@ intro drop only incidentally — the real gate there is `GameMode.playing`, whic
   edges, an inverted-hull contour round every part, black seals round flat
   panes. How, and the line widths, are in `docs/cel-shading.md`; the
   per-kind pipelines are `docs/soldier-pipeline.md`, `docs/boat-pipeline.md`
-  and `docs/level3d-pipeline.md`. Only the jeep, the BTR, the Chinook and the model-sheet soldiers are
-  done so far.
+  and `docs/level3d-pipeline.md`. Only the jeep, the BTR, the Chinook,
+  the model-sheet soldiers and the boat are done so far.
 
 ## Known deviations from the original
 
