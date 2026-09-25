@@ -17,18 +17,19 @@
 # the hull is the one the prisoners have given, as Main's has_missiles and
 # missile_power pick the game's weapon. The grenade is a mortar, and its bomb
 # is lobbed -- the game's Grenade flies straight while its drawn size swells
-# and shrinks, which is a lob seen from above -- so it goes over walls, as the
-# grenade does and a missile, stopped by is_missile_target, does not. It is
-# swept along its arc, so it also goes over what is too low to reach up to
-# it, which the grenade, hitting anything its box touches on the way, does
-# not. The missile and its upgrades are rockets on rails, each bigger than
-# the last; the last is in three stages, and drops the two spent ones on the
-# way.
+# and shrinks, which is a lob seen from above. The missile and its upgrades
+# are rockets on rails, each bigger than the last; the last is in three
+# stages, and drops the two spent ones on the way.
 #
 # Unlike a round, a rocket is slow enough to be seen, so it is flown rather than
-# decided: each physics step it moves along its line and the segment it covered
-# is asked for anything in the way. It flies at the ground under the cursor, no
-# further than RANGE, and goes off at whatever it meets first or at the end.
+# decided: each physics step it moves along its line, and the segment it
+# covered is asked for the enemies in the way. What stops it on the ground is
+# the game's to say, on the map's collision grid (Level3DMap), as it is for the
+# gun and the BTR's driving: a missile goes off over the first solid or shield
+# tile it comes to, PlayerMissile's is_missile_target, and a grenade asks no
+# tile at all -- Grenade goes over every wall, and off only on an enemy or at
+# the end of its throw. The scene is asked only how high it strikes. It flies
+# at the ground under the cursor, no further than RANGE.
 #
 # From the tank bench (BlenderMCP/godot, docs/combat.md): an explosion shakes
 # the camera -- the one shake the bench leaves on, because without it a blast
@@ -109,18 +110,18 @@ const FITS := [
 			"tail": "BTR_StageMissile1Nozzle", "stages": 3},
 ]
 
-# What a rocket may hit: the preview's ground, solid and target layers.
-var mask := 0xFFFFFFFF
+# `ground.call(x, z)` as the BTR has it; `surface.call(x, z)` the same over the
+# walls, trunks and buildings on it.
 var ground: Callable
+var surface: Callable
 var btr: Level3DBtr
 var aim_point = null        # Vector3 or null
-# `exploded.call(point, rid)` at each explosion, returning whether it destroyed
-# anything; rid is what the rocket hit, or an empty RID when it went off at the
-# end of its flight.
+# `exploded.call(point)` at each explosion, returning whether it destroyed
+# anything.
 var exploded: Callable
-# `intercept.call(from, to)`: what the rocket's flight meets that is not a body
-# -- the bunkers' guns, Level3DGuns.intercept -- as {"t": 0-1 along from -> to,
-# ...}, or empty. It goes off there, and `struck.call(found)` is told first.
+# `intercept.call(from, to)`: the first enemy on the rocket's flight -- a
+# bunker's gun, a boat or a tank -- as {"t": 0-1 along from -> to, ...}, or
+# empty. It goes off there, and `struck.call(found)` is told first.
 var intercept: Callable
 var struck: Callable
 # `traveled.call(at, direction)`: each TravelingExplosion an upgraded missile
@@ -414,6 +415,15 @@ func _fly(rocket: Dictionary, delta: float) -> void:
 		return
 	node.global_position += direction * move
 	rocket.left -= move
+	# PlayerMissile.update: off on the tick it is over a solid or shield tile.
+	var over := Level3DMap.to_map(Vector2(node.global_position.x, node.global_position.z))
+	if btr.map.is_missile_target(over.x, over.y):
+		var at := node.global_position
+		var top: Dictionary = surface.call(at.x, at.z)
+		if top.hit:
+			at.y = minf(at.y, top.height)
+		_explode(rocket, at, -direction)
+		return
 	var flame: MeshInstance3D = rocket.flame
 	_stretch_flame(flame, rocket.axis, _rng.randf_range(0.16, 0.3))
 	rocket.smoke += delta
@@ -428,7 +438,7 @@ func _fly(rocket: Dictionary, delta: float) -> void:
 	if rocket.left <= 0.001:
 		var there: Dictionary = ground.call(node.global_position.x, node.global_position.z)
 		var at := Vector3(node.global_position.x, there.height, node.global_position.z)
-		_explode(rocket, at, Vector3.UP, RID())
+		_explode(rocket, at, Vector3.UP)
 
 
 # A bomb: along its arc at a steady speed over the ground, nose first, and
@@ -449,7 +459,7 @@ func _fly_lob(rocket: Dictionary, delta: float) -> void:
 		_trail(node.global_position + rocket.direction * rocket.tail * rocket.scale)
 	if gone >= rocket.run - 0.001:
 		var there: Dictionary = ground.call(next.x, next.z)
-		_explode(rocket, Vector3(next.x, there.height, next.z), Vector3.UP, RID())
+		_explode(rocket, Vector3(next.x, there.height, next.z), Vector3.UP)
 
 
 func _arc(rocket: Dictionary, gone: float) -> Vector3:
@@ -474,22 +484,15 @@ func _place_on_arc(rocket: Dictionary, gone: float) -> void:
 	rocket.direction = ahead
 
 
-# Asks the segment a round's nose covers this step for anything in the way,
+# Asks the segment a round's nose covers this step for an enemy in the way,
 # and sets it off there; whether it did.
 func _sweep(rocket: Dictionary, nose: Vector3, reach: Vector3) -> bool:
-	var query := PhysicsRayQueryParameters3D.create(nose, reach, mask)
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
 	var found: Dictionary = intercept.call(nose, reach) if intercept.is_valid() else {}
-	if not found.is_empty():
-		var at := nose.lerp(reach, found.t)
-		if hit.is_empty() or nose.distance_to(at) < nose.distance_to(hit.position):
-			struck.call(found)
-			_explode(rocket, at, (nose - reach).normalized(), RID())
-			return true
-	if not hit.is_empty():
-		_explode(rocket, hit.position, hit.normal, hit.rid)
-		return true
-	return false
+	if found.is_empty():
+		return false
+	struck.call(found)
+	_explode(rocket, nose.lerp(reach, found.t), (nose - reach).normalized())
+	return true
 
 
 # The rearmost stage still on, burnt out: its parts fall away tumbling, and
@@ -540,7 +543,7 @@ func _trail(at: Vector3) -> void:
 # ----------------------------------------------------------------------------
 # The explosion
 
-func _explode(rocket: Dictionary, at: Vector3, normal: Vector3, rid: RID) -> void:
+func _explode(rocket: Dictionary, at: Vector3, normal: Vector3) -> void:
 	_rockets.erase(rocket)
 	(rocket.node as Node3D).queue_free()
 	if rocket.classic and not loaded:
@@ -549,7 +552,7 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3, rid: RID) -> voi
 	var on_water: bool = there.hit and there.kind == "water" and at.y <= there.height + 0.05
 	# Asked first: a building that goes down brings its own soot, and a crater
 	# of the rocket's on top of it is a second, darker scorch.
-	var destroyed: bool = exploded.call(at, rid) if exploded.is_valid() else false
+	var destroyed: bool = exploded.call(at) if exploded.is_valid() else false
 	_fireball(at)
 	_light(at)
 	if on_water:

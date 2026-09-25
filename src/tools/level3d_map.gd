@@ -116,6 +116,13 @@ func is_driveable_land(x: float, y: float) -> bool:
 	return t == MapIO.TYPE_EMPTY or t == MapIO.TYPE_CONVEYOR
 
 
+# GameMode.is_missile_target: what stops the player's round and missile --
+# solid and shield tiles. Water and forest floor do not; the forest is solid.
+func is_missile_target(x: float, y: float) -> bool:
+	var t := tile_type(x, y)
+	return t == MapIO.TYPE_SOLID or t == MapIO.TYPE_SHIELD
+
+
 func is_solid(x: float, y: float) -> bool:
 	return tile_type(x, y) == MapIO.TYPE_SOLID
 

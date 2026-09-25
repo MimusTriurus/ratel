@@ -7,14 +7,18 @@
 # bunkers' guns are the exception, as in the game: three rounds each
 # (level3d_guns.gd), found along the round's flight through `intercept`.
 #
-# A round is decided the moment it is fired, by a ray: at this scale a bullet's
-# flight is a few frames at most, and nothing on the stage moves out of the way.
-# It is aimed at the ground where the cursor is, along the turret's bearing
-# rather than the cursor's -- the turret lags a fast mouse, and the stream is
-# seen to swing round with it -- and no further than RANGE. What the ray meets
-# first is what is hit: a wall, a building, a trunk, the ground, the sea. The
-# tracer then flies there at a speed the eye can follow, and the impact is shown
-# when it arrives, not when the ray found it.
+# A round is decided the moment it is fired: at this scale a bullet's flight is
+# a few frames at most, and nothing on the stage moves out of the way. It is
+# aimed at the ground where the cursor is, along the turret's bearing rather
+# than the cursor's -- the turret lags a fast mouse, and the stream is seen to
+# swing round with it -- and no further than RANGE. What stops it is the
+# game's to say, as it is for the BTR's driving: PlayerBullet moves VELOCITY a
+# tick and is gone on the first tick it is over a tile is_missile_target
+# answers for -- solid or shield -- on the map's collision grid
+# (Level3DMap). The scene is asked only what is there to be seen: how high the
+# round strikes, and whether it is a wall, a trunk, a building, the ground or
+# the sea, for the impact. The tracer then flies there at a speed the eye can
+# follow, and the impact is shown when it arrives.
 #
 # From the tank bench (BlenderMCP/godot, docs/combat.md), the two things it
 # settled for the cannon: recoil is an impulse into the body spring, not a
@@ -31,8 +35,8 @@
 # Player.update's trigger instead: a round the tick the trigger goes down, then
 # one every GUN_ARMED_DELAY ticks while it is held -- tapping is faster than
 # holding, as it is in the game -- each one flying 18 px a tick for 21 ticks,
-# 378 px, whatever it was aimed at, with no spread. It is still decided by the
-# ray when it is fired.
+# 378 px, whatever it was aimed at, with no spread. It is still decided when it
+# is fired.
 class_name Level3DGun
 extends Node3D
 
@@ -52,20 +56,18 @@ const RECOIL_KICK := 0.12
 const CLASSIC_RANGE := (PlayerBullet.TRAVEL_TIME + 1) * PlayerBullet.VELOCITY * Level3DMap.PX
 const CLASSIC_TRACER_SPEED := PlayerBullet.VELOCITY * 100.0 * Level3DMap.PX
 
-# What the ray may stop at: the preview's ground, solid and target layers.
-var mask := 0xFFFFFFFF
-# `hit_kind.call(rid)` names what a body is: "water", "forest", "ground",
-# "wall", "trunk" or "building".
-var hit_kind: Callable
-# `ground.call(x, z)` as the BTR has it.
+# `ground.call(x, z)` as the BTR has it; `surface.call(x, z)` the same over
+# everything that stands on the ground as well -- walls, trunks, buildings --
+# with its kind: "water", "forest", "ground", "wall", "trunk" or "building".
 var ground: Callable
+var surface: Callable
 var btr: Level3DBtr
 var trigger := false
 var aim_point = null        # Vector3 or null
-# `intercept.call(from, to)`: whatever the round's flight meets before the ray
-# does that is not a body -- the bunkers' guns, Level3DGuns.intercept -- as
-# {"t": 0-1 along from -> to, ...}, or empty. `struck.call(found)` when the
-# round gets there.
+# `intercept.call(from, to)`: the first enemy on the round's flight before the
+# grid stops it -- a bunker's gun, a soldier, a boat or a tank -- as {"t": 0-1
+# along from -> to, ...}, or empty. `struck.call(found)` when the round gets
+# there.
 var intercept: Callable
 var struck: Callable
 
@@ -164,18 +166,22 @@ func _fire() -> void:
 	var landing := from + direction * reach
 	var there: Dictionary = ground.call(landing.x, landing.z)
 	landing.y = there.height
-
-	# Past the landing point a little, so a round aimed at the ground finds it.
-	var line := landing - from
-	var query := PhysicsRayQueryParameters3D.create(from, landing + line.normalized() * 0.5, mask)
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
 	var point := landing
 	var normal := Vector3.UP
 	var kind: String = there.kind if there.hit else "ground"
-	if not hit.is_empty():
-		point = hit.position
-		normal = hit.normal
-		kind = hit_kind.call(hit.rid)
+	var stop := _grid_stop(from, direction, reach)
+	if stop >= 0.0:
+		# Struck where the grid stops it, at the height it flew at or on top of
+		# whatever is lower than that; head on.
+		point = from + direction * stop
+		var top: Dictionary = surface.call(point.x, point.z)
+		if top.hit:
+			point.y = minf(from.y, top.height)
+		normal = -direction
+		# A solid tile the scene has as bare ground is the grid's rock or
+		# sandbag, drawn smaller than its tile.
+		kind = top.kind if top.hit and not (top.kind in ["ground", ""]) else "wall"
+	var line := point - from
 	var found := {}
 	if intercept.is_valid():
 		found = intercept.call(from, point)
@@ -191,6 +197,20 @@ func _fire() -> void:
 			.scaled(Vector3(1.6, 1.0, 1.0) * _rng.randf_range(0.8, 1.2)), Vector3(0.12, 0.0, 0.0))
 	_flash_left = FLASH_TIME
 	btr.recoil(direction, RECOIL_KICK)
+
+
+# PlayerBullet.update's is_missile_target, a tick's move at a time along the
+# round's flight: how far it gets before a solid or shield tile stops it, or
+# -1 if it flies its whole reach.
+func _grid_stop(from: Vector3, direction: Vector3, reach: float) -> float:
+	var step := PlayerBullet.VELOCITY * Level3DMap.PX
+	var ticks := ceili(reach / step - 1e-6)
+	for k in range(1, ticks + 1):
+		var d := minf(k * step, reach)
+		var p := Level3DMap.to_map(Vector2(from.x + direction.x * d, from.z + direction.z * d))
+		if btr.map.is_missile_target(p.x, p.y):
+			return d
+	return -1.0
 
 
 func _tracer(from: Vector3, to: Vector3, kind: String, normal: Vector3, travel: Vector3,

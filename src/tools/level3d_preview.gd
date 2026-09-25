@@ -181,13 +181,12 @@ func _ready() -> void:
 	gun = Level3DGun.new()
 	gun.btr = btr
 	gun.ground = _ground_at
-	gun.hit_kind = _hit_kind
-	gun.mask = GROUND_LAYER | SOLID_LAYER | TARGET_LAYER
+	gun.surface = _surface_at
 	add_child(gun)
 	launcher = Level3DLauncher.new()
 	launcher.btr = btr
 	launcher.ground = _ground_at
-	launcher.mask = GROUND_LAYER | SOLID_LAYER | TARGET_LAYER
+	launcher.surface = _surface_at
 	launcher.exploded = _on_exploded
 	add_child(launcher)
 	_add_guns(level)
@@ -316,9 +315,11 @@ func _flat_ground_casts_nothing(root: Node) -> void:
 
 
 # The scene's collision, decided by what each object of the level is -- its
-# Blender name -- rather than by how tall it is. It is not what the BTR drives
-# by any more: that is the game's grid, in both modes (level3d_btr.gd). It is
-# what the hull sits on and what the rounds and rockets hit.
+# Blender name -- rather than by how tall it is. It is not what stops anything
+# any more: the BTR, its rounds and its rockets all go by the game's grid, in
+# both modes (level3d_btr.gd, level3d_gun.gd, level3d_rocket.gd). It is what
+# the hull sits on, and where a round or a rocket is seen to strike: how high,
+# and on what.
 #
 # Two layers, for two kinds of question. The ground layer is what a downward
 # ray finds: its height, and which kind it is -- the sea, the forest floor
@@ -459,8 +460,11 @@ func _add_targets(root: Node, all: bool) -> void:
 				_kinds[child.get_rid()] = "building"
 
 
-func _hit_kind(rid: RID) -> String:
-	return _kinds.get(rid, "ground")
+# The top of whatever stands at x, z -- a wall, a trunk, a building or the
+# ground -- and which kind it is: where a round or a rocket the grid has
+# stopped is seen to strike (level3d_gun.gd, level3d_rocket.gd).
+func _surface_at(x: float, z: float) -> Dictionary:
+	return _ground_at(x, z, GROUND_LAYER | SOLID_LAYER | TARGET_LAYER)
 
 
 # The top of the ground layer at x, z, and which kind it is.
@@ -511,7 +515,7 @@ const DESTRUCTION_ANIMATION := "Scene"
 # Longer than any destruction animation (2.6 s).
 const DESTRUCTION_SETTLE := 3.0
 
-# name -> {root, player, centre, destroyed, bodies, rids, footprint}; centre is
+# name -> {root, player, centre, destroyed, bodies, footprint}; centre is
 # where the flash goes off, footprint the intact building's Rect2 in x, z.
 var destructibles := {}
 
@@ -534,13 +538,11 @@ func _add_destructibles() -> void:
 		_add_collision(root)
 		_add_targets(root, true)
 		var bodies := []
-		var rids := {}
 		for body in root.find_children("*", "StaticBody3D", true, false):
 			bodies.append([body.get_parent(), body, body.collision_layer])
-			rids[body.get_rid()] = true
 		destructibles[building] = {
 			"root": root, "player": player, "destroyed": false, "bodies": bodies,
-			"rids": rids, "centre": flash.global_position if flash else _mesh_aabb(root).get_center(),
+			"centre": flash.global_position if flash else _mesh_aabb(root).get_center(),
 		}
 		_set_destroyed(building, false)
 		destructibles[building].footprint = _footprint(root)
@@ -640,13 +642,13 @@ func _set_destroyed(building: String, destroyed: bool) -> void:
 	_sync_bodies(entry)
 
 
-# What a rocket's explosion destroys: the building it hit, and any whose
-# footprint is within BLAST_RADIUS of where it went off -- a rocket that lands
-# at the foot of a wall counts, as Jackal's grenade does.
+# What a rocket's explosion destroys: any building whose footprint is within
+# BLAST_RADIUS of where it went off -- one stopped by the building's own solid
+# tiles, and one that lands at the foot of a wall, as Jackal's grenade does.
 const BLAST_RADIUS := 1.2
 
 
-func _on_exploded(at: Vector3, rid: RID) -> bool:
+func _on_exploded(at: Vector3) -> bool:
 	_shake(SHAKE_PIXELS)
 	# The missile's own Explosion, which goes on to hit the guns it grows over.
 	guns.explode(at)
@@ -657,7 +659,7 @@ func _on_exploded(at: Vector3, rid: RID) -> bool:
 			continue
 		var box: Rect2 = entry.footprint
 		var near := Vector2(clampf(at.x, box.position.x, box.end.x), clampf(at.z, box.position.y, box.end.y))
-		if entry.rids.has(rid) or near.distance_to(Vector2(at.x, at.z)) <= BLAST_RADIUS:
+		if near.distance_to(Vector2(at.x, at.z)) <= BLAST_RADIUS:
 			_set_destroyed(building, true)
 			any = true
 	return any
@@ -1314,10 +1316,11 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # What the scene's collision says over the whole level, one pixel per
 # OBSTACLE_STEP metres, north up: ground grey, water blue, forest green, walls
-# red, trunks orange, off the level black. The BTR drove by it once; it drives
-# by the game's grid now (level3d_btr.gd), and this is what the rounds, the
-# rockets and the ground's height go by. Needs no window -- physics runs
-# headless -- so it is the check for _add_collision:
+# red, trunks orange, off the level black. The BTR, its rounds and its rockets
+# went by it once; they go by the game's grid now (level3d_btr.gd,
+# level3d_gun.gd, level3d_rocket.gd), and this is what the ground's height and
+# the look of a strike go by. Needs no window -- physics runs headless -- so it
+# is the check for _add_collision:
 #
 #     godot --path . --headless src/tools/level3d_preview.tscn -- --obstacle-map out.png
 const OBSTACLE_STEP := 0.25
