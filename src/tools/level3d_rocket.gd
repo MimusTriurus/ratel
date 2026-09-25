@@ -86,9 +86,21 @@ const MISSILE_RANGE := (PlayerMissile.TRAVEL_TIME + 1) * PlayerMissile.VELOCITY 
 # TravelingExplosion is gone when its count passes TRAVEL_TIME.
 const EXPLOSION_TIME := 0.47
 const TRAVELING_EXPLOSION_TIME := (TravelingExplosion.TRAVEL_TIME + 1) / 100.0
-# A bomb has no motor: free, it goes at the grenade's speed too, and leaves a
-# thinner trail than a rocket.
-const LOB_SMOKE_EVERY := 0.04
+# A bomb has no motor, and Grenade draws no trail: it goes at the grenade's
+# speed in either mode, 5 px a tick over the ground, and leaves nothing behind
+# it. What it has is at the tube, a flash and a cough of smoke as it goes
+# (_mortar_blast), and on the ground under it a spot (_place_blob) that it
+# climbs away from and comes back down to -- the arc seen from above, which the
+# game's Grenade shows by swelling as it rises. The spot stands in for its
+# shadow, which is off. It noses up and down a little as it flies, for the
+# game's spinning sprite: a bomb steadied by fins does not spin.
+const BLOB_RADIUS := 0.2
+const BLOB_SHRINK := 0.7        # per metre above the ground
+# No smaller than this, or straight under a high bomb it hides behind it.
+const BLOB_SMALLEST := 0.12
+const BLOB_LIFT := 0.015
+const WOBBLE := deg_to_rad(7.0)
+const WOBBLE_RATE := 15.0       # radians a second
 # A spent stage falls away for this long before it is gone.
 const STAGE_FALL := 0.7
 
@@ -202,6 +214,9 @@ func _ready() -> void:
 		"splash": _lit(Color(0.92, 0.97, 1.0)),
 		"soot": _lit(Color(0.09, 0.05, 0.02).linear_to_srgb()),
 		"chip": _lit(Color(0.25, 0.2, 0.15)),
+		# The stage's own shadows, on sand and on water.
+		"blob": _unshaded(Color(0.24, 0.15, 0.03)),
+		"blob_water": _unshaded(Color(0.01, 0.08, 0.22)),
 	}
 
 
@@ -389,6 +404,10 @@ func _launch() -> void:
 			"power": missile_power if has_missiles else 0}
 	entry["total"] = entry.left
 	if _lob:
+		for copy in copies.values():
+			(copy as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		entry["blob"] = _instance(_crater_mesh, "blob")
+		_mortar_blast(start + heading * _nose * entry.scale, heading)
 		# The arc leaves along the tube: a parabola from the muzzle to the
 		# ground whose rise over its run, at the start, is the tube's
 		# elevation -- near enough, the two ends not being level.
@@ -453,10 +472,6 @@ func _fly_lob(rocket: Dictionary, delta: float) -> void:
 	if _sweep(rocket, nose, next_nose + (next_nose - nose).normalized() * 0.05):
 		return
 	_place_on_arc(rocket, gone)
-	rocket.smoke += delta
-	while rocket.smoke >= LOB_SMOKE_EVERY:
-		rocket.smoke -= LOB_SMOKE_EVERY
-		_trail(node.global_position + rocket.direction * rocket.tail * rocket.scale)
 	if gone >= rocket.run - 0.001:
 		var there: Dictionary = ground.call(next.x, next.z)
 		_explode(rocket, Vector3(next.x, there.height, next.z), Vector3.UP)
@@ -479,9 +494,52 @@ func _place_on_arc(rocket: Dictionary, gone: float) -> void:
 	var ahead := _arc_tangent(rocket, gone)
 	var heading: Vector3 = rocket.heading
 	var turn := Quaternion(heading, ahead) if heading.cross(ahead).length() > 1e-5 else Quaternion()
-	(rocket.node as Node3D).global_transform = Transform3D(Basis(turn) * rocket.basis, _arc(rocket, gone))
+	var side := ahead.cross(Vector3.UP)
+	if side.length() > 1e-5:
+		var nod := WOBBLE * sin(gone / rocket.speed * WOBBLE_RATE)
+		turn = Quaternion(side.normalized(), nod) * turn
+	var at := _arc(rocket, gone)
+	(rocket.node as Node3D).global_transform = Transform3D(Basis(turn) * rocket.basis, at)
 	rocket.gone = gone
 	rocket.direction = ahead
+	_place_blob(rocket.blob, at)
+
+
+# The spot under a bomb: on the ground below it, smaller the higher it is.
+func _place_blob(blob: MeshInstance3D, at: Vector3) -> void:
+	var there: Dictionary = ground.call(at.x, at.z)
+	var height: float = there.height if there.hit else 0.0
+	blob.material_override = _materials["blob_water" if there.hit and there.kind == "water" else "blob"]
+	var size := maxf(BLOB_RADIUS / (1.0 + maxf(at.y - height, 0.0) * BLOB_SHRINK), BLOB_SMALLEST)
+	blob.global_position = Vector3(at.x, height + BLOB_LIFT, at.z)
+	blob.scale = Vector3(size, 1.0, size)
+
+
+# The mortar going off: a flash at the tube's mouth and a cough of smoke thrown
+# out along it, and nothing after.
+func _mortar_blast(at: Vector3, along: Vector3) -> void:
+	for layer in [["flash", 0.3, 0.1], ["core", 0.18, 0.07]]:
+		var ball := _instance(_puff_mesh, layer[0])
+		ball.global_position = at
+		ball.scale = Vector3.ONE * 0.05
+		var tween := ball.create_tween()
+		tween.tween_property(ball, "scale", Vector3.ONE * float(layer[1]), float(layer[2]) * 0.3)
+		tween.tween_property(ball, "scale", Vector3.ONE * 0.001, float(layer[2]) * 0.7)
+		tween.tween_callback(ball.queue_free)
+	for i in 6:
+		var puff := _instance(_puff_mesh, "trail")
+		var out := (along * _rng.randf_range(0.15, 0.6) + Vector3(_rng.randf_range(-1, 1),
+				_rng.randf_range(-0.2, 0.6), _rng.randf_range(-1, 1)) * 0.18)
+		puff.global_position = at
+		puff.scale = Vector3.ONE * 0.05
+		var size := _rng.randf_range(0.14, 0.24)
+		var life := _rng.randf_range(0.6, 1.0)
+		var tween := puff.create_tween()
+		tween.set_parallel()
+		tween.tween_property(puff, "scale", Vector3.ONE * size, life * 0.3).set_ease(Tween.EASE_OUT)
+		tween.tween_property(puff, "global_position", at + out + Vector3.UP * 0.3, life).set_ease(Tween.EASE_OUT)
+		tween.tween_property(puff, "scale", Vector3.ONE * 0.001, life * 0.7).set_delay(life * 0.3) 				.set_ease(Tween.EASE_IN)
+		tween.chain().tween_callback(puff.queue_free)
 
 
 # Asks the segment a round's nose covers this step for an enemy in the way,
@@ -546,6 +604,8 @@ func _trail(at: Vector3) -> void:
 func _explode(rocket: Dictionary, at: Vector3, normal: Vector3) -> void:
 	_rockets.erase(rocket)
 	(rocket.node as Node3D).queue_free()
+	if rocket.has("blob"):
+		(rocket.blob as Node3D).queue_free()
 	if rocket.classic and not loaded:
 		_reload_left = rocket.rearm
 	var there: Dictionary = ground.call(at.x, at.z)
