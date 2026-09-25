@@ -65,7 +65,8 @@ const CLASSIC_ROUND_SPEED := PlayerBullet.VELOCITY * 100.0 * Level3DMap.PX
 
 # `ground.call(x, z)` as the BTR has it; `surface.call(x, z)` the same over
 # everything that stands on the ground as well -- walls, trunks, buildings --
-# with its kind: "water", "forest", "ground", "wall", "trunk" or "building".
+# with its kind: "water", "forest", "ground", "hard" (the bridge, the helipad,
+# the hangars' pads, the gate's sill), "wall", "trunk" or "building".
 var ground: Callable
 var surface: Callable
 var btr: Level3DBtr
@@ -260,6 +261,11 @@ func _impact(at: Vector3, kind: String, normal: Vector3, travel: Vector3) -> voi
 			_chips(at, normal, travel, "spark", 4)
 			_chips(at, normal, travel, "stone", 3)
 			_puffs(at, "stone", 1, 0.15, 0.25)
+		"hard":
+			# Concrete underfoot: what a wall throws, no sand.
+			_chips(at, normal, travel, "spark", 3)
+			_chips(at, normal, travel, "stone", 3)
+			_puffs(at, "stone", 1, 0.12, 0.22)
 		_:
 			_dust(at, travel)
 

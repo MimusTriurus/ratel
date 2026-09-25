@@ -77,6 +77,10 @@ const CRATER_SMALLEST := 0.2
 # Hit again and again, a crater grows to this and no bigger (_crater).
 const CRATER_BIGGEST := 1.1
 const CRATER_STEP := 0.06
+# _scorch: how many are kept -- level3d_scorch.gdshaderinc's SCORCHES -- and
+# how big one is, from and to.
+const SCORCHES_KEPT := 32
+const SCORCH_RADIUS := Vector2(0.35, 0.5)
 # Grenade and PlayerMissile at the map's PX. Each is gone on the tick its count
 # passes TRAVEL_TIME, so it flies TRAVEL_TIME + 1 moves.
 const GRENADE_SPEED := Grenade.VELOCITY * 100.0 * Level3DMap.PX
@@ -188,6 +192,7 @@ var _stages := []               # a staged round's parts, stage by stage
 var _stage_tails := []          # each stage's tail, centre-relative, pivot units
 var _rockets := []
 var _craters := []              # see _crater, oldest first
+var _scorches: Array[Vector4] = []   # see _scorch, oldest first
 var _crater_meshes: Array[Dictionary] = []   # Level3DFx.crater_mesh, a few of them
 var _rng := RandomNumberGenerator.new()
 var _puff_mesh: ArrayMesh
@@ -659,9 +664,13 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3) -> void:
 	else:
 		_smoke(at)
 		_chips(at, normal)
-		# Not on the water, even from a hit above it -- a boat's.
+		# Not on the water, even from a hit above it -- a boat's. A crater
+		# where the ground can be dug and there is room for one, a scorch
+		# where not.
 		if not destroyed and there.kind != "water" and at.y <= there.height + 0.2:
-			_crater(Vector3(at.x, there.height, at.z))
+			var on_ground := Vector3(at.x, there.height, at.z)
+			if not (there.kind != "hard" and _crater(on_ground)):
+				_scorch(on_ground)
 	# PlayerMissile.update: an upgraded missile throws its blast sideways, and
 	# the second upgrade vertically too.
 	if rocket.power > 0:
@@ -860,14 +869,14 @@ func _chips(at: Vector3, normal: Vector3) -> void:
 # A crater that stays: a ring of thrown-up sand round a scorched hole, clods
 # beyond it (Level3DFx.crater_mesh), and a shape the vehicles feel (crater_height).
 # The oldest goes when there are too many. It lies on flat ground, so it is
-# made no bigger than the surface it lies on: shrunk until its rim is all off
-# the water and at the height of its centre -- or there is none, near a
-# bridge's edge or the shore.
+# made no bigger than the ground it lies on: shrunk until its rim is all off
+# the water and the hard ground and at the height of its centre -- or there is
+# none, near a bridge's edge or the shore, and a scorch instead (_scorch).
 #
 # Nor does one lie over another. Two that overlapped showed each rim standing
-# over the other's hole, and each bowl drawn through the other's rim -- the
-# stencil is one mark for all of them. A round that lands in a crater makes
-# that one bigger instead, up to CRATER_BIGGEST, its middle drawn a little
+# over the other's hole, and each bowl through the other's rim. A round that
+# lands in a crater makes that one bigger instead, up to CRATER_BIGGEST, its
+# middle drawn a little
 # towards the new hit; one that lands beside a crater makes a smaller one, no
 # further out than the other's foot -- or, too small for that, the other
 # bigger. The craters a building leaves (add_ruin_crater) are fixed: a round
@@ -877,7 +886,10 @@ func _chips(at: Vector3, normal: Vector3) -> void:
 # in x, z; radii its outer foot's along its own x and z, which are the same
 # but for a ruin's; angle its turn about y; height its scale up; ruin the
 # building it belongs to, or "" for a round's.
-func _crater(at: Vector3) -> void:
+#
+# False when there is no room for one, and the round should leave a scorch
+# instead (_scorch); true when it dug one, grew one, or landed in one.
+func _crater(at: Vector3) -> bool:
 	var centre := Vector2(at.x, at.z)
 	var size := _rng.randf_range(0.6, 0.8)
 	var grown := -1         # the crater this one replaces
@@ -886,7 +898,7 @@ func _crater(at: Vector3) -> void:
 		var gap: float = centre.distance_to(_craters[i].centre) - _foot(_craters[i], centre)
 		if gap < 0.0:
 			if _craters[i].ruin != "":
-				return
+				return true
 			grown = i
 			break
 		if gap < size:
@@ -894,7 +906,7 @@ func _crater(at: Vector3) -> void:
 			nearest = i
 	if grown < 0 and size < CRATER_SMALLEST and nearest >= 0:
 		if _craters[nearest].ruin != "":
-			return
+			return false
 		grown = nearest
 	var start := size * 0.1
 	if grown >= 0:
@@ -907,13 +919,13 @@ func _crater(at: Vector3) -> void:
 			if i != grown:
 				size = minf(size, centre.distance_to(_craters[i].centre) - _foot(_craters[i], centre))
 		if size <= old.height:
-			return
+			return true
 		var there: Dictionary = ground.call(centre.x, centre.y)
 		at = Vector3(centre.x, there.height, centre.y)
 	while not _fits(at, size):
 		size *= 0.85
 		if size < CRATER_SMALLEST or (grown >= 0 and size <= start):
-			return
+			return grown >= 0
 	if grown >= 0:
 		(_craters[grown].node as Node3D).queue_free()
 		_craters.remove_at(grown)
@@ -942,6 +954,21 @@ func _crater(at: Vector3) -> void:
 	if rounds.size() > CRATERS_KEPT:
 		(rounds[0].node as Node3D).queue_free()
 		_craters.erase(rounds[0])
+	return true
+
+
+# What a rocket leaves where it digs no crater: on the hard ground -- the
+# bridge, the helipad, a hangar's pad, the gate's sill -- or on ground with
+# no room for a crater, by the hard ground's edge or the water's. A ragged
+# black blotch, painted by the ground's shaders on whatever it lies across
+# (level3d_scorch.gdshaderinc); the vehicles do not feel it. SCORCHES_KEPT of
+# them, the oldest going first.
+func _scorch(at: Vector3) -> void:
+	_scorches.append(Vector4(at.x, at.z, _rng.randf_range(SCORCH_RADIUS.x, SCORCH_RADIUS.y),
+			_rng.randf_range(0.0, 100.0)))
+	if _scorches.size() > SCORCHES_KEPT:
+		_scorches.remove_at(0)
+	_scorches_told = false
 
 
 # A unit crater's parts under `parent`: its opening, its bowl and its rim
@@ -956,17 +983,31 @@ func make_crater(parent: Node) -> Node3D:
 	return crater
 
 
-# The materials that let the craters' holes through (level3d_holes.gdshaderinc)
-# -- the ground's, the tyre marks', the lines painted on the ground -- which
-# the preview hands over. Told every frame, from the craters' nodes as they
-# are then: a round's crater growing in, a building's shrunk to nothing until
-# the destruction shows it.
-var hole_materials: Array[ShaderMaterial] = []
+# The materials the craters' holes go through (level3d_holes.gdshaderinc) --
+# the ground's, the hard ground's, the tyre marks', the lines painted on the
+# ground -- which the preview hands over; the ground's paint the scorches as
+# well (level3d_scorch.gdshaderinc). The holes are told every frame, from the
+# craters' nodes as they are then: a round's crater growing in, a building's
+# shrunk to nothing until the destruction shows it. The scorches when there is
+# one more or none.
+var ground_materials: Array[ShaderMaterial] = []
 var _holes_told := PackedFloat32Array()
+var _scorches_told := false
 const HOLES := 64                # level3d_holes.gdshaderinc's
 
 
 func _process(_delta: float) -> void:
+	_push_ground()
+
+
+func _push_ground() -> void:
+	if not _scorches_told:
+		_scorches_told = true
+		var scorches := PackedVector4Array(_scorches)
+		scorches.resize(SCORCHES_KEPT)
+		for material in ground_materials:
+			material.set_shader_parameter("scorch_count", _scorches.size())
+			material.set_shader_parameter("scorch_place", scorches)
 	var places := PackedVector4Array()
 	var sizes := PackedVector2Array()
 	var told := PackedFloat32Array()
@@ -991,7 +1032,7 @@ func _process(_delta: float) -> void:
 	var count := places.size()
 	places.resize(HOLES)
 	sizes.resize(HOLES)
-	for material in hole_materials:
+	for material in ground_materials:
 		material.set_shader_parameter("crater_count", count)
 		material.set_shader_parameter("crater_place", places)
 		material.set_shader_parameter("crater_size", sizes)
@@ -1051,24 +1092,26 @@ func crater_height(x: float, z: float) -> float:
 	return height
 
 
-# Whether a disc of radius `size` at `at` lies on something other than water
-# all round, within CRATER_STEP of its height: sampled at eight points of the
-# rim.
+# Whether a disc of radius `size` at `at` lies on ground that can be dug --
+# not the water, not the hard ground -- all round, within CRATER_STEP of its
+# height: sampled at eight points of the rim.
 func _fits(at: Vector3, size: float) -> bool:
 	for i in 8:
 		var a := TAU * i / 8.0
 		var there: Dictionary = ground.call(at.x + size * cos(a), at.z + size * sin(a))
-		if not there.hit or there.kind == "water" or absf(there.height - at.y) > CRATER_STEP:
+		if not there.hit or there.kind in ["water", "hard"] or absf(there.height - at.y) > CRATER_STEP:
 			return false
 	return true
 
 
-# The rounds' craters; a building's go when it is put back.
+# The rounds' craters and scorches; a building's craters go when it is put back.
 func clear_craters() -> void:
 	for crater in _craters:
 		if crater.ruin == "":
 			(crater.node as Node3D).queue_free()
 	_craters = _craters.filter(func(c): return c.ruin != "")
+	_scorches.clear()
+	_scorches_told = false
 
 
 # ----------------------------------------------------------------------------

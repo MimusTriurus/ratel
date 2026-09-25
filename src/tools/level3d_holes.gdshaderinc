@@ -5,7 +5,7 @@
 // is these shaders not drawing there: the crater's bowl, below, is then
 // simply seen, depth and all -- a soldier in it, rubble lying in it.
 //
-// Set by Level3DLauncher._push_holes from the craters' own nodes, every
+// Set by Level3DLauncher._push_ground from the craters' own nodes, every
 // frame, so that a hole is as big as its crater is at that moment -- one
 // growing in, a building's shown when the destruction shows it:
 //   crater_place  x, z of its middle; cos and sin of its turn about y

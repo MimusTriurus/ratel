@@ -252,8 +252,8 @@ func _ready() -> void:
 	launcher.exploded = _on_exploded
 	add_child(launcher)
 	_add_guns(level)
-	launcher.hole_materials = _hole_materials
-	launcher.hole_materials.append(tracks.material())
+	launcher.ground_materials = _ground_materials
+	launcher.ground_materials.append(tracks.material())
 	btr.map = map
 	_make_markers()
 	_make_hud()
@@ -445,17 +445,22 @@ func _cast_both_sides_of_planes(root: Node) -> void:
 
 
 # The ground, drawn by level3d_ground.gdshader rather than by the glb's
-# materials, so that the craters are holes in it (level3d_holes.gdshaderinc):
-# every surface in one of GROUND_MATERIALS, one shader material to each,
-# taking its colour. What is painted on the ground has to let the holes
-# through as well, or it would lie over them in the air: the beach's band
-# lines and the hangars' pads' dashes, in J_Black. The launcher is told of
-# all of them (Level3DLauncher.hole_materials), and the tyre marks'.
+# materials, so that the craters are holes in it (level3d_holes.gdshaderinc)
+# and the rockets' scorches lie on it (level3d_scorch.gdshaderinc): every
+# surface in one of GROUND_MATERIALS, one shader material to each, taking its
+# colour. What is painted on the ground has to let the holes through as well,
+# or it would lie over them in the air: the beach's band lines and the
+# hangars' pads' dashes, in J_Black. And the hard ground (HARD_NAMES), all of
+# it, which is where the scorches mostly are, and where a building's crater
+# can reach -- a hangar's lies half on its pad -- with its contour holed too
+# (level3d_ground_contour.gdshader). The launcher is told of all of them
+# (Level3DLauncher.ground_materials), and the tyre marks'.
 const GROUND_MATERIALS: Array[String] = ["J_Sand", "J_BeachBrown", "J_BeachGreen", "J_ForestFloor",
 		"J_Earth", "J_RiverBed"]
 const PAINTED_ON_GROUND: Array[String] = ["Shore_Lines", "HangarPad_Dash"]
 const GROUND_SHADER := preload("res://src/tools/level3d_ground.gdshader")
-var _hole_materials: Array[ShaderMaterial] = []
+const GROUND_CONTOUR_SHADER := preload("res://src/tools/level3d_ground_contour.gdshader")
+var _ground_materials: Array[ShaderMaterial] = []
 
 #
 # A shader that discards is drawn into the shadow map another way than an
@@ -471,20 +476,24 @@ func _holed_ground(root: Node) -> void:
 	for node in root.find_children("*", "MeshInstance3D", true, false):
 		var mesh_instance := node as MeshInstance3D
 		var painted := PAINTED_ON_GROUND.any(func(prefix): return mesh_instance.name.begins_with(prefix))
+		var hard := _kind_of(mesh_instance.name) == "hard"
 		var holed_any := false
 		for surface in mesh_instance.mesh.get_surface_count():
 			var material := mesh_instance.mesh.surface_get_material(surface) as BaseMaterial3D
 			if material == null:
 				continue
 			var called := material.resource_name
-			if not (called in GROUND_MATERIALS or painted and called == "J_Black"):
+			if not (called in GROUND_MATERIALS or painted and called == "J_Black" or hard):
 				continue
 			if not made.has(called):
 				var holed := ShaderMaterial.new()
-				holed.shader = GROUND_SHADER
-				holed.set_shader_parameter("albedo", material.albedo_color)
+				if called.ends_with("Contour"):
+					holed.shader = GROUND_CONTOUR_SHADER
+				else:
+					holed.shader = GROUND_SHADER
+					holed.set_shader_parameter("albedo", material.albedo_color)
 				made[called] = holed
-				_hole_materials.append(holed)
+				_ground_materials.append(holed)
 			mesh_instance.set_surface_override_material(surface, made[called])
 			holed_any = true
 		if holed_any and mesh_instance.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
@@ -532,9 +541,10 @@ func _flat_ground_casts_nothing(root: Node) -> void:
 # Two layers, for two kinds of question. The ground layer is what a downward
 # ray finds: its height, and which kind it is -- the sea, the forest floor
 # (the forest is the eight Forest_Floor patches its 3678 trees stand on, 98% of
-# them; a tree is a crown, not something to hit), a wall, or plain ground. The
-# solid layer is what stands up out of it: walls, and a cylinder round every
-# palm trunk, which a round aimed past the palm's crown should still meet.
+# them; a tree is a crown, not something to hit), a wall, hard ground or
+# plain ground. The solid layer is what stands up out of it: walls, and a
+# cylinder round every palm trunk, which a round aimed past the palm's crown
+# should still meet.
 const GROUND_LAYER := 1
 const SOLID_LAYER := 2
 # A third, for the gun only: what stops a round but not the BTR -- bunkers,
@@ -547,8 +557,14 @@ const RAMP_LAYER := 8
 # The parts of a destruction that are not there to be hit: the blast itself and
 # what lies flat or flies.
 const NOT_TARGET_PARTS: Array[String] = ["Blast_", "Flash", "Smoke", "Shard", "Debris", "Soot"]
-const GROUND_NAMES: Array[String] = ["Land_Base", "Beach", "Cliff", "Skirt",
-		"Terrain", "Bridge", "Helipad", "Gate_Sill"]
+const GROUND_NAMES: Array[String] = ["Land_Base", "Beach", "Cliff", "Skirt", "Terrain"]
+# What is built on the ground and flat -- concrete, plates, paint -- which a
+# rocket scorches rather than digs into (Level3DLauncher._scorch) and a round
+# chips rather than kicks up. The hangars' pads had no collision, and a
+# rocket on one dug its crater in the sand under it, the pad over the hole;
+# their doors stand up, and are not ground.
+const HARD_NAMES: Array[String] = ["Bridge", "Helipad", "HangarPad", "Gate_Sill"]
+const NOT_HARD_NAMES: Array[String] = ["HangarPad_Door"]
 const WALL_NAMES: Array[String] = ["Wall", "Merlon", "GatePost", "Gate_"]
 # What the gate leaves behind that is not a wall: the rubble, the soot and the
 # blast itself. The stubs at either side are.
@@ -569,6 +585,8 @@ static func _kind_of(object_name: String) -> String:
 		return "trunk"
 	if object_name == "Sand":
 		return "ground"     # not a prefix: Sandbag is not ground
+	if HARD_NAMES.any(func(prefix): return object_name.begins_with(prefix)):
+		return "" if NOT_HARD_NAMES.any(func(prefix): return object_name.begins_with(prefix)) else "hard"
 	for prefix in GROUND_NAMES:
 		if object_name.begins_with(prefix):
 			return "ground"
@@ -1636,6 +1654,7 @@ func _unhandled_input(event: InputEvent) -> void:
 const OBSTACLE_STEP := 0.25
 const OBSTACLE_COLOURS := {
 	"ground": Color(0.62, 0.58, 0.50), "water": Color(0.15, 0.35, 0.85),
+	"hard": Color(0.85, 0.85, 0.85),
 	"forest": Color(0.10, 0.50, 0.20), "wall": Color(0.85, 0.15, 0.10),
 	"trunk": Color(1.0, 0.55, 0.0), "": Color.BLACK,
 }

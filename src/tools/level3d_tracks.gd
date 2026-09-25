@@ -78,7 +78,7 @@ func _ready() -> void:
 
 
 # The one material every chunk draws with, for what tells it where the
-# craters' holes are (Level3DLauncher.hole_materials).
+# craters' holes are (Level3DLauncher.ground_materials).
 func material() -> ShaderMaterial:
 	return _material
 
