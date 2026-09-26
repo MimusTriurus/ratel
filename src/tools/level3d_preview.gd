@@ -209,8 +209,11 @@ var _marker_material: StandardMaterial3D
 
 func _ready() -> void:
 	# Before anything is added: every mesh from here on, the level's and every
-	# unit's, spawned now or later, is lit in two tones (_toon).
+	# unit's, spawned now or later, is lit in two tones (_toon) and gets its
+	# contour from the engine (_engine_contour).
 	get_tree().node_added.connect(_toon)
+	if not OS.get_cmdline_user_args().has("--baked-contour"):
+		get_tree().node_added.connect(_engine_contour)
 	var scene: PackedScene = load(LEVEL_PATH)
 	if scene == null:
 		push_error("Cannot load %s -- open the project in the editor once so it is imported" % LEVEL_PATH)
@@ -420,6 +423,14 @@ func _toon(node: Node) -> void:
 		base.metallic_specular = 0.0
 
 
+# The contour, grown by a shader in place of the Solidify's shell the glbs
+# carry (Level3DHull, docs/cel-shading.md, section 5). --baked-contour keeps
+# the shell, to compare the two.
+func _engine_contour(node: Node) -> void:
+	if node is MeshInstance3D:
+		Level3DHull.apply(node)
+
+
 # Palm fronds and the like are single planes, and Compatibility culls front
 # faces in the shadow pass, which drops every plane that faces the sun -- their
 # shadows vanish unless both sides cast. Only for those, though: the ground
@@ -483,19 +494,25 @@ func _holed_ground(root: Node) -> void:
 		var hard := _kind_of(mesh_instance.name) == "hard"
 		var holed_any := false
 		for surface in mesh_instance.mesh.get_surface_count():
-			var material := mesh_instance.mesh.surface_get_material(surface) as BaseMaterial3D
-			if material == null:
+			var material := mesh_instance.mesh.surface_get_material(surface)
+			# The contour is the engine's hull (_engine_contour); the glb's own
+			# shell, under --baked-contour, is left whole.
+			var hull := Level3DHull.is_hull(material)
+			if not (material is BaseMaterial3D or hull):
 				continue
 			var called := material.resource_name
+			if hull and not hard or called.ends_with("Contour") and not hull:
+				continue
 			if not (called in GROUND_MATERIALS or painted and called == "J_Black" or hard):
 				continue
 			if not made.has(called):
 				var holed := ShaderMaterial.new()
-				if called.ends_with("Contour"):
+				if hull:
 					holed.shader = GROUND_CONTOUR_SHADER
+					holed.set_shader_parameter("width", Level3DFx.CONTOUR)
 				else:
 					holed.shader = GROUND_SHADER
-					holed.set_shader_parameter("albedo", material.albedo_color)
+					holed.set_shader_parameter("albedo", (material as BaseMaterial3D).albedo_color)
 				made[called] = holed
 				_ground_materials.append(holed)
 			mesh_instance.set_surface_override_material(surface, made[called])
@@ -1722,7 +1739,7 @@ func _screenshot_mode() -> void:
 		args.remove_at(immortal)
 	# Level3DSoldiers and Level3DBtr read these for themselves; they are not
 	# waypoints.
-	for own in ["--sprite-soldiers", "--btr"]:
+	for own in ["--sprite-soldiers", "--btr", "--baked-contour"]:
 		var at := args.find(own)
 		if at >= 0:
 			args.remove_at(at)
