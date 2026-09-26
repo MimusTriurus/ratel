@@ -68,7 +68,7 @@
 #         -- --shot out.png <position 0-1 or x,z> <zoom> <top|tilt> [<seconds> <x,z> ...] \
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
 #            [--at <x,z>] [--free] [--hold <keys>@<from>-<to>[,...]] [--weapon <0-3>]
-#            [--intro] [--pows <n>] [--strip <frames>,<seconds>[,<px>]]
+#            [--intro] [--pows <n>] [--strip <frames>,<seconds>[,<px>]] [--die <seconds>]
 #
 # The bunkers' guns, the enemy soldiers, the two boats on the river, the two
 # brown tanks and the boss's four heavy tanks at the top of the stage fight back
@@ -94,7 +94,8 @@
 # many prisoners aboard, for the rescue helicopter. --strip takes that many
 # frames instead of one, that many seconds apart from the first, and lays the
 # middle <px> square of each (512 unless given) out four to a row in the one
-# file: a blast from start to finish, which one frame never catches.
+# file: a blast from start to finish, which one frame never catches. --die
+# blows the BTR up that many seconds in, for its wreck (level3d_wreck.gd).
 #
 # The BTR's rear wheels and the tanks' tracks leave marks on the ground that
 # fade in under seven seconds (level3d_tracks.gd); the game leaves none.
@@ -1285,8 +1286,15 @@ func _player_box() -> Rect2:
 
 # Player.explode: the blast, the BTR gone, and back after RESPAWN_DELAY where
 # it went, invincible. No lives are counted; the preview has no continue.
+# Under the blast a copy of it comes apart and burns until it is back
+# (Level3DWreck); the game's jeep is simply gone.
 func _explode_btr(by: String) -> void:
 	_spawn_blast(btr.position + Vector3.UP * 0.6, 1.0, 0.0)
+	var wreck := Level3DWreck.new()
+	wreck.ground = launcher.ground
+	wreck.launcher = launcher
+	add_child(wreck)
+	wreck.build(btr)
 	# Its own Explosion, which spares the guns and not the soldiers.
 	guns.explode(btr.position, true)
 	friends.player_died(btr.position)
@@ -1799,6 +1807,12 @@ func _screenshot_mode() -> void:
 		else:
 			_rocket_wanted = INF
 		args = args.slice(0, rocket) + args.slice(rocket + 2)
+	var die := args.find("--die")
+	if die >= 0:
+		get_tree().create_timer(float(args[die + 1])).timeout.connect(func():
+			if _respawning == 0:
+				_explode_btr("--die"))
+		args = args.slice(0, die) + args.slice(die + 2)
 	var strip := args.find("--strip")
 	if strip >= 0:
 		var spec := args[strip + 1].split(",")

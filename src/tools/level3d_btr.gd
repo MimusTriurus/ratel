@@ -310,6 +310,11 @@ func _ready() -> void:
 				"angle": Vector2.ZERO, "rate": Vector2.ZERO})
 
 
+# The model as it stands, for the wreck to copy (Level3DWreck).
+func model_node() -> Node3D:
+	return _model
+
+
 # The gun's bore: where rounds leave from, its +X the way they go.
 func muzzle_node() -> Node3D:
 	return _bore

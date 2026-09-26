@@ -872,6 +872,16 @@ func _cinder(at: Vector3, size: float, age: float) -> void:
 	tween.tween_callback(flame.queue_free)
 
 
+# The blasts' smoke and flames, for what burns after them: the player's wreck
+# (Level3DWreck).
+func wreck_smoke(at: Vector3, size: float) -> void:
+	_puff(at, size, "smoke")
+
+
+func wreck_flame(at: Vector3, size: float, age: float) -> void:
+	_cinder(at, size, age)
+
+
 # One puff that swells, rises and shrinks away.
 func _puff(at: Vector3, size: float, material: String) -> void:
 	var puff := _instance(_puff_mesh, material)
