@@ -60,9 +60,9 @@
 #   + / -                  zoom
 #   Tab                    tilted view / top view
 #   Home / End             start / end of the level
-#   G                      the palms' sway smooth / stepped, held poses at
-#                          8 a second (level3d_wind.gd); --wind-steps starts
-#                          stepped, --no-wind stills them
+#   G                      the palms' and the trees' sway smooth / stepped,
+#                          held poses at 8 a second (level3d_wind.gd);
+#                          --wind-steps starts stepped, --no-wind stills them
 #
 # Like the map editor it can render one view and quit (a real window is needed,
 # --headless has no framebuffer to read back):
@@ -442,12 +442,13 @@ func _engine_contour(node: Node) -> void:
 		Level3DHull.apply(node)
 
 
-# The palms sway (level3d_wind.gd), smooth or stepped, G toggling.
+# The palms and the trees sway, and the blasts and the rounds throw them about
+# (level3d_wind.gd): whatever has a trunk, smooth or stepped, G toggling.
 func _add_wind(level: Node) -> void:
 	var args := OS.get_cmdline_user_args()
 	if args.has("--no-wind"):
 		return
-	for node in level.find_children("Palm*", "MeshInstance3D", true, false):
+	for node in level.find_children("*", "MeshInstance3D", true, false):
 		Level3DWind.apply(node)
 	Level3DWind.set_stepped(args.has("--wind-steps"))
 
@@ -1583,6 +1584,7 @@ func _physics_process(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	Level3DWind.tick(delta)
 	if not _live:
 		return
 	var scroll := _axis(KEY_DOWN, KEY_UP)
@@ -1677,6 +1679,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				boss.reset()
 				tracks.reset()
 				puffs.reset()
+				Level3DWind.reset()
 				friends.reset()
 				rescue.reset()
 				map.reset()

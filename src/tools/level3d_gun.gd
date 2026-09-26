@@ -65,6 +65,16 @@ const RECOIL_KICK := 0.12
 # tick its count passes TRAVEL_TIME, so it covers TRAVEL_TIME + 1 moves.
 const CLASSIC_RANGE := (PlayerBullet.TRAVEL_TIME + 1) * PlayerBullet.VELOCITY * Level3DMap.PX
 const CLASSIC_ROUND_SPEED := PlayerBullet.VELOCITY * 100.0 * Level3DMap.PX
+# What a round does to the plants (Level3DWind), as a blast of its own: one in
+# a palm's trunk knocks that palm on, set TRUNK_BACK behind the hit so that it
+# throws it along the round's way and reaches no other; one in the forest
+# stirs the trees it lands among. Metres a crown two metres up is thrown, and
+# how far it reaches.
+const TRUNK_BACK := 0.3
+const TRUNK_THROW := 0.25
+const TRUNK_REACH := 0.8
+const FOREST_THROW := 0.1
+const FOREST_REACH := 1.4
 
 # `ground.call(x, z)` as the BTR has it; `surface.call(x, z)` the same over
 # everything that stands on the ground as well -- walls, trunks, buildings --
@@ -249,8 +259,12 @@ func _impact(at: Vector3, kind: String, normal: Vector3, travel: Vector3) -> voi
 			Level3DFx.ripple(get_parent(), at, 0.5, 0.6, 0.0, _rng.randf() * 100.0)
 		"forest":
 			_puffs(at, "leaves", 2, 0.18, 0.30)
+			Level3DWind.blast(at, FOREST_THROW, FOREST_REACH)
 		"trunk":
 			_chips(at, normal, travel, "wood", 4)
+			# From behind the hit, along the round's way: the palm is knocked on.
+			Level3DWind.blast(at - Vector3(travel.x, 0.0, travel.z).normalized() * TRUNK_BACK,
+					TRUNK_THROW, TRUNK_REACH)
 		"wall", "building":
 			_chips(at, normal, travel, "spark", 4)
 			_chips(at, normal, travel, "stone", 3)

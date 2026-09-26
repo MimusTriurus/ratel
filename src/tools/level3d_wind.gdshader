@@ -1,8 +1,8 @@
-// A palm's trunk and fronds in the wind (level3d_wind.gdshaderinc), lit as
-// every other material of the preview's is (level3d_preview.gd, _toon): two
+// A palm's or a tree's trunk and crown in the wind (level3d_wind.gdshaderinc),
+// lit as every other material of the preview's is (level3d_preview.gd, _toon): two
 // tones, no specular, no reflection. The glb's material was a
 // StandardMaterial3D, which cannot move its vertices; this takes its colour.
-// Both sides drawn, as the glb's were: the fronds are single planes.
+// Both sides drawn, as the glb's were: a palm's fronds are single planes.
 shader_type spatial;
 render_mode diffuse_toon, specular_disabled, cull_disabled;
 

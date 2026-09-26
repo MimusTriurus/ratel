@@ -110,6 +110,13 @@ const SMOKE_TIME := 1.2
 # A destruction's blast (blast): how long its mushroom takes to grow, on a
 # curve of its own rather than the game's box.
 const BLAST_GROW := 0.4
+# What every mushroom, a round's or a destruction's, does to the palms and the
+# trees round it (Level3DWind): it reaches PLANT_REACH times its radius at
+# its peak -- a round's is 0.94 m, a building's up to 2 -- and throws a crown
+# two metres up PLANT_THROW times it, at most PLANT_THROW_MAX.
+const PLANT_REACH := 5.0
+const PLANT_THROW := 0.4
+const PLANT_THROW_MAX := 0.55
 # The mushroom's lobes (_fireball), in the game ball's radius: [part, how
 # many, how far out, how big, stretch, height, warmth]. The height is a
 # share of the cap's -- 0 on the ground, 1 the cap -- or, over 1, the cap's
@@ -976,6 +983,7 @@ func _mushroom(at: Vector3, radius_at: Callable, grow_time: float, delay: float)
 					"drift": Vector3(_rng.randf_range(-1, 1), _rng.randf_range(0.0, 0.5), _rng.randf_range(-1, 1)) * 0.2})
 	var lean := Vector3(_rng.randf_range(-1, 1), 0.0, _rng.randf_range(-1, 1)).limit_length(1.0) * 0.04
 	var peak: float = radius_at.call(grow_time)
+	Level3DWind.blast(at, minf(peak * PLANT_THROW, PLANT_THROW_MAX), peak * PLANT_REACH, delay)
 	var life := grow_time + COOL_TIME + SMOKE_TIME
 	# `seconds` from the blast. The radius grows until `grow_time` -- for a
 	# round's, the game ball's until its box is gone -- then is the peak's;
