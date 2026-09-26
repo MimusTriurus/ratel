@@ -156,6 +156,14 @@ const STAGE_FALL := 0.7
 const BOMB_PEAK := 3.0
 const ROCKET_GROWTH := 2.0
 const ROCKET_GROW_TIME := 0.3
+# A rocket's back-blast (_back_blast): fire out of the rails' tail, under the
+# launcher, and smoke thrown out over the hull from it. By weapon level, a
+# share of BACK_BLAST_RADIUS -- the mortar has none, its bomb goes out of the
+# tube's mouth (_mortar_blast) -- and bigger as the missile is.
+const BACK_BLAST := [0.0, 1.0, 1.3, 1.6]
+const BACK_BLAST_RADIUS := 0.2
+const BACK_BLAST_TIME := 0.25
+const BACK_BLAST_PUFFS := 9
 
 # The fits, by weapon level: 0 the grenade, 1 the missile, 2 and 3 its
 # upgrades. Each is the base the mount turns on the hull, the pivot its tube
@@ -487,6 +495,8 @@ func _launch() -> void:
 			(copy as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		entry["blob"] = _instance(_crater_mesh, "blob")
 		_mortar_blast(start + heading * _nose * entry.scale, heading)
+	else:
+		_back_blast(frame * (_centre + _axis * _tail), -heading, BACK_BLAST[weapon_level()])
 	_place_on_arc(entry, 0.0)
 	_rockets.append(entry)
 	btr.recoil(heading, KICK)
@@ -627,6 +637,75 @@ func _mortar_blast(at: Vector3, along: Vector3) -> void:
 		tween.tween_property(puff, "global_position", at + out + Vector3.UP * 0.3, life).set_ease(Tween.EASE_OUT)
 		tween.tween_property(puff, "scale", Vector3.ONE * 0.001, life * 0.7).set_delay(life * 0.3) 				.set_ease(Tween.EASE_IN)
 		tween.chain().tween_callback(puff.queue_free)
+
+
+# A rocket leaving its rails: out of their tail, `at`, along `back`, a ball of
+# fire that swells and cools from white to red and burns away in
+# BACK_BLAST_TIME, with a star of flame thrown back in it (Level3DFx.flash),
+# and under them smoke blown out low over the hull and past it. The fire rides
+# on the vehicle -- it is gone before the vehicle has gone far -- and the
+# smoke is left behind. From above the rails stand steep, so what is seen of
+# the blast is the ball round their foot and the smoke spreading from it; the
+# star, along the rails, is mostly end on. `size` is BACK_BLAST's.
+func _back_blast(at: Vector3, back: Vector3, size: float) -> void:
+	if size <= 0.0:
+		return
+	var radius := BACK_BLAST_RADIUS * size
+	var holder := Node3D.new()
+	btr.add_child(holder)
+	holder.global_position = at
+	var ball := MeshInstance3D.new()
+	ball.mesh = _fire_mesh
+	ball.material_override = _materials.fire
+	ball.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	holder.add_child(ball)
+	var spin := Basis(Vector3.UP, _rng.randf() * TAU)
+	var forward := back.normalized()
+	var side := forward.cross(Vector3.UP)
+	if side.length() < 1e-3:
+		side = Vector3.RIGHT
+	var star := Node3D.new()
+	holder.add_child(star)
+	star.global_basis = Basis(forward, side.cross(forward).normalized(), side.normalized()) \
+			* Basis(Vector3.RIGHT, _rng.randf_range(-Level3DFx.FLASH_ROCK, Level3DFx.FLASH_ROCK))
+	var flames := Level3DFx.flash(star, _fire_mesh, _materials.fire, radius * 3.0, radius * 1.2)
+	var burn := func(t: float):
+		var k := t / BACK_BLAST_TIME
+		ball.transform = Transform3D(spin.scaled(Vector3.ONE * radius * (0.35 + 0.65 * sqrt(k))),
+				holder.global_basis.inverse() * forward * radius * 0.4 * k)
+		ball.set_instance_shader_parameter("age", k)
+		ball.set_instance_shader_parameter("burn", clampf((k - 0.55) / 0.45, 0.0, 1.0))
+		Level3DFx.set_fire(flames, minf(k * 1.4, 1.0), clampf((k - 0.6) / 0.4, 0.0, 1.0))
+	burn.call(0.0)
+	var tween := holder.create_tween()
+	tween.tween_method(burn, 0.0, BACK_BLAST_TIME, BACK_BLAST_TIME)
+	tween.tween_callback(holder.queue_free)
+	# The smoke, low and out: back along the blast's run over the ground and
+	# to either side of it, as it spreads off the hull. Out of the fire's edge
+	# once it has flared, and no bigger than half of it: out of its middle at
+	# once, it covered the fire before it was seen.
+	var flat := Vector3(forward.x, 0.0, forward.z)
+	for i in BACK_BLAST_PUFFS:
+		var out := Vector3(_rng.randf_range(-1, 1), 0.0, _rng.randf_range(-1, 1)).normalized()
+		if flat.length() > 0.1:
+			out = (out + flat.normalized() * 0.8).normalized()
+		var puff := _instance(_puff_mesh, "trail")
+		var from := at + out * radius * 0.8
+		puff.global_position = from
+		puff.scale = Vector3.ONE * 0.001
+		var reach := _rng.randf_range(0.6, 1.2) * radius * 3.0
+		var puff_size := _rng.randf_range(0.3, 0.5) * radius
+		var life := _rng.randf_range(0.5, 0.8)
+		var wait := BACK_BLAST_TIME * _rng.randf_range(0.35, 0.6)
+		var smoke := puff.create_tween()
+		smoke.set_parallel()
+		smoke.tween_property(puff, "scale", Vector3.ONE * puff_size, life * 0.3).set_delay(wait) \
+				.set_ease(Tween.EASE_OUT)
+		smoke.tween_property(puff, "global_position", from + out * reach + Vector3.UP * radius * 0.8, life) \
+				.set_delay(wait).set_ease(Tween.EASE_OUT)
+		smoke.tween_property(puff, "scale", Vector3.ONE * 0.001, life * 0.7).set_delay(wait + life * 0.3) \
+				.set_ease(Tween.EASE_IN)
+		smoke.chain().tween_callback(puff.queue_free)
 
 
 # Asks the segment a round's nose covers this step for an enemy in the way,
