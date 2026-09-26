@@ -63,6 +63,11 @@
 #   G                      the palms' and the trees' sway smooth / stepped,
 #                          held poses at 8 a second (level3d_wind.gd);
 #                          --wind-steps starts stepped, --no-wind stills them
+#   H                      the rockets and the mortar's bomb cast a real
+#                          shadow in the sun, or have a spot on the ground
+#                          under them (Level3DFx.spot); from the next one
+#                          fired; --spots starts with spots. The rounds fly
+#                          low and always cast one
 #
 # Like the map editor it can render one view and quit (a real window is needed,
 # --headless has no framebuffer to read back):
@@ -221,6 +226,7 @@ func _ready() -> void:
 	get_tree().node_added.connect(_toon)
 	Level3DHull.creases = OS.get_cmdline_user_args().has("--engine-creases")
 	Level3DHull.drawn = not OS.get_cmdline_user_args().has("--no-contour")
+	Level3DFx.real_shadows = not OS.get_cmdline_user_args().has("--spots")
 	if not OS.get_cmdline_user_args().has("--baked-contour"):
 		get_tree().node_added.connect(_engine_contour)
 	var scene: PackedScene = load(LEVEL_PATH)
@@ -1715,6 +1721,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_G:
 				Level3DWind.set_stepped(not Level3DWind.is_stepped())
 				print("wind: ", "stepped" if Level3DWind.is_stepped() else "smooth")
+			KEY_H:
+				Level3DFx.real_shadows = not Level3DFx.real_shadows
+				print("rockets and bombs: ", "shadows" if Level3DFx.real_shadows else "spots")
 			KEY_P:
 				if not btr.classic:
 					_rocket_wanted = ROCKET_WAIT
@@ -1840,7 +1849,7 @@ func _screenshot_mode() -> void:
 	# Level3DSoldiers and Level3DBtr read these for themselves; they are not
 	# waypoints.
 	for own in ["--sprite-soldiers", "--btr", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
-			"--no-wind", "--wind-steps"]:
+			"--no-wind", "--wind-steps", "--spots"]:
 		var at := args.find(own)
 		if at >= 0:
 			args.remove_at(at)

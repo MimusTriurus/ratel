@@ -21,11 +21,12 @@
 # follow, and the impact is shown when it arrives.
 #
 # The round is PlayerBullet's -- the one EnemyBullet draws yellow, as the
-# game's player and gunners fire the same round -- at the game's size and over
-# everything, as Level3DGuns draws the enemies', and drawn as the fire is
-# (Level3DFx.round_node): a white core in a yellow ring in a red rim, lined in
-# black. It used to be a glowing streak, a tracer the game never had, and
-# then the sprite itself, pixels on a cel-shaded stage.
+# game's player and gunners fire the same round -- as Level3DGuns draws the
+# enemies' (Level3DFx.take_round): a slug in the sprite's yellow, lined in its
+# red, lit in two tones and casting its shadow as the models do. It used to be
+# a glowing streak, a tracer the game never had, then the sprite itself,
+# pixels on a cel-shaded stage, then the sprite drawn as the fire is, on a
+# card turned to the camera, flat among the models.
 #
 # From the tank bench (BlenderMCP/godot, docs/combat.md), the two things it
 # settled for the cannon: recoil is an impulse into the body spring, not a
@@ -258,16 +259,16 @@ func _grid_stop(from: Vector3, direction: Vector3, reach: float) -> float:
 
 func _round(from: Vector3, to: Vector3, kind: String, normal: Vector3, travel: Vector3,
 		found: Dictionary) -> void:
-	# Drawn as Level3DGuns.enemy_bullet draws the enemies' yellow rounds.
-	var node := Level3DFx.round_node(false)
-	get_parent().add_child(node)
-	node.global_position = from
+	# The enemies' yellow round (Level3DFx.take_round), from the pool.
+	var node := Level3DFx.take_round(get_parent(), false)
+	var fly := func(k: float): Level3DFx.aim_round(node, from.lerp(to, k), to - from)
+	fly.call(0.0)
 	_in_flight += 1
 	var time := from.distance_to(to) / (CLASSIC_ROUND_SPEED if btr.classic else ROUND_SPEED)
 	var tween := node.create_tween()
-	tween.tween_property(node, "global_position", to, time)
+	tween.tween_method(fly, 0.0, 1.0, time)
 	tween.tween_callback(func():
-		node.queue_free()
+		Level3DFx.give_round(node)
 		_in_flight -= 1
 		impact(to, kind, normal, travel)
 		if not found.is_empty():

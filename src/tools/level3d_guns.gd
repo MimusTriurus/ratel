@@ -68,16 +68,10 @@ const EXPLOSION_MARGIN := 0.35
 
 # The height a shot flies at: the barrel's axis on the model.
 const ROUND_HEIGHT := 0.83
-# A shot is the game's own, EnemyBullet's white or yellow, at the game's size:
-# 24 px across, a white core in a grey or yellow ring in a black or red one,
-# drawn as the fire is and lined in black (Level3DFx.round_node). A small
-# white ball, as it once was, was lost on the sand; the dark ring is what
-# makes it read, there as in the game.
-# Rounds, the enemies' and the player's, are drawn over everything, as the
-# game draws them over the stage: at the height they fly they went through a
-# ruin or a wall they passed, and the height does not decide what they hit.
-# Last in the transparent pass, after the water and the boats' wakes (1).
-const ROUND_PRIORITY := 10
+# A shot is EnemyBullet's white or yellow, as a slug that is lit, lined and
+# casts its shadow as the models do (Level3DFx.take_round), from a pool. It
+# was the game's sprite, drawn over everything; a slug is hidden by what it
+# passes behind, but what it hits is the grid's to say, and a wall stops it.
 
 # The guns' flash. RotatingGun has none -- its second sprite is the barrel run
 # back, nothing more -- and nor has any of the game's enemies, but a 3D gun's
@@ -360,12 +354,11 @@ func muzzle_flash(at: Vector3, direction: Vector3, size := 1.0) -> void:
 # what it hits is the grid's to say, so the height is only what is seen.
 func enemy_bullet(at: Vector2, v: Vector2, travel: int, height: float, white := true,
 		behind_flash := false) -> void:
-	var node := Level3DFx.round_node(white)
-	if behind_flash:
-		node.visible = false
-		get_tree().create_timer(FLASH_TIME, false, true).timeout.connect(node.show)
-	add_child(node)
-	var shot := {"at": at, "v": v * PX, "travel": travel, "node": node,
+	var node := Level3DFx.take_round(self, white)
+	# Hidden for as many ticks, counted rather than timed: a pooled round that
+	# ended sooner would be shown by a timer while it waited in the pool.
+	var hidden := ceili(FLASH_TIME * 100.0) if behind_flash else 0
+	var shot := {"at": at, "v": v * PX, "travel": travel, "node": node, "hidden": hidden,
 			"flight": maxi(travel, 1), "above": height - _ground_y(at)}
 	_place_shot(shot)
 	_shots.append(shot)
@@ -400,7 +393,12 @@ func _update_shots(view: Rect2) -> void:
 
 
 func _place_shot(shot: Dictionary) -> void:
-	(shot.node as Node3D).position = _shot_position(shot)
+	var node: MeshInstance3D = shot.node
+	node.visible = shot.hidden <= 0
+	shot.hidden -= 1
+	# Drawn out along its way over the ground and its fall.
+	Level3DFx.aim_round(node, _shot_position(shot),
+			Vector3(shot.v.x, -shot.above / shot.flight, shot.v.y))
 
 
 # Where the shot is seen: its x, z, and down from where it set off over the
@@ -422,7 +420,7 @@ func _ground_y(at: Vector2) -> float:
 func _drop_shot(i: int, how: String) -> void:
 	var shot: Dictionary = _shots[i]
 	_shots.remove_at(i)
-	(shot.node as Node3D).queue_free()
+	Level3DFx.give_round(shot.node)
 	if how == "gone":
 		return
 	var at := _shot_position(shot)

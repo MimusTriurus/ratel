@@ -22,16 +22,15 @@ const CONTOUR_SHADER := preload("res://src/tools/level3d_contour.gdshader")
 const FIRE_SHADER := preload("res://src/tools/level3d_fire.gdshader")
 const FIRE_CONTOUR_SHADER := preload("res://src/tools/level3d_fire_contour.gdshader")
 const RIPPLE_SHADER := preload("res://src/tools/level3d_ripple.gdshader")
-const ROUND_SHADER := preload("res://src/tools/level3d_round.gdshader")
-# A round's colours, core, ring and rim, by EnemyBullet's `white`: the yellow
-# round, which the player fires too, is the fire's white, yellow and red; the
-# white one is the sprite's white, grey and black, the grey a little cold.
+# A round's colours, the sprite's core, ring and rim, by EnemyBullet's `white`:
+# the yellow round, which the player fires too, is the fire's white, yellow
+# and red; the white one is the sprite's white and grey, the grey a little
+# cold, rimmed in the yellow one's red rather than the sprite's black, so
+# that every enemy's round is lined in red (take_round).
 const ROUND_COLOURS := {
 	false: [Color(1.0, 0.98, 0.85), Color(1.0, 0.86, 0.12), Color(0.6, 0.06, 0.02)],
-	true: [Color(1.0, 1.0, 1.0), Color(0.62, 0.66, 0.72), Color(0.16, 0.16, 0.2)],
+	true: [Color(1.0, 1.0, 1.0), Color(0.62, 0.66, 0.72), Color(0.6, 0.06, 0.02)],
 }
-# The sprite's diamond is 24 px of its 32 across.
-const ROUND_SIZE := 24.0 * Level3DMap.PX
 
 # The icosahedron: twelve corners on three golden rectangles.
 const _T := 1.618034
@@ -80,27 +79,107 @@ const FLASH_ROCK := deg_to_rad(30.0)
 const FLASH_LENGTH := 0.5
 const FLASH_WIDTH := 0.22
 
-static var _round_mesh: QuadMesh
-static var _round_materials := {}
+# A round, EnemyBullet's `white` or yellow -- the jeep fires the yellow one --
+# as a thing in the scene rather than the game's sprite: a faceted ball
+# ROUND_WIDTH across, as round as the sprite's rounded diamond is, drawn as
+# the sprite and the blasts' fire are (level3d_round.gdshader): a white core
+# in a ring of its colour, unlit, and a thick rim, its contour, in the
+# sprite's rim colour -- ROUND_RIM wide, capped at a third of its
+# radius as the contour shader caps it, which is what the sprite's rim is.
+# The yellow round is white, yellow and red, the white one white, cold grey
+# and red. It casts its shadow as the models do.
+#
+# It was the sprite, on a card turned to the camera and drawn over
+# everything, flat among the models; then an egg, lit and thinly lined, which
+# read as a ball; then a diamond drawn out along its flight, ROUND_LENGTH, the
+# sprite's 24 px, and ROUND_WIDTH across, a tracer (ROUND_SHAPE "diamond").
+# Unlit and rimmed, the ball reads as the sprite's disc.
+#
+# Rounds come and go nine a second from the jeep alone, so they are pooled,
+# a pool for each parent and colour: take_round hands out a hidden one or
+# makes one, give_round hides it again for the next.
+const ROUND_SHADER := preload("res://src/tools/level3d_round.gdshader")
+const ROUND_SHAPE := "ball"
+const ROUND_WIDTH := 0.2
+const ROUND_LENGTH := 24.0 * Level3DMap.PX
+const ROUND_RIM := 0.04
+const ROUND_SIDES := 6
+# Where each colour's core ends (level3d_round.gdshader's core_edge).
+const ROUND_CORE := {false: 0.85, true: 0.55}
 
-# A round, EnemyBullet's `white` or yellow, not yet in the tree
-# (level3d_round.gdshader): the game's size, and drawn over everything.
-static func round_node(white: bool) -> MeshInstance3D:
+static var _round_mesh: ArrayMesh
+static var _round_materials := {}
+static var _round_pool := {}    # "parent id:white" -> the hidden rounds
+
+
+static func take_round(parent: Node, white: bool) -> MeshInstance3D:
+	var key := "%d:%s" % [parent.get_instance_id(), white]
+	var pool: Array = _round_pool.get(key, [])
+	while not pool.is_empty():
+		var kept = pool.pop_back()
+		if is_instance_valid(kept):
+			(kept as MeshInstance3D).visible = true
+			return kept
 	if _round_mesh == null:
-		_round_mesh = QuadMesh.new()
-		_round_mesh.size = Vector2.ONE * ROUND_SIZE
+		_round_mesh = ball(2, 0.0, 7) if ROUND_SHAPE == "ball" else _diamond(ROUND_SIDES)
 		for colour in ROUND_COLOURS:
-			var material := ShaderMaterial.new()
-			material.shader = ROUND_SHADER
-			material.render_priority = Level3DGuns.ROUND_PRIORITY
-			for k in 3:
-				material.set_shader_parameter(["core", "ring", "rim"][k], ROUND_COLOURS[colour][k])
-			_round_materials[colour] = material
+			var body := ShaderMaterial.new()
+			body.shader = ROUND_SHADER
+			body.set_shader_parameter("core", ROUND_COLOURS[colour][0])
+			body.set_shader_parameter("ring", ROUND_COLOURS[colour][1])
+			body.set_shader_parameter("core_edge", ROUND_CORE[colour])
+			var rim := ShaderMaterial.new()
+			rim.shader = CONTOUR_SHADER
+			rim.set_shader_parameter("colour", ROUND_COLOURS[colour][2])
+			rim.set_shader_parameter("width", ROUND_RIM)
+			rim.set_shader_parameter("extent", 1.0)
+			body.next_pass = rim
+			_round_materials[colour] = body
 	var node := MeshInstance3D.new()
 	node.mesh = _round_mesh
 	node.material_override = _round_materials[white]
-	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.set_meta("round_pool", key)
+	parent.add_child(node)
 	return node
+
+
+static func give_round(node: MeshInstance3D) -> void:
+	node.visible = false
+	var key: String = node.get_meta("round_pool")
+	if not _round_pool.has(key):
+		_round_pool[key] = []
+	_round_pool[key].append(node)
+
+
+# `node` at `at`, drawn out along `along`.
+static func aim_round(node: MeshInstance3D, at: Vector3, along: Vector3) -> void:
+	var forward := along.normalized() if along.length() > 1e-5 else Vector3.FORWARD
+	var up := Vector3.UP if absf(forward.y) < 0.99 else Vector3.RIGHT
+	node.global_transform = Transform3D(Basis.looking_at(forward, up)
+			* Basis.from_scale(Vector3(ROUND_WIDTH, ROUND_WIDTH,
+			ROUND_WIDTH if ROUND_SHAPE == "ball" else ROUND_LENGTH) * 0.5), at)
+
+
+# A diamond on the unit sphere, its tips at z = +-1 and `sides` corners round
+# its middle, its faces flat.
+static func _diamond(sides: int) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in sides:
+		var a := Vector3(cos(TAU * i / sides), sin(TAU * i / sides), 0.0)
+		var b := Vector3(cos(TAU * (i + 1) / sides), sin(TAU * (i + 1) / sides), 0.0)
+		for tip: Vector3 in [Vector3(0, 0, 1), Vector3(0, 0, -1)]:
+			var p: Array[Vector3] = [tip, a, b]
+			var normal: Vector3 = (p[1] - p[0]).cross(p[2] - p[0]).normalized()
+			# Clockwise from outside, as Godot's front faces are (ball).
+			if normal.dot(p[0] + p[1] + p[2]) > 0.0:
+				p = [tip, b, a]
+			else:
+				normal = -normal
+			st.set_normal(normal)
+			for v in p:
+				st.add_vertex(v)
+	return st.commit()
 
 
 # A muzzle's flash, fire in a star (level3d_fire.gdshader): a long flame out
@@ -131,6 +210,64 @@ static func set_fire(parts: Array, age: float, burn := 0.0) -> void:
 	for part in parts:
 		(part as GeometryInstance3D).set_instance_shader_parameter("age", age)
 		(part as GeometryInstance3D).set_instance_shader_parameter("burn", burn)
+
+
+# What flies high can have a spot on the ground under it in place of its
+# shadow, which says where it is and how high the way a shadow does not -- the
+# sun is low and to one side, and a rocket's shadow lies three or four metres
+# off it, crossing the sand on its own while the rocket is out of the frame
+# above. Flat,
+# unlit and unlined, as the game's own drop shadows are, sand-dark on the
+# ground and sea-dark on the water, and smaller the higher the thing is:
+# `radius` on the ground, divided by 1 + `shrink` a metre above it, and no
+# smaller than `smallest`, or straight under a high one it hides behind it.
+# The mortar's bomb and the rockets (level3d_rocket.gd); the rounds fly low
+# and always cast a real one (take_round).
+const SPOT_COLOUR := Color(0.24, 0.15, 0.03)
+const SPOT_WATER_COLOUR := Color(0.01, 0.08, 0.22)
+const SPOT_LIFT := 0.015
+# A real shadow in the sun, which is the default, or the spot: the preview's
+# H and --spots, to compare the two. Read when a thing is made, so a switch
+# shows from the next one fired. The shadow is what everything else on the
+# stage has, and the arc reads without a spot.
+static var real_shadows := true
+
+static var _spot_mesh: CylinderMesh
+static var _spot_materials: Array[StandardMaterial3D] = []
+
+
+# A spot, under `parent`, placed by place_spot.
+static func spot(parent: Node) -> MeshInstance3D:
+	if _spot_mesh == null:
+		_spot_mesh = CylinderMesh.new()
+		_spot_mesh.top_radius = 1.0
+		_spot_mesh.bottom_radius = 1.0
+		_spot_mesh.height = 0.01
+		_spot_mesh.radial_segments = 9
+		_spot_mesh.rings = 1
+		for colour in [SPOT_COLOUR, SPOT_WATER_COLOUR]:
+			var material := StandardMaterial3D.new()
+			material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			material.albedo_color = colour
+			_spot_materials.append(material)
+	var node := MeshInstance3D.new()
+	node.mesh = _spot_mesh
+	node.material_override = _spot_materials[0]
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# With real shadows, on no layer the camera sees: still placed, not drawn.
+	if real_shadows:
+		node.layers = 0
+	parent.add_child(node)
+	return node
+
+
+# The spot of what is at `at`, over ground `ground_y` high, water or not.
+static func place_spot(node: MeshInstance3D, at: Vector3, ground_y: float, on_water: bool, radius: float,
+		shrink: float, smallest: float) -> void:
+	node.material_override = _spot_materials[1 if on_water else 0]
+	var size := maxf(radius / (1.0 + maxf(at.y - ground_y, 0.0) * shrink), smallest)
+	node.global_transform = Transform3D(Basis.from_scale(Vector3(size, 1.0, size)),
+			Vector3(at.x, ground_y + SPOT_LIFT, at.z))
 
 
 static var _ripple_mesh: PlaneMesh

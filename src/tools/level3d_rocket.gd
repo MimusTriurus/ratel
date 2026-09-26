@@ -146,17 +146,19 @@ const DUST_REACH := Vector2(0.7, 1.5)
 # A bomb has no motor, and Grenade draws no trail: it goes at the grenade's
 # speed in either mode, 5 px a tick over the ground, and leaves nothing behind
 # it. What it has is at the tube, a flash and a cough of smoke as it goes
-# (_mortar_blast), and on the ground under it a spot (_place_blob) that it
-# climbs away from and comes back down to -- the arc seen from above, which the
-# game's Grenade shows by swelling as it rises, as the bomb here does too
-# (BOMB_PEAK). The spot stands in for its shadow, which is off. It noses up
-# and down a little as it flies, for the game's spinning sprite: a bomb
-# steadied by fins does not spin.
+# (_mortar_blast), and on the ground its shadow, which it climbs away from and
+# comes back down to -- the arc seen from above, which the game's Grenade
+# shows by swelling as it rises, as the bomb here does too (BOMB_PEAK). It
+# noses up and down a little as it flies, for the game's spinning sprite: a
+# bomb steadied by fins does not spin.
+#
+# Both cast a real shadow, or with Level3DFx.real_shadows off (the preview's
+# H, --spots) have a spot on the ground under them instead: a rocket's arc
+# takes it six metres up, and its shadow lies three or four off it with the
+# sun where it is. The spot's size, as Level3DFx.place_spot has it.
 const BLOB_RADIUS := 0.2
 const BLOB_SHRINK := 0.7        # per metre above the ground
-# No smaller than this, or straight under a high bomb it hides behind it.
 const BLOB_SMALLEST := 0.12
-const BLOB_LIFT := 0.015
 const WOBBLE := deg_to_rad(7.0)
 const WOBBLE_RATE := 15.0       # radians a second
 # A spent stage falls away for this long before it is gone.
@@ -262,7 +264,6 @@ var _puff_mesh: ArrayMesh
 var _chip_mesh: ArrayMesh
 var _flame_mesh: SphereMesh
 var _fire_mesh: ArrayMesh
-var _crater_mesh: CylinderMesh
 var _materials := {}
 
 
@@ -280,12 +281,6 @@ func _ready() -> void:
 	_flame_mesh.rings = 2
 	_flame_mesh.radius = 1.0
 	_flame_mesh.height = 2.0
-	_crater_mesh = CylinderMesh.new()
-	_crater_mesh.top_radius = 1.0
-	_crater_mesh.bottom_radius = 1.0
-	_crater_mesh.height = 0.01
-	_crater_mesh.radial_segments = 9
-	_crater_mesh.rings = 1
 	for i in 4:
 		_crater_meshes.append(Level3DFx.crater_mesh(10 + i))
 	_materials = {
@@ -309,9 +304,6 @@ func _ready() -> void:
 		# Darker than the sand, or only their lines show on it.
 		"rim_clod": _lit(Level3DFx.RIM_SAND.lerp(Level3DFx.RIM_SCORCHED, 0.6)),
 		"chip": _lit(Color(0.25, 0.2, 0.15)),
-		# The stage's own shadows, on sand and on water.
-		"blob": _unshaded(Color(0.24, 0.15, 0.03)),
-		"blob_water": _unshaded(Color(0.01, 0.08, 0.22)),
 	}
 
 
@@ -512,10 +504,11 @@ func _launch() -> void:
 			"from": start, "to": target, "run": run, "gone": 0.0,
 			"hump": maxf(run * rise - (target.y - start.y), 0.0),
 			"heading": heading, "basis": frame.basis}
+	for copy in copies.values():
+		(copy as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON \
+				if Level3DFx.real_shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	entry["blob"] = Level3DFx.spot(get_parent())
 	if _lob:
-		for copy in copies.values():
-			(copy as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		entry["blob"] = _instance(_crater_mesh, "blob")
 		_mortar_blast(start + heading * _nose * entry.scale, heading)
 	else:
 		_back_blast(frame * (_centre + _axis * _tail), -heading, BACK_BLAST[weapon_level()])
@@ -601,8 +594,8 @@ func _size(rocket: Dictionary) -> float:
 
 
 # The round turned from the line it sat on to its path's, at its size for how
-# far it has gone (BOMB_PEAK, ROCKET_GROWTH); a bomb nods as well, and has its
-# spot on the ground.
+# far it has gone (BOMB_PEAK, ROCKET_GROWTH), and its spot on the ground; a
+# bomb nods as well.
 func _place_on_arc(rocket: Dictionary, gone: float) -> void:
 	if rocket.lob:
 		var s: float = gone / rocket.run if rocket.run > 0.0 else 1.0
@@ -620,18 +613,10 @@ func _place_on_arc(rocket: Dictionary, gone: float) -> void:
 	(rocket.node as Node3D).global_transform = Transform3D(Basis(turn) * rocket.basis * rocket.grow, at)
 	rocket.gone = gone
 	rocket.direction = ahead
-	if rocket.lob:
-		_place_blob(rocket.blob, at)
-
-
-# The spot under a bomb: on the ground below it, smaller the higher it is.
-func _place_blob(blob: MeshInstance3D, at: Vector3) -> void:
-	var there: Dictionary = ground.call(at.x, at.z)
-	var height: float = there.height if there.hit else 0.0
-	blob.material_override = _materials["blob_water" if there.hit and there.kind == "water" else "blob"]
-	var size := maxf(BLOB_RADIUS / (1.0 + maxf(at.y - height, 0.0) * BLOB_SHRINK), BLOB_SMALLEST)
-	blob.global_position = Vector3(at.x, height + BLOB_LIFT, at.z)
-	blob.scale = Vector3(size, 1.0, size)
+	# On whatever is under it, a bunker's roof or a rock as well as the ground.
+	var there: Dictionary = surface.call(at.x, at.z)
+	Level3DFx.place_spot(rocket.blob, at, there.height if there.hit else 0.0, there.hit and there.kind == "water",
+			BLOB_RADIUS, BLOB_SHRINK, BLOB_SMALLEST)
 
 
 # The mortar going off: a flash at the tube's mouth and a cough of smoke thrown
@@ -792,8 +777,7 @@ func _trail(at: Vector3) -> void:
 func _explode(rocket: Dictionary, at: Vector3, normal: Vector3) -> void:
 	_rockets.erase(rocket)
 	(rocket.node as Node3D).queue_free()
-	if rocket.has("blob"):
-		(rocket.blob as Node3D).queue_free()
+	(rocket.blob as Node3D).queue_free()
 	if rocket.classic and not loaded:
 		_reload_left = rocket.rearm
 	var there: Dictionary = ground.call(at.x, at.z)
