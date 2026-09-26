@@ -41,6 +41,10 @@ const EXHAUST_BACK := Vector2(0.04, 0.14)
 const EXHAUST_BIG := 1.35
 const DUST_STEP := 0.28
 const DUST_LIFE := Vector2(0.6, 0.85)
+const CLOUD_LIFE := Vector2(0.9, 1.4)
+# How much further a cloud's puffs are blown than a wheel's (DUST_DRIFT):
+# puffed out from a line, they did not part and stood in one long lump.
+const CLOUD_SPREAD := 2.2
 # How far a dust puff drifts from where it was raised, and how high it lifts,
 # as shares of its size.
 const DUST_DRIFT := 1.4
@@ -146,11 +150,36 @@ func _dust(e: Dictionary) -> void:
 	_last[e.key] = [at, fmod(gone, DUST_STEP)]
 	if gone < DUST_STEP:
 		return
-	var material: String = under.kind if under.kind in ["hard", "forest"] else "ground"
 	var size: float = e.size * _rng.randf_range(0.8, 1.2)
 	var way := Vector3(_rng.randf_range(-1, 1), 0.0, _rng.randf_range(-1, 1)).normalized()
-	var drift := way * size * DUST_DRIFT * _rng.randf_range(0.5, 1.0)
-	var life := _rng.randf_range(DUST_LIFE.x, DUST_LIFE.y)
+	_dust_puff(at, size, way * size * DUST_DRIFT * _rng.randf_range(0.5, 1.0), _ground_material(under),
+			_rng.randf_range(DUST_LIFE.x, DUST_LIFE.y))
+
+
+# A cloud thrown up off a line on the ground at once -- the Chinook's ramp
+# coming down on the sand (Level3DChinook) -- `count` puffs `size` big from
+# `at` - `across` to `at` + `across`, blown out along `out` and away to either
+# end, and living CLOUD_LIFE, longer than a wheel's. None off the water.
+func cloud(at: Vector3, across: Vector3, out: Vector3, size: float, count: int) -> void:
+	for i in count:
+		var k := float(i) / maxf(count - 1, 1) * 2.0 - 1.0
+		var p := at + across * k
+		var under: Dictionary = ground.call(p.x, p.z)
+		if not under.hit or under.kind == "water":
+			continue
+		p.y = under.height
+		var s := size * _rng.randf_range(0.6, 1.3)
+		var drift := (out * _rng.randf_range(0.4, 1.3) + across.normalized() * k * _rng.randf_range(0.5, 1.2)) \
+				* s * DUST_DRIFT * CLOUD_SPREAD
+		_dust_puff(p, s, drift, _ground_material(under), _rng.randf_range(CLOUD_LIFE.x, CLOUD_LIFE.y))
+
+
+func _ground_material(under: Dictionary) -> String:
+	return under.kind if under.kind in ["hard", "forest"] else "ground"
+
+
+# One puff of dust on the ground at `at`, drifting `drift` over its life.
+func _dust_puff(at: Vector3, size: float, drift: Vector3, material: String, life: float) -> void:
 	var puff := _puff(material)
 	var spin := _rng.randf() * TAU
 	var settle := func(t: float):

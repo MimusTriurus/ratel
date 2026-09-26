@@ -112,6 +112,10 @@ var solid: Callable
 # `player_attack.call(x, z)`: whether a shot at x, z kills the player
 # (Player.attack), who is then the preview's to blow up.
 var player_attack: Callable
+# `hull.call(at)`: where a shot at `at` strikes what the grid does not have
+# and a round is still stopped by -- the Chinook bringing the jeep in
+# (Level3DChinook.strike) -- as {"point", "normal"}, or empty.
+var hull: Callable
 # `player_position.call()`: the player's x, z.
 var player_position: Callable
 # `blast.call(at, scale)`: an explosion to be seen at `at`.
@@ -397,12 +401,17 @@ func _update_shots(view: Rect2) -> void:
 			_drop_shot(i, "gone")
 			continue
 		shot.travel -= 1
+		var struck: Dictionary = hull.call(_shot_position(shot)) \
+				if hull.is_valid() and shot.travel >= 0 else {}
 		# In the game's order, which is the order of the calls: player_attack
 		# is only asked, and so the player only killed, when neither ends it.
+		# The hull is not the game's; it goes after the grid.
 		if shot.travel < 0:
 			_drop_shot(i, "landed")
 		elif solid.call(at.x, at.y):
 			_drop_shot(i, "stopped")
+		elif not struck.is_empty():
+			_drop_shot(i, "hull", struck)
 		elif player_attack.call(at.x, at.y):
 			_drop_shot(i, "player")
 		else:
@@ -432,9 +441,10 @@ func _ground_y(at: Vector2) -> float:
 
 # BulletHit where it stopped, `how`: "gone" out of the frame, nothing; "landed"
 # at the end of its flight and "stopped" by the grid, what the jeep's rounds
-# leave there (impact); "player" on the player, a spark of the blasts' fire
-# that cools and shrinks away -- the hit, not the ground under it.
-func _drop_shot(i: int, how: String) -> void:
+# leave there (impact); "hull" on the Chinook, at `struck`, what they leave on
+# an enemy, sparks and no mark; "player" on the player, a spark of the blasts'
+# fire that cools and shrinks away -- the hit, not the ground under it.
+func _drop_shot(i: int, how: String, struck := {}) -> void:
 	var shot: Dictionary = _shots[i]
 	_shots.remove_at(i)
 	Level3DFx.give_round(shot.node)
@@ -442,6 +452,9 @@ func _drop_shot(i: int, how: String) -> void:
 		return
 	var at := _shot_position(shot)
 	var travel := Vector3(shot.v.x, 0.0, shot.v.y).normalized()
+	if how == "hull" and impact.is_valid():
+		impact.call(struck.point, "unit", struck.normal, travel)
+		return
 	if how != "player" and impact.is_valid():
 		var struck_at: Dictionary = landed.call(at) if how == "landed" else stopped.call(at, travel)
 		impact.call(struck_at.point, struck_at.kind, struck_at.normal, travel)

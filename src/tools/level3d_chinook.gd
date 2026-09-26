@@ -24,7 +24,9 @@
 #     the BTR backs straight down it until its bow is clear of the lip, and
 #     only then starts the original's diagonal. The ramp goes up again as it
 #     lifts off. To end the diagonal where the original does, the Chinook sets
-#     down that much further north: LANDING_SHIFT px, 234.
+#     down that much further north: LANDING_SHIFT px, 234. It stops with the
+#     underside of its lip on the sand, a little short of the model's clip
+#     (_ramp_down), and throws up a cloud of dust along the lip as it does.
 #   * The diagonal's heading turns at the jeep's Player.ANGLE_VELOCITY rather
 #     than jumping to -45, which a hull shows and a sprite hid.
 #   * Height. The original draws it as a scale, Z0 / (Z0 - z) -- a pinhole
@@ -35,6 +37,10 @@
 #     unscaled copy of it that only casts shadows, from where it really is.
 #     ALTITUDE is set so that the shadow is as far out at the top as the
 #     original's.
+#   * The enemies' rounds strike it (strike): the original's pass under the
+#     sprite, which is drawn over them, and here the rounds are drawn over
+#     everything, so they flew through it. They strike sparks off it and do
+#     nothing else; the jeep in it is not the player's yet.
 class_name Level3DChinook
 extends Node3D
 
@@ -49,8 +55,24 @@ const CARGO_BACK := 2.0         # CARGO: where the BTR rides
 const HINGE_BACK := 7.5         # HINGE_Y
 const FLOOR := 1.0              # the cabin floor, and the hinge's height
 const RAMP_LEN := 4.6
+# The ramp's skin under its deck at the lip (C_BodyDark), measured off the
+# model: what lies on the ground when it is down (_ramp_down).
+const RAMP_PLATE := 0.15
+# The dust the ramp raises coming down (_ramp_dust): puffs along the lip, and
+# how big, level metres -- twice a wheel's (Level3DBtr.DUST_SIZE).
+const RAMP_DUST := 9
+const RAMP_DUST_SIZE := 0.28
 const CABIN_HALF_WIDTH := 1.9   # CABIN_W
 const MODEL_HEIGHT := 7.6       # the rear rotor's top, over the wheels
+# What stops the enemies' rounds (strike), in the model's own metres and axes,
+# nose +Z: the cabin, nose to tail, from the ground up to its roof, and the
+# sponsons either side of its back half. Off the model's own surfaces --
+# C_Body, C_Glass and C_BodyDark -- without the pylons over the roof, which
+# nothing flies as high as, and without the rotors.
+const HULL_BOXES: Array[AABB] = [
+	AABB(Vector3(-2.25, 0.0, -11.3), Vector3(4.5, 4.7, 22.1)),
+	AABB(Vector3(-4.1, 0.0, -10.75), Vector3(8.2, 2.6, 9.65)),
+]
 # The vehicle rides the ramp by its axles, which it knows (Level3DBtr's
 # VEHICLES, ramp_axles), as it knows its bow (body_front).
 
@@ -67,6 +89,9 @@ enum { FORWARDS, OPENING, OUT, DIAGONAL, REVERSE, AWAY, DONE }
 # Asked of the scene, as the BTR is: `ground.call(x, z)` -> {"height", ...}.
 var ground: Callable
 var btr: Level3DBtr
+# `dust.call(at, across, out, size, count)`: a cloud of dust off a line on the
+# ground (Level3DPuffs.cloud), which the ramp raises coming down on it.
+var dust: Callable
 # Called once, when the BTR is the player's.
 var finished: Callable
 # The top view: the model drawn at the original's scale for its height.
@@ -96,6 +121,7 @@ var _ramps: Array[AnimationPlayer] = []     # the ramp, on both copies
 var _sound: AudioStreamPlayer
 var _landed_height := 0.0
 var _shift := 0.0
+var _ramp_landed := false   # the ramp has come down and raised its dust
 
 
 # How far the Chinook sets down north of the original's spot, in px: the
@@ -113,10 +139,15 @@ func clear_back() -> float:
 	return (lip + btr.body_front() + 0.1) / PX
 
 
-# The ramp's angle when it is down, its lip on the ground: jackal_chinook.py's
-# RAMP_DOWN.
+# The ramp's angle when it is down, the underside of its lip on the ground.
+# jackal_chinook.py's RAMP_DOWN, -asin(FLOOR / RAMP_LEN), puts the deck's lip
+# there, and the skin under the deck, RAMP_PLATE thick, went into the sand;
+# so the ramp stops short of the clip's end, a couple of degrees up
+# (_hold_ramp). One step of Newton's from RAMP_DOWN is exact to a millimetre.
 static func _ramp_down() -> float:
-	return -asin(FLOOR / RAMP_LEN)
+	var a := -asin(FLOOR / RAMP_LEN)
+	var lip := FLOOR + RAMP_LEN * sin(a) - RAMP_PLATE * cos(a)
+	return a - lip / (RAMP_LEN * cos(a) + RAMP_PLATE * sin(a))
 
 
 func _ready() -> void:
@@ -191,6 +222,60 @@ func top() -> float:
 	return _model.position.y + MODEL_HEIGHT * _model.scale.y
 
 
+# Where a round at `at` strikes the hull, {"point", "normal"} on its surface,
+# or empty. The game's Chinook is no HitElement -- its rounds pass under the
+# sprite, which is drawn over them -- but here the rounds are drawn over
+# everything, the Chinook included, so they went through it. So a round
+# strikes it where it is seen on it: where the camera's ray through the round
+# meets the hull, on the face that ray sees -- whatever the round's height
+# and the Chinook's. By its height the round passed under a Chinook coming
+# down, which the tilted view shows where it is, over the round, and the top
+# view at the original's scale for its height (enlarge); both drew the round
+# on it.
+func strike(at: Vector3) -> Dictionary:
+	if _model == null or state == DONE:
+		return {}
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return {}
+	var screen := camera.unproject_position(at)
+	var origin := camera.project_ray_origin(screen)
+	var inverse := _model.global_transform.affine_inverse()
+	var a := inverse * origin
+	var b := inverse * (origin + camera.project_ray_normal(screen) * camera.far)
+	var best := {}
+	var nearest := INF
+	for box in HULL_BOXES:
+		var entry: Variant = box.intersects_segment(a, b)
+		if entry == null or a.distance_to(entry) >= nearest:
+			continue
+		nearest = a.distance_to(entry)
+		var face := _nearest_face(box, entry)
+		best = {"point": _model.global_transform * (face.point as Vector3),
+				"normal": (_model.global_basis * (face.normal as Vector3)).normalized()}
+	return best
+
+
+# The face of `box` nearest `p`, in it or on it: {"point" on it, "normal"}.
+# Not the bottom, which stands on the ground and is never seen.
+static func _nearest_face(box: AABB, p: Vector3) -> Dictionary:
+	var point := p
+	var normal := Vector3.ZERO
+	var nearest := INF
+	for axis in 3:
+		for side in [-1.0, 1.0]:
+			if axis == 1 and side < 0.0:
+				continue
+			var face: float = box.position[axis] + (box.size[axis] if side > 0.0 else 0.0)
+			if absf(p[axis] - face) < nearest:
+				nearest = absf(p[axis] - face)
+				point = p
+				point[axis] = face
+				normal = Vector3.ZERO
+				normal[axis] = side
+	return {"point": point, "normal": normal}
+
+
 # The continue: the jeep is just there, as Chinook.init does when
 # main.continued.
 func skip() -> void:
@@ -220,7 +305,11 @@ func tick() -> void:
 				btr.visible = true
 			_play_sound(SOUND_VOLUME)
 		OPENING:
-			if _advance_ramp():
+			var over := _advance_ramp()
+			if not _ramp_landed and _ramp_angle() <= _ramp_down() + 0.001:
+				_ramp_landed = true
+				_ramp_dust()
+			if over:
 				state = OUT
 			_play_sound(SOUND_VOLUME)
 		OUT:
@@ -289,6 +378,23 @@ func _play_ramp(clip: String) -> void:
 	for p in _ramps:
 		p.play(clip)
 		p.seek(0.0, true)
+	_hold_ramp()
+
+
+# The ramp no lower than _ramp_down, on both copies: the clip goes on down
+# past it, and is turned back up about the hinge -- the bone's origin -- by
+# what it went past, after each step of it. The ramp's players are advanced
+# by hand, so what this sets stands until the next step.
+func _hold_ramp() -> void:
+	for copy in [_model, _shadow]:
+		var skeleton := (copy as Node3D).find_child("Skeleton3D", true, false) as Skeleton3D
+		var past := _ramp_down() - _ramp_angle(skeleton)
+		if past <= 0.0:
+			continue
+		var bone := skeleton.find_bone("Ramp")
+		var parent := skeleton.get_bone_global_pose(skeleton.get_bone_parent(bone)).basis
+		var pose := Basis(Vector3.RIGHT, past) * skeleton.get_bone_global_pose(bone).basis
+		skeleton.set_bone_pose_rotation(bone, (parent.inverse() * pose).get_rotation_quaternion())
 
 
 # The ramp one tick on; true once the clip is over.
@@ -297,7 +403,21 @@ func _advance_ramp() -> bool:
 	for p in _ramps:
 		p.advance(1.0 / Engine.physics_ticks_per_second)
 		over = over and p.current_animation_position >= p.current_animation_length
+	_hold_ramp()
 	return over
+
+
+# The ramp's lip coming down on the sand throws it up: a line of dust along
+# the lip, blown out behind and to the sides, RAMP_DUST puffs RAMP_DUST_SIZE
+# big. Off the shadow's copy, which is where the Chinook really is.
+func _ramp_dust() -> void:
+	if not dust.is_valid():
+		return
+	var frame := _shadow.global_transform
+	var lip := frame * Vector3(0.0, 0.0, -(HINGE_BACK + RAMP_LEN * cos(_ramp_down())))
+	var across := frame.basis * Vector3(CABIN_HALF_WIDTH, 0.0, 0.0)
+	var out := (frame.basis * Vector3(0.0, 0.0, -1.0)).normalized()
+	dust.call(lip, across, out, RAMP_DUST_SIZE, RAMP_DUST)
 
 
 # Main.play_sound_if_not_playing.
@@ -359,8 +479,9 @@ func _surface(p: Vector3) -> float:
 
 # The ramp's angle up from level now, off the ramp bone's pose: the clip is
 # the one place that knows it.
-func _ramp_angle() -> float:
-	var skeleton := _shadow.find_child("Skeleton3D", true, false) as Skeleton3D
+func _ramp_angle(skeleton: Skeleton3D = null) -> float:
+	if skeleton == null:
+		skeleton = _shadow.find_child("Skeleton3D", true, false) as Skeleton3D
 	var bone := skeleton.find_bone("Ramp")
 	var rest := skeleton.get_bone_global_rest(bone)
 	var now := skeleton.get_bone_global_pose(bone)

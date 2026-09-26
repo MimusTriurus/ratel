@@ -312,6 +312,8 @@ func _start_intro() -> void:
 	chinook = Level3DChinook.new()
 	chinook.ground = _ground_at
 	chinook.btr = btr
+	chinook.dust = func(at: Vector3, across: Vector3, out: Vector3, size: float, count: int):
+		puffs.cloud(at, across, out, size, count)
 	chinook.enlarge = not tilted
 	chinook.finished = func():
 		chinook = null
@@ -1118,6 +1120,8 @@ func _add_guns(level: Node) -> void:
 		var p := Level3DMap.to_map(Vector2(x, z))
 		return map.is_solid(p.x, p.y)
 	guns.player_attack = _attack_player
+	guns.hull = func(at: Vector3) -> Dictionary:
+		return chinook.strike(at) if chinook != null else {}
 	guns.player_position = func(): return Vector2(btr.position.x, btr.position.z)
 	guns.blast = _spawn_blast
 	guns.scored = func(points: int): _set_score(_score + points)
