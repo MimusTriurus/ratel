@@ -21,13 +21,14 @@
 #
 # Where this departs from the game, and why:
 #   * The first round of damage repaints the game's tank from blue to brown.
-#     Here the tank is dark gunmetal throughout, and the round shows in its
+#     Here the tank is the sprite's blue throughout, and the round shows in its
 #     shape: Breach, played once with Damage for the jolt -- three skirt
 #     plates and an armour plate blown off, three holes torn open with fire in
 #     them -- then Breached, held: the holes glowing and smoking. The model's
 #     damage layer (jackal_heavy_tank.py) is made for this.
-#   * It is drawn half as big again as the game's sprite would make it, and
-#     its hit, mine and solid boxes are grown with it (SCALE, GROWN).
+#   * It is the sprite's size and, from above, its shape (SCALE): it was drawn
+#     half as big again, on an 8 m hull twice as long as wide, with boxes
+#     grown to match, and it is not any more.
 #   * The spawn below the frame is below this frame's bottom edge, as the
 #     game's is below its own, and the preview's frame is taller than the
 #     game's 1152 px.
@@ -43,37 +44,32 @@ extends Node3D
 
 const TANK_PATH := "res://resources/3d/jackal_heavy_tank.glb"
 const PX := Level3DMap.PX
-# The model is an 8 m tank, 3.8 m wide; the sprite is 96 x 80 px side on,
-# 1.41 x 1.17 m on the level's scale, about the jeep's size. The boss is drawn
-# bigger than that, 2.88 x 1.37 m against the BTR's 1.8 x 1.1, so that it
-# reads as the heavy one: GROWN times the 0.23 that would have matched the
-# brown tanks' rule.
-const SCALE := 0.36
-const GROWN := SCALE / 0.23
-# BossBlueTank's boxes -- hit 50 px, mine 40, solid 54 -- grown with the
-# model, or rounds would pass through its nose and tail and the four would
-# drive into one another. What it steers by (the sensor and the corners, on
-# the game's grid) is left the game's, so that it paths as the game's does;
-# the price is a hull that can overhang the forest edge a little.
-const HIT := 50.0 * GROWN
-const MINE := 40.0 * GROWN
-const SOLID := 54.0 * GROWN
+# The sprite, seen from above, is a hull 80 px across and 92 nose to tail,
+# the gun 8 px past the nose -- 1.17 x 1.35 m on the level's scale, a little
+# under the BTR's 1.8 x 1.1 and wider. The model is built to that shape
+# (jackal_heavy_tank.py, K): 3.8 m across the skirts, 4.4 nose to tail, so
+# it is drawn at the scale that makes its width the sprite's.
+const SPRITE_WIDTH := 80.0
+const MODEL_WIDTH := 3.8
+const SCALE := SPRITE_WIDTH * PX / MODEL_WIDTH
+# BossBlueTank's boxes, the game's own: the model is the sprite's size.
+const HIT := 50.0
+const MINE := 40.0
+const SOLID := 54.0
 const POINTS := 800
 const HITS := 5               # BossBlueTank.bullet_hits, each round of damage
 const SPAWN_X := [640.0, 1408.0]
-# 52 px beyond the frame, grown too, so that no part of the longer hull shows
-# where it appears; the drive in from below grown with it, to stop as far
-# inside the frame as the game's does.
-const SPAWN_OUTSIDE := 52.0 * GROWN
+# 52 px beyond the frame, as the game's.
+const SPAWN_OUTSIDE := 52.0
 const INTRO_FROM_TOP := 128
 const INTRO_FROM_BOTTOM := 66
 const TURRET_TURN := 4.0      # rad/s
-const BLAST_HEIGHT := 0.5 * GROWN
-const BLAST_SCALE := 1.1 * GROWN
+const BLAST_HEIGHT := 0.5
+const BLAST_SCALE := 1.1
 # How far the tracks move in one loop of Tracks and Spin, in the model's
 # metres (jackal_heavy_tank.py: TRACK_STEPS * LOOP.step), and how far out
 # from the middle a track runs (TRACK_X).
-const TRACK_TRAVEL := 0.763
+const TRACK_TRAVEL := 0.770
 const TRACK_X := 1.36
 # A track's width and the pads in one loop of Tracks (TRACK_STEPS), as
 # Level3DTanks': the marks it leaves, in model metres.
@@ -102,8 +98,8 @@ const CHAR := 0.28
 const KEEP_COLOUR := ["HT_Fire", "HT_Flash", "HT_Smoke", "HT_SmokeDark"]
 # Level3DPuffs': a puff's radius, level metres, out of the exhausts standing,
 # and off the tracks -- the brown tanks', grown with the tank.
-const EXHAUST_SIZE := 0.12
-const DUST_SIZE := 0.26
+const EXHAUST_SIZE := 0.1
+const DUST_SIZE := 0.22
 
 var map: Level3DMap
 var guns: Level3DGuns
