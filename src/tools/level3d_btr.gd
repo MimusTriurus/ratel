@@ -284,7 +284,7 @@ func _ready() -> void:
 	add_child(_model)
 	# Lit by its own gun's and launcher's flashes, and only it (Level3DFx.flash_light).
 	Level3DFx.flash_lit(_model)
-	_model.transform =Transform3D(Basis(Vector3.UP, vehicle.facing).scaled(Vector3.ONE * model_scale), Vector3.ZERO)
+	_model.transform = Transform3D(Basis(Vector3.UP, vehicle.facing).scaled(Vector3.ONE * model_scale), Vector3.ZERO)
 	_hull = _model.find_child(prefix + "Hull", true, false)
 	_ahead = Basis(Vector3.UP, -vehicle.facing) * Vector3.RIGHT
 	_across = Vector3.UP.cross(_ahead)

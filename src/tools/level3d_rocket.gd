@@ -444,7 +444,17 @@ func _launch() -> void:
 	var frame := _pivot.global_transform
 	var start := frame * _centre
 	var heading := (frame.basis * _axis).normalized()
-	var flat := Vector3(heading.x, 0.0, heading.z).normalized()
+	# Where it goes is the game's: along the hull's heading, turned by the
+	# mount's yaw, which is what the aim turns it by. Not along the rails as
+	# they lie: a hull tipped up on a ruin or a rock tips them too, and rails
+	# raised for the lob, rolled with the hull, point off to the side -- the
+	# round went off wherever the ground had rocked the jeep. How steeply it
+	# rises is the rails' elevation on the hull, for the same reason.
+	var bearing := btr.heading + yaw
+	var flat := Vector3(cos(bearing), 0.0, -sin(bearing))
+	var hull_up := (_base.get_parent() as Node3D).global_basis.y.normalized()
+	var elevation := asin(clampf(heading.dot(hull_up), -1.0, 1.0))
+	var launch := flat * cos(elevation) + Vector3.UP * sin(elevation)
 	var classic := btr.classic
 	var reach := RANGE
 	if classic:
@@ -491,17 +501,17 @@ func _launch() -> void:
 		rearm = TRAVELING_EXPLOSION_TIME if has_missiles and missile_power > 0 else EXPLOSION_TIME
 	if _lob:
 		speed = GRENADE_SPEED
-	# Either leaves along its rails or its tube, whatever they point at -- the
-	# mount's own elevation, and the hull's pitch and roll under it -- and
-	# comes down on the target: the line to it with a hump over it (_arc),
-	# as big as makes the slope at the start the rails'. A rocket's hump is
+	# Either leaves at its rails' or its tube's elevation on the hull, along
+	# `launch`, and comes down on the target: the line to it with a hump over
+	# it (_arc), as big as makes the slope at the start the rails'. The model
+	# is turned off the rails as they lie on to that at once (_place_on_arc). A rocket's hump is
 	# over by the end, so it arrives along that line; a bomb's is a
 	# parabola's, and comes down as steeply as it went up. A round whose
 	# rails point below the line would dip under it, into the ground; it
 	# takes the line instead.
 	var run := Vector2(target.x - start.x, target.z - start.z).length()
-	var rise := heading.y / maxf(Vector2(heading.x, heading.z).length(), 0.01)
-	var entry := {"node": rocket, "flame": flame, "direction": heading,
+	var rise := launch.y / maxf(Vector2(launch.x, launch.z).length(), 0.01)
+	var entry := {"node": rocket, "flame": flame, "direction": launch,
 			"speed": speed, "smoke": 0.0, "age": 0.0, "grow": 1.0,
 			"scale": frame.basis.get_scale().x, "classic": classic, "rearm": rearm,
 			"axis": _axis, "nose": _nose, "tail": _tail, "lob": _lob,
@@ -521,7 +531,7 @@ func _launch() -> void:
 	_launch_light(start)
 	_place_on_arc(entry, 0.0)
 	_rockets.append(entry)
-	btr.recoil(heading, KICK)
+	btr.recoil(launch, KICK)
 
 
 func _fly(rocket: Dictionary, delta: float) -> void:
