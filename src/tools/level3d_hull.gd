@@ -158,7 +158,10 @@ static func _rebuild(mesh: ArrayMesh) -> ArrayMesh:
 		bare[i] = 1 if kept_in.has(_key(positions[i])) or normals[i] == Vector3.ZERO else 0
 		if normals[i] == Vector3.ZERO:
 			normals[i] = flat[i]
-		reach[i] = Vector2(0.0 if bare[i] else aabb.get_longest_axis_size() * REACH, 0.0)
+		# And how high the corner stands over the mesh's lowest: its foot is
+		# where the hull is brought up out of the ground (level3d_hull.gdshaderinc).
+		reach[i] = Vector2(0.0 if bare[i] else aabb.get_longest_axis_size() * REACH,
+				positions[i].y - aabb.position.y)
 	var lined := PackedInt32Array()
 	for t in range(0, indices.size() - 2, 3):
 		if not (bare[indices[t]] and bare[indices[t + 1]] and bare[indices[t + 2]]):

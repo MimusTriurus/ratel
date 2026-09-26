@@ -560,9 +560,10 @@ intro drop only incidentally — the real gate there is `GameMode.playing`, whic
   cel-shaded, and a model without it is not finished. The units are drawn as
   Chinatown Wars draws its cars: flat colours, no chamfers, an inverted-hull
   contour round the silhouette and the big parts only (what lies on a part
-  is built plain), grey seals round flat panes. The buildings and the rest
-  of stage 1 still have black chamfers on sharp edges and a contour round
-  every part. How, and the line widths, are in `docs/cel-shading.md`; the
+  is built plain), grey seals round flat panes; and so are stage 1's
+  buildings, the bunkers, the pads and the rocks. Only the blast's shards
+  in `jackal_fx.blend` still have black chamfers. How, and the line widths,
+  are in `docs/cel-shading.md`; the
   per-kind pipelines are `docs/soldier-pipeline.md`, `docs/boat-pipeline.md`
   and `docs/level3d-pipeline.md`. Only the jeep, the BTR, the Chinook,
   the Little Bird (`jackal_littlebird_lowpoly.blend`, the preview's rescue

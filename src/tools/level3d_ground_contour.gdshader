@@ -12,7 +12,10 @@ render_mode unshaded, cull_front, shadows_disabled;
 varying vec3 world;
 
 void vertex() {
+	vec3 corner = VERTEX;
 	VERTEX = hull_grown(VERTEX, NORMAL, UV.x, MODEL_MATRIX, MODELVIEW_MATRIX, PROJECTION_MATRIX);
+	POSITION = hull_position(corner, VERTEX, NORMAL, UV, MODEL_MATRIX, MODELVIEW_MATRIX, VIEW_MATRIX,
+			PROJECTION_MATRIX);
 	world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
