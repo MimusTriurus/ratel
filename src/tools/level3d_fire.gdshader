@@ -26,7 +26,7 @@ render_mode unshaded, cull_disabled, shadows_disabled;
 
 #include "res://src/tools/level3d_fire.gdshaderinc"
 
-const float FRAMES = 8.0;
+const float FRAMES = 14.0;
 
 uniform vec4 white : source_color = vec4(1.0, 0.98, 0.85, 1.0);
 uniform vec4 yellow : source_color = vec4(1.0, 0.86, 0.12, 1.0);

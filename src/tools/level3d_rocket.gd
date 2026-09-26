@@ -97,10 +97,15 @@ const MISSILE_RANGE := (PlayerMissile.TRAVEL_TIME + 1) * PlayerMissile.VELOCITY 
 # TravelingExplosion is gone when its count passes TRAVEL_TIME.
 const EXPLOSION_TIME := 0.47
 const TRAVELING_EXPLOSION_TIME := (TravelingExplosion.TRAVEL_TIME + 1) / 100.0
-# How long the fire takes to burn away once the game's explosion is over
+# How long a travelling explosion's fire takes to burn away once it is over
 # (level3d_fire.gdshader's `burn`), and the embers a blast throws.
 const BURN_TIME := 0.12
 const EMBERS := 7
+# A blast's fire once the game's explosion is over (_fireball): how long it
+# takes to collapse, and how much of its heat it has spent at its peak -- the
+# rest goes as it collapses.
+const COLLAPSE_TIME := 0.25
+const PEAK_AGE := 0.7
 # _dust_ring: how many puffs, how far out they run from the middle, in metres.
 const DUST_PUFFS := 20
 const DUST_REACH := Vector2(0.7, 1.5)
@@ -799,14 +804,18 @@ func _puff(at: Vector3, size: float, material: String) -> void:
 #
 # It cools as it grows, over the same clock (level3d_fire.gdshader's `age`):
 # white-hot at first, as the sprite's first frame is, and mostly red by the
-# third's size; and when the box is gone it burns away in holes rather than
-# shrinking, which would draw a smaller blast than the one that was.
+# third's size. When the box is gone the fire collapses, over COLLAPSE_TIME:
+# it shrinks, cooling on to red, and breaks into holes in its second half
+# (`burn`). The game's sprite is simply gone on the tick its box
+# is; the fire here used to burn away in holes at its full size in 0.12 s,
+# which read as gone in a frame. Shrinking draws a blast smaller than the
+# one that was, but only once it is over -- nothing is hit by it then.
 func _fireball(at: Vector3) -> void:
 	var ball := _instance(_fire_mesh, "fire")
 	var place := func(size: float, seconds: float):
 		ball.scale = Vector3.ONE * size * 0.5 * Level3DMap.PX
 		ball.global_position = at + Vector3.UP * 0.2
-		ball.set_instance_shader_parameter("age", seconds / EXPLOSION_TIME)
+		ball.set_instance_shader_parameter("age", seconds / EXPLOSION_TIME * PEAK_AGE)
 	place.call(Level3DGuns.EXPLOSION_START, 0.0)
 	var life := EXPLOSION_TIME
 	var tween := ball.create_tween()
@@ -816,7 +825,12 @@ func _fireball(at: Vector3) -> void:
 		place.call(minf(Level3DGuns.EXPLOSION_START * pow(Explosion.GROW_RATE, ticks),
 				Level3DGuns.EXPLOSION_END), seconds),
 		0.0, life, life)
-	tween.tween_method(func(k: float): ball.set_instance_shader_parameter("burn", k), 0.0, 1.0, BURN_TIME)
+	var peak := Level3DGuns.EXPLOSION_END * 0.5 * Level3DMap.PX
+	tween.tween_method(func(k: float):
+		ball.scale = Vector3.ONE * maxf(peak * (1.0 - k), 0.001)
+		ball.set_instance_shader_parameter("age", lerpf(PEAK_AGE, 1.0, k))
+		ball.set_instance_shader_parameter("burn", clampf((k - 0.5) / 0.5, 0.0, 1.0)),
+		0.0, 1.0, COLLAPSE_TIME)
 	tween.tween_callback(ball.queue_free)
 
 
@@ -860,8 +874,8 @@ func _light(at: Vector3) -> void:
 	tween.tween_callback(light.queue_free)
 
 
-# What the fire leaves. It rises as the fireball burns away and from inside
-# it: puffs starting at once and spread 0.45 m hid the fire and stood as far
+# What the fire leaves. It rises as the fireball's collapse is ending
+# (_fireball), and from inside it -- any sooner and it hides the collapse: puffs starting at once and spread 0.45 m hid the fire and stood as far
 # out as the old fireball did, the same lie about the reach. The game's blast
 # leaves no smoke at all, so there is not much of it: the fire is the picture,
 # the smoke only what is left of it.
@@ -873,7 +887,7 @@ func _smoke(at: Vector3) -> void:
 		puff.scale = Vector3.ONE * 0.001
 		var size := _rng.randf_range(0.24, 0.36)
 		var life := _rng.randf_range(0.9, 1.3)
-		var delay := EXPLOSION_TIME * _rng.randf_range(0.85, 1.05)
+		var delay := EXPLOSION_TIME + COLLAPSE_TIME * _rng.randf_range(0.5, 0.8)
 		var tween := puff.create_tween()
 		tween.set_parallel()
 		tween.tween_property(puff, "scale", Vector3.ONE * size, life * 0.3).set_delay(delay).set_ease(Tween.EASE_OUT)
