@@ -117,10 +117,6 @@ const BODY_REACH := 0.1
 # Both figures' rifles are bound whole to this bone, the barrel along its +Y
 # (soldier-pipeline.md, section 5).
 const RIFLE_BONE := "Rifle"
-# The rifle's flash, as a part of a bunker gun's (Level3DGuns.muzzle_flash).
-# The round sets off from the same point and is bigger, so it is kept out of
-# sight until the flash is out (Level3DGuns.enemy_bullet).
-const RIFLE_FLASH := 0.5
 
 const STATE_SEEKING := 0
 const STATE_AIMING := 1
@@ -441,7 +437,7 @@ func _shoot(s: Soldier) -> void:
 	var local := guns.to_local(muzzle)
 	guns.enemy_bullet(Vector2(local.x, local.z), d * EnemyBullet.SPEED,
 			EnemySoldier.BULLET_TRAVEL_TIME, local.y, true, true)
-	guns.muzzle_flash(muzzle, Vector3(d.x, 0.0, d.y), RIFLE_FLASH)
+	guns.muzzle_flash(muzzle, Vector3(d.x, 0.0, d.y), Level3DGuns.RIFLE_FLASH)
 	s.player.play(SHOOT)
 	s.player.queue(AIM)
 

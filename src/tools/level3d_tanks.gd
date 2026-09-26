@@ -499,11 +499,13 @@ func _handle_loop(t: Tank, player: Vector2) -> void:
 		t.loop_target = Vector2(_rng.randf() * 2048, _rng.randf() * player.y)
 
 
-# The round: from the muzzle, along the facing, as the game fires it.
+# The round: from the muzzle, along the facing, as the game fires it, with a
+# flash the game's tank has not (Level3DGuns.muzzle_flash).
 func _fire(t: Tank) -> void:
 	var muzzle := _muzzle(t)
 	guns.enemy_bullet(Vector2(muzzle.x, muzzle.z), t.direction * EnemyBullet.SPEED,
-			BrownTank.BULLET_TRAVEL_TIME, muzzle.y, true)
+			BrownTank.BULLET_TRAVEL_TIME, muzzle.y, true, true)
+	guns.muzzle_flash(muzzle, Vector3(t.direction.x, 0.0, t.direction.y), Level3DGuns.TANK_FLASH)
 	var weapon: AnimationPlayer = t.players.weapon
 	weapon.play("Shoot")
 	weapon.seek(0.0, true)

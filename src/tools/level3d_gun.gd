@@ -20,10 +20,12 @@
 # the sea, for the impact. The round then flies there at a speed the eye can
 # follow, and the impact is shown when it arrives.
 #
-# The round is PlayerBullet's sprite, yellow-bullet.png -- the one EnemyBullet
-# draws yellow, as the game's player and gunners fire the same round -- turned
-# to the camera at the game's size, as Level3DGuns draws the enemies'. It used
-# to be a glowing streak, a tracer the game never had.
+# The round is PlayerBullet's -- the one EnemyBullet draws yellow, as the
+# game's player and gunners fire the same round -- at the game's size and over
+# everything, as Level3DGuns draws the enemies', and drawn as the fire is
+# (Level3DFx.round_node): a white core in a yellow ring in a red rim, lined in
+# black. It used to be a glowing streak, a tracer the game never had, and
+# then the sprite itself, pixels on a cel-shaded stage.
 #
 # From the tank bench (BlenderMCP/godot, docs/combat.md), the two things it
 # settled for the cannon: recoil is an impulse into the body spring, not a
@@ -35,7 +37,9 @@
 # Effects are low poly and opaque, like the stage: a puff grows and shrinks
 # away instead of fading, which also keeps them out of Compatibility's
 # transparent pass. They are cel-shaded as the models are, faceted and drawn
-# round (level3d_fx.gd).
+# round (level3d_fx.gd). What burns is the blasts' fire (level3d_fire.gdshader):
+# the flash, a star of it at the bore that cools from white to red while it
+# lasts, and the sparks a round strikes off a wall.
 #
 # With the BTR driving classic (level3d_btr.gd) the gun is PlayerBullet's and
 # Player.update's trigger instead: a round the tick the trigger goes down, then
@@ -55,7 +59,6 @@ const RANGE := 12.0
 const MIN_RANGE := 1.5
 const RANGE_JITTER := 0.05
 const ROUND_SPEED := 70.0
-const ROUND_SPRITE := "yellow-bullet.png"
 const FLASH_TIME := 0.05
 const RECOIL_KICK := 0.12
 # PlayerBullet, at the map's PX: it moves VELOCITY a tick and is gone on the
@@ -87,9 +90,10 @@ var _shoot_released := true
 # Rounds still flying, for Player.MAX_BULLETS.
 var _in_flight := 0
 var _rng := RandomNumberGenerator.new()
-var _flash: MeshInstance3D
+var _flash: Node3D
+var _flash_parts: Array[MeshInstance3D] = []
 var _flash_left := 0.0
-var _round_texture: AtlasTexture
+var _fire_mesh: ArrayMesh
 var _puff_mesh: ArrayMesh
 var _chip_mesh: ArrayMesh
 var _materials := {}
@@ -98,23 +102,16 @@ var _materials := {}
 func _ready() -> void:
 	# Seeded, so a --shot of a burst is the same burst every time.
 	_rng.seed = 1
-	var sprite := SpriteBank.new(Main.SPRITES).get_sprite(ROUND_SPRITE)
-	_round_texture = AtlasTexture.new()
-	_round_texture.atlas = sprite.tex
-	_round_texture.region = sprite.region
-
-	var star := SphereMesh.new()
-	star.radial_segments = 5
-	star.rings = 2
-	star.radius = 0.16
-	star.height = 0.16
-	star.material = _unshaded(Color(1.0, 0.75, 0.25))
+	_fire_mesh = Level3DFx.ball(1, 0.06, 6)
+	var fire := Level3DFx.fire()
 	# On the bore itself, so it rides with the turret and the hull's pitch.
-	_flash = MeshInstance3D.new()
-	_flash.mesh = star
-	_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_flash = Node3D.new()
 	_flash.visible = false
 	btr.muzzle_node().add_child(_flash)
+	# In the level's metres, whatever the model is scaled by.
+	var model := btr.muzzle_node().global_basis.get_scale().x
+	_flash_parts = Level3DFx.flash(_flash, _fire_mesh, fire, Level3DFx.FLASH_LENGTH / model,
+			Level3DFx.FLASH_WIDTH / model)
 
 	_puff_mesh = Level3DFx.ball(1, 0.12, 1)
 	_chip_mesh = Level3DFx.ball(0, 0.25, 2)
@@ -126,7 +123,8 @@ func _ready() -> void:
 		"wood": _lit(Color(0.36, 0.24, 0.13)),
 		"stone": _lit(Color(0.62, 0.62, 0.60)),
 		"splash": _lit(Color(0.92, 0.97, 1.0)),
-		"spark": _unshaded(Color(1.0, 0.9, 0.45)),
+		# Fire, cooling as it flies (_chips).
+		"spark": fire,
 	}
 
 
@@ -155,6 +153,8 @@ func step(delta: float) -> void:
 	_flash_left -= delta
 	if _flash_left <= 0.0:
 		_flash.visible = false
+	elif _flash.visible:
+		Level3DFx.set_fire(_flash_parts, 1.0 - _flash_left / FLASH_TIME)
 
 
 func _fire() -> void:
@@ -198,10 +198,13 @@ func _fire() -> void:
 			kind = "building"
 
 	_round(from, point, kind, normal, line.normalized(), found)
-	# A star at the bore, turned and sized afresh each round so a burst flickers.
+	# A star at the bore, rocked about it and sized afresh each round so a
+	# burst flickers, and white-hot again. Rocked, not turned all the way:
+	# on its side the star is a single flame from above.
 	_flash.visible = true
-	_flash.transform = Transform3D(Basis(Vector3.RIGHT, _rng.randf() * TAU)
-			.scaled(Vector3(1.6, 1.0, 1.0) * _rng.randf_range(0.8, 1.2)), Vector3(0.12, 0.0, 0.0))
+	_flash.transform = Transform3D(Basis(Vector3.RIGHT, _rng.randf_range(-Level3DFx.FLASH_ROCK, Level3DFx.FLASH_ROCK))
+			.scaled(Vector3.ONE * _rng.randf_range(0.8, 1.2)), Vector3.ZERO)
+	Level3DFx.set_fire(_flash_parts, 0.0)
 	_flash_left = FLASH_TIME
 	btr.recoil(direction, RECOIL_KICK)
 
@@ -222,18 +225,8 @@ func _grid_stop(from: Vector3, direction: Vector3, reach: float) -> float:
 
 func _round(from: Vector3, to: Vector3, kind: String, normal: Vector3, travel: Vector3,
 		found: Dictionary) -> void:
-	# Drawn as Level3DGuns.enemy_bullet draws the enemies' rounds.
-	var node := Sprite3D.new()
-	node.texture = _round_texture
-	node.pixel_size = Level3DMap.PX
-	node.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	node.shaded = false
-	node.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
-	node.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# Over everything: Level3DGuns.ROUND_PRIORITY.
-	node.no_depth_test = true
-	node.render_priority = Level3DGuns.ROUND_PRIORITY
+	# Drawn as Level3DGuns.enemy_bullet draws the enemies' yellow rounds.
+	var node := Level3DFx.round_node(false)
 	get_parent().add_child(node)
 	node.global_position = from
 	_in_flight += 1
@@ -361,10 +354,12 @@ func _puffs(at: Vector3, material: String, count: int, size: float, life: float)
 # gun, and falling.
 func _chips(at: Vector3, normal: Vector3, travel: Vector3, material: String, count: int) -> void:
 	var bounce := (travel - 2.0 * travel.dot(normal) * normal).normalized()
+	var spark := material == "spark"
 	for i in count:
 		var chip := _instance(_chip_mesh, material)
-		# Half a unit box's 0.03 to 0.06: the chip is a ball of radius 1.
-		var size := _rng.randf_range(0.015, 0.03)
+		# Half a unit box's 0.03 to 0.06: the chip is a ball of radius 1. A
+		# spark a little bigger, for its bands to show.
+		var size := _rng.randf_range(0.04, 0.06) if spark else _rng.randf_range(0.015, 0.03)
 		chip.scale = Vector3.ONE * size
 		chip.global_position = at + normal * 0.03
 		var out := (bounce + normal + Vector3(_rng.randf_range(-0.6, 0.6), _rng.randf_range(0.2, 0.9),
@@ -373,7 +368,9 @@ func _chips(at: Vector3, normal: Vector3, travel: Vector3, material: String, cou
 		var velocity := out * _rng.randf_range(2.0, 4.0)
 		var tween := chip.create_tween()
 		tween.tween_method(func(t: float):
-			chip.global_position = at + velocity * t + Vector3.DOWN * 4.9 * t * t, 0.0, life, life)
+			chip.global_position = at + velocity * t + Vector3.DOWN * 4.9 * t * t
+			if spark:
+				chip.set_instance_shader_parameter("age", t / life), 0.0, life, life)
 		tween.tween_callback(chip.queue_free)
 
 
@@ -386,13 +383,6 @@ func _instance(mesh: Mesh, material: String) -> MeshInstance3D:
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	get_parent().add_child(node)
 	return node
-
-
-static func _unshaded(colour: Color) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = colour
-	return material
 
 
 static func _lit(colour: Color) -> StandardMaterial3D:

@@ -280,7 +280,8 @@ func _fire(b: Boat, player: Vector2) -> void:
 	var muzzle := _muzzle(b)
 	var at := Vector2(muzzle.x, muzzle.z)
 	var d := (Level3DMap.to_level(player) - at).normalized()
-	guns.enemy_bullet(at, d * EnemyBullet.SPEED, GreenBoat.BULLET_TRAVEL_TIME, muzzle.y, true)
+	guns.enemy_bullet(at, d * EnemyBullet.SPEED, GreenBoat.BULLET_TRAVEL_TIME, muzzle.y, true, true)
+	guns.muzzle_flash(muzzle, Vector3(d.x, 0.0, d.y), Level3DGuns.BOAT_FLASH)
 	b.weapon.play(SHOOT)
 	b.weapon.seek(0.0, true)
 	if verbose:

@@ -1,5 +1,6 @@
-# What the 3D preview's procedural effects share -- the gun's dust and chips
-# (level3d_gun.gd), the rocket's fire, smoke and debris (level3d_rocket.gd):
+# What the 3D preview's procedural effects share -- the guns' rounds and
+# flashes and the gun's dust and chips (level3d_gun.gd, level3d_guns.gd), the
+# rocket's fire, smoke and debris (level3d_rocket.gd):
 # their cel-shading, docs/cel-shading.md, and the faceted balls they are made
 # of.
 #
@@ -21,6 +22,16 @@ const CONTOUR_SHADER := preload("res://src/tools/level3d_contour.gdshader")
 const FIRE_SHADER := preload("res://src/tools/level3d_fire.gdshader")
 const FIRE_CONTOUR_SHADER := preload("res://src/tools/level3d_fire_contour.gdshader")
 const RIPPLE_SHADER := preload("res://src/tools/level3d_ripple.gdshader")
+const ROUND_SHADER := preload("res://src/tools/level3d_round.gdshader")
+# A round's colours, core, ring and rim, by EnemyBullet's `white`: the yellow
+# round, which the player fires too, is the fire's white, yellow and red; the
+# white one is the sprite's white, grey and black, the grey a little cold.
+const ROUND_COLOURS := {
+	false: [Color(1.0, 0.98, 0.85), Color(1.0, 0.86, 0.12), Color(0.6, 0.06, 0.02)],
+	true: [Color(1.0, 1.0, 1.0), Color(0.62, 0.66, 0.72), Color(0.16, 0.16, 0.2)],
+}
+# The sprite's diamond is 24 px of its 32 across.
+const ROUND_SIZE := 24.0 * Level3DMap.PX
 
 # The icosahedron: twelve corners on three golden rectangles.
 const _T := 1.618034
@@ -60,6 +71,66 @@ static func fire() -> ShaderMaterial:
 	line.set_shader_parameter("width", CONTOUR)
 	material.next_pass = line
 	return material
+
+
+const FLASH_ROCK := deg_to_rad(30.0)
+# The jeep's machine gun's flash, its long flame from the bore, in the level's
+# metres: every other gun's is this, scaled by what it is
+# (Level3DGuns.muzzle_flash).
+const FLASH_LENGTH := 0.5
+const FLASH_WIDTH := 0.22
+
+static var _round_mesh: QuadMesh
+static var _round_materials := {}
+
+# A round, EnemyBullet's `white` or yellow, not yet in the tree
+# (level3d_round.gdshader): the game's size, and drawn over everything.
+static func round_node(white: bool) -> MeshInstance3D:
+	if _round_mesh == null:
+		_round_mesh = QuadMesh.new()
+		_round_mesh.size = Vector2.ONE * ROUND_SIZE
+		for colour in ROUND_COLOURS:
+			var material := ShaderMaterial.new()
+			material.shader = ROUND_SHADER
+			material.render_priority = Level3DGuns.ROUND_PRIORITY
+			for k in 3:
+				material.set_shader_parameter(["core", "ring", "rim"][k], ROUND_COLOURS[colour][k])
+			_round_materials[colour] = material
+	var node := MeshInstance3D.new()
+	node.mesh = _round_mesh
+	node.material_override = _round_materials[white]
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return node
+
+
+# A muzzle's flash, fire in a star (level3d_fire.gdshader): a long flame out
+# along the holder's +x, `length` and `width` metres, and two shorter ones
+# splayed either side of it in the holder's x, z plane, which the holder's
+# roll about x rocks round the shot -- by no more than FLASH_ROCK, since with
+# them upright the star is one flame from above. Its parts, whose `age` is the caller's
+# to run (set_fire), so that it cools from white to red as it goes out.
+static func flash(holder: Node3D, mesh: Mesh, material: Material, length: float,
+		width: float) -> Array[MeshInstance3D]:
+	var parts: Array[MeshInstance3D] = []
+	for flame in [[0.0, 1.0, 0.0], [deg_to_rad(60.0), 0.5, 0.12], [deg_to_rad(-60.0), 0.5, 0.12]]:
+		var way := Vector3.RIGHT.rotated(Vector3.UP, flame[0])
+		var half: float = length * 0.5 * float(flame[1])
+		var thick := width * 0.5 * (1.0 if flame[1] == 1.0 else 0.7)
+		var part := MeshInstance3D.new()
+		part.mesh = mesh
+		part.material_override = material
+		part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		holder.add_child(part)
+		part.transform = Transform3D(Basis(way * half, Vector3.UP * thick, way.cross(Vector3.UP) * thick),
+				way * half + Vector3.RIGHT * length * float(flame[2]))
+		parts.append(part)
+	return parts
+
+
+static func set_fire(parts: Array, age: float, burn := 0.0) -> void:
+	for part in parts:
+		(part as GeometryInstance3D).set_instance_shader_parameter("age", age)
+		(part as GeometryInstance3D).set_instance_shader_parameter("burn", burn)
 
 
 static var _ripple_mesh: PlaneMesh

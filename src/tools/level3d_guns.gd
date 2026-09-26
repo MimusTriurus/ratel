@@ -68,23 +68,32 @@ const EXPLOSION_MARGIN := 0.35
 
 # The height a shot flies at: the barrel's axis on the model.
 const ROUND_HEIGHT := 0.83
-# A shot is the game's own sprite, EnemyBullet's white or yellow, turned to
-# the camera at the game's size: 24 px across, a white core in a grey or
-# yellow ring in a black one. A small white ball, as it was, was lost on the
-# sand; the black ring is what makes it read, there as in the game.
-const ROUND_SPRITES := {true: "white-bullet.png", false: "yellow-bullet.png"}
+# A shot is the game's own, EnemyBullet's white or yellow, at the game's size:
+# 24 px across, a white core in a grey or yellow ring in a black or red one,
+# drawn as the fire is and lined in black (Level3DFx.round_node). A small
+# white ball, as it once was, was lost on the sand; the dark ring is what
+# makes it read, there as in the game.
 # Rounds, the enemies' and the player's, are drawn over everything, as the
 # game draws them over the stage: at the height they fly they went through a
 # ruin or a wall they passed, and the height does not decide what they hit.
 # Last in the transparent pass, after the water and the boats' wakes (1).
 const ROUND_PRIORITY := 10
 
-# The gun's flash. RotatingGun has none -- its second sprite is the barrel run
-# back, nothing more -- but the 3D gun's round leaves from a muzzle that was
-# otherwise dark: a star of fire along the shot for FLASH_TIME, and a wisp.
-const FLASH_TIME := 0.07
-const FLASH_LENGTH := 0.6
-const FLASH_WIDTH := 0.3
+# The guns' flash. RotatingGun has none -- its second sprite is the barrel run
+# back, nothing more -- and nor has any of the game's enemies, but a 3D gun's
+# round leaves from a muzzle that was otherwise dark: a star of fire along the
+# shot for FLASH_TIME, the blasts' fire, cooling from white to red while it
+# lasts, and a wisp (muzzle_flash). Every enemy's is the jeep's
+# (Level3DFx.FLASH_LENGTH) scaled by its gun: a bunker's and a tank's bigger,
+# a rifle's smaller. Longer than the jeep's, which fires nine times a second
+# and is seen for it; an enemy fires a round or three at a time. It was a
+# rifle's half of a bunker's, 0.3 m, and a bunker's 0.07 s: no one saw
+# either, and the tanks and the boats had none at all.
+const FLASH_TIME := 0.1
+const BUNKER_FLASH := 1.8
+const TANK_FLASH := 1.8
+const BOAT_FLASH := 1.5
+const RIFLE_FLASH := 1.0
 # Where the destruction's blast goes off, and its size: GUN_CENTRE and the
 # scale in jackal_bunker_dest.py.
 const BLAST_HEIGHT := 0.85
@@ -121,10 +130,8 @@ var guns: Array[Gun] = []
 var _shots := []
 var _explosions := []
 var _travels := []
-var _shot_textures := {}
-var _hit_mesh: SphereMesh
-var _flash_mesh: SphereMesh
-var _flash_core: SphereMesh
+var _fire_mesh: ArrayMesh
+var _fire_material: ShaderMaterial
 var _wisp_mesh: SphereMesh
 
 
@@ -152,21 +159,8 @@ class Gun:
 
 
 func _ready() -> void:
-	_hit_mesh = SphereMesh.new()
-	_hit_mesh.radial_segments = 5
-	_hit_mesh.rings = 2
-	_hit_mesh.radius = 1.0
-	_hit_mesh.height = 2.0
-	_hit_mesh.material = _unshaded(Color(1.0, 0.95, 0.7))
-	var bank := SpriteBank.new(Main.SPRITES)
-	for white in ROUND_SPRITES:
-		var sprite := bank.get_sprite(ROUND_SPRITES[white])
-		var texture := AtlasTexture.new()
-		texture.atlas = sprite.tex
-		texture.region = sprite.region
-		_shot_textures[white] = texture
-	_flash_mesh = _ball(Color(1.0, 0.72, 0.22))
-	_flash_core = _ball(Color(1.0, 0.95, 0.7))
+	_fire_mesh = Level3DFx.ball(1, 0.06, 6)
+	_fire_material = Level3DFx.fire()
 	_wisp_mesh = SphereMesh.new()
 	_wisp_mesh.radial_segments = 6
 	_wisp_mesh.rings = 3
@@ -175,7 +169,7 @@ func _ready() -> void:
 	var wisp := StandardMaterial3D.new()
 	wisp.albedo_color = Color(0.5, 0.48, 0.45)
 	wisp.roughness = 1.0
-	_wisp_mesh.material = wisp
+	_wisp_mesh.material = Level3DFx.contour(wisp)
 
 
 # One gun, its model already in the tree and prepared as a destructible is.
@@ -303,27 +297,30 @@ func _fire(gun: Gun) -> void:
 	var unit := Vector2(cos(a), sin(a))
 	var speed := EnemyBullet.SPEED * (1.0 if gun.white else RotatingGun.YELLOW_BULLET_SPEED)
 	var muzzle := gun.at + unit * MUZZLE * PX
-	enemy_bullet(muzzle, unit * speed, RotatingGun.BULLET_TRAVEL_TIME, ROUND_HEIGHT, gun.white)
-	muzzle_flash(Vector3(muzzle.x, ROUND_HEIGHT, muzzle.y), Vector3(unit.x, 0.0, unit.y))
+	enemy_bullet(muzzle, unit * speed, RotatingGun.BULLET_TRAVEL_TIME, ROUND_HEIGHT, gun.white, true)
+	muzzle_flash(Vector3(muzzle.x, ROUND_HEIGHT, muzzle.y), Vector3(unit.x, 0.0, unit.y), BUNKER_FLASH)
 
 
-# A flash at a gun's muzzle, long along `direction`, for FLASH_TIME: fire
-# round a hot core, the core standing up out of it so that it shows from
-# above. Then a wisp of smoke drifts off where it was. `size` scales all of
-# it: 1 is a bunker's gun, the soldiers' rifles are smaller (level3d_soldiers.gd).
+# A flash at a gun's muzzle, a star of fire long along `direction`, rocked
+# about it at random, for FLASH_TIME, cooling as it goes (Level3DFx.flash).
+# Then a wisp of smoke drifts off where it was. `size` scales all of it: 1 is
+# the jeep's machine gun, and each enemy has its own (BUNKER_FLASH and the
+# rest). The round that sets off with it is kept out of sight until it is out
+# (enemy_bullet's `behind_flash`): drawn over everything, it would sit on the
+# flame's root.
 func muzzle_flash(at: Vector3, direction: Vector3, size := 1.0) -> void:
-	var along := Basis.looking_at(direction, Vector3.UP)
-	var ahead := at + direction * FLASH_LENGTH * 0.4 * size
-	for layer in [[_flash_mesh, 1.0, 0.0], [_flash_core, 0.6, FLASH_WIDTH * 0.35]]:
-		var node := MeshInstance3D.new()
-		node.mesh = layer[0]
-		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(node)
-		var part: float = layer[1] * size
-		# The ball's -Z is looking_at's forward: long that way.
-		var shape := Vector3(FLASH_WIDTH, FLASH_WIDTH, FLASH_LENGTH) * 0.5 * part
-		node.global_transform = Transform3D(along.scaled_local(shape), ahead + Vector3.UP * layer[2] * size)
-		get_tree().create_timer(FLASH_TIME, false, true).timeout.connect(node.queue_free)
+	var ahead := at + direction * Level3DFx.FLASH_LENGTH * 0.4 * size
+	var holder := Node3D.new()
+	add_child(holder)
+	var forward := direction.normalized()
+	holder.global_transform = Transform3D(Basis(forward, Vector3.UP, forward.cross(Vector3.UP))
+			* Basis(Vector3.RIGHT, randf_range(-Level3DFx.FLASH_ROCK, Level3DFx.FLASH_ROCK)), at)
+	var parts := Level3DFx.flash(holder, _fire_mesh, _fire_material, Level3DFx.FLASH_LENGTH * size,
+			Level3DFx.FLASH_WIDTH * size)
+	var cool := holder.create_tween()
+	cool.set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
+	cool.tween_method(func(t: float): Level3DFx.set_fire(parts, t / FLASH_TIME), 0.0, FLASH_TIME, FLASH_TIME)
+	cool.tween_callback(holder.queue_free)
 	var wisp := MeshInstance3D.new()
 	wisp.mesh = _wisp_mesh
 	wisp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -348,19 +345,10 @@ func muzzle_flash(at: Vector3, direction: Vector3, size := 1.0) -> void:
 # the same.
 func enemy_bullet(at: Vector2, v: Vector2, travel: int, height: float, white := true,
 		behind_flash := false) -> void:
-	var node := Sprite3D.new()
+	var node := Level3DFx.round_node(white)
 	if behind_flash:
 		node.visible = false
 		get_tree().create_timer(FLASH_TIME, false, true).timeout.connect(node.show)
-	node.texture = _shot_textures[white]
-	node.pixel_size = PX
-	node.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	node.shaded = false
-	node.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
-	node.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	node.no_depth_test = true
-	node.render_priority = ROUND_PRIORITY
 	add_child(node)
 	var shot := {"at": at, "v": v * PX, "travel": travel, "node": node, "height": height}
 	_place_shot(shot)
@@ -393,7 +381,8 @@ func _place_shot(shot: Dictionary) -> void:
 	(shot.node as Node3D).position = Vector3(shot.at.x, shot.height, shot.at.y)
 
 
-# BulletHit where it stopped, a spark that shrinks away.
+# BulletHit where it stopped: a spark of the blasts' fire that cools and
+# shrinks away.
 func _drop_shot(i: int, spark: bool) -> void:
 	var shot: Dictionary = _shots[i]
 	_shots.remove_at(i)
@@ -401,13 +390,18 @@ func _drop_shot(i: int, spark: bool) -> void:
 	if not spark:
 		return
 	var node := MeshInstance3D.new()
-	node.mesh = _hit_mesh
+	node.mesh = _fire_mesh
+	node.material_override = _fire_material
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(node)
 	node.position = Vector3(shot.at.x, shot.height, shot.at.y)
-	node.scale = Vector3.ONE * 0.12
+	var life := 0.15
 	var tween := node.create_tween()
-	tween.tween_property(node, "scale", Vector3.ONE * 0.001, 0.12)
+	tween.tween_method(func(t: float):
+		var k := t / life
+		node.scale = Vector3.ONE * lerpf(0.12, 0.05, k)
+		node.set_instance_shader_parameter("age", k)
+		node.set_instance_shader_parameter("burn", clampf((k - 0.6) / 0.4, 0.0, 1.0)), 0.0, life, life)
 	tween.tween_callback(node.queue_free)
 
 
@@ -615,20 +609,3 @@ static func _segment_enters(a: Vector2, b: Vector2, box: Rect2) -> float:
 			return -1.0
 	return t0
 
-
-static func _unshaded(colour: Color) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = colour
-	return material
-
-
-# A unit ball, low poly, in one unshaded colour.
-static func _ball(colour: Color) -> SphereMesh:
-	var mesh := SphereMesh.new()
-	mesh.radial_segments = 6
-	mesh.rings = 3
-	mesh.radius = 1.0
-	mesh.height = 2.0
-	mesh.material = _unshaded(colour)
-	return mesh

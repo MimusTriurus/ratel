@@ -569,10 +569,12 @@ func _handle_loop(t: Tank, player: Vector2) -> void:
 
 # A yellow round from the muzzle, along the facing, twice the brown tank's
 # speed: EnemyBullet(direction * 2), which the bullet scales by its SPEED.
+# With a flash, as the brown tanks' (Level3DGuns.muzzle_flash).
 func _fire(t: Tank) -> void:
 	var muzzle := _muzzle(t)
 	guns.enemy_bullet(Vector2(muzzle.x, muzzle.z), t.direction * 2.0 * EnemyBullet.SPEED,
-			BossBlueTank.BULLET_TRAVEL_TIME, muzzle.y, false)
+			BossBlueTank.BULLET_TRAVEL_TIME, muzzle.y, false, true)
+	guns.muzzle_flash(muzzle, Vector3(t.direction.x, 0.0, t.direction.y), Level3DGuns.TANK_FLASH)
 	var weapon: AnimationPlayer = t.players.weapon
 	weapon.play("Shoot")
 	weapon.seek(0.0, true)
