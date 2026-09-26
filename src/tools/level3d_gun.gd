@@ -253,6 +253,7 @@ func _impact(at: Vector3, kind: String, normal: Vector3, travel: Vector3) -> voi
 	match kind:
 		"water":
 			_puffs(at, "splash", 3, 0.22, 0.35)
+			Level3DFx.ripple(get_parent(), at, 0.5, 0.6, 0.0, _rng.randf() * 100.0)
 		"forest":
 			_puffs(at, "leaves", 2, 0.18, 0.30)
 		"trunk":

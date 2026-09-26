@@ -68,7 +68,7 @@
 #         -- --shot out.png <position 0-1 or x,z> <zoom> <top|tilt> [<seconds> <x,z> ...] \
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
 #            [--at <x,z>] [--free] [--hold <keys>@<from>-<to>[,...]] [--weapon <0-3>]
-#            [--intro] [--pows <n>]
+#            [--intro] [--pows <n>] [--strip <frames>,<seconds>[,<px>]]
 #
 # The bunkers' guns, the enemy soldiers, the two boats on the river, the two
 # brown tanks and the boss's four heavy tanks at the top of the stage fight back
@@ -91,7 +91,10 @@
 # many spans as are given (wd@0-1.5,a@2-3), which is how the classic keys
 # are checked. --weapon starts with what the prisoners would have given: 0 the
 # grenade, 1 to 3 the missile and its two upgrades. --pows starts with that
-# many prisoners aboard, for the rescue helicopter.
+# many prisoners aboard, for the rescue helicopter. --strip takes that many
+# frames instead of one, that many seconds apart from the first, and lays the
+# middle <px> square of each (512 unless given) out four to a row in the one
+# file: a blast from start to finish, which one frame never catches.
 #
 # The BTR's rear wheels and the tanks' tracks leave marks on the ground that
 # fade in under seven seconds (level3d_tracks.gd); the game leaves none.
@@ -196,6 +199,7 @@ var _hold_fire := false # --fire: the gun's trigger held throughout
 # How much longer a right click waits to be a rocket; see _physics_process.
 var _rocket_wanted := 0.0
 const ROCKET_WAIT := 0.8
+var _strip := []        # --strip: frames, seconds apart, px square
 var _kinds := {}        # body RID -> ground kind, see _add_collision
 var _trunks := 0
 var _markers: Array[MeshInstance3D] = []
@@ -1772,6 +1776,11 @@ func _screenshot_mode() -> void:
 		else:
 			_rocket_wanted = INF
 		args = args.slice(0, rocket) + args.slice(rocket + 2)
+	var strip := args.find("--strip")
+	if strip >= 0:
+		var spec := args[strip + 1].split(",")
+		_strip = [int(spec[0]), float(spec[1]), int(spec[2]) if spec.size() > 2 else 512]
+		args = args.slice(0, strip) + args.slice(strip + 2)
 	if args.size() >= 2 and args[0] == "--obstacle-map":
 		# Mapped once the ruins have settled, when anything was blown up.
 		if blow_up >= 0:
@@ -1812,7 +1821,29 @@ func _screenshot_mode() -> void:
 	for i in 8:
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw
-	var error := get_viewport().get_texture().get_image().save_png(args[1])
+	var image := get_viewport().get_texture().get_image()
+	if not _strip.is_empty():
+		image = await _strip_sheet(image)
+	var error := image.save_png(args[1])
 	if error != OK:
 		push_error("Cannot write %s (error %d)" % [args[1], error])
 	get_tree().quit()
+
+
+# --strip's sheet: the middle square of `first` and of each frame after it,
+# four to a row.
+func _strip_sheet(first: Image) -> Image:
+	var count: int = _strip[0]
+	var side: int = _strip[2]
+	var columns := mini(count, 4)
+	var sheet := Image.create(columns * side, ceili(count / float(columns)) * side, false, Image.FORMAT_RGBA8)
+	var frame := first
+	for k in count:
+		if k > 0:
+			await get_tree().create_timer(_strip[1]).timeout
+			await RenderingServer.frame_post_draw
+			frame = get_viewport().get_texture().get_image()
+		frame.convert(Image.FORMAT_RGBA8)
+		var middle := Rect2i((frame.get_width() - side) / 2, (frame.get_height() - side) / 2, side, side)
+		sheet.blit_rect(frame, middle, Vector2i(k % columns * side, k / columns * side))
+	return sheet

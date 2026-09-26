@@ -38,8 +38,13 @@
 # not change it. The preview owns the camera; `exploded` hands it the point.
 #
 # Effects are low poly and opaque, as the gun's are and the stage's
-# destruction is: J_BlastFlash's colour for the fireball, J_Smoke's for the
-# smoke; the crater is its own (Level3DFx.crater_mesh).
+# destruction is. The fire is the game's Explosion sprite cel-shaded -- white,
+# yellow, orange and red bands on a faceted ball, drawn round, burning away at
+# the end (level3d_fire.gdshader) -- and so are the embers it throws; the
+# smoke is J_Smoke's colour, the dust the blast throws out over the ground
+# the colour of the ground, and the crater is its own (Level3DFx.crater_mesh).
+# On the water it is a splash instead of smoke and dust: a column, a crown of
+# drops and rings of foam spreading from it (_splash).
 #
 # With the BTR driving classic (level3d_btr.gd) the flight and the reload are
 # the game's weapon's, Grenade or PlayerMissile by what the prisoners have
@@ -92,6 +97,13 @@ const MISSILE_RANGE := (PlayerMissile.TRAVEL_TIME + 1) * PlayerMissile.VELOCITY 
 # TravelingExplosion is gone when its count passes TRAVEL_TIME.
 const EXPLOSION_TIME := 0.47
 const TRAVELING_EXPLOSION_TIME := (TravelingExplosion.TRAVEL_TIME + 1) / 100.0
+# How long the fire takes to burn away once the game's explosion is over
+# (level3d_fire.gdshader's `burn`), and the embers a blast throws.
+const BURN_TIME := 0.12
+const EMBERS := 7
+# _dust_ring: how many puffs, how far out they run from the middle, in metres.
+const DUST_PUFFS := 20
+const DUST_REACH := Vector2(0.7, 1.5)
 # A bomb has no motor, and Grenade draws no trail: it goes at the grenade's
 # speed in either mode, 5 px a tick over the ground, and leaves nothing behind
 # it. What it has is at the tube, a flash and a cough of smoke as it goes
@@ -198,6 +210,7 @@ var _rng := RandomNumberGenerator.new()
 var _puff_mesh: ArrayMesh
 var _chip_mesh: ArrayMesh
 var _flame_mesh: SphereMesh
+var _fire_mesh: ArrayMesh
 var _crater_mesh: CylinderMesh
 var _materials := {}
 
@@ -210,6 +223,7 @@ func _ready() -> void:
 
 	_puff_mesh = Level3DFx.ball(1, 0.12, 3)
 	_chip_mesh = Level3DFx.ball(0, 0.25, 4)
+	_fire_mesh = Level3DFx.ball(2, 0.06, 5)
 	_flame_mesh = SphereMesh.new()
 	_flame_mesh.radial_segments = 5
 	_flame_mesh.rings = 2
@@ -226,11 +240,19 @@ func _ready() -> void:
 	_materials = {
 		"flash": _unshaded(Color(1.0, 0.62, 0.2)),
 		"core": _unshaded(Color(1.0, 0.92, 0.6)),
+		"fire": Level3DFx.fire(),
 		# The Blender materials' base colours are linear; a material's albedo
 		# here is sRGB, and taken as it is J_Soot came out black.
 		"smoke": _lit(Color(0.33, 0.31, 0.29).linear_to_srgb()),
 		"trail": _lit(Color(0.78, 0.78, 0.76)),
+		# The gun's dust, level3d_gun.gd's, by the ground it is thrown off:
+		# sand, the hard ground's concrete, the forest's earth.
+		"dust": _lit(Color(0.93, 0.76, 0.48)),
+		"dust_hard": _lit(Color(0.66, 0.65, 0.62)),
+		"dust_forest": _lit(Color(0.52, 0.42, 0.26)),
 		"splash": _lit(Color(0.92, 0.97, 1.0)),
+		# The splash's paler water, under its white.
+		"spray": _lit(Color(0.6, 0.87, 0.97)),
 		"rim": _painted(true),
 		"bowl": _painted(false),
 		# Darker than the sand, or only their lines show on it.
@@ -660,10 +682,13 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3) -> void:
 	_fireball(at)
 	_light(at)
 	if on_water:
-		_column(at)
+		_splash(Vector3(at.x, there.height, at.z))
 	else:
+		_embers(at)
 		_smoke(at)
 		_chips(at, normal)
+		if there.hit and at.y <= there.height + 0.2:
+			_dust_ring(Vector3(at.x, there.height, at.z), there.kind)
 		# Not on the water, even from a hit above it -- a boat's. A crater
 		# where the ground can be dug and there is room for one, a scorch
 		# where not.
@@ -684,14 +709,15 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3) -> void:
 
 
 # A TravelingExplosion as it is seen: a ball of fire running along the ground
-# at the game's speed, as big as the game's box and shrinking with it -- the
-# game's sprite is fire, then flash, then smoke, one to each of its periods --
-# and leaving puffs behind it, spray over the water.
+# at the game's speed, as big as the game's box and shrinking with it, and
+# leaving flames behind it that burn out where they are (_cinder), spray over
+# the water. It used to leave puffs of smoke, which stood in a grey cross
+# long after the fire had gone and was all anyone saw of it. The game's sprite is fire in
+# all three of its periods, cooling from the big blast's second frame through
+# its first to the small red ring of the fourth, and so is the ball: its `age`
+# runs from hot to cold over the whole run, then it burns away.
 func _travel(at: Vector3, way: Vector2) -> void:
-	# Fire is a flash round a hot core, which reads on the sand where the
-	# flash's orange alone does not; smoke is the flash's ball in J_Smoke.
-	var ball := _instance(_puff_mesh, "flash")
-	var core := _instance(_puff_mesh, "core")
+	var ball := _instance(_fire_mesh, "fire")
 	var light := OmniLight3D.new()
 	get_parent().add_child(light)
 	light.light_color = Color(1.0, 0.6, 0.25)
@@ -699,7 +725,7 @@ func _travel(at: Vector3, way: Vector2) -> void:
 	light.omni_attenuation = 2.0
 	var step := Vector3(way.x, 0.0, way.y) * TravelingExplosion.VELOCITY * Level3DMap.PX
 	var life := TravelingExplosion.TRAVEL_TIME / 100.0
-	var last := [-1, 0]     # the period shown, the tick of the last puff
+	var last := [0]     # the tick of the last puff
 	var run := func(seconds: float):
 		var t := mini(int(seconds * 100.0) + 1, TravelingExplosion.TRAVEL_TIME)
 		var p := at + step * t
@@ -708,28 +734,43 @@ func _travel(at: Vector3, way: Vector2) -> void:
 		p.y = (there.height if there.hit else at.y) + radius * 0.5
 		ball.global_position = p
 		ball.scale = Vector3.ONE * radius
-		core.global_position = p + Vector3.UP * radius * 0.35
-		core.scale = Vector3.ONE * radius * 0.6
+		ball.set_instance_shader_parameter("age", float(t) / TravelingExplosion.TRAVEL_TIME)
 		light.global_position = p + Vector3.UP * 0.5
 		light.light_energy = 3.0 * (1.0 - float(t) / TravelingExplosion.TRAVEL_TIME)
-		var period := 0 if t < TravelingExplosion.PERIOD0 else (1 if t < TravelingExplosion.PERIOD1 else 2)
-		if period != last[0]:
-			last[0] = period
-			ball.material_override = _materials["smoke" if period == 2 else "flash"]
-			core.visible = period < 2
-		if t - last[1] >= 6:
-			last[1] = t
-			_puff(p, radius * 0.8, "splash" if there.hit and there.kind == "water" else "smoke")
+		if t - last[0] >= 6:
+			last[0] = t
+			if there.hit and there.kind == "water":
+				_puff(p, radius * 0.8, "splash")
+				Level3DFx.ripple(get_parent(), Vector3(p.x, there.height, p.z), radius * 3.0,
+						0.8, 0.0, _rng.randf() * 100.0)
+			else:
+				_cinder(p, radius * 0.6, float(t) / TravelingExplosion.TRAVEL_TIME)
 	# Placed now, not on the tween's first step, the next frame: until then
 	# the ball would be a metre across at the middle of the map.
 	run.call(0.0)
 	var tween := ball.create_tween()
 	tween.tween_method(run, 0.0, life, life)
-	tween.tween_property(ball, "scale", Vector3.ONE * 0.001, 0.12)
-	tween.tween_callback(func():
-		ball.queue_free()
-		core.queue_free()
-		light.queue_free())
+	tween.tween_callback(light.queue_free)
+	tween.tween_method(func(k: float): ball.set_instance_shader_parameter("burn", k), 0.0, 1.0, BURN_TIME)
+	tween.tween_callback(ball.queue_free)
+
+
+# A flame left on the ground, as hot as the fire that left it was (`age`), which
+# cools where it is, rising a little, and burns away.
+func _cinder(at: Vector3, size: float, age: float) -> void:
+	var flame := _instance(_chip_mesh, "fire")
+	var life := _rng.randf_range(0.25, 0.4)
+	var spin := Basis(Vector3.UP, _rng.randf() * TAU)
+	var burn := func(t: float):
+		var k := t / life
+		flame.global_transform = Transform3D(spin.scaled(Vector3.ONE * size * (1.0 - 0.3 * k)),
+				at + Vector3.UP * 0.15 * k)
+		flame.set_instance_shader_parameter("age", lerpf(age, 1.0, k))
+		flame.set_instance_shader_parameter("burn", clampf((k - 0.5) / 0.5, 0.0, 1.0))
+	burn.call(0.0)
+	var tween := flame.create_tween()
+	tween.tween_method(burn, 0.0, life, life)
+	tween.tween_callback(flame.queue_free)
 
 
 # One puff that swells, rises and shrinks away.
@@ -754,33 +795,53 @@ func _puff(at: Vector3, size: float, material: String) -> void:
 # stepped with the physics ticks, so the two do not drift apart. It used to
 # swell to 0.9 m in a twelfth of a second and be gone in 0.28, when the box
 # was a quarter of that and only half grown: an enemy inside the fire lived,
-# and one walking in after it was out died of nothing to be seen. The hot core
-# is there for the game's first two frames and goes on the third, from 80 px,
-# where its fire breaks up into holes.
+# and one walking in after it was out died of nothing to be seen.
+#
+# It cools as it grows, over the same clock (level3d_fire.gdshader's `age`):
+# white-hot at first, as the sprite's first frame is, and mostly red by the
+# third's size; and when the box is gone it burns away in holes rather than
+# shrinking, which would draw a smaller blast than the one that was.
 func _fireball(at: Vector3) -> void:
-	var ball := _instance(_puff_mesh, "flash")
-	var core := _instance(_puff_mesh, "core")
-	var place := func(size: float):
-		var radius := size * 0.5 * Level3DMap.PX
-		ball.scale = Vector3.ONE * radius
+	var ball := _instance(_fire_mesh, "fire")
+	var place := func(size: float, seconds: float):
+		ball.scale = Vector3.ONE * size * 0.5 * Level3DMap.PX
 		ball.global_position = at + Vector3.UP * 0.2
-		core.visible = size < 80.0
-		core.scale = Vector3.ONE * radius * 0.6
-		# High enough to stand out of the flash's top, or from above it is not
-		# there, and the flash's orange alone is lost on the sand.
-		core.global_position = at + Vector3.UP * (0.2 + radius * 0.6)
-	place.call(Level3DGuns.EXPLOSION_START)
+		ball.set_instance_shader_parameter("age", seconds / EXPLOSION_TIME)
+	place.call(Level3DGuns.EXPLOSION_START, 0.0)
 	var life := EXPLOSION_TIME
 	var tween := ball.create_tween()
 	tween.set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
 	tween.tween_method(func(seconds: float):
 		var ticks := int(seconds * 100.0) + 1
 		place.call(minf(Level3DGuns.EXPLOSION_START * pow(Explosion.GROW_RATE, ticks),
-				Level3DGuns.EXPLOSION_END)),
+				Level3DGuns.EXPLOSION_END), seconds),
 		0.0, life, life)
-	tween.tween_callback(core.queue_free)
-	tween.tween_property(ball, "scale", Vector3.ONE * 0.001, 0.08)
+	tween.tween_method(func(k: float): ball.set_instance_shader_parameter("burn", k), 0.0, 1.0, BURN_TIME)
 	tween.tween_callback(ball.queue_free)
+
+
+# Sparks of the fire thrown out of it, which cool from white to red as they
+# fly, on the fire's own bands, and burn away before they are down. They are
+# not the blast's reach -- they are past the box's edge in a blink -- any more
+# than the chips are.
+func _embers(at: Vector3) -> void:
+	var floor_y: float = ground.call(at.x, at.z).height
+	for i in EMBERS:
+		var ember := _instance(_chip_mesh, "fire")
+		var out := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(0.4, 1.2), _rng.randf_range(-1, 1)).normalized()
+		var velocity := out * _rng.randf_range(2.5, 4.5)
+		var start := at + Vector3.UP * 0.25 + out * 0.15
+		var size := _rng.randf_range(0.04, 0.07)
+		var life := _rng.randf_range(0.35, 0.6)
+		var fly := func(t: float):
+			var k := t / life
+			var p := start + velocity * t + Vector3.DOWN * 3.0 * t * t
+			p.y = maxf(p.y, floor_y + size)
+			ember.global_position = p
+			ember.scale = Vector3.ONE * size * (1.0 - 0.4 * k)
+			ember.set_instance_shader_parameter("age", k)
+			ember.set_instance_shader_parameter("burn", clampf((k - 0.7) / 0.3, 0.0, 1.0))
+		_start(ember, fly, life)
 
 
 # Blast_Light's curve, shortened: the stage's destruction lights 700 W for a
@@ -799,18 +860,20 @@ func _light(at: Vector3) -> void:
 	tween.tween_callback(light.queue_free)
 
 
-# What the fire leaves. It rises once the fireball is nearly done and from
-# inside it: puffs starting at once and spread 0.45 m hid the fire and stood
-# as far out as the old fireball did, the same lie about the reach.
+# What the fire leaves. It rises as the fireball burns away and from inside
+# it: puffs starting at once and spread 0.45 m hid the fire and stood as far
+# out as the old fireball did, the same lie about the reach. The game's blast
+# leaves no smoke at all, so there is not much of it: the fire is the picture,
+# the smoke only what is left of it.
 func _smoke(at: Vector3) -> void:
-	for i in 7:
+	for i in 5:
 		var puff := _instance(_puff_mesh, "smoke")
 		var offset := Vector3(_rng.randf_range(-1, 1), 0.0, _rng.randf_range(-1, 1)) * 0.3
 		puff.global_position = at + offset + Vector3.UP * 0.1
 		puff.scale = Vector3.ONE * 0.001
-		var size := _rng.randf_range(0.28, 0.42)
+		var size := _rng.randf_range(0.24, 0.36)
 		var life := _rng.randf_range(0.9, 1.3)
-		var delay := EXPLOSION_TIME * _rng.randf_range(0.7, 0.95)
+		var delay := EXPLOSION_TIME * _rng.randf_range(0.85, 1.05)
 		var tween := puff.create_tween()
 		tween.set_parallel()
 		tween.tween_property(puff, "scale", Vector3.ONE * size, life * 0.3).set_delay(delay).set_ease(Tween.EASE_OUT)
@@ -821,24 +884,103 @@ func _smoke(at: Vector3) -> void:
 		tween.chain().tween_callback(puff.queue_free)
 
 
-func _column(at: Vector3) -> void:
-	for i in 6:
-		var puff := _instance(_puff_mesh, "splash")
-		var offset := Vector3(_rng.randf_range(-1, 1), 0.0, _rng.randf_range(-1, 1)) * 0.3
-		puff.global_position = at + offset
-		puff.scale = Vector3.ONE * 0.1
-		var size := _rng.randf_range(0.22, 0.35)
-		var rise := _rng.randf_range(0.6, 1.2)
-		var life := _rng.randf_range(0.6, 0.9)
+# The blast on the ground throws the ground out from under it: a ring of dust
+# that runs out low over it on every side, swelling as it goes, and settles
+# back down, shrinking, where it stopped. Past the fire, which smoke may not
+# go -- smoke standing out there reads as the fire's reach -- but dust is the
+# ground's colour and lies flat on it, so it reads as what the blast pushed,
+# not what it burnt. On the ground only: a hit on a building or a boat, or
+# over the water, throws none.
+func _dust_ring(at: Vector3, kind: String) -> void:
+	var material: String = {"hard": "dust_hard", "forest": "dust_forest"}.get(kind, "dust")
+	var turn := _rng.randf() * TAU
+	for i in DUST_PUFFS:
+		var puff := _instance(_puff_mesh, material)
+		var way := Vector3.RIGHT.rotated(Vector3.UP, turn + TAU * (i + _rng.randf_range(-0.4, 0.4)) / DUST_PUFFS)
+		var from := _rng.randf_range(0.2, 0.4)
+		var reach := _rng.randf_range(DUST_REACH.x, DUST_REACH.y)
+		# The ones that go further are the smaller: the ring's edge frays
+		# rather than ending in a row of balls.
+		var peak := lerpf(0.36, 0.2, inverse_lerp(DUST_REACH.x, DUST_REACH.y, reach)) * _rng.randf_range(0.85, 1.15)
+		var life := _rng.randf_range(0.9, 1.3)
+		var delay := _rng.randf_range(0.0, 0.06)
+		# Long along the way it goes, swept rather than blown up.
+		var spin := Basis(way.cross(Vector3.UP), Vector3.UP, way).scaled(Vector3(1.0, 0.55, 1.4))
+		var roll := func(t: float):
+			var k := clampf((t - delay) / life, 0.0, 1.0)
+			# Out fast and slowing, as a push does; swells in the first
+			# quarter, then shrinks as it settles.
+			var r := lerpf(from, reach, 1.0 - pow(1.0 - k, 3.0))
+			var size := peak * (1.0 - pow(1.0 - minf(k * 4.0, 1.0), 2.0)) \
+					* (1.0 - pow(maxf(k - 0.25, 0.0) / 0.75, 2.0))
+			size = maxf(size, 0.001)
+			puff.global_transform = Transform3D(spin.scaled(Vector3.ONE * size),
+					at + way * r + Vector3.UP * size * 0.4)
+		roll.call(0.0)
 		var tween := puff.create_tween()
-		tween.set_parallel()
-		tween.tween_property(puff, "scale", Vector3.ONE * size, life * 0.3)
-		tween.tween_property(puff, "global_position", puff.global_position + Vector3.UP * rise, life * 0.5) \
-				.set_ease(Tween.EASE_OUT)
-		tween.tween_property(puff, "global_position", puff.global_position, life * 0.5).set_delay(life * 0.5) \
-				.set_ease(Tween.EASE_IN)
-		tween.tween_property(puff, "scale", Vector3.ONE * 0.001, life * 0.5).set_delay(life * 0.5)
-		tween.chain().tween_callback(puff.queue_free)
+		tween.tween_method(roll, 0.0, life + delay, life + delay)
+		tween.tween_callback(puff.queue_free)
+
+
+# The blast on the water, `at` its surface: a column thrown straight up that
+# falls back into itself, white over the paler water under it, higher than
+# the fire and slower, so that it stands out of it and comes down once the
+# fire has burnt away; a crown of drops thrown out and up all round, which
+# fall back in; three rings of foam spreading from it one after another, and
+# a patch of foam where the column comes down (Level3DFx.ripple). The fire over it is the game's -- its
+# Explosion is the same on the water -- and so is its reach; the rings are
+# only the water's.
+func _splash(at: Vector3) -> void:
+	var gravity := Vector3.DOWN * 9.8
+	for i in 6:
+		var puff := _instance(_puff_mesh, "splash" if i % 2 == 0 else "spray")
+		var offset := Vector3(_rng.randf_range(-1, 1), 0.0, _rng.randf_range(-1, 1)) * 0.12
+		var height := _rng.randf_range(1.6, 2.4) * (1.0 - i * 0.1)
+		var width := _rng.randf_range(0.18, 0.28)
+		var life := _rng.randf_range(1.0, 1.3)
+		var spin := Basis(Vector3.UP, _rng.randf() * TAU)
+		var throw := func(t: float):
+			var k := t / life
+			# Up and back down on a parabola, and thinning as it falls:
+			# tall while it rises, a heap as it lands.
+			var y := height * 4.0 * k * (1.0 - k)
+			var size := maxf(width * (1.0 - pow(k, 3.0)), 0.001)
+			var tall := lerpf(2.0, 1.0, k)
+			puff.global_transform = Transform3D(spin.scaled(Vector3(size, size * tall, size)),
+					at + offset * (1.0 + k) + Vector3.UP * y)
+		_start(puff, throw, life)
+	for i in 16:
+		var drop := _instance(_chip_mesh, "splash")
+		var out := Vector3.RIGHT.rotated(Vector3.UP, TAU * (i + _rng.randf_range(-0.3, 0.3)) / 16.0)
+		var velocity := out * _rng.randf_range(1.2, 2.2) + Vector3.UP * _rng.randf_range(2.5, 4.0)
+		var start := at + out * 0.15
+		var size := _rng.randf_range(0.03, 0.05)
+		# Until it is back down on the water.
+		var life := 2.0 * velocity.y / -gravity.y
+		var fly := func(t: float):
+			var v := velocity + gravity * t
+			var along := v.normalized()
+			var side := along.cross(Vector3.UP if absf(along.y) < 0.99 else Vector3.RIGHT).normalized()
+			# Long along the way it flies, a drop and not a pebble.
+			drop.global_transform = Transform3D(
+					Basis(side, along, side.cross(along)).scaled(Vector3(1.0, 1.8, 1.0) * size),
+					start + velocity * t + gravity * 0.5 * t * t)
+		_start(drop, fly, life)
+	# Reach, life, delay: the rings, then the foam where the column lands.
+	# The first goes furthest, as a ripple's does -- one that set off later
+	# and went further would cross it.
+	for ring in [[2.8, 1.8, 0.0], [2.1, 1.6, 0.25], [1.4, 1.4, 0.5], [0.8, 0.9, 1.0]]:
+		Level3DFx.ripple(get_parent(), at, ring[0], ring[1], ring[2], _rng.randf() * 100.0)
+
+
+# Runs `move` over `life` seconds, then frees the node -- and once now: a
+# tween's first step is the next frame, and until then the node would be drawn
+# as it was made, at the middle of the map (level3d_gun.gd's).
+func _start(node: Node3D, move: Callable, life: float) -> void:
+	move.call(0.0)
+	var tween := node.create_tween()
+	tween.tween_method(move, 0.0, life, life)
+	tween.tween_callback(node.queue_free)
 
 
 func _chips(at: Vector3, normal: Vector3) -> void:

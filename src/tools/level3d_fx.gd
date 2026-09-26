@@ -1,6 +1,7 @@
 # What the 3D preview's procedural effects share -- the gun's dust and chips
-# (level3d_gun.gd), the rocket's smoke and debris (level3d_rocket.gd): their
-# cel-shading, docs/cel-shading.md, and the faceted balls they are made of.
+# (level3d_gun.gd), the rocket's fire, smoke and debris (level3d_rocket.gd):
+# their cel-shading, docs/cel-shading.md, and the faceted balls they are made
+# of.
 #
 # The stage and the units are cel-shaded in Blender, by modifiers the glTF
 # export applies; these are built at run time, so their contour is a shader
@@ -17,6 +18,9 @@ extends RefCounted
 
 const CONTOUR := 0.014
 const CONTOUR_SHADER := preload("res://src/tools/level3d_contour.gdshader")
+const FIRE_SHADER := preload("res://src/tools/level3d_fire.gdshader")
+const FIRE_CONTOUR_SHADER := preload("res://src/tools/level3d_fire_contour.gdshader")
+const RIPPLE_SHADER := preload("res://src/tools/level3d_ripple.gdshader")
 
 # The icosahedron: twelve corners on three golden rectangles.
 const _T := 1.618034
@@ -43,6 +47,55 @@ static func contour(material: BaseMaterial3D, extent := 1.0) -> BaseMaterial3D:
 	line.set_shader_parameter("extent", extent)
 	material.next_pass = line
 	return material
+
+
+# Fire, drawn round (level3d_fire.gdshader), for a ball: one material for
+# every blast, each node's heat and burn its own instance uniforms, `age` and
+# `burn`, which the contour's `burn` follows.
+static func fire() -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = FIRE_SHADER
+	var line := ShaderMaterial.new()
+	line.shader = FIRE_CONTOUR_SHADER
+	line.set_shader_parameter("width", CONTOUR)
+	material.next_pass = line
+	return material
+
+
+static var _ripple_mesh: PlaneMesh
+static var _ripple_material: ShaderMaterial
+
+# A ring of foam spreading on the water from `at`, the water's height there, out
+# to `reach` metres over `life` seconds, starting `delay` in
+# (level3d_ripple.gdshader): a patch of foam at first, opening into a ring
+# that slows and thins as it goes, and is gone when it is a line. `seed`
+# makes its edges its own.
+static func ripple(parent: Node, at: Vector3, reach: float, life: float, delay: float, seed: float) -> void:
+	if _ripple_mesh == null:
+		_ripple_mesh = PlaneMesh.new()
+		_ripple_mesh.size = Vector2(2.0, 2.0)
+		_ripple_material = ShaderMaterial.new()
+		_ripple_material.shader = RIPPLE_SHADER
+	var ring := MeshInstance3D.new()
+	ring.mesh = _ripple_mesh
+	ring.material_override = _ripple_material
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(ring)
+	ring.set_instance_shader_parameter("seed", seed)
+	var spread := func(t: float):
+		var k := clampf((t - delay) / life, 0.0, 1.0)
+		ring.visible = t >= delay
+		var radius := lerpf(reach * 0.12, reach, 1.0 - pow(1.0 - k, 2.0))
+		var band := reach * lerpf(0.14, 0.012, k)
+		ring.global_transform = Transform3D(Basis.from_scale(Vector3(radius, 1.0, radius)),
+				at + Vector3.UP * 0.01)
+		ring.set_instance_shader_parameter("inner", clampf(1.0 - band / radius, 0.0, 1.0))
+	# Placed now: until the tween's first step, the next frame, it would be
+	# a patch two metres across wherever the parent's origin is.
+	spread.call(0.0)
+	var tween := ring.create_tween()
+	tween.tween_method(spread, 0.0, delay + life, delay + life)
+	tween.tween_callback(ring.queue_free)
 
 
 # A crater, radius 1 to the foot of its rim (level3d_rocket.gd, _crater): two
