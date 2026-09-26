@@ -557,9 +557,12 @@ intro drop only incidentally — the real gate there is `GameMode.playing`, whic
 - `.gitattributes` forces LF everywhere, including the working tree on Windows.
 - `.godot/` is ignored; it is regenerated on open.
 - 3D models (`resources/3d/`, built by the scripts inside each `.blend`) are
-  cel-shaded, and a model without it is not finished: black chamfers on sharp
-  edges, an inverted-hull contour round every part, black seals round flat
-  panes. How, and the line widths, are in `docs/cel-shading.md`; the
+  cel-shaded, and a model without it is not finished. The units are drawn as
+  Chinatown Wars draws its cars: flat colours, no chamfers, an inverted-hull
+  contour round the silhouette and the big parts only (what lies on a part
+  is built plain), grey seals round flat panes. The buildings and the rest
+  of stage 1 still have black chamfers on sharp edges and a contour round
+  every part. How, and the line widths, are in `docs/cel-shading.md`; the
   per-kind pipelines are `docs/soldier-pipeline.md`, `docs/boat-pipeline.md`
   and `docs/level3d-pipeline.md`. Only the jeep, the BTR, the Chinook,
   the Little Bird (`jackal_littlebird_lowpoly.blend`, the preview's rescue
