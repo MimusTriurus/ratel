@@ -1112,6 +1112,10 @@ func _add_guns(level: Node) -> void:
 	guns.player_position = func(): return Vector2(btr.position.x, btr.position.z)
 	guns.blast = _spawn_blast
 	guns.scored = func(points: int): _set_score(_score + points)
+	# Where the enemies' rounds end, the jeep's gun's say what is seen.
+	guns.landed = gun.landed
+	guns.stopped = gun.stopped
+	guns.impact = gun.impact
 	add_child(guns)
 	soldiers = Level3DSoldiers.new()
 	soldiers.map = map

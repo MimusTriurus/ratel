@@ -186,32 +186,12 @@ func _fire() -> void:
 			var to: Vector3 = aim_point - from
 			reach = clampf(Vector2(to.x, to.z).length(), MIN_RANGE, RANGE)
 		reach *= 1.0 + _rng.randf_range(-RANGE_JITTER, RANGE_JITTER)
-	var landing := from + direction * reach
-	var there: Dictionary = ground.call(landing.x, landing.z)
-	landing.y = there.height
-	var point := landing
-	var normal := Vector3.UP
-	var kind: String = there.kind if there.hit else "ground"
 	var stop := _grid_stop(from, direction, reach)
-	if stop >= 0.0:
-		# Struck where the grid stops it, at the height it flew at or on top of
-		# whatever is lower than that; head on.
-		point = from + direction * stop
-		var top: Dictionary = surface.call(point.x, point.z)
-		if top.hit:
-			point.y = minf(from.y, top.height)
-		normal = -direction
-		# A solid tile the scene has as bare ground is the grid's rock or
-		# sandbag, drawn smaller than its tile.
-		kind = top.kind if top.hit and not (top.kind in ["ground", ""]) else "wall"
-		# On the face itself, where its pock lies, rather than wherever in the
-		# tile the grid stopped it.
-		if strike.is_valid():
-			var hit: Dictionary = strike.call(point, direction)
-			if hit.hit and hit.kind in Level3DMarks.KINDS:
-				point = hit.position
-				normal = hit.normal
-				kind = hit.kind
+	var struck_at := landed(from + direction * reach) if stop < 0.0 \
+			else stopped(from + direction * stop, direction)
+	var point: Vector3 = struck_at.point
+	var normal: Vector3 = struck_at.normal
+	var kind: String = struck_at.kind
 	var line := point - from
 	var found := {}
 	if intercept.is_valid():
@@ -231,6 +211,35 @@ func _fire() -> void:
 	Level3DFx.set_fire(_flash_parts, 0.0)
 	_flash_left = FLASH_TIME
 	btr.recoil(direction, RECOIL_KICK)
+
+
+# Where a round that flew its whole reach to `at` comes down: on the ground
+# under it, facing up. {"point", "normal", "kind"}, for impact. The enemies'
+# rounds as well (Level3DGuns), so that theirs raise the sand the jeep's do.
+func landed(at: Vector3) -> Dictionary:
+	var there: Dictionary = ground.call(at.x, at.z)
+	return {"point": Vector3(at.x, there.height, at.z), "normal": Vector3.UP,
+			"kind": there.kind if there.hit else "ground"}
+
+
+# Where a round the grid stopped at `at`, flying `direction`, is seen to
+# strike: at the height it flew at or on top of whatever is lower than that,
+# head on -- and on the face itself if there is one, where its pock lies,
+# rather than wherever in the tile the grid stopped it. As landed.
+func stopped(at: Vector3, direction: Vector3) -> Dictionary:
+	var point := at
+	var top: Dictionary = surface.call(point.x, point.z)
+	if top.hit:
+		point.y = minf(at.y, top.height)
+	# A solid tile the scene has as bare ground is the grid's rock or sandbag,
+	# drawn smaller than its tile.
+	var struck_at := {"point": point, "normal": -direction,
+			"kind": top.kind if top.hit and not (top.kind in ["ground", ""]) else "wall"}
+	if strike.is_valid():
+		var hit: Dictionary = strike.call(point, direction)
+		if hit.hit and hit.kind in Level3DMarks.KINDS:
+			struck_at = {"point": hit.position, "normal": hit.normal, "kind": hit.kind}
+	return struck_at
 
 
 # PlayerBullet.update's is_missile_target, a tick's move at a time along the
@@ -260,13 +269,14 @@ func _round(from: Vector3, to: Vector3, kind: String, normal: Vector3, travel: V
 	tween.tween_callback(func():
 		node.queue_free()
 		_in_flight -= 1
-		_impact(to, kind, normal, travel)
+		impact(to, kind, normal, travel)
 		if not found.is_empty():
 			struck.call(found))
 
 
-# What a round leaves where it lands, by what it landed on.
-func _impact(at: Vector3, kind: String, normal: Vector3, travel: Vector3) -> void:
+# What a round leaves where it lands, by what it landed on -- the jeep's and,
+# through Level3DGuns, the enemies'.
+func impact(at: Vector3, kind: String, normal: Vector3, travel: Vector3) -> void:
 	match kind:
 		"water":
 			_puffs(at, "splash", 3, 0.22, 0.35)

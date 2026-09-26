@@ -123,6 +123,15 @@ var travel_hit: Callable
 var blast: Callable
 # `scored.call(points)`.
 var scored: Callable
+# What is seen where a shot ends, as the jeep's rounds have it (Level3DGun):
+# `landed.call(at)` where one that flew its whole way comes down,
+# `stopped.call(at, direction)` where one the grid stopped strikes, and
+# `impact.call(at, kind, normal, travel)` what it leaves there -- sand, a
+# splash, leaves, chips and a pock. Unset, a shot ends in a spark where it
+# flew, as all of them used to.
+var landed: Callable
+var stopped: Callable
+var impact: Callable
 # Prints what happens, for --shot runs.
 var verbose := false
 
@@ -339,10 +348,16 @@ func muzzle_flash(at: Vector3, direction: Vector3, size := 1.0) -> void:
 
 
 # An EnemyBullet at `at` (level x, z), moving `v` map pixels a tick for
-# `travel` ticks, drawn `height` above the ground: white or yellow. `behind_flash`
-# keeps it out of sight while a muzzle flash burns where it set off, which a
-# round as big as the game's covers when the flash is a rifle's; it flies all
-# the same.
+# `travel` ticks, set off at `height`: white or yellow. `behind_flash` keeps it
+# out of sight while a muzzle flash burns where it set off, which a round as
+# big as the game's covers when the flash is a rifle's; it flies all the same.
+#
+# It comes down as it goes, as the jeep's rounds do (Level3DGun): from
+# `height` over the ground to the ground itself on its last tick, a straight
+# fall over its whole flight. It used to fly level all the way and go out in
+# a spark half a metre over the sand -- the jeep's struck the ground and threw
+# it up. The game's EnemyBullet and PlayerBullet end alike, in a BulletHit;
+# what it hits is the grid's to say, so the height is only what is seen.
 func enemy_bullet(at: Vector2, v: Vector2, travel: int, height: float, white := true,
 		behind_flash := false) -> void:
 	var node := Level3DFx.round_node(white)
@@ -350,7 +365,8 @@ func enemy_bullet(at: Vector2, v: Vector2, travel: int, height: float, white := 
 		node.visible = false
 		get_tree().create_timer(FLASH_TIME, false, true).timeout.connect(node.show)
 	add_child(node)
-	var shot := {"at": at, "v": v * PX, "travel": travel, "node": node, "height": height}
+	var shot := {"at": at, "v": v * PX, "travel": travel, "node": node,
+			"flight": maxi(travel, 1), "above": height - _ground_y(at)}
 	_place_shot(shot)
 	_shots.append(shot)
 
@@ -368,33 +384,59 @@ func _update_shots(view: Rect2) -> void:
 		shot.at += shot.v
 		var at: Vector2 = shot.at
 		if _outside(view, at, EnemyBullet.MARGIN * PX):
-			_drop_shot(i, false)
+			_drop_shot(i, "gone")
 			continue
 		shot.travel -= 1
-		if shot.travel < 0 or solid.call(at.x, at.y) or player_attack.call(at.x, at.y):
-			_drop_shot(i, true)
-			continue
-		_place_shot(shot)
+		# In the game's order, which is the order of the calls: player_attack
+		# is only asked, and so the player only killed, when neither ends it.
+		if shot.travel < 0:
+			_drop_shot(i, "landed")
+		elif solid.call(at.x, at.y):
+			_drop_shot(i, "stopped")
+		elif player_attack.call(at.x, at.y):
+			_drop_shot(i, "player")
+		else:
+			_place_shot(shot)
 
 
 func _place_shot(shot: Dictionary) -> void:
-	(shot.node as Node3D).position = Vector3(shot.at.x, shot.height, shot.at.y)
+	(shot.node as Node3D).position = _shot_position(shot)
 
 
-# BulletHit where it stopped: a spark of the blasts' fire that cools and
-# shrinks away.
-func _drop_shot(i: int, spark: bool) -> void:
+# Where the shot is seen: its x, z, and down from where it set off over the
+# ground to the ground by its last tick.
+func _shot_position(shot: Dictionary) -> Vector3:
+	var at: Vector2 = shot.at
+	var left := clampf(float(shot.travel) / shot.flight, 0.0, 1.0)
+	return Vector3(at.x, _ground_y(at) + shot.above * left, at.y)
+
+
+func _ground_y(at: Vector2) -> float:
+	return landed.call(Vector3(at.x, 0.0, at.y)).point.y if landed.is_valid() else 0.0
+
+
+# BulletHit where it stopped, `how`: "gone" out of the frame, nothing; "landed"
+# at the end of its flight and "stopped" by the grid, what the jeep's rounds
+# leave there (impact); "player" on the player, a spark of the blasts' fire
+# that cools and shrinks away -- the hit, not the ground under it.
+func _drop_shot(i: int, how: String) -> void:
 	var shot: Dictionary = _shots[i]
 	_shots.remove_at(i)
 	(shot.node as Node3D).queue_free()
-	if not spark:
+	if how == "gone":
+		return
+	var at := _shot_position(shot)
+	var travel := Vector3(shot.v.x, 0.0, shot.v.y).normalized()
+	if how != "player" and impact.is_valid():
+		var struck_at: Dictionary = landed.call(at) if how == "landed" else stopped.call(at, travel)
+		impact.call(struck_at.point, struck_at.kind, struck_at.normal, travel)
 		return
 	var node := MeshInstance3D.new()
 	node.mesh = _fire_mesh
 	node.material_override = _fire_material
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(node)
-	node.position = Vector3(shot.at.x, shot.height, shot.at.y)
+	node.position = at
 	var life := 0.15
 	var tween := node.create_tween()
 	tween.tween_method(func(t: float):
