@@ -60,6 +60,9 @@
 #   + / -                  zoom
 #   Tab                    tilted view / top view
 #   Home / End             start / end of the level
+#   G                      the palms' sway smooth / stepped, held poses at
+#                          8 a second (level3d_wind.gd); --wind-steps starts
+#                          stepped, --no-wind stills them
 #
 # Like the map editor it can render one view and quit (a real window is needed,
 # --headless has no framebuffer to read back):
@@ -242,6 +245,8 @@ func _ready() -> void:
 	# Last: it adds meshes of its own, which want no collision.
 	_holed_ground(level)
 	_add_destructibles()
+	# After the contour and the shadows, whose materials it replaces.
+	_add_wind(level)
 
 	_add_environment()
 	_add_lights()
@@ -435,6 +440,16 @@ func _toon(node: Node) -> void:
 func _engine_contour(node: Node) -> void:
 	if node is MeshInstance3D:
 		Level3DHull.apply(node)
+
+
+# The palms sway (level3d_wind.gd), smooth or stepped, G toggling.
+func _add_wind(level: Node) -> void:
+	var args := OS.get_cmdline_user_args()
+	if args.has("--no-wind"):
+		return
+	for node in level.find_children("Palm*", "MeshInstance3D", true, false):
+		Level3DWind.apply(node)
+	Level3DWind.set_stepped(args.has("--wind-steps"))
 
 
 # Palm fronds and the like are single planes, and Compatibility culls front
@@ -1637,6 +1652,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				mouse_aim = not mouse_aim
 			KEY_T:
 				gun.turbo = not gun.turbo
+			KEY_G:
+				Level3DWind.set_stepped(not Level3DWind.is_stepped())
+				print("wind: ", "stepped" if Level3DWind.is_stepped() else "smooth")
 			KEY_P:
 				if not btr.classic:
 					_rocket_wanted = ROCKET_WAIT
@@ -1759,7 +1777,8 @@ func _screenshot_mode() -> void:
 		args.remove_at(immortal)
 	# Level3DSoldiers and Level3DBtr read these for themselves; they are not
 	# waypoints.
-	for own in ["--sprite-soldiers", "--btr", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour"]:
+	for own in ["--sprite-soldiers", "--btr", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
+			"--no-wind", "--wind-steps"]:
 		var at := args.find(own)
 		if at >= 0:
 			args.remove_at(at)
