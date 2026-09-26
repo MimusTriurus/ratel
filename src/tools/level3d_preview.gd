@@ -1667,12 +1667,13 @@ func _process(delta: float) -> void:
 		focus.y = Level3DMap.to_level(Vector2(0.0, boss_top)).y + level_aabb.size.x / zoom * 9.0 / 32.0
 	rescue.enlarge = not tilted
 	# The game flashes the jeep through four palettes a frame while it is
-	# invincible; the BTR has one, so it blinks.
+	# invincible; the BTR has one, so it blinks -- the model, not its shadow
+	# or its tracks (Level3DBtr.blink).
 	if chinook != null:
 		chinook.enlarge = not tilted
 	elif _respawning == 0:
 		_blink = _blink + 1 if _invincible > 0 else 0
-		btr.visible = _blink % 4 < 2
+		btr.blink(_blink % 4 < 2)
 	_shake_left = maxf(_shake_left - delta, 0.0)
 	_update_camera()
 
@@ -1757,6 +1758,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_respawning = 0
 				_invincible = 0
 				btr.visible = true
+				btr.blink(true)
 				_set_score(0)
 				_start_intro()
 			KEY_ESCAPE:

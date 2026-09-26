@@ -242,6 +242,7 @@ var _roll_velocity := 0.0
 var _wheel_spin := 0.0
 var _steer_angle := 0.0
 var _model: Node3D
+var _shown := true  # blink
 var _hull: Node3D
 var _turret_pivot: Node3D
 var _bore: Node3D
@@ -335,6 +336,30 @@ func _ready() -> void:
 		_hull.add_child(mouth)
 		mouth.global_position = at
 		_exhausts.append(mouth)
+
+
+# The blink while it cannot be hit (the preview's): the model goes and its
+# shadow stays, since what blinks is that it cannot be hit, not that it is not
+# there. Not `visible`, which is what says it is gone -- blown up, or in the
+# Chinook -- and what the tracks and puffs go by: blinking that, it left
+# neither. What casts a shadow casts only that; what does not, the contour's
+# shells, is taken off every layer the camera draws.
+func blink(shown: bool) -> void:
+	if shown == _shown:
+		return
+	_shown = shown
+	for node in _model.find_children("*", "GeometryInstance3D", true, false):
+		var mesh := node as GeometryInstance3D
+		if not mesh.has_meta("blink"):
+			mesh.set_meta("blink", [mesh.cast_shadow, mesh.layers])
+		var kept: Array = mesh.get_meta("blink")
+		if shown:
+			mesh.cast_shadow = kept[0]
+			mesh.layers = kept[1]
+		elif kept[0] == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+			mesh.layers = 0
+		else:
+			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 
 
 # The model as it stands, for the wreck to copy (Level3DWreck).
