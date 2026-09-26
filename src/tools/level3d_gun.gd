@@ -31,7 +31,9 @@
 # From the tank bench (BlenderMCP/godot, docs/combat.md), the two things it
 # settled for the cannon: recoil is an impulse into the body spring, not a
 # curve over time, and it is signed along the gun, so a shot over the bow
-# lifts the nose and a shot over the side does not. The camera does not shake:
+# lifts the nose. The bench's shot over the side did nothing, which with the
+# gun aimed anywhere read as the kick going missing: it rolls the body away
+# instead (Level3DBtr.recoil). The camera does not shake:
 # the bench leaves shake off for the cannon, and this gun fires nine times a
 # second.
 #

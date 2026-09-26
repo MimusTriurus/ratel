@@ -23,7 +23,7 @@
 #   * The turret has its own traverse rate; unaimed, it comes round to the bow
 #     while the hull is moving and stays where it was left when it is not.
 #   * The gun (level3d_gun.gd) asks it where the muzzle is and kicks the same
-#     pitch spring on every round; the rocket launcher (level3d_rocket.gd)
+#     pitch and roll springs on every round; the rocket launcher (level3d_rocket.gd)
 #     turns its own mount on the hull and kicks it harder.
 #
 # One deliberate departure: wheels cannot pivot. The bench's tanks swing round
@@ -140,6 +140,8 @@ const VEHICLES := {
 # Sideways acceleration, m/s^2, that leans the body over by all its roll gain:
 # the free mode's tightest turn at its top speed.
 const ROLL_FULL := 8.0
+# How much more a shot abeam rolls the body than one ahead pitches it (recoil).
+const ROLL_RECOIL := 1.5
 # Player.RUMBLE's step, radians a rendered frame at the game's 60.
 const RUMBLE_RATE := 0.74 * 60.0
 const RUMBLE_FADE := 0.15
@@ -355,10 +357,14 @@ func launcher_node(base_name: String) -> Node3D:
 	return _hull.find_child(base_name, true, false)
 
 
-# A shot's kick into the body spring, signed along the bow: firing ahead
-# lifts the nose, firing astern dips it, firing abeam does neither.
+# A shot's kick into the body springs, the body leaning away from it: firing
+# ahead lifts the nose, astern dips it, abeam rolls it off the side fired to,
+# and anything between does some of each. The roll takes ROLL_RECOIL times as
+# much, the body being narrower than it is long.
 func recoil(direction: Vector3, kick: float) -> void:
+	var left := Vector3(-sin(heading), 0.0, -cos(heading))
 	_pitch_velocity -= kick * direction.dot(forward())
+	_roll_velocity += kick * ROLL_RECOIL * direction.dot(left)
 
 
 func top_speed() -> float:
@@ -848,11 +854,10 @@ func _update_pitch(accel_ratio: float, delta: float) -> void:
 
 
 # The body leaning out of a turn: `sideways`, m/s^2, positive turning left,
-# rolls it to the right, which is positive.
+# rolls it to the right, which is positive. A gain of 0, the BTR's, only
+# takes the lean out: the spring still plays out a shot's kick (recoil).
 func _update_roll(sideways: float, delta: float) -> void:
 	var spring: Array = vehicle.roll
-	if spring[0] == 0.0:
-		return
 	var target: float = spring[0] * clampf(sideways / ROLL_FULL, -1.0, 1.0)
 	_roll_velocity += (-spring[1] * (_roll - target) - spring[2] * _roll_velocity) * delta
 	_roll += _roll_velocity * delta
