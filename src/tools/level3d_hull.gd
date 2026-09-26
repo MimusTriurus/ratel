@@ -51,6 +51,10 @@ const PIXELS := 3.0
 # what they would pointing one way has no normal (_smooth_normals).
 const DEGENERATE := 0.25
 
+# A prototype, --engine-creases: the lines along the sharp edges too
+# (Level3DCreases).
+static var creases := false
+
 static var _material: ShaderMaterial
 static var _made := {}  # a glb's Mesh -> the same with the engine's hull
 
@@ -101,6 +105,7 @@ static func _rebuild(mesh: ArrayMesh) -> ArrayMesh:
 	var bones := PackedInt32Array()
 	var weights := PackedFloat32Array()
 	var indices := PackedInt32Array()
+	var black := PackedByteArray()  # per face: in a black paint, a chamfer's
 	var skinned := false
 	for surface in out.get_surface_count():
 		if out.surface_get_primitive_type(surface) != Mesh.PRIMITIVE_TRIANGLES:
@@ -108,6 +113,7 @@ static func _rebuild(mesh: ArrayMesh) -> ArrayMesh:
 		var arrays := out.surface_get_arrays(surface)
 		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 		var base := positions.size()
+		var faces_before := indices.size() / 3
 		positions.append_array(vertices)
 		flat.append_array(arrays[Mesh.ARRAY_NORMAL])
 		if arrays[Mesh.ARRAY_BONES] != null:
@@ -124,6 +130,10 @@ static func _rebuild(mesh: ArrayMesh) -> ArrayMesh:
 		else:
 			for i in vertices.size():
 				indices.append(base + i)
+		var paint := out.surface_get_material(surface)
+		var is_black := 1 if paint != null and paint.resource_name.ends_with("Black") else 0
+		for f in indices.size() / 3 - faces_before:
+			black.append(is_black)
 	if indices.is_empty():
 		return out
 	var aabb := AABB(positions[0], Vector3.ZERO)
@@ -161,6 +171,9 @@ static func _rebuild(mesh: ArrayMesh) -> ArrayMesh:
 		hull[Mesh.ARRAY_WEIGHTS] = weights
 	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, hull)
 	out.surface_set_material(out.get_surface_count() - 1, material())
+	if creases:
+		Level3DCreases.add_to(out, positions, flat, indices, black, bare,
+				aabb.get_longest_axis_size() * REACH, bones if skinned else PackedInt32Array(), weights)
 	return out
 
 

@@ -259,7 +259,12 @@ func _ready() -> void:
 	vehicle = VEHICLES["btr" if OS.get_cmdline_user_args().has("--btr") else "jeep"]
 	model_scale = vehicle.scale
 	var prefix: String = vehicle.prefix
-	var scene: PackedScene = load(vehicle.path)
+	var path: String = vehicle.path
+	# A prototype: the BTR exported without its chamfers, for the engine's
+	# creases to draw instead (Level3DCreases).
+	if OS.get_cmdline_user_args().has("--btr-noline"):
+		path = path.replace(".glb", "_noline.glb")
+	var scene: PackedScene = load(path)
 	_model = scene.instantiate()
 	add_child(_model)
 	_model.transform = Transform3D(Basis(Vector3.UP, vehicle.facing).scaled(Vector3.ONE * model_scale), Vector3.ZERO)

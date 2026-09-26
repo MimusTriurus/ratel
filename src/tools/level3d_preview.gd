@@ -212,6 +212,7 @@ func _ready() -> void:
 	# unit's, spawned now or later, is lit in two tones (_toon) and gets its
 	# contour from the engine (_engine_contour).
 	get_tree().node_added.connect(_toon)
+	Level3DHull.creases = OS.get_cmdline_user_args().has("--engine-creases")
 	if not OS.get_cmdline_user_args().has("--baked-contour"):
 		get_tree().node_added.connect(_engine_contour)
 	var scene: PackedScene = load(LEVEL_PATH)
@@ -1739,7 +1740,7 @@ func _screenshot_mode() -> void:
 		args.remove_at(immortal)
 	# Level3DSoldiers and Level3DBtr read these for themselves; they are not
 	# waypoints.
-	for own in ["--sprite-soldiers", "--btr", "--baked-contour"]:
+	for own in ["--sprite-soldiers", "--btr", "--baked-contour", "--engine-creases", "--btr-noline"]:
 		var at := args.find(own)
 		if at >= 0:
 			args.remove_at(at)
