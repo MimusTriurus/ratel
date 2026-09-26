@@ -37,8 +37,9 @@
 #     say what it does, one layer each on a player of its own, as the boat's
 #     two are: the tracks run as far as it drives and spin as far as it
 #     turns, the hull rocks over the ground while it moves and idles while it
-#     does not, the exhaust puffs harder under way, a hit knocks it about and
-#     leaves it smoking, and Shoot recoils the barrel.
+#     does not, a hit knocks it about and leaves it smoking, and Shoot recoils
+#     the barrel. Its exhaust and the dust off its tracks are Level3DPuffs',
+#     out of the model's Exhaust and Dust bones (puffs).
 #   * The game removes it and draws an Explosion. Here the blast is drawn over
 #     it, it plays Death -- the turret blown off in a fireball -- and it stays
 #     where it was, burnt black and smoking, until it is left behind. A wreck
@@ -76,18 +77,21 @@ const LAYERS := {
 	"tracks": {"bones": ["Pad.", "Wheel."], "clips": ["Tracks", "Spin_L", "Spin_R"]},
 	"hull": {"bones": ["Hull", "Ring", "Blast."], "clips": ["Idle", "Drive", "Damage", "Death"]},
 	"weapon": {"bones": ["Gun", "Barrel", "Flash"], "clips": ["Shoot"]},
-	"exhaust": {"bones": ["Exhaust.", "Dust."], "clips": ["Exhaust", "Exhaust_Drive"]},
 	"smoke": {"bones": ["Smoke."], "clips": ["Smoke", "Burn"]},
 }
-const LOOPS := ["Tracks", "Spin_L", "Spin_R", "Idle", "Drive", "Exhaust", "Exhaust_Drive", "Smoke", "Burn"]
-# Every layer of puffs has an Off, made here: jackal_tank.py bakes one, but a
-# two-frame clip does not come through the glTF export.
+const LOOPS := ["Tracks", "Spin_L", "Spin_R", "Idle", "Drive", "Smoke", "Burn"]
+# The smoke has an Off, made here: jackal_tank.py bakes one, but a two-frame
+# clip does not come through the glTF export.
 const OFF := "Off"
 const BLEND := 0.25
 # A wreck goes black over this long, all but its fireball and its smoke.
 const CHAR_TIME := 1.2
 const CHAR := 0.28
-const KEEP_COLOUR := ["MT_Fire", "MT_Flash", "MT_Smoke", "MT_SmokeDark", "MT_Dust"]
+const KEEP_COLOUR := ["MT_Fire", "MT_Flash", "MT_SmokeDark"]
+# Level3DPuffs': a puff's radius, level metres, out of the exhausts standing,
+# and off the tracks.
+const EXHAUST_SIZE := 0.09
+const DUST_SIZE := 0.2
 
 var map: Level3DMap
 var guns: Level3DGuns
@@ -106,6 +110,8 @@ var _scene: PackedScene
 var _libraries := {}
 var _turret_pivot: Vector3        # model metres, Godot axes
 var _muzzle_from_turret: Vector3
+var _exhaust_bones := PackedInt32Array()
+var _dust_bones := PackedInt32Array()
 var _trigger_y := -1
 var _furthest_top := INF
 var _rng := RandomNumberGenerator.new()
@@ -182,7 +188,7 @@ func _make_libraries() -> void:
 				a.remove_track(i)
 		a.loop_mode = Animation.LOOP_LINEAR if clip in LOOPS else Animation.LOOP_NONE
 		(_libraries[layer] as AnimationLibrary).add_animation(clip, a)
-	for layer in ["exhaust", "smoke"]:
+	for layer in ["smoke"]:
 		var off := Animation.new()
 		off.length = 1.0 / 24.0
 		for i in skeleton.get_bone_count():
@@ -196,6 +202,9 @@ func _make_libraries() -> void:
 	# out again here: the Flash bone is at the muzzle.
 	_turret_pivot = skeleton.get_bone_global_rest(skeleton.find_bone("Turret")).origin
 	_muzzle_from_turret = skeleton.get_bone_global_rest(skeleton.find_bone("Flash")).origin - _turret_pivot
+	for side in ["L", "R"]:
+		_exhaust_bones.append(skeleton.find_bone("Exhaust." + side))
+		_dust_bones.append(skeleton.find_bone("Dust." + side))
 	probe.free()
 
 
@@ -210,6 +219,29 @@ func track_contacts() -> Array:
 					"at": t.root.position + across * side, "width": TRACK_WIDTH * SCALE,
 					"pitch": TRACK_TRAVEL / TRACK_PADS * SCALE, "tread": 1.0})
 	return contacts
+
+
+# Level3DPuffs' emitters: the exhausts' mouths, which ride on the hull, and
+# the back of each track, of every tank still running. A wreck has neither.
+func puffs() -> Array:
+	var out := []
+	for t in tanks:
+		var id := t.root.get_instance_id()
+		var mouths: Array[Vector3] = []
+		for bone in _exhaust_bones:
+			mouths.append(t.skeleton.global_transform * t.skeleton.get_bone_global_pose(bone).origin)
+		var tail := (mouths[0] + mouths[1]) * 0.5 - t.root.global_position
+		var back := Vector3(tail.x, 0.0, tail.z).normalized()
+		for i in mouths.size():
+			out.append({"key": "%d:e%d" % [id, i], "kind": "exhaust", "at": mouths[i], "back": back,
+					"size": EXHAUST_SIZE, "working": 1.0 if t.busy else 0.0})
+		# The bone is a little over the ground, off the back of the track:
+		# brought down to where the tank stands.
+		for i in _dust_bones.size():
+			var at := t.skeleton.global_transform * t.skeleton.get_bone_global_pose(_dust_bones[i]).origin
+			at.y = t.root.global_position.y
+			out.append({"key": "%d:d%d" % [id, i], "kind": "dust", "at": at, "size": DUST_SIZE})
+	return out
 
 
 func reset() -> void:
@@ -299,7 +331,6 @@ func _split_players(t: Tank) -> void:
 			hull.play(_base(t), BLEND))
 	hull.play("Idle")
 	(t.players.tracks as AnimationPlayer).play("Tracks")
-	(t.players.exhaust as AnimationPlayer).play("Exhaust")
 	(t.players.smoke as AnimationPlayer).play(OFF)
 	# Shoot's last frame is the gun at rest with no flash: held there until
 	# the first round.
@@ -322,10 +353,6 @@ func _update(t: Tank, player: Vector2) -> void:
 	var hull: AnimationPlayer = t.players.hull
 	if hull.current_animation in LOOPS and hull.current_animation != _base(t):
 		hull.play(_base(t), BLEND)
-	var exhaust: AnimationPlayer = t.players.exhaust
-	var puff := "Exhaust_Drive" if t.busy else "Exhaust"
-	if exhaust.current_animation != puff:
-		exhaust.play(puff, BLEND)
 
 
 func _drive(t: Tank, player: Vector2) -> void:
@@ -573,7 +600,7 @@ func _run_tracks(t: Tank, delta: float) -> void:
 
 
 func _pose(t: Tank, delta: float) -> void:
-	for layer in ["hull", "weapon", "exhaust", "smoke"]:
+	for layer in ["hull", "weapon", "smoke"]:
 		(t.players[layer] as AnimationPlayer).advance(delta)
 	t.skeleton.set_bone_pose_rotation(t.turret_bone,
 			Quaternion(Vector3.UP, t.turret_yaw - t.root.rotation.y))
@@ -592,7 +619,6 @@ func _kill(i: int, by: String) -> void:
 	guns.explode(at)
 	(t.players.hull as AnimationPlayer).play("Death", 0.05)
 	(t.players.smoke as AnimationPlayer).play("Burn", 0.3)
-	(t.players.exhaust as AnimationPlayer).play(OFF, 0.2)
 	_char(t)
 	_wrecks.append(t)
 	scored.call(POINTS)

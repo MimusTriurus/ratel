@@ -98,7 +98,9 @@
 # blows the BTR up that many seconds in, for its wreck (level3d_wreck.gd).
 #
 # The BTR's rear wheels and the tanks' tracks leave marks on the ground that
-# fade in under seven seconds (level3d_tracks.gd); the game leaves none.
+# fade in under seven seconds (level3d_tracks.gd); the game leaves none. They
+# raise dust as they go, and everything that drives puffs its exhaust
+# (level3d_puffs.gd), which the game draws neither of.
 #
 # The prisoners the BTR picks up go home by helicopter, as the game's do: one
 # flies up the stage on row 161 and lands on the Helipad, and the prisoners
@@ -182,6 +184,7 @@ var soldiers: Level3DSoldiers
 var friends: Level3DFriends
 var rescue: Level3DRescue
 var tracks: Level3DTracks
+var puffs: Level3DPuffs
 var boats: Level3DBoats
 var tanks: Level3DTanks
 var boss: Level3DBoss
@@ -1081,6 +1084,11 @@ func _add_guns(level: Node) -> void:
 	tracks.ground = _ground_at
 	tracks.sources = [btr.wheel_tracks, tanks.track_contacts, boss.track_contacts]
 	add_child(tracks)
+	# And the dust they raise, and everything's exhaust.
+	puffs = Level3DPuffs.new()
+	puffs.ground = _ground_at
+	puffs.sources = [btr.puffs, tanks.puffs, boss.puffs, boats.puffs]
+	add_child(puffs)
 	# The boss tanks are not in explosion_hit: nothing but the player's own
 	# weapons hurts them (BossBlueTank.attack).
 	guns.explosion_hit = func(box: Rect2, player: bool):
@@ -1552,6 +1560,7 @@ func _physics_process(delta: float) -> void:
 	tanks.tick()
 	boss.tick()
 	tracks.tick()
+	puffs.tick()
 	friends.tick()
 	rescue.tick()
 	_set_score(_score)
@@ -1649,6 +1658,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				tanks.reset()
 				boss.reset()
 				tracks.reset()
+				puffs.reset()
 				friends.reset()
 				rescue.reset()
 				map.reset()

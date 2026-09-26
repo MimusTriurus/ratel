@@ -115,13 +115,17 @@ const MODEL_SCALE := 0.31
 #   aerials        the aerial chains' names, without the prefix and link
 #   spare_fits     launcher fits the model has and the game's four weapons do
 #                  not use (level3d_rocket.gd's FITS): hidden
+#   exhausts       where Level3DPuffs' exhaust comes out: a part, by name
+#                  without the prefix, at the middle of its box -- the BTR's
+#                  pipes' tips -- or a point in the model, for the jeep, which
+#                  has no pipe to show
 const VEHICLES := {
 	"btr": {"path": "res://resources/3d/ratel_btr.glb", "prefix": "BTR_", "scale": MODEL_SCALE,
 			"facing": 0.0, "axles": 3, "wheel_radius": 0.66, "wheelbase": 3.06,
 			"nose": 3.5, "half_width": 1.3, "body": [-2.45, 3.74, 1.83], "ramp_axles": [2.25, -1.52],
 			# BodyPitch, verbatim: zeta 0.65 at omega 21.9.
 			"pitch": [0.030, 480.0, 28.5], "roll": [0.0, 480.0, 28.5], "kick": 0.0,
-			"rumble": 0.0, "aerials": []},
+			"rumble": 0.0, "aerials": [], "exhausts": ["ExhaustTip1", "ExhaustTip-1"]},
 	"jeep": {"path": "res://resources/3d/jackal_jeep.glb", "prefix": "Jeep_", "scale": 0.375,
 			"facing": PI / 2.0, "axles": 2, "wheel_radius": 0.44, "wheelbase": 2.3,
 			"nose": 2.3, "half_width": 1.0, "body": [-1.97, 2.01, 1.33], "ramp_axles": [1.2, -1.1],
@@ -129,7 +133,9 @@ const VEHICLES := {
 			# light vehicle on long travel.
 			"pitch": [0.045, 256.0, 14.4], "roll": [0.07, 256.0, 14.4], "kick": 0.25,
 			"rumble": 1.6 * Level3DMap.PX, "aerials": ["AerialL", "AerialR"],
-			"spare_fits": ["GradBase", "TubeLauncherBase"]},
+			"spare_fits": ["GradBase", "TubeLauncherBase"],
+			# Under the tail, on the right, where a jeep's pipe ends.
+			"exhausts": [Vector3(-0.6, 0.4, -2.0)]},
 }
 # Sideways acceleration, m/s^2, that leans the body over by all its roll gain:
 # the free mode's tightest turn at its top speed.
@@ -183,6 +189,10 @@ const RAMP_TILT_STEP := 1.0
 const BUMP_JOLT := 1.5
 # How far along a tyre's mark its lugs repeat, level metres.
 const TYRE_PITCH := 0.08
+# Level3DPuffs': a puff's radius, level metres, out of the exhausts standing,
+# and off the rear wheels.
+const EXHAUST_SIZE := 0.06
+const DUST_SIZE := 0.14
 
 # Asked of the scene: `ground.call(x, z)` returns
 # {"height": float, "kind": String, "hit": bool} for the top surface there.
@@ -253,6 +263,8 @@ var _velocity := Vector3.ZERO
 # Each aerial: its links and their rests, and its spring's two angles --
 # pitch and roll, as the body's -- with their rates.
 var _aerials := []
+# VEHICLES' exhausts, as points on the hull, so that they ride with it.
+var _exhausts: Array[Node3D] = []
 
 
 func _ready() -> void:
@@ -308,6 +320,19 @@ func _ready() -> void:
 			rests.append(link.transform)
 		_aerials.append({"links": links, "rests": rests, "omega": AERIAL_OMEGA[i % AERIAL_OMEGA.size()],
 				"angle": Vector2.ZERO, "rate": Vector2.ZERO})
+	for exhaust in vehicle.get("exhausts", []):
+		var at: Vector3
+		if exhaust is String:
+			var part := _model.find_child(prefix + exhaust, true, false) as MeshInstance3D
+			if part == null:
+				continue
+			at = part.global_transform * part.get_aabb().get_center()
+		else:
+			at = _model.global_transform * (exhaust as Vector3)
+		var mouth := Node3D.new()
+		_hull.add_child(mouth)
+		mouth.global_position = at
+		_exhausts.append(mouth)
 
 
 # The model as it stands, for the wreck to copy (Level3DWreck).
@@ -403,6 +428,22 @@ func wheel_tracks() -> Array:
 					"at": _wheels[i].global_position - Vector3.UP * _wheel_radius(),
 					"width": _tyre_width, "pitch": TYRE_PITCH, "tread": 0.0})
 	return contacts
+
+
+# Level3DPuffs' emitters: the exhausts, harder as the engine works -- the
+# rumble's level, which eases in and out as it starts and stops -- and the
+# dust off the rear wheels, which the ones ahead run in. None while it is
+# gone.
+func puffs() -> Array:
+	var out := []
+	if not visible:
+		return out
+	for i in _exhausts.size():
+		out.append({"key": "exhaust%d" % i, "kind": "exhaust", "at": _exhausts[i].global_position,
+				"back": -forward(), "size": EXHAUST_SIZE, "working": _rumble_level})
+	for contact in wheel_tracks():
+		out.append({"key": contact.key, "kind": "dust", "at": contact.at, "size": DUST_SIZE})
+	return out
 
 
 # A wheel's narrowest extent, level metres: its tyre's width, while it

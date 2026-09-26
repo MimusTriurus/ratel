@@ -35,6 +35,8 @@
 #   * The sprite's wake is two frames of white. Here it is foam: a band round
 #     the hull, a bow wave while it is under way, and a wake behind the stern
 #     that spreads and breaks up as it ages (level3d_foam.gdshader).
+#   * Its outboards smoke, harder under way: Level3DPuffs' exhaust, out of
+#     the top of each cowling (puffs). It raises no dust, on the water.
 class_name Level3DBoats
 extends Node3D
 
@@ -55,6 +57,11 @@ const HEADING := Vector2(-1.0, 1.0)
 const TURRET_PIVOT := Vector3(0.0, 1.35, -1.6)
 const MUZZLE_FROM_TURRET := Vector3(0.0, 0.71, 0.45 + 1.73)
 const TURRET_TURN := 3.0      # rad/s: fast enough to be on the player by its next round
+# Level3DPuffs': where the exhaust comes out, the back of the top of a
+# cowling, from its motor's bone in the model's metres and axes
+# (jackal_boat.py's model_motor); and a puff's radius, level metres, standing.
+const EXHAUST_FROM_MOTOR := Vector3(0.0, 0.8, -0.6)
+const EXHAUST_SIZE := 0.075
 const BLAST_HEIGHT := 0.4
 const BLAST_SCALE := 0.8
 const IDLE := "Idle"
@@ -104,6 +111,7 @@ var _hull_clips: AnimationLibrary
 var _weapon_clips: AnimationLibrary
 var _trigger_y := -1
 var _furthest_top := INF
+var _motor_bones := PackedInt32Array()
 
 
 class Boat:
@@ -155,7 +163,25 @@ func _make_libraries() -> void:
 				a.remove_track(i)
 		a.loop_mode = Animation.LOOP_LINEAR if clip in LOOPS else Animation.LOOP_NONE
 		(_weapon_clips if clip == SHOOT else _hull_clips).add_animation(clip, a)
+	var skeleton := probe.find_child("Skeleton3D", true, false) as Skeleton3D
+	for side in ["L", "R"]:
+		_motor_bones.append(skeleton.find_bone("Motor." + side))
 	probe.free()
+
+
+# Level3DPuffs' emitters: both outboards of every boat still afloat, harder
+# as it gets under way (the bow wave's `speed`).
+func puffs() -> Array:
+	var out := []
+	for b in boats:
+		var id := b.root.get_instance_id()
+		var back := -b.root.global_basis.z.normalized()
+		for i in _motor_bones.size():
+			var motor := b.skeleton.get_bone_global_pose(_motor_bones[i]).origin
+			out.append({"key": "%d:%d" % [id, i], "kind": "exhaust",
+					"at": b.skeleton.global_transform * (motor + EXHAUST_FROM_MOTOR), "back": back,
+					"size": EXHAUST_SIZE, "working": b.speed})
+	return out
 
 
 func reset() -> void:
