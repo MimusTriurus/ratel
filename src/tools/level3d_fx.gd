@@ -83,11 +83,12 @@ const FLASH_WIDTH := 0.22
 # as a thing in the scene rather than the game's sprite: a faceted ball
 # ROUND_WIDTH across, as round as the sprite's rounded diamond is, drawn as
 # the sprite and the blasts' fire are (level3d_round.gdshader): a white core
-# in a ring of its colour, unlit, and a thick rim, its contour, in the
-# sprite's rim colour -- ROUND_RIM wide, capped at a third of its
-# radius as the contour shader caps it, which is what the sprite's rim is.
-# The yellow round is white, yellow and red, the white one white, cold grey
-# and red. It casts its shadow as the models do.
+# in a ring of its colour, unlit, in a thick rim, the outer ROUND_RIM of its
+# radius as the sprite's is. The yellow round is white, yellow and red, the
+# white one white, cold grey and red. It casts its shadow as the models do,
+# and is drawn over everything, as the game draws its rounds (ROUND_PRIORITY,
+# after the water and the boats' wakes): flying low, it went into the wreck
+# of a bunker it passed over.
 #
 # It was the sprite, on a card turned to the camera and drawn over
 # everything, flat among the models; then an egg, lit and thinly lined, which
@@ -100,12 +101,14 @@ const FLASH_WIDTH := 0.22
 # makes one, give_round hides it again for the next.
 const ROUND_SHADER := preload("res://src/tools/level3d_round.gdshader")
 const ROUND_SHAPE := "ball"
-const ROUND_WIDTH := 0.2
+const ROUND_WIDTH := 0.27
 const ROUND_LENGTH := 24.0 * Level3DMap.PX
-const ROUND_RIM := 0.04
+const ROUND_RIM := 0.25
+const ROUND_PRIORITY := 10
 const ROUND_SIDES := 6
-# Where each colour's core ends (level3d_round.gdshader's core_edge).
-const ROUND_CORE := {false: 0.85, true: 0.55}
+# Where each colour's core ends, out from its middle (level3d_round.gdshader's
+# core_edge).
+const ROUND_CORE := {false: 0.4, true: 0.63}
 
 static var _round_mesh: ArrayMesh
 static var _round_materials := {}
@@ -127,17 +130,21 @@ static func take_round(parent: Node, white: bool) -> MeshInstance3D:
 			body.shader = ROUND_SHADER
 			body.set_shader_parameter("core", ROUND_COLOURS[colour][0])
 			body.set_shader_parameter("ring", ROUND_COLOURS[colour][1])
+			body.set_shader_parameter("rim", ROUND_COLOURS[colour][2])
 			body.set_shader_parameter("core_edge", ROUND_CORE[colour])
-			var rim := ShaderMaterial.new()
-			rim.shader = CONTOUR_SHADER
-			rim.set_shader_parameter("colour", ROUND_COLOURS[colour][2])
-			rim.set_shader_parameter("width", ROUND_RIM)
-			rim.set_shader_parameter("extent", 1.0)
-			body.next_pass = rim
+			body.set_shader_parameter("rim_edge", 1.0 - ROUND_RIM)
+			body.render_priority = ROUND_PRIORITY
 			_round_materials[colour] = body
 	var node := MeshInstance3D.new()
 	node.mesh = _round_mesh
 	node.material_override = _round_materials[white]
+	# Drawn with no depth test, it is left out of the sun's pass: a copy of it
+	# the sun alone sees casts its shadow.
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var caster := MeshInstance3D.new()
+	caster.mesh = _round_mesh
+	caster.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	node.add_child(caster)
 	node.set_meta("round_pool", key)
 	parent.add_child(node)
 	return node
