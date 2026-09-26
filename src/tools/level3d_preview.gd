@@ -777,8 +777,8 @@ func _add_destructibles() -> void:
 		add_child(root)
 		var player := root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 		_sharpen_visibility(player.get_animation(DESTRUCTION_ANIMATION))
-		_light_flashes(root, player)
 		var flash := _find_by_prefix(root, FLASH_NAMES)
+		_hide_baked_fire(root)
 		_cast_both_sides_of_planes(root)
 		_add_collision(root)
 		_add_targets(root, true)
@@ -794,9 +794,23 @@ func _add_destructibles() -> void:
 
 
 const FLASH_NAMES: Array[String] = ["Blast_Flash", "Gate_Flash", "FX_Blast_Flash"]
-# J_BlastFlash's emission strength over the destruction, keyed on its node tree
-# in Blender: (frame, strength). Frame 1 is time 0, at 24 fps.
-const FLASH_EMISSION := [[9, 0.0], [10, 14.0], [12, 9.0], [15, 4.0], [18, 0.0]]
+# The flash and the smoke baked into every destruction and FX_Blast, which are
+# hidden: the preview's own fire and smoke go off in their place
+# (Level3DLauncher.blast). The flash was a flat white glow -- J_BlastFlash's
+# emission, which glTF does not carry and _light_flashes used to animate --
+# and the smoke grey lumps, both beside fire and smoke drawn in bands and
+# lines. The shards and the ruins stay.
+const BAKED_FIRE_NAMES: Array[String] = ["Blast_Flash", "Gate_Flash", "FX_Blast_Flash",
+		"Blast_Smoke", "Gate_Smoke", "FX_Blast_Smoke"]
+# How big a destruction's blast is: a unit's, by the scale it asks for
+# (BLAST_SCALE), in metres of radius at its peak; a building's, by its
+# footprint, a share of its narrow side, and within these.
+const UNIT_BLAST_RADIUS := 0.8
+const BUILDING_BLAST := 0.5
+const BUILDING_BLAST_RADIUS := Vector2(0.9, 1.6)
+# A blast that a round sets off goes off this long after the round's own,
+# a chain rather than one.
+const CHAIN_DELAY := 0.1
 const BLENDER_FPS := 24.0
 # F0 in jackal_destruction_lib.py: the frame the intact building goes and the
 # blast begins, as time into the animation.
@@ -804,30 +818,10 @@ const BLAST_FRAME := 10
 const BLAST_START := (BLAST_FRAME - 1) / BLENDER_FPS
 
 
-# The flash's glow is animated on its material in Blender, and glTF carries no
-# material animation. It is one material there, shared by every flash, which
-# works only because every building's timeline starts together; here each
-# building gets its own copy and the glow as a track of its own animation. It
-# casts no shadow either: it is a fireball, and the sun's shadow of it on the
-# ground read as a hole.
-func _light_flashes(root: Node, player: AnimationPlayer) -> void:
-	var animation := player.get_animation(DESTRUCTION_ANIMATION)
-	var base := player.get_node(player.root_node)
+static func _hide_baked_fire(root: Node) -> void:
 	for node in root.find_children("*", "MeshInstance3D", true, false):
-		var flash := node as MeshInstance3D
-		if not FLASH_NAMES.any(func(prefix): return flash.name.begins_with(prefix)):
-			continue
-		var material := flash.mesh.surface_get_material(0).duplicate() as StandardMaterial3D
-		material.emission_enabled = true
-		material.emission = material.albedo_color
-		material.emission_energy_multiplier = 0.0
-		flash.material_override = material
-		flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var track := animation.add_track(Animation.TYPE_VALUE)
-		animation.track_set_path(track, NodePath("%s:material_override:emission_energy_multiplier"
-				% base.get_path_to(flash)))
-		for key in FLASH_EMISSION:
-			animation.track_insert_key(track, (key[0] - 1) / BLENDER_FPS, key[1])
+		if BAKED_FIRE_NAMES.any(func(prefix): return node.name.begins_with(prefix)):
+			(node as Node3D).visible = false
 
 
 # Scale at or below this is the export's "hidden".
@@ -878,8 +872,13 @@ func _set_destroyed(building: String, destroyed: bool) -> void:
 	player.seek(BLAST_START if destroyed else 0.0, true)
 	if not destroyed:
 		player.pause()
-	elif friends != null:
-		friends.building_destroyed(building)
+	else:
+		if launcher != null and entry.has("footprint"):
+			var footprint: Rect2 = entry.footprint
+			launcher.blast(entry.centre, clampf(minf(footprint.size.x, footprint.size.y) * BUILDING_BLAST,
+					BUILDING_BLAST_RADIUS.x, BUILDING_BLAST_RADIUS.y), CHAIN_DELAY)
+		if friends != null:
+			friends.building_destroyed(building)
 	# Gate.attack: the gate's group opens the way on the grid, which is what
 	# the BTR drives by.
 	if destroyed and building == "Gate" and map != null and map.gate_group >= 0:
@@ -1214,15 +1213,20 @@ static func _nearest(found: Array) -> Dictionary:
 	return best
 
 
-# FX_Blast from jackal_fx.blend, played once from its blast frame and gone.
-func _spawn_blast(at: Vector3, size: float) -> void:
+# A unit's or the BTR's blast: FX_Blast from jackal_fx.blend for its shards,
+# played once from its blast frame and gone, and the launcher's fire and smoke
+# (Level3DLauncher.blast) for its flash and smoke. A unit is brought down by a
+# round, whose own blast goes first; the BTR by a round or a collision, which
+# has none, so its goes off at once.
+func _spawn_blast(at: Vector3, size: float, delay := CHAIN_DELAY) -> void:
 	var root := _blast_scene.instantiate() as Node3D
 	add_child(root)
 	root.global_position = at
 	root.scale = Vector3.ONE * size
 	var player := root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	_sharpen_visibility(player.get_animation(DESTRUCTION_ANIMATION))
-	_light_flashes(root, player)
+	_hide_baked_fire(root)
+	launcher.blast(at, size * UNIT_BLAST_RADIUS, delay)
 	player.play(DESTRUCTION_ANIMATION)
 	player.seek(BLAST_START, true)
 	get_tree().create_timer(DESTRUCTION_SETTLE).timeout.connect(root.queue_free)
@@ -1263,7 +1267,7 @@ func _player_box() -> Rect2:
 # Player.explode: the blast, the BTR gone, and back after RESPAWN_DELAY where
 # it went, invincible. No lives are counted; the preview has no continue.
 func _explode_btr(by: String) -> void:
-	_spawn_blast(btr.position + Vector3.UP * 0.6, 1.0)
+	_spawn_blast(btr.position + Vector3.UP * 0.6, 1.0, 0.0)
 	# Its own Explosion, which spares the guns and not the soldiers.
 	guns.explode(btr.position, true)
 	friends.player_died(btr.position)

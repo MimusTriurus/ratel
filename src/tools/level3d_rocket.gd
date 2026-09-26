@@ -101,11 +101,27 @@ const TRAVELING_EXPLOSION_TIME := (TravelingExplosion.TRAVEL_TIME + 1) / 100.0
 # (level3d_fire.gdshader's `burn`), and the embers a blast throws.
 const BURN_TIME := 0.12
 const EMBERS := 7
-# A blast's fire once the game's explosion is over (_fireball): how long it
-# takes to collapse, and how much of its heat it has spent at its peak -- the
-# rest goes as it collapses.
-const COLLAPSE_TIME := 0.25
+# A blast's fire once the game's explosion is over (_fireball): how much of
+# its heat it has spent at its peak, how long it then takes to cool to the
+# edge of smoke, and how long the smoke lasts.
 const PEAK_AGE := 0.7
+const COOL_TIME := 0.25
+const SMOKE_TIME := 1.2
+# A destruction's blast (blast): how long its mushroom takes to grow, on a
+# curve of its own rather than the game's box.
+const BLAST_GROW := 0.4
+# The mushroom's lobes (_fireball), in the game ball's radius: [part, how
+# many, how far out, how big, stretch, height, warmth]. The height is a
+# share of the cap's -- 0 on the ground, 1 the cap -- or, over 1, the cap's
+# and that much more of a radius. How far out and how big together stay
+# inside 1, so that seen from above the fire covers no more ground than the
+# game's box does.
+const LOBES := [
+	["base", 5, 0.52, 0.42, Vector3(1.0, 0.6, 1.0), 0.0, 0.05],
+	["stem", 2, 0.05, 0.28, Vector3(0.8, 1.7, 0.8), 0.45, 0.3],
+	["cap", 6, 0.44, 0.44, Vector3(1.0, 0.8, 1.0), 1.0, 0.0],
+	["cap", 1, 0.08, 0.55, Vector3(1.0, 0.85, 1.0), 1.35, 0.12],
+]
 # _dust_ring: how many puffs, how far out they run from the middle, in metres.
 const DUST_PUFFS := 20
 const DUST_REACH := Vector2(0.7, 1.5)
@@ -690,7 +706,6 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3) -> void:
 		_splash(Vector3(at.x, there.height, at.z))
 	else:
 		_embers(at)
-		_smoke(at)
 		_chips(at, normal)
 		if there.hit and at.y <= there.height + 0.2:
 			_dust_ring(Vector3(at.x, there.height, at.z), there.kind)
@@ -795,43 +810,146 @@ func _puff(at: Vector3, size: float, material: String) -> void:
 
 # Explosion as it is seen: the game draws its sprite `size` px across while the
 # box that kills is 0.35 of that either side, so what it shows is what it hits.
-# The ball is the same, on the same curve and clock as Level3DGuns' box --
+# The fire is the same, on the same curve and clock as Level3DGuns' box --
 # from EXPLOSION_START by GROW_RATE a tick until past EXPLOSION_END -- and
 # stepped with the physics ticks, so the two do not drift apart. It used to
 # swell to 0.9 m in a twelfth of a second and be gone in 0.28, when the box
 # was a quarter of that and only half grown: an enemy inside the fire lived,
 # and one walking in after it was out died of nothing to be seen.
 #
-# It cools as it grows, over the same clock (level3d_fire.gdshader's `age`):
-# white-hot at first, as the sprite's first frame is, and mostly red by the
-# third's size. When the box is gone the fire collapses, over COLLAPSE_TIME:
-# it shrinks, cooling on to red, and breaks into holes in its second half
-# (`burn`). The game's sprite is simply gone on the tick its box
-# is; the fire here used to burn away in holes at its full size in 0.12 s,
-# which read as gone in a frame. Shrinking draws a blast smaller than the
-# one that was, but only once it is over -- nothing is hit by it then.
+# It is a cartoon's mushroom of fire, made of lobes (LOBES): billows on the
+# ground, a stem, hotter than the rest, and a cap that climbs as it grows.
+# Seen from above it covers the ground the game's ball does and no more --
+# the lobes are placed within its radius -- and it can stand as tall as it
+# likes. It cools as it grows, over the same clock (level3d_fire.gdshader's
+# `age`): white-hot at first, as the sprite's first frame is, and going red.
+#
+# When the box is gone it cools on, over COOL_TIME, and then over SMOKE_TIME
+# the same lobes turn to smoke, the edges grey first and the hearts last, as
+# a cartoon blast's do: the cap goes on climbing and billowing out, the stem
+# thins away beneath it, the billows on the ground spread and go first, and
+# then each lobe thins from the middle out to a broken ring of its edge and
+# is gone (`burn`). It used to shrink away in a quarter of a second and leave
+# puffs of smoke of its own; before that, burn away in holes at its full size
+# in a frame. The game's sprite is simply gone on the tick its box is: all
+# of this is after it, when nothing is hit.
+#
+# Each blast is its own -- the lobes' sizes and places a little off, the cap
+# leaning, every lobe drifting its own way -- and each lobe is turned at
+# random, so that the fire's noise, the same in every ball, is not.
 func _fireball(at: Vector3) -> void:
-	var ball := _instance(_fire_mesh, "fire")
-	var place := func(size: float, seconds: float):
-		ball.scale = Vector3.ONE * size * 0.5 * Level3DMap.PX
-		ball.global_position = at + Vector3.UP * 0.2
-		ball.set_instance_shader_parameter("age", seconds / EXPLOSION_TIME * PEAK_AGE)
-	place.call(Level3DGuns.EXPLOSION_START, 0.0)
-	var life := EXPLOSION_TIME
-	var tween := ball.create_tween()
-	tween.set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
-	tween.tween_method(func(seconds: float):
+	_mushroom(at, func(seconds: float) -> float:
 		var ticks := int(seconds * 100.0) + 1
-		place.call(minf(Level3DGuns.EXPLOSION_START * pow(Explosion.GROW_RATE, ticks),
-				Level3DGuns.EXPLOSION_END), seconds),
-		0.0, life, life)
-	var peak := Level3DGuns.EXPLOSION_END * 0.5 * Level3DMap.PX
-	tween.tween_method(func(k: float):
-		ball.scale = Vector3.ONE * maxf(peak * (1.0 - k), 0.001)
-		ball.set_instance_shader_parameter("age", lerpf(PEAK_AGE, 1.0, k))
-		ball.set_instance_shader_parameter("burn", clampf((k - 0.5) / 0.5, 0.0, 1.0)),
-		0.0, 1.0, COLLAPSE_TIME)
-	tween.tween_callback(ball.queue_free)
+		return minf(Level3DGuns.EXPLOSION_START * pow(Explosion.GROW_RATE, ticks),
+				Level3DGuns.EXPLOSION_END) * 0.5 * Level3DMap.PX, EXPLOSION_TIME, 0.0)
+
+
+# A destruction's blast, which the preview sets off (level3d_preview.gd): a
+# unit's, the BTR's, a building's. The same mushroom, embers and light as a
+# round's, `radius` metres over the ground at its peak, standing on the ground
+# under `at`, `delay` seconds from now -- a round's blast that brings a
+# building down goes off first, and the building's after it, a chain. It is
+# not the game's Explosion, whose box is the round's if a round set it off,
+# so it grows on a curve of its own, over BLAST_GROW. The destructions' own
+# flash and smoke, baked in Blender, are hidden: they were a flat white
+# glow and grey lumps, beside fire and smoke drawn as these are.
+func blast(at: Vector3, radius: float, delay := 0.0) -> void:
+	var there: Dictionary = ground.call(at.x, at.z)
+	var foot := Vector3(at.x, there.height if there.hit else at.y, at.z)
+	_mushroom(foot, func(seconds: float) -> float:
+		return radius * (0.3 + 0.7 * (1.0 - pow(1.0 - minf(seconds / BLAST_GROW, 1.0), 2.0))),
+		BLAST_GROW, delay)
+	var go := func():
+		_light(foot)
+		_embers(foot)
+	if delay > 0.0:
+		get_tree().create_timer(delay, false, true).timeout.connect(go)
+	else:
+		go.call()
+
+
+# The mushroom itself: `radius_at.call(seconds)` its radius over the ground
+# while it grows, for `grow_time`; then it cools and turns to smoke.
+func _mushroom(at: Vector3, radius_at: Callable, grow_time: float, delay: float) -> void:
+	var lobes: Array[Dictionary] = []
+	for group in LOBES:
+		for i in int(group[1]):
+			var node := _instance(_fire_mesh, "fire")
+			node.set_instance_shader_parameter("warmth", float(group[6]))
+			var size: float = group[3] * _rng.randf_range(0.88, 1.12)
+			var reach: float = group[2] * _rng.randf_range(0.85, 1.15)
+			var angle := TAU * (i + _rng.randf_range(-0.3, 0.3)) / float(group[1])
+			var axis := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1))
+			lobes.append({"node": node, "part": group[0], "size": size,
+					"out": Vector3(cos(angle), 0.0, sin(angle)) * minf(reach, 0.95 - size),
+					"stretch": group[4], "height": group[5],
+					"spin": Basis(axis.normalized() if axis.length() > 0.01 else Vector3.UP, _rng.randf() * TAU),
+					"drift": Vector3(_rng.randf_range(-1, 1), _rng.randf_range(0.0, 0.5), _rng.randf_range(-1, 1)) * 0.2})
+	var lean := Vector3(_rng.randf_range(-1, 1), 0.0, _rng.randf_range(-1, 1)).limit_length(1.0) * 0.04
+	var peak: float = radius_at.call(grow_time)
+	var life := grow_time + COOL_TIME + SMOKE_TIME
+	# `seconds` from the blast. The radius grows until `grow_time` -- for a
+	# round's, the game ball's until its box is gone -- then is the peak's;
+	# `after` is the time since.
+	var place := func(seconds: float):
+		var radius := peak
+		var after := seconds - grow_time
+		var rise := 1.0
+		if after < 0.0:
+			radius = radius_at.call(seconds)
+			rise = seconds / grow_time
+			after = 0.0
+		var spent := after / (COOL_TIME + SMOKE_TIME)
+		# The cap: from half a radius up to a radius and a half while the
+		# fire grows, then on up and slowing.
+		var cap := radius * (0.5 + 1.1 * rise) + 0.7 * (1.0 - pow(1.0 - spent, 2.0))
+		for lobe in lobes:
+			var node: MeshInstance3D = lobe.node
+			var out: Vector3 = lobe.out
+			var grow := 1.0
+			var height: float = lobe.height
+			var y := 0.0
+			var smoke_time := SMOKE_TIME
+			match lobe.part:
+				"base":
+					out *= 1.0 + 0.6 * spent
+					grow = 1.0 - 0.5 * spent
+					smoke_time *= 0.7
+				"stem":
+					grow = clampf(1.0 - after / 0.35, 0.0, 1.0)
+				"cap":
+					out = out * (1.0 + 0.35 * spent) + lean * (1.0 + 3.0 * spent)
+					grow = 1.0 + 0.35 * spent
+			var size: float = lobe.size * radius * grow
+			if height > 1.0:
+				y = cap + (height - 1.0) * radius
+			elif height > 0.0:
+				y = cap * height
+			else:
+				y = size * 0.35
+			var age := rise * PEAK_AGE
+			if after > 0.0:
+				age = lerpf(PEAK_AGE, 1.0, minf(after / COOL_TIME, 1.0)) \
+						+ clampf((after - COOL_TIME) / smoke_time, 0.0, 1.0)
+			var smoke := clampf(age - 1.0, 0.0, 1.0)
+			node.visible = size > 0.001
+			node.global_transform = Transform3D(
+					(lobe.spin as Basis).scaled(lobe.stretch * maxf(size, 0.001)),
+					at + out * radius + Vector3.UP * y + lobe.drift * after)
+			node.set_instance_shader_parameter("age", age)
+			node.set_instance_shader_parameter("burn", clampf((smoke - 0.4) / 0.6, 0.0, 1.0))
+	var tween := create_tween()
+	tween.set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
+	if delay > 0.0:
+		for lobe in lobes:
+			(lobe.node as Node3D).visible = false
+		tween.tween_interval(delay)
+	else:
+		place.call(0.0)
+	tween.tween_method(place, 0.0, life, life)
+	tween.tween_callback(func():
+		for lobe in lobes:
+			(lobe.node as Node).queue_free())
 
 
 # Sparks of the fire thrown out of it, which cool from white to red as they
@@ -872,30 +990,6 @@ func _light(at: Vector3) -> void:
 	tween.tween_property(light, "light_energy", 6.0, 0.04)
 	tween.tween_property(light, "light_energy", 0.0, 0.4).set_ease(Tween.EASE_IN)
 	tween.tween_callback(light.queue_free)
-
-
-# What the fire leaves. It rises as the fireball's collapse is ending
-# (_fireball), and from inside it -- any sooner and it hides the collapse: puffs starting at once and spread 0.45 m hid the fire and stood as far
-# out as the old fireball did, the same lie about the reach. The game's blast
-# leaves no smoke at all, so there is not much of it: the fire is the picture,
-# the smoke only what is left of it.
-func _smoke(at: Vector3) -> void:
-	for i in 5:
-		var puff := _instance(_puff_mesh, "smoke")
-		var offset := Vector3(_rng.randf_range(-1, 1), 0.0, _rng.randf_range(-1, 1)) * 0.3
-		puff.global_position = at + offset + Vector3.UP * 0.1
-		puff.scale = Vector3.ONE * 0.001
-		var size := _rng.randf_range(0.24, 0.36)
-		var life := _rng.randf_range(0.9, 1.3)
-		var delay := EXPLOSION_TIME + COLLAPSE_TIME * _rng.randf_range(0.5, 0.8)
-		var tween := puff.create_tween()
-		tween.set_parallel()
-		tween.tween_property(puff, "scale", Vector3.ONE * size, life * 0.3).set_delay(delay).set_ease(Tween.EASE_OUT)
-		tween.tween_property(puff, "global_position", puff.global_position + Vector3.UP * 1.1 + offset * 0.6,
-				life).set_delay(delay)
-		tween.tween_property(puff, "scale", Vector3.ONE * 0.001, life * 0.7).set_delay(delay + life * 0.3) \
-				.set_ease(Tween.EASE_IN)
-		tween.chain().tween_callback(puff.queue_free)
 
 
 # The blast on the ground throws the ground out from under it: a ring of dust
