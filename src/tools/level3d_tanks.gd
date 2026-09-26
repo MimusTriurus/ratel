@@ -29,7 +29,8 @@
 #
 # Where this departs from the game, and why:
 #   * It fires from the muzzle, not from 32 px ahead of its centre: the turret
-#     stands on the model's middle and the muzzle 3 m out from it, scaled.
+#     stands aft of the middle, as the sprite's, and the muzzle 1.4 m ahead
+#     of the model's middle, scaled -- 22 px.
 #   * The turret leads a turn: it comes round to the new facing faster than
 #     the hull does, and is on it by the time the tank drives and fires. The
 #     sprite has no turret to turn; the rounds still go the way the tank faces.
@@ -49,10 +50,14 @@ extends Node3D
 
 const TANK_PATH := "res://resources/3d/jackal_tank.glb"
 const PX := Level3DMap.PX
-# The model is a 6.4 m tank, 3.9 m wide; the sprite is 84 x 64 px, 1.23 x
-# 0.94 m on the level's scale. A little over that, as the boat is, so that
-# the turret and the tracks read from above: 1.6 x 1 m, the BTR's width.
-const SCALE := 0.25
+# The sprite, seen from above, is 84 x 64 px, 1.23 x 0.94 m on the level's
+# scale. The model is built to that shape (jackal_tank.py, K): 3.9 m across,
+# 5.2 nose to tail, so it is drawn at the scale that makes its width the
+# sprite's. It was drawn a little over, 1.6 x 1 m, on the sheet's longer
+# hull, so that the turret and the tracks would read from above.
+const SPRITE_WIDTH := 64.0
+const MODEL_WIDTH := 3.9
+const SCALE := SPRITE_WIDTH * PX / MODEL_WIDTH
 const HIT := 40.0
 const MINE := 28.0
 const SOLID := 45.0
@@ -64,7 +69,7 @@ const BLAST_SCALE := 0.9
 # How far the tracks move in one loop of Tracks and Spin, in the model's
 # metres (jackal_tank.py: TRACK_STEPS * LOOP.step), and how far out from the
 # middle a track runs (TRACK_X): what a turn on the spot moves it.
-const TRACK_TRAVEL := 0.736
+const TRACK_TRAVEL := 0.722
 const TRACK_X := 1.6
 # A track's width (jackal_tank.py's pads), and the pads in one loop of Tracks
 # (TRACK_STEPS): the marks it leaves, in model metres.
