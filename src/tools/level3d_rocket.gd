@@ -86,6 +86,17 @@ const CRATER_STEP := 0.06
 # how big one is, from and to.
 const SCORCHES_KEPT := 32
 const SCORCH_RADIUS := Vector2(0.35, 0.5)
+# What a rocket leaves on a wall or a building it strikes, where the ground would
+# take a crater: soot on it (Level3DMarks) this many metres round, smaller than
+# a scorch -- a wall is half a metre thick; RUBBLE bits of it knocked off, which
+# fall at its foot and stay, the last RUBBLE_KEPT of them; and a thin smoke
+# from the soot, a puff every SMOULDER_EVERY seconds for SMOULDER_TIME.
+const SOOT_RADIUS := Vector2(0.3, 0.4)
+const RUBBLE := Vector2i(4, 6)
+const RUBBLE_KEPT := 48
+const RUBBLE_SIZE := Vector2(0.035, 0.07)
+const SMOULDER_TIME := 2.5
+const SMOULDER_EVERY := 0.14
 # Grenade and PlayerMissile at the map's PX. Each is gone on the tick its count
 # passes TRAVEL_TIME, so it flies TRAVEL_TIME + 1 moves.
 const GRENADE_SPEED := Grenade.VELOCITY * 100.0 * Level3DMap.PX
@@ -194,6 +205,9 @@ const FITS := [
 # walls, trunks and buildings on it.
 var ground: Callable
 var surface: Callable
+# `strike.call(at, travel)`: the face a rocket that went off at `at` is seen to
+# strike, and what it is -- level3d_preview.gd's _strike_at.
+var strike: Callable
 var btr: Level3DBtr
 var aim_point = null        # Vector3 or null
 # `exploded.call(point)` at each explosion, returning whether it destroyed
@@ -241,6 +255,7 @@ var _stage_tails := []          # each stage's tail, centre-relative, pivot unit
 var _rockets := []
 var _craters := []              # see _crater, oldest first
 var _scorches: Array[Vector4] = []   # see _scorch, oldest first
+var _rubble_bits: Array[Node3D] = []   # see _rubble, oldest first
 var _crater_meshes: Array[Dictionary] = []   # Level3DFx.crater_mesh, a few of them
 var _rng := RandomNumberGenerator.new()
 var _puff_mesh: ArrayMesh
@@ -793,15 +808,23 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3) -> void:
 	else:
 		_embers(at)
 		_chips(at, normal)
-		if there.hit and at.y <= there.height + 0.2:
+		# On a wall or a building, what it leaves is on that: soot, rubble at
+		# its foot and smoke, and nothing on the ground. A wall's top is ground
+		# to the hull, and took a crater dug into it.
+		var hit: Dictionary = strike.call(at, -normal) if strike.is_valid() else {"hit": false}
+		if hit.hit and hit.kind in Level3DMarks.KINDS:
+			Level3DMarks.soot(hit.position, _rng.randf_range(SOOT_RADIUS.x, SOOT_RADIUS.y))
+			_rubble(hit.position, hit.normal, hit.colour)
+			_smoulder(hit.position + hit.normal * 0.05)
+		elif there.hit and there.kind != "wall" and at.y <= there.height + 0.2:
 			_dust_ring(Vector3(at.x, there.height, at.z), there.kind)
-		# Not on the water, even from a hit above it -- a boat's. A crater
-		# where the ground can be dug and there is room for one, a scorch
-		# where not.
-		if not destroyed and there.kind != "water" and at.y <= there.height + 0.2:
-			var on_ground := Vector3(at.x, there.height, at.z)
-			if not (there.kind != "hard" and _crater(on_ground)):
-				_scorch(on_ground)
+			# Not on the water, even from a hit above it -- a boat's. A crater
+			# where the ground can be dug and there is room for one, a scorch
+			# where not.
+			if not destroyed and there.kind != "water":
+				var on_ground := Vector3(at.x, there.height, at.z)
+				if not (there.kind != "hard" and _crater(on_ground)):
+					_scorch(on_ground)
 	# PlayerMissile.update: an upgraded missile throws its blast sideways, and
 	# the second upgrade vertically too.
 	if rocket.power > 0:
@@ -1054,7 +1077,9 @@ func _mushroom(at: Vector3, radius_at: Callable, grow_time: float, delay: float)
 # not the blast's reach -- they are past the box's edge in a blink -- any more
 # than the chips are.
 func _embers(at: Vector3) -> void:
-	var floor_y: float = ground.call(at.x, at.z).height
+	# No higher than the blast: one in the side of a wall is under its top,
+	# which is ground to a downward ray.
+	var floor_y: float = minf(ground.call(at.x, at.z).height, at.y)
 	for i in EMBERS:
 		var ember := _instance(_chip_mesh, "fire")
 		var out := Vector3(_rng.randf_range(-1, 1), _rng.randf_range(0.4, 1.2), _rng.randf_range(-1, 1)).normalized()
@@ -1198,7 +1223,7 @@ func _chips(at: Vector3, normal: Vector3) -> void:
 				_rng.randf_range(-1, 1))).normalized()
 		var velocity := out * _rng.randf_range(3.0, 6.0)
 		var spin := Vector3(_rng.randf_range(-15, 15), _rng.randf_range(-15, 15), _rng.randf_range(-15, 15))
-		var floor_y: float = ground.call(at.x, at.z).height
+		var floor_y: float = minf(ground.call(at.x, at.z).height, at.y)
 		var life := _rng.randf_range(0.5, 0.8)
 		var fly := func(t: float):
 			var p := at + velocity * t + Vector3.DOWN * 4.9 * t * t
@@ -1459,6 +1484,68 @@ func clear_craters() -> void:
 	_craters = _craters.filter(func(c): return c.ruin != "")
 	_scorches.clear()
 	_scorches_told = false
+	for bit in _rubble_bits:
+		bit.queue_free()
+	_rubble_bits.clear()
+
+
+# What a rocket knocks off a wall or a building (_explode): bits of it, in its
+# colour a shade darker so they read against it, thrown out off the face and
+# falling to whatever is under them -- the ground at its foot, mostly, or the
+# top of a wall -- where they stay. `surface` is asked as they fall, so that
+# one over a bunker lands on it rather than in it.
+func _rubble(at: Vector3, normal: Vector3, colour: Color) -> void:
+	var key := "rubble_%s" % colour.to_html(false)
+	if not _materials.has(key):
+		_materials[key] = _lit(colour.darkened(0.2))
+	var out_flat := Vector3(normal.x, 0.0, normal.z)
+	for i in _rng.randi_range(RUBBLE.x, RUBBLE.y):
+		var bit := _instance(_chip_mesh, key)
+		var size := _rng.randf_range(RUBBLE_SIZE.x, RUBBLE_SIZE.y)
+		var shape := Vector3(size * _rng.randf_range(0.8, 1.3), size * _rng.randf_range(0.5, 0.8),
+				size * _rng.randf_range(0.8, 1.3))
+		bit.scale = shape
+		var velocity := (out_flat * 1.2 + Vector3(_rng.randf_range(-0.7, 0.7), _rng.randf_range(0.3, 0.9),
+				_rng.randf_range(-0.7, 0.7))).normalized() * _rng.randf_range(1.2, 2.6)
+		var from := at + normal * 0.05
+		# Where it comes down, stepped along its fall.
+		var land := 1.5
+		var t := 0.02
+		while t < 1.5:
+			var p := from + velocity * t + Vector3.DOWN * 4.9 * t * t
+			var under: Dictionary = surface.call(p.x, p.z)
+			if velocity.y - 9.8 * t < 0.0 and (not under.hit or p.y <= under.height + shape.y * 0.5):
+				land = t
+				break
+			t += 0.02
+		var spin := Vector3(_rng.randf_range(-12, 12), _rng.randf_range(-12, 12), _rng.randf_range(-12, 12))
+		var rest := Vector3(0.0, _rng.randf() * TAU, 0.0)
+		var fly := func(s: float):
+			var p := from + velocity * s + Vector3.DOWN * 4.9 * s * s
+			if s >= land:
+				var under: Dictionary = surface.call(p.x, p.z)
+				p.y = (under.height if under.hit else p.y) + shape.y * 0.5
+			bit.global_position = p
+			bit.rotation = rest if s >= land else spin * s
+		fly.call(0.0)
+		var tween := bit.create_tween()
+		tween.tween_method(fly, 0.0, land, land)
+		_rubble_bits.append(bit)
+	while _rubble_bits.size() > RUBBLE_KEPT:
+		_rubble_bits.pop_front().queue_free()
+
+
+# A thin smoke going up from a rocket's soot for a while after the blast.
+func _smoulder(at: Vector3) -> void:
+	var tween := create_tween()
+	var puffs := int(SMOULDER_TIME / SMOULDER_EVERY)
+	tween.tween_interval(EXPLOSION_TIME)
+	for i in puffs:
+		var left := 1.0 - float(i) / puffs
+		tween.tween_callback(func():
+			_puff(at + Vector3(_rng.randf_range(-0.05, 0.05), 0.0, _rng.randf_range(-0.05, 0.05)),
+					lerpf(0.08, 0.2, left) * _rng.randf_range(0.8, 1.2), "smoke"))
+		tween.tween_interval(SMOULDER_EVERY)
 
 
 # ----------------------------------------------------------------------------

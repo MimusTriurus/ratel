@@ -245,6 +245,7 @@ func _ready() -> void:
 	# Last: it adds meshes of its own, which want no collision.
 	_holed_ground(level)
 	_add_destructibles()
+	_add_marks(level)
 	# After the contour and the shadows, whose materials it replaces.
 	_add_wind(level)
 
@@ -258,6 +259,7 @@ func _ready() -> void:
 	gun.btr = btr
 	gun.ground = _ground_at
 	gun.surface = _surface_at
+	gun.strike = _strike_at
 	# The game's own switch, as the game last saved it.
 	var mapping := ButtonMapping.new()
 	mapping.load_saved()
@@ -267,6 +269,7 @@ func _ready() -> void:
 	launcher.btr = btr
 	launcher.ground = _ground_at
 	launcher.surface = _surface_at
+	launcher.strike = _strike_at
 	launcher.exploded = _on_exploded
 	add_child(launcher)
 	_add_guns(level)
@@ -451,6 +454,23 @@ func _add_wind(level: Node) -> void:
 	for node in level.find_children("*", "MeshInstance3D", true, false):
 		Level3DWind.apply(node)
 	Level3DWind.set_stepped(args.has("--wind-steps"))
+
+
+# What the rockets and the rounds mark where they strike (Level3DMarks): the
+# walls, the bunkers, the sandbags and the rocks of the stage, and the
+# buildings, every part that can be hit -- the ruins' walls as well as the
+# intact ones, so that the soot of a rocket that brought a barracks down is
+# on what is left of it.
+func _add_marks(level: Node) -> void:
+	for node in level.find_children("*", "MeshInstance3D", true, false):
+		var object_name := String(node.name)
+		if _kind_of(object_name) == "wall" \
+				or TARGET_NAMES.any(func(prefix): return object_name.begins_with(prefix)):
+			Level3DMarks.apply(node)
+	for building in destructibles:
+		for node in destructibles[building].root.find_children("*", "MeshInstance3D", true, false):
+			if not NOT_TARGET_PARTS.any(func(part): return node.name.contains(part)):
+				Level3DMarks.apply(node)
 
 
 # Palm fronds and the like are single planes, and Compatibility culls front
@@ -745,6 +765,40 @@ func _ground_at(x: float, z: float, mask := GROUND_LAYER) -> Dictionary:
 	if hit.is_empty():
 		return {"height": 0.0, "kind": "", "hit": false}
 	return {"height": hit.position.y, "kind": _kinds.get(hit.rid, "ground"), "hit": true}
+
+
+# Where a round or a rocket that stopped at `at`, going `travel`, is seen to
+# strike, for the mark it leaves (Level3DMarks): the grid stops it anywhere in
+# a solid tile, which is often inside the wall or the rock drawn on it, or in
+# front of it, and a mark there would lie on nothing. {"hit", "position",
+# "normal", "kind", "colour"}: on the face it flew into, level, from
+# STRIKE_BACK short of `at` to as far past it; on the top, if it came down on
+# one or finds no face -- a round aimed over a low rock stops above it.
+# `colour` is the struck surface's, for its rubble.
+const STRIKE_BACK := 1.0
+const ON_TOP := 0.02
+
+func _strike_at(at: Vector3, travel: Vector3) -> Dictionary:
+	var space := get_world_3d().direct_space_state
+	var flat := Vector3(travel.x, 0.0, travel.z).normalized()
+	var hit := {}
+	var top := _surface_at(at.x, at.z)
+	if flat != Vector3.ZERO and not (top.hit and at.y >= top.height - ON_TOP):
+		hit = space.intersect_ray(PhysicsRayQueryParameters3D.create(at - flat * STRIKE_BACK,
+				at + flat * STRIKE_BACK, SOLID_LAYER | TARGET_LAYER))
+	if hit.is_empty():
+		hit = space.intersect_ray(PhysicsRayQueryParameters3D.create(at + Vector3.UP * STRIKE_BACK,
+				at + Vector3.DOWN * STRIKE_BACK, GROUND_LAYER | SOLID_LAYER | TARGET_LAYER))
+	if hit.is_empty():
+		return {"hit": false}
+	var colour := Color.GRAY
+	var mesh_instance := (hit.collider as Node).get_parent() as MeshInstance3D
+	if mesh_instance != null and mesh_instance.mesh != null:
+		var material := mesh_instance.mesh.surface_get_material(0) as BaseMaterial3D
+		if material != null:
+			colour = material.albedo_color
+	return {"hit": true, "position": hit.position, "normal": hit.normal,
+			"kind": _kinds.get(hit.rid, "ground"), "colour": colour}
 
 
 # What the hull sits on: the ground, and the ramps over the bunkers that have
@@ -1672,6 +1726,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				for building in destructibles:
 					_set_destroyed(building, false)
 				launcher.clear_craters()
+				Level3DMarks.clear()
 				guns.reset()
 				soldiers.reset()
 				boats.reset()

@@ -75,6 +75,9 @@ const TRUNK_THROW := 0.25
 const TRUNK_REACH := 0.8
 const FOREST_THROW := 0.1
 const FOREST_REACH := 1.4
+# A round that strikes a wall or a building leaves a pock (Level3DMarks) this
+# many metres round: a few of the game's pixels.
+const POCK_RADIUS := Vector2(0.05, 0.08)
 
 # `ground.call(x, z)` as the BTR has it; `surface.call(x, z)` the same over
 # everything that stands on the ground as well -- walls, trunks, buildings --
@@ -82,6 +85,9 @@ const FOREST_REACH := 1.4
 # the hangars' pads, the gate's sill), "wall", "trunk" or "building".
 var ground: Callable
 var surface: Callable
+# `strike.call(at, travel)`: the face a round the grid stopped at `at` is seen
+# to strike, for its pock -- level3d_preview.gd's _strike_at.
+var strike: Callable
 var btr: Level3DBtr
 var trigger := false
 var turbo := true
@@ -198,6 +204,14 @@ func _fire() -> void:
 		# A solid tile the scene has as bare ground is the grid's rock or
 		# sandbag, drawn smaller than its tile.
 		kind = top.kind if top.hit and not (top.kind in ["ground", ""]) else "wall"
+		# On the face itself, where its pock lies, rather than wherever in the
+		# tile the grid stopped it.
+		if strike.is_valid():
+			var hit: Dictionary = strike.call(point, direction)
+			if hit.hit and hit.kind in Level3DMarks.KINDS:
+				point = hit.position
+				normal = hit.normal
+				kind = hit.kind
 	var line := point - from
 	var found := {}
 	if intercept.is_valid():
@@ -205,7 +219,7 @@ func _fire() -> void:
 		if not found.is_empty():
 			point = from.lerp(point, found.t)
 			normal = -line.normalized()
-			kind = "building"
+			kind = "unit"
 
 	_round(from, point, kind, normal, line.normalized(), found)
 	# A star at the bore, rocked about it and sized afresh each round so a
@@ -265,10 +279,13 @@ func _impact(at: Vector3, kind: String, normal: Vector3, travel: Vector3) -> voi
 			# From behind the hit, along the round's way: the palm is knocked on.
 			Level3DWind.blast(at - Vector3(travel.x, 0.0, travel.z).normalized() * TRUNK_BACK,
 					TRUNK_THROW, TRUNK_REACH)
-		"wall", "building":
+		"wall", "building", "unit":
 			_chips(at, normal, travel, "spark", 4)
 			_chips(at, normal, travel, "stone", 3)
 			_puffs(at, "stone", 1, 0.15, 0.25)
+			# Not on an enemy, which moves and is not painted.
+			if kind != "unit":
+				Level3DMarks.pock(at, _rng.randf_range(POCK_RADIUS.x, POCK_RADIUS.y))
 		"hard":
 			# Concrete underfoot: what a wall throws, no sand.
 			_chips(at, normal, travel, "spark", 3)
