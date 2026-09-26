@@ -1252,6 +1252,9 @@ func _add_guns(level: Node) -> void:
 		root.name = "Gun_" + bunker_name
 		add_child(root)
 		root.global_transform = bunker.global_transform
+		# Lit by the gun's flash, and the bunker round it (Level3DGuns.muzzle_flash).
+		Level3DFx.flash_lit(root, Level3DFx.ENEMY_FLASH_LAYER)
+		Level3DFx.flash_lit(bunker, Level3DFx.ENEMY_FLASH_LAYER)
 		var player := root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 		_sharpen_visibility(player.get_animation(DESTRUCTION_ANIMATION))
 		_cast_both_sides_of_planes(root)

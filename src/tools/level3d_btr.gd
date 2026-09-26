@@ -282,7 +282,9 @@ func _ready() -> void:
 	var scene: PackedScene = load(path)
 	_model = scene.instantiate()
 	add_child(_model)
-	_model.transform = Transform3D(Basis(Vector3.UP, vehicle.facing).scaled(Vector3.ONE * model_scale), Vector3.ZERO)
+	# Lit by its own gun's and launcher's flashes, and only it (Level3DFx.flash_light).
+	Level3DFx.flash_lit(_model)
+	_model.transform =Transform3D(Basis(Vector3.UP, vehicle.facing).scaled(Vector3.ONE * model_scale), Vector3.ZERO)
 	_hull = _model.find_child(prefix + "Hull", true, false)
 	_ahead = Basis(Vector3.UP, -vehicle.facing) * Vector3.RIGHT
 	_across = Vector3.UP.cross(_ahead)

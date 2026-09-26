@@ -349,6 +349,8 @@ func _spawn(x: float, y: float, from_top: bool) -> void:
 	t.root = _scene.instantiate() as Node3D
 	t.root.scale = Vector3.ONE * SCALE
 	add_child(t.root)
+	# Lit by its own flash (Level3DGuns.muzzle_flash).
+	Level3DFx.flash_lit(t.root, Level3DFx.ENEMY_FLASH_LAYER)
 	_split_players(t)
 	t.skeleton = t.root.find_child("Skeleton3D", true, false) as Skeleton3D
 	t.turret_bone = t.skeleton.find_bone("Turret")

@@ -318,6 +318,8 @@ func _spawn(x: float, y: float, type: int) -> void:
 	s.root = _scene.instantiate() as Node3D
 	s.root.scale = Vector3.ONE * model.scale
 	add_child(s.root)
+	# Lit by its own flash (Level3DGuns.muzzle_flash).
+	Level3DFx.flash_lit(s.root, Level3DFx.ENEMY_FLASH_LAYER)
 	s.player = s.root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	for clip in [WALK, AIM]:
 		s.player.get_animation(clip).loop_mode = Animation.LOOP_LINEAR

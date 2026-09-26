@@ -213,6 +213,39 @@ static func flash(holder: Node3D, mesh: Mesh, material: Material, length: float,
 	return parts
 
 
+# A flash's light: what a shot throws on the hull that fired it, warm, for as
+# long as the flash lasts. On the hull and nothing else -- what flash_lit has
+# put on FLASH_LAYER -- since even at attenuation 0 a light fades out over the
+# outer half of its range, and on the sand that was a soft halo, the gradient
+# the two-tone light is there not to have (the preview's _toon). `reach` is
+# wide enough for the hull to lie in the even middle of it, so that a face is
+# lit by it or not. No shadow. Hidden, and out of every mesh's light count,
+# until the caller lights it. The player's side and the enemies' have a layer
+# each, ENEMY_FLASH_LAYER theirs: a flash lights its own side, since a unit
+# near another's flash lies in the fading edge of it.
+const FLASH_GLOW := Color(1.0, 0.8, 0.5)
+const FLASH_LAYER := 1 << 9
+const ENEMY_FLASH_LAYER := 1 << 10
+
+static func flash_light(parent: Node, reach: float, layer := FLASH_LAYER) -> OmniLight3D:
+	var light := OmniLight3D.new()
+	light.light_color = FLASH_GLOW
+	light.light_cull_mask = layer
+	light.omni_range = reach
+	light.omni_attenuation = 0.0
+	light.shadow_enabled = false
+	light.light_specular = 0.0
+	light.visible = false
+	parent.add_child(light)
+	return light
+
+
+# Everything under `root` taken into `layer`, lit by that side's flashes.
+static func flash_lit(root: Node, layer := FLASH_LAYER) -> void:
+	for node in root.find_children("*", "GeometryInstance3D", true, false):
+		(node as GeometryInstance3D).layers |= layer
+
+
 static func set_fire(parts: Array, age: float, burn := 0.0) -> void:
 	for part in parts:
 		(part as GeometryInstance3D).set_instance_shader_parameter("age", age)

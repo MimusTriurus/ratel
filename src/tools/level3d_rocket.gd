@@ -74,6 +74,12 @@ const LAUNCH_SPEED := 6.0
 const THRUST := 60.0
 const TOP_SPEED := 28.0
 const KICK := 0.6
+# The launch's light (_launch_light): energy, metres round, seconds going out,
+# and how far over the round's middle.
+const LAUNCH_LIGHT_ENERGY := 1.6
+const LAUNCH_LIGHT_REACH := 6.0
+const LAUNCH_LIGHT_TIME := 0.18
+const LAUNCH_LIGHT_LIFT := 0.2
 const SMOKE_EVERY := 0.012
 const CRATERS_KEPT := 40
 # A crater smaller than this is not worth drawing; its rim may stand this far
@@ -512,6 +518,7 @@ func _launch() -> void:
 		_mortar_blast(start + heading * _nose * entry.scale, heading)
 	else:
 		_back_blast(frame * (_centre + _axis * _tail), -heading, BACK_BLAST[weapon_level()])
+	_launch_light(start)
 	_place_on_arc(entry, 0.0)
 	_rockets.append(entry)
 	btr.recoil(heading, KICK)
@@ -1080,6 +1087,21 @@ func _embers(at: Vector3) -> void:
 			ember.set_instance_shader_parameter("age", k)
 			ember.set_instance_shader_parameter("burn", clampf((k - 0.7) / 0.3, 0.0, 1.0))
 		_start(ember, fly, life)
+
+
+# The launch's light on the hull (Level3DFx.flash_light), as the
+# machine gun's flash lights it (Level3DGun.FLASH_ENERGY) but bigger and
+# longer, the back blast's or the bomb's charge: up in a flash, out over
+# LAUNCH_LIGHT_TIME. Over the mount, so that it takes the hull's top.
+func _launch_light(at: Vector3) -> void:
+	var light := Level3DFx.flash_light(get_parent(), LAUNCH_LIGHT_REACH)
+	light.global_position = at + Vector3.UP * LAUNCH_LIGHT_LIFT
+	light.light_energy = 0.0
+	light.visible = true
+	var tween := light.create_tween()
+	tween.tween_property(light, "light_energy", LAUNCH_LIGHT_ENERGY, 0.02)
+	tween.tween_property(light, "light_energy", 0.0, LAUNCH_LIGHT_TIME).set_ease(Tween.EASE_IN)
+	tween.tween_callback(light.queue_free)
 
 
 # Blast_Light's curve, shortened: the stage's destruction lights 700 W for a

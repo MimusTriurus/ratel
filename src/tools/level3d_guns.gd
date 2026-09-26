@@ -88,6 +88,14 @@ const BUNKER_FLASH := 1.8
 const TANK_FLASH := 1.8
 const BOAT_FLASH := 1.5
 const RIFLE_FLASH := 1.0
+# The flash's light on the unit that fired it, as the jeep's lights the jeep
+# (Level3DGun.FLASH_ENERGY): the energy it is lit at, going out with the star,
+# and how far round and how far over the muzzle it is, at size 1 -- scaled as
+# the star is. Far enough for the hull to lie in its even middle, as the
+# jeep's; any further and it reached the soldiers round a bunker.
+const FLASH_ENERGY := 1.0
+const FLASH_REACH := 2.5
+const FLASH_LIFT := 0.15
 # Where the destruction's blast goes off, and its size: GUN_CENTRE and the
 # scale in jackal_bunker_dest.py.
 const BLAST_HEIGHT := 0.85
@@ -306,7 +314,8 @@ func _fire(gun: Gun) -> void:
 
 # A flash at a gun's muzzle, a star of fire long along `direction`, rocked
 # about it at random, for FLASH_TIME, cooling as it goes (Level3DFx.flash).
-# Then a wisp of smoke drifts off where it was. `size` scales all of it: 1 is
+# Then a wisp of smoke drifts off where it was. It lights the unit that fired
+# it while it burns (FLASH_ENERGY). `size` scales all of it: 1 is
 # the jeep's machine gun, and each enemy has its own (BUNKER_FLASH and the
 # rest). The round that sets off with it is kept out of sight until it is out
 # (enemy_bullet's `behind_flash`): drawn over everything, it would sit on the
@@ -324,6 +333,14 @@ func muzzle_flash(at: Vector3, direction: Vector3, size := 1.0) -> void:
 	cool.set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
 	cool.tween_method(func(t: float): Level3DFx.set_fire(parts, t / FLASH_TIME), 0.0, FLASH_TIME, FLASH_TIME)
 	cool.tween_callback(holder.queue_free)
+	var light := Level3DFx.flash_light(self, FLASH_REACH * size, Level3DFx.ENEMY_FLASH_LAYER)
+	light.global_position = at + Vector3.UP * FLASH_LIFT * size
+	light.light_energy = FLASH_ENERGY
+	light.visible = true
+	var fade := light.create_tween()
+	fade.set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
+	fade.tween_property(light, "light_energy", 0.0, FLASH_TIME)
+	fade.tween_callback(light.queue_free)
 	var wisp := MeshInstance3D.new()
 	wisp.mesh = _wisp_mesh
 	wisp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

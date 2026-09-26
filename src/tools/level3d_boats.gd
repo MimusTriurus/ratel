@@ -233,6 +233,8 @@ func _spawn(x: float, y: float) -> void:
 	b.root.scale = Vector3.ONE * SCALE
 	b.root.rotation.y = atan2(HEADING.x, HEADING.y)
 	add_child(b.root)
+	# Lit by its own flash (Level3DGuns.muzzle_flash).
+	Level3DFx.flash_lit(b.root, Level3DFx.ENEMY_FLASH_LAYER)
 	_split_players(b)
 	_add_foam(b)
 	b.skeleton = b.root.find_child("Skeleton3D", true, false) as Skeleton3D

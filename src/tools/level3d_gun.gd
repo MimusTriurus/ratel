@@ -63,6 +63,13 @@ const MIN_RANGE := 1.5
 const RANGE_JITTER := 0.05
 const ROUND_SPEED := 70.0
 const FLASH_TIME := 0.05
+# The flash's light on the hull (Level3DFx.flash_light), going out with the
+# star: the energy it is lit at, and how far round -- the whole hull, with
+# room. Just over the bore, so that it takes the hull's top rather than only
+# what faces the muzzle.
+const FLASH_ENERGY := 1.0
+const FLASH_REACH := 5.0
+const FLASH_LIFT := 0.15
 const RECOIL_KICK := 0.12
 # PlayerBullet, at the map's PX: it moves VELOCITY a tick and is gone on the
 # tick its count passes TRAVEL_TIME, so it covers TRAVEL_TIME + 1 moves.
@@ -112,6 +119,7 @@ var _rng := RandomNumberGenerator.new()
 var _flash: Node3D
 var _flash_parts: Array[MeshInstance3D] = []
 var _flash_left := 0.0
+var _flash_light: OmniLight3D
 var _fire_mesh: ArrayMesh
 var _puff_mesh: ArrayMesh
 var _chip_mesh: ArrayMesh
@@ -131,6 +139,7 @@ func _ready() -> void:
 	var model := btr.muzzle_node().global_basis.get_scale().x
 	_flash_parts = Level3DFx.flash(_flash, _fire_mesh, fire, Level3DFx.FLASH_LENGTH / model,
 			Level3DFx.FLASH_WIDTH / model)
+	_flash_light = Level3DFx.flash_light(self, FLASH_REACH)
 
 	_puff_mesh = Level3DFx.ball(1, 0.12, 1)
 	_chip_mesh = Level3DFx.ball(0, 0.25, 2)
@@ -174,6 +183,10 @@ func step(delta: float) -> void:
 		_flash.visible = false
 	elif _flash.visible:
 		Level3DFx.set_fire(_flash_parts, 1.0 - _flash_left / FLASH_TIME)
+	_flash_light.visible = _flash.visible and btr.visible
+	if _flash_light.visible:
+		_flash_light.global_position = btr.muzzle().origin + Vector3.UP * FLASH_LIFT
+		_flash_light.light_energy = FLASH_ENERGY * _flash_left / FLASH_TIME
 
 
 func _fire() -> void:
