@@ -9,12 +9,13 @@ extends RefCounted
 # The glbs still carry the contour as a surface of every mesh, the Solidify's
 # shell, in a `*Contour` material. That surface is dropped and a hull made in
 # its place out of the mesh's own triangles, all its surfaces together, which
-# level3d_hull.gdshader grows by `width` in the world and draws from behind
-# only -- the same inverted hull, grown on the GPU, one width for every model,
-# Level3DFx.CONTOUR, rather than one baked into each glb for the scale it was
-# built to stand at in the preview, which has drifted since: the jeep's was
-# baked for 0.31 and stands at 0.375, 1.7 cm. --baked-contour draws the glbs'
-# own, to compare.
+# level3d_hull.gdshader grows and draws from behind only -- the same inverted
+# hull, grown on the GPU, one width for every model: PIXELS on the screen,
+# near or far, zoomed in or out (level3d_hull.gdshaderinc). The glbs' was
+# baked in metres for the scale each was built to stand at in the preview,
+# which has drifted since -- the jeep's for 0.31, and it stands at 0.375 --
+# and was 1.4 cm or so, which the camera, far up, drew a pixel wide.
+# --baked-contour draws the glbs' own, to compare.
 #
 # The normals it is grown along are not the mesh's: the models are flat, so
 # every corner is a vertex per face, each with its face's normal, and grown
@@ -43,6 +44,12 @@ const SHADER := preload("res://src/tools/level3d_hull.gdshader")
 # How far a part's line may reach, as a share of the part's size: a part
 # shrinking to nothing takes its line with it (level3d_hull.gdshaderinc).
 const REACH := 1.0 / 6.0
+# The line, in pixels of a frame 1080 high (level3d_hull.gdshaderinc): thick,
+# as Chinatown Wars draws its cars and people.
+const PIXELS := 3.0
+# A position whose faces' normals, summed, come to less than this share of
+# what they would pointing one way has no normal (_smooth_normals).
+const DEGENERATE := 0.25
 
 static var _material: ShaderMaterial
 static var _made := {}  # a glb's Mesh -> the same with the engine's hull
@@ -53,7 +60,7 @@ static func material() -> ShaderMaterial:
 		_material = ShaderMaterial.new()
 		_material.resource_name = HULL_NAME
 		_material.shader = SHADER
-		_material.set_shader_parameter("width", Level3DFx.CONTOUR)
+		_material.set_shader_parameter("pixels", PIXELS)
 	return _material
 
 
@@ -75,6 +82,10 @@ static func _rebuild(mesh: ArrayMesh) -> ArrayMesh:
 	var baked := -1
 	for surface in mesh.get_surface_count():
 		var material := mesh.surface_get_material(surface)
+		# Made here already -- a copy of a node that had it, the ground's
+		# shadow casters (_holed_ground) -- and the hull is no baked shell.
+		if is_hull(material):
+			return mesh
 		if material != null and material.resource_name.ends_with("Contour"):
 			baked = surface
 	if baked < 0 or mesh.get_blend_shape_count() > 0:
@@ -118,16 +129,21 @@ static func _rebuild(mesh: ArrayMesh) -> ArrayMesh:
 	var aabb := AABB(positions[0], Vector3.ZERO)
 	for p in positions:
 		aabb = aabb.expand(p)
+	# The normals over every face, as Blender's are; the hull without the
+	# faces that are bare all round, which would lie on the part and be culled.
+	# A position with no normal to speak of is bare too: grown along a normal
+	# that is next to nothing, the hull of a frond went every way, across its
+	# face, and the palm came out black.
+	var normals := _smooth_normals(positions, flat, indices)
 	var reach := PackedVector2Array()
 	reach.resize(positions.size())
 	var bare := PackedByteArray()
 	bare.resize(positions.size())
 	for i in positions.size():
-		bare[i] = 1 if kept_in.has(_key(positions[i])) else 0
+		bare[i] = 1 if kept_in.has(_key(positions[i])) or normals[i] == Vector3.ZERO else 0
+		if normals[i] == Vector3.ZERO:
+			normals[i] = flat[i]
 		reach[i] = Vector2(0.0 if bare[i] else aabb.get_longest_axis_size() * REACH, 0.0)
-	# The normals over every face, as Blender's are; the hull without the
-	# faces that are bare all round, which would lie on the part and be culled.
-	var normals := _smooth_normals(positions, flat, indices)
 	var lined := PackedInt32Array()
 	for t in range(0, indices.size() - 2, 3):
 		if not (bare[indices[t]] and bare[indices[t + 1]] and bare[indices[t + 2]]):
@@ -155,7 +171,8 @@ static func _key(p: Vector3) -> Vector3i:
 
 # The angle-weighted normal of each position, whichever vertices share it.
 # Which way a face points is its vertices' own normals' to say, not its
-# winding's.
+# winding's. Zero where the faces round a position point every which way and
+# all but cancel (DEGENERATE): a sheet with both its sides, a palm's frond.
 static func _smooth_normals(positions: PackedVector3Array, flat: PackedVector3Array,
 		indices: PackedInt32Array) -> PackedVector3Array:
 	var key_of := PackedInt32Array()
@@ -168,6 +185,8 @@ static func _smooth_normals(positions: PackedVector3Array, flat: PackedVector3Ar
 		key_of[i] = keys[key]
 	var sums := PackedVector3Array()
 	sums.resize(keys.size())
+	var angles := PackedFloat32Array()
+	angles.resize(keys.size())
 	for t in range(0, indices.size() - 2, 3):
 		var a := positions[indices[t]]
 		var b := positions[indices[t + 1]]
@@ -183,8 +202,10 @@ static func _smooth_normals(positions: PackedVector3Array, flat: PackedVector3Ar
 			var p: Vector3 = corners[k][0]
 			var angle: float = (corners[k][1] - p).angle_to(corners[k][2] - p)
 			sums[key_of[indices[t + k]]] += face * angle
+			angles[key_of[indices[t + k]]] += angle
 	var normals := PackedVector3Array()
 	normals.resize(positions.size())
 	for i in positions.size():
-		normals[i] = sums[key_of[i]].normalized()
+		var sum := sums[key_of[i]]
+		normals[i] = sum.normalized() if sum.length() > DEGENERATE * angles[key_of[i]] else Vector3.ZERO
 	return normals

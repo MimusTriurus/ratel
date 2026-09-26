@@ -509,7 +509,7 @@ func _holed_ground(root: Node) -> void:
 				var holed := ShaderMaterial.new()
 				if hull:
 					holed.shader = GROUND_CONTOUR_SHADER
-					holed.set_shader_parameter("width", Level3DFx.CONTOUR)
+					holed.set_shader_parameter("pixels", Level3DHull.PIXELS)
 				else:
 					holed.shader = GROUND_SHADER
 					holed.set_shader_parameter("albedo", (material as BaseMaterial3D).albedo_color)

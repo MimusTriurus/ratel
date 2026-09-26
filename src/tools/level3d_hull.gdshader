@@ -7,7 +7,7 @@ render_mode unshaded, cull_front, shadows_disabled;
 #include "res://src/tools/level3d_hull.gdshaderinc"
 
 void vertex() {
-	VERTEX = hull_grown(VERTEX, NORMAL, UV.x, MODEL_MATRIX);
+	VERTEX = hull_grown(VERTEX, NORMAL, UV.x, MODEL_MATRIX, MODELVIEW_MATRIX, PROJECTION_MATRIX);
 }
 
 void fragment() {
