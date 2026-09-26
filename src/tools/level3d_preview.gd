@@ -213,6 +213,7 @@ func _ready() -> void:
 	# contour from the engine (_engine_contour).
 	get_tree().node_added.connect(_toon)
 	Level3DHull.creases = OS.get_cmdline_user_args().has("--engine-creases")
+	Level3DHull.drawn = not OS.get_cmdline_user_args().has("--no-contour")
 	if not OS.get_cmdline_user_args().has("--baked-contour"):
 		get_tree().node_added.connect(_engine_contour)
 	var scene: PackedScene = load(LEVEL_PATH)
@@ -426,7 +427,7 @@ func _toon(node: Node) -> void:
 
 # The contour, grown by a shader in place of the Solidify's shell the glbs
 # carry (Level3DHull, docs/cel-shading.md, section 5). --baked-contour keeps
-# the shell, to compare the two.
+# the shell, to compare the two; --no-contour draws neither.
 func _engine_contour(node: Node) -> void:
 	if node is MeshInstance3D:
 		Level3DHull.apply(node)
@@ -1740,7 +1741,7 @@ func _screenshot_mode() -> void:
 		args.remove_at(immortal)
 	# Level3DSoldiers and Level3DBtr read these for themselves; they are not
 	# waypoints.
-	for own in ["--sprite-soldiers", "--btr", "--baked-contour", "--engine-creases", "--btr-noline"]:
+	for own in ["--sprite-soldiers", "--btr", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour"]:
 		var at := args.find(own)
 		if at >= 0:
 			args.remove_at(at)

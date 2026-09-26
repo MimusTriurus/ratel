@@ -54,6 +54,9 @@ const DEGENERATE := 0.25
 # A prototype, --engine-creases: the lines along the sharp edges too
 # (Level3DCreases).
 static var creases := false
+# --no-contour: the baked shell goes and no hull takes its place, to see what
+# is left black without a line -- the paint.
+static var drawn := true
 
 static var _material: ShaderMaterial
 static var _made := {}  # a glb's Mesh -> the same with the engine's hull
@@ -100,6 +103,8 @@ static func _rebuild(mesh: ArrayMesh) -> ArrayMesh:
 		kept_in[_key(p)] = true
 	var out := mesh.duplicate() as ArrayMesh
 	out.surface_remove(baked)
+	if not drawn:
+		return out
 	var positions := PackedVector3Array()
 	var flat := PackedVector3Array()
 	var bones := PackedInt32Array()
