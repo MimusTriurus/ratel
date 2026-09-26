@@ -825,7 +825,10 @@ func _walker_ground_at(x: float, z: float) -> Dictionary:
 
 func _with_craters(there: Dictionary, x: float, z: float) -> Dictionary:
 	if there.hit and there.kind != "water" and launcher != null:
-		there.height += launcher.crater_height(x, z)
+		# Apart as well, so that the hull can tell a crater's slope from a
+		# wall's edge (Level3DBtr._settle).
+		there.crater = launcher.crater_height(x, z)
+		there.height += there.crater
 	return there
 
 

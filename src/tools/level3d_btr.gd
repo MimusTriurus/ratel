@@ -924,31 +924,39 @@ func _update_turret(delta: float) -> void:
 	turret = wrapf(turret + clampf(diff, -budget, budget), -PI, PI)
 
 
-# Sits the vehicle on the ground under it, tilted to the ground under its ends
-# and sides.
+# Sits the vehicle on the ground under its four corners, where its wheels or
+# tracks are, tilted to them: over a crater smaller than itself it bridges it,
+# in a bigger one it lies on its slopes. It used to sit at the height under
+# its middle, tilted to its ends and sides -- in a crater that was the bowl's
+# bottom, with the rim's sand up its flanks, and a tilt that came and went as
+# the rim and the bowl under its ends parted by more than TILT_STEP.
+#
+# A corner over something higher or lower than the ground under its middle by
+# more than TILT_STEP -- a wall beside the hull, an edge -- is not what it
+# rests on: that corner takes the middle's ground. A ramp over a ruined bunker
+# is a slope however steep (RAMP_TILT_STEP). The craters are not steps: the
+# ground `ground` answers carries them apart (`crater`, level3d_preview.gd's
+# _with_craters), and the step is judged without them.
 func _settle(delta: float, snap: bool) -> void:
-	var centre: Dictionary = ground.call(position.x, position.z)
-	var target_y: float = centre.height
-	position.y = target_y if snap else lerpf(position.y, target_y, clampf(delta * 8.0, 0.0, 1.0))
-
 	var f := forward()
 	var left := Vector3(-sin(heading), 0.0, -cos(heading))
 	var half: float = vehicle.nose * 0.5 * model_scale
 	var side: float = vehicle.half_width * model_scale
-	var hf: Dictionary = ground.call(position.x + f.x * half, position.z + f.z * half)
-	var hb: Dictionary = ground.call(position.x - f.x * half, position.z - f.z * half)
-	var hl: Dictionary = ground.call(position.x + left.x * side, position.z + left.z * side)
-	var hr: Dictionary = ground.call(position.x - left.x * side, position.z - left.z * side)
-	var pitch := 0.0
-	var roll := 0.0
-	# Only over a jump it could be a slope, so a wall beside the hull does not
-	# tip it over. A ramp over a ruined bunker is a slope however steep.
-	var dp: float = hf.height - hb.height
-	var dr: float = hl.height - hr.height
-	if absf(dp) < (RAMP_TILT_STEP if "ruin" in [hf.kind, hb.kind] else TILT_STEP):
-		pitch = atan2(dp, half * 2.0)
-	if absf(dr) < (RAMP_TILT_STEP if "ruin" in [hl.kind, hr.kind] else TILT_STEP):
-		roll = atan2(dr, side * 2.0)
+	var centre: Dictionary = ground.call(position.x, position.z)
+	var centre_base: float = centre.height - centre.get("crater", 0.0)
+	# Front left, front right, back left, back right.
+	var corners: Array[float] = []
+	for way in [Vector2(1, 1), Vector2(1, -1), Vector2(-1, 1), Vector2(-1, -1)]:
+		var at: Vector3 = position + f * half * way.x + left * side * way.y
+		var there: Dictionary = ground.call(at.x, at.z)
+		var crater: float = there.get("crater", 0.0)
+		var step := RAMP_TILT_STEP if "ruin" in [there.kind, centre.kind] else TILT_STEP
+		corners.append(there.height if absf(there.height - crater - centre_base) < step
+				else centre_base + crater)
+	var target_y := (corners[0] + corners[1] + corners[2] + corners[3]) / 4.0
+	position.y = target_y if snap else lerpf(position.y, target_y, clampf(delta * 8.0, 0.0, 1.0))
+	var pitch := atan2((corners[0] + corners[1] - corners[2] - corners[3]) * 0.5, half * 2.0)
+	var roll := atan2((corners[0] + corners[2] - corners[1] - corners[3]) * 0.5, side * 2.0)
 	# Only the slope is eased, in the hull's own axes; the heading is taken as it
 	# is. Eased with it, the hull trailed its heading by an eighth of a second,
 	# which a classic 45 degree step turned into a launcher 16 degrees off the
