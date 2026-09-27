@@ -140,6 +140,14 @@ uniform float sun_gain = 1.0;
 // shadows (SHADE there), but the Blender world's blue it always had: added
 // here, as the ambient would have been, to what the sun lights.
 uniform vec3 sky = vec3(0.041, 0.066, 0.12);
+// What a shadow on the water keeps of the sun: the preview's SHADE, the share
+// the land's shadows are lifted to. The sun is the only light the water has --
+// the world's blue is a fraction of it, and Compatibility, which takes
+// EMISSION for sRGB, darkens that to next to nothing -- so a shadow took all
+// of it away, and the cliff's on the water read as a black hole cut in it:
+// the wedge off the spit's nose, the strip down the river's west bank, the
+// water under the bridge.
+uniform float shade = 0.3;
 
 varying vec3 world;
 varying float shore;
@@ -378,7 +386,18 @@ void light() {
 	float fd90_minus_1 = 2.0 * cldh * cldh * ROUGHNESS - 0.5;
 	float fdv = 1.0 + fd90_minus_1 * pow(1.0 - cndv, 5.0);
 	float fdl = 1.0 + fd90_minus_1 * pow(1.0 - cndl, 5.0);
-	DIFFUSE_LIGHT += LIGHT_COLOR * (fdv * fdl * cndl / PI) * ATTENUATION;
+	// The sun's alone, and the lifted shadow with it. The omni lights -- a
+	// blast's, 6 m round (level3d_rocket.gd, _light), the rolling fire's -- light
+	// the water only by their glint, below. On the two-tone sand they add to a
+	// colour already at its brightest and show as nothing, but they lit the dark
+	// water as a halo the width of the river, which is the gradient the two-tone
+	// light is there not to have (Level3DFx.flash_light), and read as the water
+	// glowing. The lift made it worse: on an omni light ATTENUATION is its
+	// fall-off with distance as well, so every bit of water in its reach took a
+	// third of its full light, and sun_gain, on ALBEDO, doubled it.
+	if (LIGHT_IS_DIRECTIONAL) {
+		DIFFUSE_LIGHT += LIGHT_COLOR * (fdv * fdl * cndl / PI) * mix(shade, 1.0, ATTENUATION);
+	}
 
 	float spark = pow(max(dot(NORMAL, half_v), 0.0), gloss) * glint;
 	vec3 hue = LIGHT_COLOR / max(max(LIGHT_COLOR.r, LIGHT_COLOR.g), max(LIGHT_COLOR.b, 1e-4));
