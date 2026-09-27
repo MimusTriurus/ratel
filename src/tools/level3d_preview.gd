@@ -116,8 +116,9 @@
 # (level3d_rescue.gd).
 #
 # The stage opens as the game's does: a Chinook flies the BTR in, backs it out
-# down its ramp and flies off, and only then is it the player's, at
-# IntroPlayer's spot rather than START (level3d_chinook.gd). A --shot starts
+# down its ramp and flies off; the BTR is the player's, at IntroPlayer's spot
+# rather than START, as soon as it is out, not once the Chinook has gone as in
+# the game (level3d_chinook.gd). A --shot starts
 # without it, at START, unless --intro is given, when the seconds count from
 # the Chinook's arrival.
 #
@@ -203,6 +204,7 @@ var tanks: Level3DTanks
 var boss: Level3DBoss
 var map: Level3DMap
 var chinook: Level3DChinook     # while it is flying the BTR in
+var helicopter: Level3DChinook  # the same, until it has gone: it outlives the run
 var level_aabb: AABB
 var focus := Vector2.ZERO       # x, z the camera is centred on
 var following := true
@@ -318,9 +320,11 @@ func _ready() -> void:
 # The Chinook's run, from the top: Triggers.CHINOOK, which the stage fires on
 # its first row. Nothing is the player's until it is over.
 func _start_intro() -> void:
-	if chinook != null:
-		chinook.queue_free()
+	if helicopter != null:
+		helicopter.queue_free()
 	chinook = Level3DChinook.new()
+	helicopter = chinook
+	chinook.left = func(): helicopter = null
 	chinook.ground = _ground_at
 	chinook.btr = btr
 	chinook.dust = func(at: Vector3, across: Vector3, out: Vector3, size: float, count: int):
@@ -1227,7 +1231,7 @@ func _add_guns(level: Node) -> void:
 		return map.is_solid(p.x, p.y)
 	guns.player_attack = _attack_player
 	guns.hull = func(at: Vector3) -> Dictionary:
-		return chinook.strike(at) if chinook != null else {}
+		return helicopter.strike(at) if helicopter != null else {}
 	guns.player_position = func(): return Vector2(btr.position.x, btr.position.z)
 	guns.blast = _spawn_blast
 	guns.scored = func(points: int): _set_score(_score + points)
@@ -1581,8 +1585,8 @@ func _update_camera() -> void:
 	# Over the Chinook while it comes in: it is drawn at the original's scale
 	# for its height, which takes it well above the usual 20 m.
 	var height := TOP_CAMERA_HEIGHT
-	if chinook != null:
-		height = maxf(height, chinook.top() + 1.0)
+	if helicopter != null:
+		height = maxf(height, helicopter.top() + 1.0)
 	# The frame stays on the level: at zoom 1 it is exactly the level's width,
 	# so x is pinned to the middle, as the game's camera_x is.
 	focus.x = clampf(focus.x, level_aabb.position.x + half_width, level_aabb.end.x - half_width)
@@ -1697,9 +1701,10 @@ func _physics_process(delta: float) -> void:
 	var gone := false
 	# The Chinook's run: Chinook sets GameMode.playing false, and the player
 	# is not updated until it is over.
+	if helicopter != null:
+		helicopter.tick()
 	if chinook != null:
-		chinook.tick()
-		gone = chinook != null
+		gone = true
 	elif _respawning > 0:
 		_respawning -= 1
 		if _respawning == 0:
@@ -1793,8 +1798,8 @@ func _process(delta: float) -> void:
 	# The game flashes the jeep through four palettes a frame while it is
 	# invincible; the BTR has one, so it blinks -- the model, not its shadow
 	# or its tracks (Level3DBtr.blink).
-	if chinook != null:
-		chinook.enlarge = not tilted
+	if helicopter != null:
+		helicopter.enlarge = not tilted
 	elif _respawning == 0:
 		_blink = _blink + 1 if _invincible > 0 else 0
 		btr.blink(_blink % 4 < 2)

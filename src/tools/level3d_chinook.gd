@@ -13,7 +13,8 @@
 #     at IntroPlayer's FINAL_X, FINAL_Y.
 #   * Out along another quarter circle, climbing and turning west, until it
 #     has turned 38 degrees; then it is gone and the BTR is the player's,
-#     invincible, as Player.make_invincible has it.
+#     invincible, as Player.make_invincible has it. Here the BTR is the
+#     player's as soon as it is at FINAL_X, FINAL_Y (_hand_over).
 #
 # What is not the original's, and why:
 #
@@ -37,6 +38,9 @@
 #     unscaled copy of it that only casts shadows, from where it really is.
 #     ALTITUDE is set so that the shadow is as far out at the top as the
 #     original's.
+#   * The original's is gone at 38 degrees, still in the frame; this one flies
+#     on west until it is out of it (_in_frame), in the top view at the size
+#     it had there (Z_AWAY).
 #   * The enemies' rounds strike it (strike): the original's pass under the
 #     sprite, which is drawn over them, and here the rounds are drawn over
 #     everything, so they flew through it. They strike sparks off it and do
@@ -82,6 +86,8 @@ const RADIUS := 1024.0
 const ARC_CENTRE := Vector2(1540.0, 10780.0)
 const ARC_LANDING := Vector2(516.0, 10780.0)   # where the original sets down
 const AWAY_ANGLE := -128.0
+# The height it has climbed to there: z = -t * IPI2 at angle = t in degrees - 90.
+const Z_AWAY := -(AWAY_ANGLE + 90.0) / Chinook.TO_DEGREES * Chinook.IPI2
 const SOUND_VOLUME := 0.5
 
 enum { FORWARDS, OPENING, OUT, DIAGONAL, REVERSE, AWAY, DONE }
@@ -92,8 +98,11 @@ var btr: Level3DBtr
 # `dust.call(at, across, out, size, count)`: a cloud of dust off a line on the
 # ground (Level3DPuffs.cloud), which the ramp raises coming down on it.
 var dust: Callable
-# Called once, when the BTR is the player's.
+# Called once, when the BTR is the player's; and `left` once, when the
+# Chinook has gone and freed itself, which is later.
 var finished: Callable
+var left: Callable
+var handed_over := false
 # The top view: the model drawn at the original's scale for its height.
 var enlarge := true
 
@@ -282,6 +291,7 @@ func skip() -> void:
 	if state == DONE:
 		return
 	_hand_over()
+	_leave()
 
 
 # ----------------------------------------------------------------------------
@@ -336,21 +346,32 @@ func tick() -> void:
 			if delay == 0:
 				unit = Vector2(IntroPlayer.FINAL_X, IntroPlayer.FINAL_Y)
 				_unload_completed()
+				_hand_over()
 			_play_sound(SOUND_VOLUME)
 		AWAY:
 			_advance_ramp()
 			vt += Chinook.AT
-			angle = Chinook.TO_DEGREES * t - 90.0
-			z = -t * Chinook.IPI2
-			t -= vt
-			x = X + RADIUS * cos(t)
-			y = Y + RADIUS * sin(t)
-			if angle < AWAY_ANGLE:
-				_hand_over()
+			if t > -PI / 2.0:
+				angle = Chinook.TO_DEGREES * t - 90.0
+				z = -t * Chinook.IPI2
+				t -= vt
+				x = X + RADIUS * cos(t)
+				y = Y + RADIUS * sin(t)
+			else:
+				# Past the original's quarter circle (below): on west, level, at
+				# the arc's speed, and on up to the top of its climb.
+				angle = -180.0
+				x -= vt * RADIUS
+				z = minf(z + vt * Chinook.IPI2, 1.0)
+			# The original is gone at AWAY_ANGLE, still in the frame, and so was
+			# this one, in either view; it flies on until it is out of it rather
+			# than vanishing in the middle of it.
+			if angle < AWAY_ANGLE and (not _in_frame() or x < -RADIUS):
+				_leave()
 				return
 			_play_sound(SOUND_VOLUME + (angle + 90.0) / 76.0)
 	_pose()
-	if state != FORWARDS:
+	if state != FORWARDS and not handed_over:
 		_pose_unit()
 
 
@@ -363,15 +384,43 @@ func _unload_completed() -> void:
 	_play_ramp("Ramp_Close")
 
 
+# The BTR is the player's the tick it is unloaded, not when the Chinook has
+# gone as in the original: the original's jeep sat still under a sprite that
+# took another 90 ticks to turn away, and in a cabin with its ramp going up
+# that reads as the game waiting on nothing.
 func _hand_over() -> void:
-	state = DONE
+	if handed_over:
+		return
+	handed_over = true
 	btr.visible = true
 	var at := hand_over_at()
 	btr.place(Vector3(at.x, 0.0, at.y), PI / 2.0)
+	finished.call()
+
+
+func _leave() -> void:
+	state = DONE
 	if _sound != null:
 		_sound.stop()
 	queue_free()
-	finished.call()
+	if left.is_valid():
+		left.call()
+
+
+# Whether any of the Chinook, a box LEAVE_BOX metres round the middle of its
+# height, is in the camera's frame.
+const LEAVE_BOX := 4.0
+
+func _in_frame() -> bool:
+	var camera := get_viewport().get_camera_3d()
+	if camera == null or _model == null:
+		return false
+	var middle := _model.global_position + Vector3.UP * MODEL_HEIGHT * _model.scale.y * 0.5
+	for i in 8:
+		var corner := middle + Vector3(1 if i & 1 else -1, 1 if i & 2 else -1, 1 if i & 4 else -1) * LEAVE_BOX
+		if camera.is_position_in_frustum(corner):
+			return true
+	return false
 
 
 # Where the BTR is the player's, level x, z: IntroPlayer's FINAL_X, FINAL_Y.
@@ -456,7 +505,9 @@ func _pose() -> void:
 	var position_3d := Vector3(at.x, _landed_height + z * ALTITUDE, at.y)
 	# The model's nose is its +Z; a game angle a points (cos a, sin a) in x, z.
 	var facing := Basis(Vector3.UP, PI / 2.0 - deg_to_rad(angle))
-	var scale_now := Chinook.Z0 / (Chinook.Z0 - z) if enlarge else 1.0
+	# Held at its size at AWAY_ANGLE past it: the original's scale goes on to
+	# ten times at the top of the climb, which the original never drew.
+	var scale_now := Chinook.Z0 / (Chinook.Z0 - minf(z, Z_AWAY)) if enlarge else 1.0
 	_model.transform = Transform3D(facing.scaled(Vector3.ONE * MODEL_SCALE * scale_now), position_3d)
 	_shadow.transform = Transform3D(facing.scaled(Vector3.ONE * MODEL_SCALE), position_3d)
 
