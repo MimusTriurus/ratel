@@ -387,6 +387,16 @@ func camera_top() -> float:
 	return _pan_top if _armed else -1.0
 
 
+# The pan to the arena is under way (the HUD's WARNING).
+func is_panning() -> bool:
+	return _armed and not _fighting
+
+
+# All four destroyed: BossBlueTanksManager's mark_stage_completed.
+func is_defeated() -> bool:
+	return _destroyed == BossBlueTanksManager.TANKS
+
+
 # ----------------------------------------------------------------------------
 # The tick: BossBlueTanksManager, then each tank.
 

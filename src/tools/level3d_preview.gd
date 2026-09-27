@@ -1571,6 +1571,8 @@ func _make_hud() -> void:
 	layer.add_child(_banner)
 	_pad_arrow = Level3DArrow.new()
 	layer.add_child(_pad_arrow)
+	_banners = Level3DBanners.new()
+	layer.add_child(_banners)
 	var crosshair := Level3DCrosshair.new()
 	crosshair.wanted = _crosshair_wanted
 	layer.add_child(crosshair)
@@ -1640,6 +1642,35 @@ func _update_pad_arrow() -> void:
 		_pad_arrow.camera = camera
 		_pad_arrow.target = rescue.pad_position()
 	_pad_arrow.queue_redraw()
+
+
+# The three moments (Level3DBanners), each on the edge of what it marks: the
+# Chinook coming and going, the boss's pan starting and ending, the fourth
+# boss tank going. R forgets all three (_restart), so a new run shows them
+# again.
+var _banners: Level3DBanners
+var _saw_chinook := false
+var _saw_pan := false
+var _saw_defeat := false
+
+func _update_banners() -> void:
+	var on := settings.hud
+	var flying := chinook != null
+	if flying and not _saw_chinook and on and settings.banner_stage:
+		_banners.stage(1)
+	elif not flying and _saw_chinook:
+		_banners.stage_over()
+	_saw_chinook = flying
+	var panning := boss != null and boss.is_panning()
+	if panning and not _saw_pan and on and settings.banner_warning:
+		_banners.warning()
+	elif not panning and _saw_pan:
+		_banners.warning_over()
+	_saw_pan = panning
+	var defeated := boss != null and boss.is_defeated()
+	if defeated and not _saw_defeat and on and settings.banner_mission:
+		_banners.mission(rescue.rescued)
+	_saw_defeat = defeated
 
 
 # The reticle: while the mouse aims something and there is a BTR to aim it --
@@ -2052,6 +2083,7 @@ func _process(delta: float) -> void:
 	_shake_left = maxf(_shake_left - delta, 0.0)
 	_update_camera()
 	_update_pad_arrow()
+	_update_banners()
 
 
 # Q and E, the turret by hand: fixed keys, not among the ones the menu binds
@@ -2183,6 +2215,10 @@ func _restart() -> void:
 	_invincible = 0
 	_lives = EXTRA_LIVES
 	_banner.visible = false
+	_banners.clear()
+	_saw_chinook = false
+	_saw_pan = false
+	_saw_defeat = false
 	btr.visible = true
 	btr.blink(true)
 	_set_score(0)

@@ -68,6 +68,11 @@ var hud_pows := true
 var hud_weapon := true
 var hud_modes := false
 var hud_pad_arrow := true   # to the rescue helicopter, prisoners aboard
+# The three banners (Level3DBanners): STAGE 1 under the Chinook, WARNING on
+# the boss's pan, the mission's lines when it is beaten. Under `hud`.
+var banner_stage := true
+var banner_warning := true
+var banner_mission := true
 # The reticle in place of the cursor while the mouse aims (Level3DCrosshair).
 # Not under `hud`: it is how the mouse is seen, not something the HUD reports.
 var hud_crosshair := true
@@ -131,6 +136,9 @@ func load_saved() -> void:
 	hud_modes = config.get_value("interface", "modes", hud_modes)
 	hud_pad_arrow = config.get_value("interface", "pad_arrow", hud_pad_arrow)
 	hud_crosshair = config.get_value("interface", "crosshair", hud_crosshair)
+	banner_stage = config.get_value("interface", "banner_stage", banner_stage)
+	banner_warning = config.get_value("interface", "banner_warning", banner_warning)
+	banner_mission = config.get_value("interface", "banner_mission", banner_mission)
 	hud_corner = clampi(config.get_value("interface", "corner", hud_corner), 0, HudCorner.size() - 1)
 	var scale = config.get_value("interface", "scale", hud_scale)
 	hud_scale = float(scale) if (scale is int or scale is float) and HUD_SCALES.has(float(scale)) else 1.0
@@ -166,6 +174,9 @@ func save() -> void:
 	config.set_value("interface", "modes", hud_modes)
 	config.set_value("interface", "pad_arrow", hud_pad_arrow)
 	config.set_value("interface", "crosshair", hud_crosshair)
+	config.set_value("interface", "banner_stage", banner_stage)
+	config.set_value("interface", "banner_warning", banner_warning)
+	config.set_value("interface", "banner_mission", banner_mission)
 	config.set_value("interface", "corner", hud_corner)
 	config.set_value("interface", "scale", hud_scale)
 	for action in ACTIONS:

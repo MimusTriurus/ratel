@@ -54,6 +54,9 @@ var _hud_weapon: CheckBox
 var _hud_modes: CheckBox
 var _hud_pad_arrow: CheckBox
 var _hud_crosshair: CheckBox
+var _banner_stage: CheckBox
+var _banner_warning: CheckBox
+var _banner_mission: CheckBox
 var _hud_corner: OptionButton
 var _hud_scale: OptionButton
 var _key_buttons := {}       # action -> Button
@@ -144,11 +147,14 @@ func refresh() -> void:
 	_hud_modes.set_pressed_no_signal(settings.hud_modes)
 	_hud_pad_arrow.set_pressed_no_signal(settings.hud_pad_arrow)
 	_hud_crosshair.set_pressed_no_signal(settings.hud_crosshair)
+	_banner_stage.set_pressed_no_signal(settings.banner_stage)
+	_banner_warning.set_pressed_no_signal(settings.banner_warning)
+	_banner_mission.set_pressed_no_signal(settings.banner_mission)
 	_hud_corner.select(settings.hud_corner)
 	_hud_scale.select(Level3DSettings.HUD_SCALES.find(settings.hud_scale))
 	# Greyed out, not hidden, with the HUD off: what it would show stays set.
 	for widget in [_hud_score, _hud_lives, _hud_pows, _hud_weapon, _hud_modes, _hud_pad_arrow,
-			_hud_corner, _hud_scale]:
+			_banner_stage, _banner_warning, _banner_mission, _hud_corner, _hud_scale]:
 		widget.disabled = not settings.hud
 	for action in _key_buttons:
 		var button: Button = _key_buttons[action]
@@ -220,6 +226,12 @@ func _make_interface_tab() -> Control:
 	_note(tab, "Выключено: режим появляется на пару секунд, когда его меняют клавишами V и M.")
 	_hud_pad_arrow = _check(tab, "Стрелка к вертолёту", func(on: bool): settings.hud_pad_arrow = on)
 	_note(tab, "Пока на борту пленные, а вертолёт, который их заберёт, за краем экрана.")
+	tab.add_child(HSeparator.new())
+	_heading(tab, "Надписи")
+	_banner_stage = _check(tab, "Номер этапа при высадке", func(on: bool): settings.banner_stage = on)
+	_banner_warning = _check(tab, "Предупреждение о боссе", func(on: bool): settings.banner_warning = on)
+	_banner_mission = _check(tab, "Миссия выполнена и спасённые пленные",
+			func(on: bool): settings.banner_mission = on)
 	tab.add_child(HSeparator.new())
 	_hud_crosshair = _check(tab, "Прицел вместо курсора", func(on: bool): settings.hud_crosshair = on)
 	_note(tab, "В современном и комбинированном режимах стрельбы, где целятся мышью. Работает и без HUD.")
