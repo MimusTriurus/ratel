@@ -127,7 +127,8 @@
 #
 # The soldiers are the model sheet's trooper; --sprite-soldiers, with or
 # without --shot, draws them as the figure made from the game's sprite
-# (level3d_soldiers.gd, MODELS).
+# (level3d_soldiers.gd, MODELS). The dead lie where they fell; --fade-corpses
+# sinks them away as the game fades them (level3d_soldiers.gd, fade_corpses).
 extends Node3D
 
 const LEVEL_PATH := "res://resources/3d/jackal_stage1.glb"
@@ -405,6 +406,9 @@ func _replace_ocean(level: Node) -> void:
 		water.set_shader_parameter("sun_gain", 1.0 / -SUN_DIRECTION_BLENDER.z / (1.0 - SHADE))
 	water.set_shader_parameter("sky", Vector3(WORLD_COLOR.r, WORLD_COLOR.g, WORLD_COLOR.b)
 			* WORLD_STRENGTH)
+	# Its shadows lifted as the land's are, or they are black: the sun is all
+	# the light the water has.
+	water.set_shader_parameter("shade", SHADE)
 	ocean.material_override = water
 	# The water is drawn in the transparent pass, because it reads the screen;
 	# it casts nothing either way.
@@ -1957,7 +1961,7 @@ func _screenshot_mode() -> void:
 		args.remove_at(immortal)
 	# Level3DSoldiers and Level3DBtr read these for themselves; they are not
 	# waypoints.
-	for own in ["--sprite-soldiers", "--btr", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
+	for own in ["--sprite-soldiers", "--fade-corpses", "--btr", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
 			"--no-wind", "--wind-steps", "--spots"]:
 		var at := args.find(own)
 		if at >= 0:

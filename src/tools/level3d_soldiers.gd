@@ -23,7 +23,8 @@
 #     through (it does not stop them -- EnemySoldier.attack returns false), any
 #     explosion including the player's own, or being run over, which does not
 #     hurt the player. He falls, lies for 182 ticks and fades over 91; the
-#     corpse is 100 points.
+#     corpse is 100 points. Here he stays where he fell (fade_corpses), unless
+#     the preview is given --fade-corpses.
 #
 # He is drawn as the trooper of the soldier model sheet (jackal_trooper.glb,
 # jackal_soldier_lowpoly.blend) unless the preview is given --sprite-soldiers,
@@ -138,6 +139,11 @@ var run_over: Callable
 # prisoners' (level3d_friends.gd).
 var more_solids: Callable
 var verbose := false
+# DeadEnemySoldier's lie-then-fade, given --fade-corpses. Without it a corpse
+# stays where he fell until he is as far behind the frame as a live soldier
+# would be gone (Enemy.check_bounds), which is past anywhere the camera can
+# back up to.
+var fade_corpses := false
 
 # MODELS' entry for the figure he is drawn as.
 var model: Dictionary
@@ -199,6 +205,7 @@ class Soldier:
 func _ready() -> void:
 	_rng.seed = 3
 	model = MODELS["sprite" if OS.get_cmdline_user_args().has("--sprite-soldiers") else "trooper"]
+	fade_corpses = OS.get_cmdline_user_args().has("--fade-corpses")
 	_scene = load(model.path)
 	if _scene == null:
 		push_error("Cannot load %s -- run export() in its .blend" % model.path)
@@ -643,6 +650,11 @@ func _kill(i: int, by: String, knock := Vector3.ZERO) -> void:
 
 # DeadEnemySoldier.update: true when it is gone.
 func _update_corpse(s: Soldier) -> bool:
+	if not fade_corpses:
+		if s.y + SOLID.position.y > _furthest_top + CAMERA_BOUND + REMOVE_BOUND:
+			s.root.queue_free()
+			return true
+		return false
 	s.delay -= 1
 	if s.fading:
 		# render() draws it at delay / FADE_DELAY: whole until the last 91.
