@@ -149,13 +149,17 @@ const SHADE := 0.3
 
 const SUN_GAIN_COMPATIBILITY := 0.85
 const SUN_GAIN_FORWARD := 1.75
-# The water's sun and glint, given back what SHADE took of the sun
-# (_replace_ocean). Measured, as the mean colour of the sea in the opening
-# frame against the one before SHADE: the glint is not linear in F0, and
-# Compatibility's sun share is not the water's.
+# The water's sun, given back what SHADE took of it (_replace_ocean).
+# Measured, as the mean colour of the sea in the opening frame against the
+# one before SHADE: Compatibility's sun share is not the water's. The glint
+# needs no gain: the shader takes it at the sun's colour, not its energy.
 const WATER_GAIN_COMPATIBILITY := 2.7
-const WATER_GLINT_COMPATIBILITY := 1.8
-const WATER_GLINT_FORWARD := 1.2
+# The sea mask (_mark_sea): where the ocean's `open` has passed this, the
+# water is the sea; its cells are this many metres square, and grown this many
+# cells out over the shore, where `open` is nought again.
+const SEA_OPEN := 0.3
+const SEA_TEXEL := 1.0
+const SEA_REACH := 5
 # What is left of the sun once the ambient is SHADE, for a lit face to stay
 # its colour. Forward+ adds the two as it should and leaves 1 - SHADE;
 # Compatibility adds more of the ambient on a lit face than it does in
@@ -247,6 +251,8 @@ func _ready() -> void:
 	_cast_both_sides_of_planes(level)
 	_flat_ground_casts_nothing(level)
 	_add_collision(level)
+	# After the collision, which is how it tells the water from the land.
+	_mark_sea(level)
 	_add_targets(level, false)
 	# Last: it adds meshes of its own, which want no collision.
 	_holed_ground(level)
@@ -387,24 +393,115 @@ func _replace_ocean(level: Node) -> void:
 	var water := ShaderMaterial.new()
 	water.shader = OCEAN_SHADER
 	# The sun _add_lights weakened for the two-tone light, given back to the
-	# water, which is still Lambert: all of it under Forward+, where the water
-	# is as bright as it was at 1 / N.L; Compatibility's, measured the same way,
-	# needs less. And what SHADE took of the sun on top of that, in both the
-	# light and the glint. The ambient the water takes is not SHADE's grey but
-	# the Blender world it was calibrated under, which the shader adds for
-	# itself.
+	# water, which is still lit smoothly (Burley, as Godot's own diffuse): all
+	# of it under Forward+, where the water is as bright as it was at 1 / N.L;
+	# Compatibility's, measured the same way, needs less. And what SHADE took
+	# of the sun on top of that. The ambient the water takes is not SHADE's
+	# grey but the Blender world it was calibrated under, which the shader adds
+	# for itself.
 	if _is_compatibility():
 		water.set_shader_parameter("sun_gain", WATER_GAIN_COMPATIBILITY)
-		water.set_shader_parameter("glint_gain", WATER_GLINT_COMPATIBILITY)
 	else:
 		water.set_shader_parameter("sun_gain", 1.0 / -SUN_DIRECTION_BLENDER.z / (1.0 - SHADE))
-		water.set_shader_parameter("glint_gain", WATER_GLINT_FORWARD)
 	water.set_shader_parameter("sky", Vector3(WORLD_COLOR.r, WORLD_COLOR.g, WORLD_COLOR.b)
 			* WORLD_STRENGTH)
 	ocean.material_override = water
 	# The water is drawn in the transparent pass, because it reads the screen;
 	# it casts nothing either way.
 	ocean.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+# Which of the water is the sea rather than the river, for the ocean shader's
+# surf, which comes in off the sea and not down the river: its sea_mask and
+# sea_box. Blender's `open`, the ocean's green vertex colour, only ever passes
+# SEA_OPEN out at sea -- the river is never that far from a bank -- but it is
+# nought along every shore, the sea's as well, which is where the surf is. So
+# the cells where it passes are grown by SEA_REACH, out over that band.
+#
+# Only where the water is on top. The ocean runs on under the land, and
+# `open`, a distance to the nearest shore with no side to it, passes SEA_OPEN
+# under every stretch of land wide enough: grown from there, it covered the
+# river from both banks. And only the open water that reaches the west edge,
+# the sea's: the river opens out too, where it runs off the map to the east.
+func _mark_sea(level: Node) -> void:
+	var ocean := level.find_child("Ocean", true, false) as MeshInstance3D
+	if ocean == null or not ocean.material_override is ShaderMaterial:
+		return
+	var to_world := ocean.global_transform
+	var open: Array[Vector2] = []
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for s in ocean.mesh.get_surface_count():
+		var arrays := ocean.mesh.surface_get_arrays(s)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var colours: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+		for i in vertices.size():
+			var at := to_world * vertices[i]
+			var xz := Vector2(at.x, at.z)
+			lo = lo.min(xz)
+			hi = hi.max(xz)
+			if i < colours.size() and colours[i].g >= SEA_OPEN:
+				open.append(xz)
+	var size := Vector2i(((hi - lo) / SEA_TEXEL).floor()) + Vector2i.ONE
+	var cells := PackedByteArray()
+	cells.resize(size.x * size.y)
+	for xz in open:
+		var cell := Vector2i(((xz - lo) / SEA_TEXEL).floor())
+		cells[cell.y * size.x + cell.x] = 255
+	for y in size.y:
+		for x in size.x:
+			if cells[y * size.x + x] == 0:
+				continue
+			var middle := lo + (Vector2(x, y) + Vector2(0.5, 0.5)) * SEA_TEXEL
+			if _ground_at(middle.x, middle.y).kind != "water":
+				cells[y * size.x + x] = 0
+	cells = _west_of(cells, size)
+	cells = _grow(cells, size, Vector2i(1, 0), SEA_REACH)
+	cells = _grow(cells, size, Vector2i(0, 1), SEA_REACH)
+	var water := ocean.material_override as ShaderMaterial
+	water.set_shader_parameter("sea_mask", ImageTexture.create_from_image(
+			Image.create_from_data(size.x, size.y, false, Image.FORMAT_L8, cells)))
+	water.set_shader_parameter("sea_box", Vector4(lo.x, lo.y, size.x * SEA_TEXEL, size.y * SEA_TEXEL))
+
+
+# `cells`, size.x across, with only the set cells joined to its west column
+# left set, side to side or corner to corner.
+static func _west_of(cells: PackedByteArray, size: Vector2i) -> PackedByteArray:
+	var kept := PackedByteArray()
+	kept.resize(cells.size())
+	var todo: Array[Vector2i] = []
+	for y in size.y:
+		if cells[y * size.x] != 0:
+			kept[y * size.x] = 255
+			todo.append(Vector2i(0, y))
+	while not todo.is_empty():
+		var at: Vector2i = todo.pop_back()
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				var c := at + Vector2i(dx, dy)
+				if c.x < 0 or c.x >= size.x or c.y < 0 or c.y >= size.y:
+					continue
+				var i := c.y * size.x + c.x
+				if cells[i] != 0 and kept[i] == 0:
+					kept[i] = 255
+					todo.append(c)
+	return kept
+
+
+# `cells`, size.x across, with every set cell spread `reach` cells either way
+# along `axis`: once along each axis is a square of 2 * reach + 1.
+static func _grow(cells: PackedByteArray, size: Vector2i, axis: Vector2i, reach: int) -> PackedByteArray:
+	var grown := PackedByteArray()
+	grown.resize(cells.size())
+	for y in size.y:
+		for x in size.x:
+			if cells[y * size.x + x] == 0:
+				continue
+			for k in range(-reach, reach + 1):
+				var c := Vector2i(x, y) + axis * k
+				if c.x >= 0 and c.x < size.x and c.y >= 0 and c.y < size.y:
+					grown[c.y * size.x + c.x] = 255
+	return grown
 
 
 # Two-tone light, docs/cel-shading.md, section 5: a face is lit or it is not,
