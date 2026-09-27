@@ -31,7 +31,20 @@
 #     grown to match, and it is not any more.
 #   * The spawn below the frame is below this frame's bottom edge, as the
 #     game's is below its own, and the preview's frame is taller than the
-#     game's 1152 px.
+#     game's 1152 px -- 1686 at zoom 1, and it moves with the zoom. So the
+#     drive in from below is not the game's 42 ticks from wherever that is but
+#     as long as it takes to reach where the game's ends (ARENA_ENTRY), and
+#     never shorter. And it goes up the lane the game picked only when the
+#     tank fits on drivable ground all the way (_lane_clear): below row 35
+#     the arena is a corridor between x 736 and 1311, and 640 and 1408 are in
+#     the forest either side of it. A tank driven in there, as it was, came
+#     out of its drive with every way blocked and turned on the spot for
+#     good. Otherwise it comes up the middle of the corridor (CORRIDOR_X),
+#     or failing that the other lane. Zoomed in to 3 or so the rocks in rows
+#     12 to 23 cross all three, and from 5 the frame's bottom is in the
+#     forest along the top of the map; then the drive is made longer or
+#     shorter until it ends clear, which is what matters
+#     (_drive_in_from_below).
 #   * It fires from the muzzle and its turret leads a turn, as the brown
 #     tanks' do; the rounds still go the way the hull faces. Its exhaust and
 #     its dust are Level3DPuffs', as theirs are (puffs).
@@ -62,7 +75,12 @@ const SPAWN_X := [640.0, 1408.0]
 # 52 px beyond the frame, as the game's.
 const SPAWN_OUTSIDE := 52.0
 const INTRO_FROM_TOP := 128
-const INTRO_FROM_BOTTOM := 66
+const INTRO_FROM_BOTTOM := 42
+# Where the game's drive in from below ends: its frame's bottom, 52 px beyond,
+# and 42 ticks back up. And the corridor's middle, for a tank whose lane is in
+# the forest.
+const ARENA_ENTRY := Main.SCREEN_HEIGHT + SPAWN_OUTSIDE - INTRO_FROM_BOTTOM * BossBlueTank.SPEED
+const CORRIDOR_X := 1024.0
 const TURRET_TURN := 4.0      # rad/s
 const BLAST_HEIGHT := 0.5
 const BLAST_SCALE := 1.1
@@ -345,7 +363,9 @@ func _spawn(x: float, y: float, from_top: bool) -> void:
 	t.direction = Vector2(0, sgn)
 	t.v = t.direction * BossBlueTank.SPEED
 	t.intro_vy = sgn * BossBlueTank.SPEED
-	t.intro_delay = INTRO_FROM_TOP if from_top else INTRO_FROM_BOTTOM
+	t.intro_delay = INTRO_FROM_TOP
+	if not from_top:
+		_drive_in_from_below(t)
 	t.root = _scene.instantiate() as Node3D
 	t.root.scale = Vector3.ONE * SCALE
 	add_child(t.root)
@@ -358,7 +378,45 @@ func _spawn(x: float, y: float, from_top: bool) -> void:
 	t.turret_yaw = t.root.rotation.y
 	tanks.append(t)
 	if verbose:
-		print("boss tank %d appears at %.0f, %.0f" % [_spawned, x, y])
+		print("boss tank %d appears at %.0f, %.0f" % [_spawned, t.x, y])
+
+
+# The lane and the length of a drive in from below (the head comment has
+# why): to ARENA_ENTRY and at least the game's 42 ticks, up the first of the
+# game's lane, the corridor's middle and the other lane that is clear all the
+# way. Failing that, the drive that ends clear nearest that length, a tick at
+# a time either way, the lanes in that order at each: one that stops short
+# waits below the frame and drives in by the flow field like any other.
+func _drive_in_from_below(t: Tank) -> void:
+	var ticks := maxi(INTRO_FROM_BOTTOM, ceili((t.y - ARENA_ENTRY) / BossBlueTank.SPEED))
+	var lanes := [t.x, CORRIDOR_X, SPAWN_X[0] + SPAWN_X[1] - t.x]
+	t.intro_delay = ticks
+	for lane in lanes:
+		if _lane_clear(lane, t.y - ticks * BossBlueTank.SPEED, t.y):
+			t.x = lane
+			return
+	for k in ticks + int(t.y / BossBlueTank.SPEED):
+		for lane in lanes:
+			for n in [ticks - k, ticks + k]:
+				var end: float = t.y - n * BossBlueTank.SPEED
+				if n >= 0 and end > 0.0 and _lane_clear(lane, end, end):
+					t.x = lane
+					t.intro_delay = n
+					return
+
+
+# Whether a tank driven up x from y `from` below to `to` is on drivable
+# ground the whole way where it is on the map: _test_corners' two corners
+# ahead of it, a tile at a time. Below the map it is off the grid, and
+# tile_type would clamp it to the bottom row.
+func _lane_clear(x: float, to: float, from: float) -> bool:
+	var y := to
+	while y <= minf(from, map.stage.map_height * 32.0 - 1.0):
+		if not map.is_driveable_box(x - BossBlueTank.DIMENSION_2, y - BossBlueTank.DIMENSION_1,
+				x + BossBlueTank.DIMENSION_2, y + BossBlueTank.DIMENSION_1):
+			return false
+		y += 32.0
+	return true
 
 
 # A player per layer, each with its own library, all advanced by hand in
