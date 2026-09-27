@@ -216,6 +216,9 @@ var backing := false
 # The map is the preview's, asked for the grid.
 var classic := true
 var map: Level3DMap
+# The preview's wall hack (Level3DSettings.wall_hack): every tile of the map
+# is driveable, solid, shield and water alike, and only its edges stop it.
+var ghost := false
 var key_up := false
 var key_down := false
 var key_left := false
@@ -711,9 +714,9 @@ func _classic_diagonal(p: Vector2, dx: int, dy: int, v: float) -> Vector2:
 	target_angle = a
 	last_target_angle = a
 	diagonal_delay = Player.DIAGONAL_DELAY
-	if map.is_driveable(p.x + dx * Player.SENSOR_D_X0, p.y + dy * Player.SENSOR_D_Y0) \
-			and map.is_driveable(p.x + dx * Player.SENSOR_D_X1, p.y + dy * Player.SENSOR_D_Y1) \
-			and map.is_driveable(p.x + dx * Player.SENSOR_D_X2, p.y + dy * Player.SENSOR_D_Y2):
+	if _driveable(p.x + dx * Player.SENSOR_D_X0, p.y + dy * Player.SENSOR_D_Y0) \
+			and _driveable(p.x + dx * Player.SENSOR_D_X1, p.y + dy * Player.SENSOR_D_Y1) \
+			and _driveable(p.x + dx * Player.SENSOR_D_X2, p.y + dy * Player.SENSOR_D_Y2):
 		p += Vector2(dx, dy) * v
 	return p
 
@@ -732,9 +735,9 @@ func _classic_straight(p: Vector2, a: int, keep_a: int, keep_b: int, v: float) -
 	var d := Level3DMap.unit_vector(a)
 	var ahead := p + d * (Player.SENSOR_X + Player.SPEED)
 	var side := Vector2(-d.y, d.x) * Player.SENSOR_Y
-	if map.is_driveable(ahead.x, ahead.y) \
-			and map.is_driveable(ahead.x - side.x, ahead.y - side.y) \
-			and map.is_driveable(ahead.x + side.x, ahead.y + side.y):
+	if _driveable(ahead.x, ahead.y) \
+			and _driveable(ahead.x - side.x, ahead.y - side.y) \
+			and _driveable(ahead.x + side.x, ahead.y + side.y):
 		p += d * v
 	return p
 
@@ -863,9 +866,17 @@ func _blocked(at: Vector3, direction: float) -> bool:
 	var f := Vector2(cos(heading), -sin(heading)) * direction
 	var side := Vector2(-f.y, f.x) * Player.SENSOR_Y
 	var ahead := p + f * (Player.SENSOR_X + Player.SPEED)
-	return not (map.is_driveable(ahead.x, ahead.y)
-			and map.is_driveable(ahead.x - side.x, ahead.y - side.y)
-			and map.is_driveable(ahead.x + side.x, ahead.y + side.y))
+	return not (_driveable(ahead.x, ahead.y)
+			and _driveable(ahead.x - side.x, ahead.y - side.y)
+			and _driveable(ahead.x + side.x, ahead.y + side.y))
+
+
+# What every sensor of both modes asks: GameMode.is_driveable, or under the
+# wall hack, anywhere on the map.
+func _driveable(x: float, y: float) -> bool:
+	if ghost:
+		return x >= 0.0 and y >= 0.0 and x < map.stage.map_width * 32 and y < map.stage.map_height * 32
+	return map.is_driveable(x, y)
 
 
 # ----------------------------------------------------------------------------

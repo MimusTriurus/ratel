@@ -28,19 +28,28 @@
 # stage; Tab switches to the game's, straight down, orthographic, the frame
 # exactly as wide as the level, 16:9. The controls are the game's -- WASD to
 # drive, the left button or L to fire the gun up the screen, the right button
-# or P for the rocket, as the game's jeep does; M hands the aim to the mouse --
+# or P for the rocket, as the game's jeep does; M hands the aim to the mouse, or
+# half of it --
 # with the tank bench's orders from BlenderMCP/godot moved to the middle
 # button. WASD drives one of two ways
 # (level3d_btr.gd): classic, the game's jeep, eight directions at its speed,
 # or free, a throttle and a wheel:
 #
+#   Esc                    the menu (level3d_menu.gd): continue, settings,
+#                          quit. The settings -- camera, look (modern, CRT,
+#                          pixels), keys, driving, firing, and the cheats:
+#                          infinite lives, wall hack, bullet hack -- are
+#                          Level3DSettings, kept in user://preview3d.cfg; the
+#                          keys below are its defaults, and a --shot ignores it
 #   W / A / S / D          classic: up, left, down, right, and the diagonals
 #                          free: drive and steer by hand
 #                          either: cancels the order
 #   V                      classic / free driving, shown by the score
-#   mouse                  aims the turret while mouse aim is on; with it off,
-#                          classic fires the gun up the screen and the rocket
-#                          the way the BTR drives, as the game's jeep does
+#   M                      the firing: classic, the game's -- driving classic
+#                          the gun up the screen and the rocket the way the
+#                          BTR drives, driving free both along the hull;
+#                          modern, both at the cursor; combined, the gun as
+#                          classic and the rocket at the cursor
 #   left button (held), L  machine gun, level3d_gun.gd
 #   right click, P         rocket, level3d_rocket.gd -- L and P are for
 #                          classic driving with the mouse off, under the
@@ -50,8 +59,8 @@
 #                          toggles; the game's setting to start with), and the
 #                          rocket goes while the button is held, one at a time
 #   middle click           drive there (shift: add a waypoint)
-#   Esc                    stop
-#   Q / E                  turn the turret by hand; M toggles mouse aim
+#   Backspace              stop
+#   Q / E                  turn the turret by hand while held
 #   R                      fly the BTR in again, rebuild what was blown up
 #                          and bring the bunkers' guns, the soldiers, the boats,
 #                          the tanks and the boss back
@@ -84,9 +93,10 @@
 # level3d_boats.gd, level3d_tanks.gd, level3d_boss.gd, on the game's own map
 # through level3d_map.gd); the boss takes the camera to its arena and keeps it
 # there, as the game's does. One round kills the BTR, which comes back where
-# it died after a pause, blinking while it cannot be hit. --immortal lets the
-# enemies' rounds pass it (running into a gun or a tank still kills it), and a
-# --shot prints what the enemies do.
+# it died after a pause, blinking while it cannot be hit, for one of four spare
+# lives; with none left the stage starts again. --immortal lets the enemies'
+# rounds pass it (running into a gun or a tank still kills it), as the menu's
+# bullet hack does, and a --shot prints what the enemies do.
 #
 # The frame is taken that many seconds later; with waypoints the BTR is sent
 # along them first (level coordinates: x across, z up the stage is negative)
@@ -135,6 +145,7 @@ extends Node3D
 const LEVEL_PATH := "res://resources/3d/jackal_stage1.glb"
 const OCEAN_SHADER := preload("res://src/tools/level3d_ocean.gdshader")
 const Btr := preload("res://src/tools/level3d_btr.gd")
+const SCREEN_SHADER := preload("res://src/tools/level3d_screen.gdshader")
 
 # From the Blender scene: J_Sun points along this (Blender axes), strength 3.
 const SUN_DIRECTION_BLENDER := Vector3(0.4265, -0.5212, -0.7392)
@@ -212,9 +223,17 @@ var following := true
 # (_process), and the time it takes to close most of it.
 const CATCH_UP := 0.25
 var _catch_up := Vector2.ZERO
-var mouse_aim := false  # M; off, classic fires as the game's jeep does
 var zoom := 1.0
 var tilted := true      # Tab; the top view is the game's
+# The Escape menu's (level3d_menu.gd): the camera, the look, the driving, the
+# firing, the keys and the cheats. Saved only when the run is not a --shot.
+var settings := Level3DSettings.new()
+var _persist := false
+var _menu: Level3DMenu
+var _look: ColorRect
+# A click that closed the menu is not a round fired: the left button is not
+# the gun's again until it has been let go of.
+var _gun_locked := false
 
 var _live := false
 var _forced_aim = null  # --fire's or --rocket's target
@@ -234,6 +253,10 @@ func _ready() -> void:
 	# Before anything is added: every mesh from here on, the level's and every
 	# unit's, spawned now or later, is lit in two tones (_toon) and gets its
 	# contour from the engine (_engine_contour).
+	var run_args := OS.get_cmdline_user_args()
+	_persist = not (run_args.has("--shot") or run_args.has("--obstacle-map"))
+	if _persist:
+		settings.load_saved()
 	get_tree().node_added.connect(_toon)
 	Level3DHull.creases = OS.get_cmdline_user_args().has("--engine-creases")
 	Level3DHull.drawn = not OS.get_cmdline_user_args().has("--no-contour")
@@ -297,10 +320,12 @@ func _ready() -> void:
 	btr.map = map
 	_make_markers()
 	_make_hud()
+	_make_menu()
 
 	camera = Camera3D.new()
 	add_child(camera)
 	camera.current = true
+	_apply_settings()
 
 	# The level's collision exists from the next physics frame on; the BTR is
 	# placed after it, or it would sit on nothing.
@@ -1212,6 +1237,14 @@ var _immortal := false  # --immortal: rounds pass the BTR by, for --shot runs
 var _blink := 0
 var _score := 0
 var _score_label: Label
+var _banner: Label      # GAME OVER
+var _hud: CanvasLayer
+# The spare lives, as Main.extra_lives: the game's four on normal. The last
+# one lost starts the stage again, as R does; the game's continue screen is
+# not here. The infinite lives cheat spends none.
+const EXTRA_LIVES := 4
+const GAME_OVER_TIME := 3.0
+var _lives := EXTRA_LIVES
 var _blast_scene: PackedScene
 # --hold: [key, from tick, to tick], and the ticks since the preview went live.
 var _held: Array = []
@@ -1469,7 +1502,7 @@ func _view_frame() -> Rect2:
 
 # Player.attack: 32 px either side of the player.
 func _attack_player(x: float, z: float) -> bool:
-	if _respawning > 0 or _invincible > 0 or _immortal or chinook != null:
+	if _respawning > 0 or _invincible > 0 or _immortal or settings.bullet_hack or chinook != null:
 		return false
 	var half := 32.0 * Level3DGuns.PX
 	if absf(x - btr.position.x) > half or absf(z - btr.position.z) > half:
@@ -1493,8 +1526,7 @@ func _player_box() -> Rect2:
 
 
 # Player.explode: the blast, the BTR gone, and back after RESPAWN_DELAY where
-# it went, invincible. No lives are counted; the preview has no continue.
-# Under the blast a copy of it comes apart and burns until it is back
+# it went, invincible, for one of its lives (_physics_process). Under the blast a copy of it comes apart and burns until it is back
 # (Level3DWreck); the game's jeep is simply gone.
 func _explode_btr(by: String) -> void:
 	_spawn_blast(btr.position + Vector3.UP * 0.6, 1.0, 0.0)
@@ -1515,7 +1547,8 @@ func _explode_btr(by: String) -> void:
 
 
 func _make_hud() -> void:
-	var layer := CanvasLayer.new()
+	_hud = CanvasLayer.new()
+	var layer := _hud
 	add_child(layer)
 	_score_label = Label.new()
 	_score_label.position = Vector2(16, 12)
@@ -1523,16 +1556,73 @@ func _make_hud() -> void:
 	_score_label.add_theme_color_override("font_outline_color", Color.BLACK)
 	_score_label.add_theme_constant_override("outline_size", 6)
 	layer.add_child(_score_label)
+	_banner = Label.new()
+	_banner.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_banner.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_banner.add_theme_font_size_override("font_size", 64)
+	_banner.add_theme_color_override("font_outline_color", Color.BLACK)
+	_banner.add_theme_constant_override("outline_size", 12)
+	_banner.visible = false
+	layer.add_child(_banner)
 	_set_score(0)
 
 
+const FIRING_NAMES := ["CLASSIC", "CURSOR", "COMBINED"]
+
 func _set_score(score: int) -> void:
 	_score = score
-	_score_label.text = "SCORE %06d" % score
+	_score_label.text = "SCORE %06d   LIVES %s" % [score,
+			"∞" if settings.infinite_lives else str(_lives)]
 	if friends != null:
 		_score_label.text += "   POW %d   %s" % [friends.pows, friends.weapon_name().to_upper()]
 	if btr != null:
-		_score_label.text += "   %s" % ("CLASSIC" if btr.classic else "FREE")
+		_score_label.text += "   %s DRIVE   %s FIRE" % ["CLASSIC" if btr.classic else "FREE",
+				FIRING_NAMES[settings.firing]]
+
+
+# The Escape menu, and under it the look it picks: a rect over the whole frame,
+# the HUD included, drawing the frame again through level3d_screen.gdshader.
+const LOOK_LAYER := 50
+
+func _make_menu() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = LOOK_LAYER
+	add_child(layer)
+	_look = ColorRect.new()
+	_look.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_look.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var material := ShaderMaterial.new()
+	material.shader = SCREEN_SHADER
+	_look.material = material
+	layer.add_child(_look)
+	_menu = Level3DMenu.new()
+	_menu.settings = settings
+	_menu.changed = _settings_changed
+	_menu.resumed = func(): _gun_locked = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	add_child(_menu)
+
+
+# From the menu, and from the keys that change the same things (Tab, V, M).
+func _settings_changed() -> void:
+	_apply_settings()
+	if _persist:
+		settings.save()
+
+
+func _apply_settings() -> void:
+	tilted = settings.camera == Level3DSettings.Camera.TILTED
+	btr.classic = settings.driving == Level3DSettings.Driving.CLASSIC
+	btr.ghost = settings.wall_hack
+	_look.visible = settings.look != Level3DSettings.Look.MODERN
+	(_look.material as ShaderMaterial).set_shader_parameter("mode", settings.look)
+	# The HUD is behind the CRT's glass, but over the pixels, which make it
+	# unreadable at a fifth of its size.
+	_hud.layer = LOOK_LAYER + 1 if settings.look == Level3DSettings.Look.PIXELS else 1
+	_set_score(_score)
+	# At once, under the menu, which has the tree paused and _process with it.
+	if camera != null:
+		_update_camera()
 
 
 func _make_markers() -> void:
@@ -1664,13 +1754,13 @@ func _physics_process(delta: float) -> void:
 	# reads it as held instead, below.
 	if not btr.classic:
 		for h in _held:
-			if h[0] == KEY_P and maxi(h[1], 1) == _ticks:
+			if h[0] == "rocket" and maxi(h[1], 1) == _ticks:
 				_rocket_wanted = ROCKET_WAIT
 	if btr.classic:
-		btr.key_up = _key(KEY_W)
-		btr.key_down = _key(KEY_S)
-		btr.key_left = _key(KEY_A)
-		btr.key_right = _key(KEY_D)
+		btr.key_up = _key("up")
+		btr.key_down = _key("down")
+		btr.key_left = _key("left")
+		btr.key_right = _key("right")
 		btr.throttle = 0.0
 		btr.steer = 0.0
 	else:
@@ -1678,20 +1768,27 @@ func _physics_process(delta: float) -> void:
 		btr.key_down = false
 		btr.key_left = false
 		btr.key_right = false
-		btr.throttle = float(_key(KEY_W)) - float(_key(KEY_S))
-		btr.steer = float(_key(KEY_A)) - float(_key(KEY_D))
-	btr.turret_input = _axis(KEY_E, KEY_Q)
-	if btr.turret_input != 0.0:
-		mouse_aim = false
-	# Classic without the mouse is the game's without it: the gun up the
-	# screen whatever the jeep does, the grenade the way it drives or faces.
-	var classic_aim := btr.classic and _forced_aim == null and not mouse_aim
+		btr.throttle = float(_key("up")) - float(_key("down"))
+		btr.steer = float(_key("left")) - float(_key("right"))
+	# By hand while held; let go, the aim below has the turret again, except
+	# driving free with the classic firing, which leaves it where it is.
+	btr.turret_input = float(_key("turret_left")) - float(_key("turret_right"))
+	# The firing (Level3DSettings.Firing). Classic is the game's: driving
+	# classic, the gun up the screen whatever the jeep does and the grenade
+	# the way it drives or faces; driving free, both along the hull. Modern
+	# has both at the cursor, combined only the launcher.
+	var firing := settings.firing
+	var cursor = null
+	if _forced_aim == null and firing != Level3DSettings.Firing.CLASSIC:
+		cursor = _cursor_on_ground()
 	if _forced_aim != null:
 		btr.aim_point = _forced_aim
-	elif classic_aim:
+	elif firing == Level3DSettings.Firing.MODERN:
+		btr.aim_point = cursor
+	elif btr.classic:
 		btr.aim_point = btr.position + _game_direction(270.0) * Level3DGun.RANGE
 	else:
-		btr.aim_point = _cursor_on_ground() if mouse_aim else null
+		btr.aim_point = null
 	for building in destructibles:
 		var entry: Dictionary = destructibles[building]
 		if entry.player.is_playing():
@@ -1707,30 +1804,44 @@ func _physics_process(delta: float) -> void:
 		gone = true
 	elif _respawning > 0:
 		_respawning -= 1
-		if _respawning == 0:
+		if _respawning > 0:
+			gone = true
+		elif _lives > 0 or settings.infinite_lives:
+			# Main.lose_life, as Player.update spends it: on the way back.
+			if not settings.infinite_lives:
+				_lives -= 1
 			btr.visible = true
 			_invincible = Player.INVINCIBLE_DELAY
 			if guns.verbose:
-				print("BTR back, invincible for %d ticks" % _invincible)
+				print("BTR back, invincible for %d ticks, %d lives left" % [_invincible, _lives])
 		else:
 			gone = true
+			_restart()
+			_banner.text = "GAME OVER"
+			_banner.visible = true
+			get_tree().create_timer(GAME_OVER_TIME, false).timeout.connect(func(): _banner.visible = false)
 	if not gone:
 		btr.step(delta)
-	gun.trigger = not gone and (_hold_fire or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
-			or _key(KEY_L))
+	var left_button := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	if not left_button:
+		_gun_locked = false
+	gun.trigger = not gone and (_hold_fire or left_button and not _gun_locked or _key("gun"))
 	gun.aim_point = btr.aim_point
 	gun.step(delta)
 	launcher.aim_point = btr.aim_point
-	if classic_aim:
-		launcher.aim_point = btr.position \
-				+ _game_direction(btr.classic_fire_angle()) * Level3DLauncher.RANGE
+	if _forced_aim == null:
+		if firing == Level3DSettings.Firing.COMBINED:
+			launcher.aim_point = cursor
+		elif firing == Level3DSettings.Firing.CLASSIC and btr.classic:
+			launcher.aim_point = btr.position \
+					+ _game_direction(btr.classic_fire_angle()) * Level3DLauncher.RANGE
 	launcher.has_missiles = friends.has_missiles
 	launcher.missile_power = friends.missile_power
 	# Player.update's grenade: held, it goes the tick it can, and it has to be
 	# let go of between two. A press while the last one is still in the air is
 	# not lost if the button is still down when it is over.
 	if btr.classic:
-		if _key(KEY_P) or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+		if _key("rocket") or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 			if _fire_released and not gone and launcher.fire():
 				_fire_released = false
 		else:
@@ -1807,12 +1918,13 @@ func _process(delta: float) -> void:
 	_update_camera()
 
 
-# A key held on the keyboard or by --hold.
-func _key(key: Key) -> bool:
-	if Input.is_key_pressed(key):
+# An action's key (Level3DSettings.ACTIONS) held on the keyboard, or the action
+# held by --hold.
+func _key(action: String) -> bool:
+	if Input.is_key_pressed(settings.key(action)):
 		return true
 	for h in _held:
-		if h[0] == key and _ticks >= h[1] and _ticks < h[2]:
+		if h[0] == action and _ticks >= h[1] and _ticks < h[2]:
 			return true
 	return false
 
@@ -1832,13 +1944,27 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not _live:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_ESCAPE:
+			get_viewport().set_input_as_handled()
+			_menu.open()
+			return
+		# P, unless it is rebound: a press, as a right click is. Classic reads
+		# it as held instead, in _physics_process.
+		if event.keycode == settings.key("rocket"):
+			if not btr.classic:
+				_rocket_wanted = ROCKET_WAIT
+			return
+		# A key bound to an action is that action's and nothing else's.
+		if settings.action_of(event.keycode) != "":
+			return
 		match event.keycode:
 			KEY_MINUS, KEY_KP_SUBTRACT:
 				zoom = maxf(zoom / ZOOM_STEP, 1.0)
 			KEY_EQUAL, KEY_KP_ADD:
 				zoom = minf(zoom * ZOOM_STEP, 8.0)
 			KEY_TAB:
-				tilted = not tilted
+				settings.camera = Level3DSettings.Camera.TOP if tilted else Level3DSettings.Camera.TILTED
+				_settings_changed()
 			KEY_HOME:
 				following = false
 				focus.y = level_aabb.end.z
@@ -1848,7 +1974,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_C:
 				following = true
 			KEY_M:
-				mouse_aim = not mouse_aim
+				settings.firing = (settings.firing + 1) % Level3DSettings.Firing.size()
+				_settings_changed()
 			KEY_T:
 				gun.turbo = not gun.turbo
 			KEY_G:
@@ -1857,40 +1984,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_H:
 				Level3DFx.real_shadows = not Level3DFx.real_shadows
 				print("rockets and bombs: ", "shadows" if Level3DFx.real_shadows else "spots")
-			KEY_P:
-				if not btr.classic:
-					_rocket_wanted = ROCKET_WAIT
 			KEY_V:
-				btr.classic = not btr.classic
-				_set_score(_score)
+				settings.driving = Level3DSettings.Driving.FREE if btr.classic \
+						else Level3DSettings.Driving.CLASSIC
+				_settings_changed()
 			KEY_SPACE:
 				if chinook != null:
 					chinook.skip()
 			KEY_R:
-				btr.place(START, START_HEADING)
-				following = true
-				for building in destructibles:
-					_set_destroyed(building, false)
-				launcher.clear_craters()
-				Level3DMarks.clear()
-				guns.reset()
-				soldiers.reset()
-				boats.reset()
-				tanks.reset()
-				boss.reset()
-				tracks.reset()
-				puffs.reset()
-				Level3DWind.reset()
-				friends.reset()
-				rescue.reset()
-				map.reset()
-				_respawning = 0
-				_invincible = 0
-				btr.visible = true
-				btr.blink(true)
-				_set_score(0)
-				_start_intro()
-			KEY_ESCAPE:
+				_restart()
+			KEY_BACKSPACE:
 				btr.stop()
 	elif event is InputEventMouseButton and event.pressed:
 		match event.button_index:
@@ -1908,6 +2011,36 @@ func _unhandled_input(event: InputEvent) -> void:
 			MOUSE_BUTTON_WHEEL_DOWN:
 				following = false
 				focus.y += 2.0 / zoom
+
+
+# R, and the last life lost: the BTR flown in again, everything blown up
+# rebuilt and every enemy back, the score and the lives as they started.
+func _restart() -> void:
+	btr.place(START, START_HEADING)
+	following = true
+	for building in destructibles:
+		_set_destroyed(building, false)
+	launcher.clear_craters()
+	Level3DMarks.clear()
+	guns.reset()
+	soldiers.reset()
+	boats.reset()
+	tanks.reset()
+	boss.reset()
+	tracks.reset()
+	puffs.reset()
+	Level3DWind.reset()
+	friends.reset()
+	rescue.reset()
+	map.reset()
+	_respawning = 0
+	_invincible = 0
+	_lives = EXTRA_LIVES
+	_banner.visible = false
+	btr.visible = true
+	btr.blink(true)
+	_set_score(0)
+	_start_intro()
 
 
 # What the scene's collision says over the whole level, one pixel per
@@ -1989,12 +2122,13 @@ func _screenshot_mode() -> void:
 			args.remove_at(at)
 	var free := args.find("--free")
 	if free >= 0:
-		btr.classic = false
+		settings.driving = Level3DSettings.Driving.FREE
+		_apply_settings()
 		args.remove_at(free)
 		_set_score(_score)
 	var hold := args.find("--hold")
 	if hold >= 0:
-		const KEYS := {"w": KEY_W, "a": KEY_A, "s": KEY_S, "d": KEY_D, "l": KEY_L, "p": KEY_P}
+		const KEYS := {"w": "up", "a": "left", "s": "down", "d": "right", "l": "gun", "p": "rocket"}
 		for span in args[hold + 1].split(","):
 			var at := span.split("@")
 			var times := at[1].split("-")
@@ -2074,7 +2208,7 @@ func _screenshot_mode() -> void:
 		zoom = float(args[3])
 	if args.size() >= 5:
 		tilted = args[4] == "tilt"
-	mouse_aim = false
+	settings.firing = Level3DSettings.Firing.CLASSIC
 	if args.size() >= 6:
 		for i in range(6, args.size()):
 			var xz := args[i].split(",")
