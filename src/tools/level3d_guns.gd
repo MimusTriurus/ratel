@@ -367,20 +367,24 @@ func muzzle_flash(at: Vector3, direction: Vector3, size := 1.0) -> void:
 # out of sight while a muzzle flash burns where it set off, which a round as
 # big as the game's covers when the flash is a rifle's; it flies all the same.
 #
-# It comes down as it goes, as the jeep's rounds do (Level3DGun): from
-# `height` over the ground to the ground itself on its last tick, a straight
-# fall over its whole flight. It used to fly level all the way and go out in
+# It comes down as it goes, as the jeep's rounds do (Level3DGun): a straight
+# line from `height` at the muzzle to the ground under the end of its flight,
+# both fixed when it is fired. It used to fly level all the way and go out in
 # a spark half a metre over the sand -- the jeep's struck the ground and threw
-# it up. The game's EnemyBullet and PlayerBullet end alike, in a BulletHit;
-# what it hits is the grid's to say, so the height is only what is seen.
+# it up. After that it fell from its height over the ground *under it*, asked
+# afresh every tick, so it rode every rise it crossed: up by a deck's height
+# over a bridge and down again, up the cliff at the coast. The game's
+# EnemyBullet and PlayerBullet end alike, in a BulletHit; what it hits is the
+# grid's to say, so the height is only what is seen.
 func enemy_bullet(at: Vector2, v: Vector2, travel: int, height: float, white := true,
 		behind_flash := false) -> void:
 	var node := Level3DFx.take_round(self, white)
 	# Hidden for as many ticks, counted rather than timed: a pooled round that
 	# ended sooner would be shown by a timer while it waited in the pool.
 	var hidden := ceili(FLASH_TIME * 100.0) if behind_flash else 0
+	var flight := maxi(travel, 1)
 	var shot := {"at": at, "v": v * PX, "travel": travel, "node": node, "hidden": hidden,
-			"flight": maxi(travel, 1), "above": height - _ground_y(at)}
+			"flight": flight, "from_y": height, "to_y": _ground_y(at + v * PX * flight)}
 	_place_shot(shot)
 	_shots.append(shot)
 
@@ -422,17 +426,17 @@ func _place_shot(shot: Dictionary) -> void:
 	var node: MeshInstance3D = shot.node
 	node.visible = shot.hidden <= 0
 	shot.hidden -= 1
-	# Drawn out along its way over the ground and its fall.
+	# Drawn out along its line.
 	Level3DFx.aim_round(node, _shot_position(shot),
-			Vector3(shot.v.x, -shot.above / shot.flight, shot.v.y))
+			Vector3(shot.v.x, (shot.to_y - shot.from_y) / shot.flight, shot.v.y))
 
 
-# Where the shot is seen: its x, z, and down from where it set off over the
-# ground to the ground by its last tick.
+# Where the shot is seen: its x, z, and its line's height there, from the
+# muzzle's to the ground's under its last tick -- whatever it passes over.
 func _shot_position(shot: Dictionary) -> Vector3:
 	var at: Vector2 = shot.at
 	var left := clampf(float(shot.travel) / shot.flight, 0.0, 1.0)
-	return Vector3(at.x, _ground_y(at) + shot.above * left, at.y)
+	return Vector3(at.x, lerpf(shot.to_y, shot.from_y, left), at.y)
 
 
 func _ground_y(at: Vector2) -> float:
