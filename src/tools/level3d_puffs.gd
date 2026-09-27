@@ -1,7 +1,8 @@
 # The exhaust and the dust of everything that drives on the 3D stage 1
 # preview: the player's jeep or BTR (Level3DBtr.puffs), the brown tanks' and
 # the boss's (their puffs), and the boats' outboards, which raise no dust on
-# the water. Nothing here is from the game, which draws neither.
+# the water; and the smoke of what burns, the tanks' wrecks and the damage
+# they take. Nothing here is from the game, which draws none of it.
 #
 # They were parts of the tanks' models once: three lumps to each exhaust and
 # to each track, on bones of their own, looping in a clip of their own
@@ -21,6 +22,14 @@
 # (level3d_gun.gd): sand, the hard ground's concrete, the forest's earth.
 # None off the water, nor off a wheel in the air.
 #
+# The smoke went the same way. A wreck's column, a hit tank's thinner one and
+# the wisps out of the boss's breaches were five or two lumps to a source on
+# bones of their own, looping in Burn, Smoke and Breached: the column leant
+# the way the hull pointed, since it was in the hull's own frame, and came up
+# the same five puffs a second on every wreck. Here a source says how often
+# and how big, and the puffs rise from it and are blown downwind (WIND),
+# whichever way the wreck lies.
+#
 # The puffs are the effects' faceted balls, low poly and opaque, cel-shaded
 # and drawn round (level3d_fx.gd): a puff swells and shrinks away instead of
 # fading, as every effect of the preview's does.
@@ -39,6 +48,17 @@ const EXHAUST_LIFE := Vector2(0.8, 1.05)
 const EXHAUST_RISE := Vector2(0.28, 0.16)
 const EXHAUST_BACK := Vector2(0.04, 0.14)
 const EXHAUST_BIG := 1.35
+# The smoke's wind, level x, z, as the sea's swell drifts (level3d_ocean.
+# gdshader): a column is blown this way by SMOKE_BLOWN of the height it
+# rises, as the models' leant 0.55 of theirs, and swayed by SMOKE_SWAY of a
+# puff's size. How far a smoke puff may come off its time, as JITTER.
+const WIND := Vector3(0.868, 0.0, 0.496)
+const SMOKE_BLOWN := 0.5
+const SMOKE_SWAY := 0.35
+const SMOKE_JITTER := 0.2
+# _grow's highest, which a smoke source's `size` is: its puffs at their
+# biggest.
+const GROW_PEAK := 0.76
 const DUST_STEP := 0.28
 const DUST_LIFE := Vector2(0.6, 0.85)
 const CLOUD_LIFE := Vector2(0.9, 1.4)
@@ -63,6 +83,10 @@ var ground: Callable
 #    puff's radius standing), "working" (0 standing .. 1 under way)}
 #   {"key", "kind": "dust", "at" (Vector3, where it touches the ground),
 #    "size"}
+#   {"key", "kind": "smoke", "at" (Vector3, where it rises from), "size"
+#    (level metres, a puff's radius at its biggest), "every" (seconds
+#    between puffs), "life" (seconds), "rise" (level metres over its life),
+#    "colour" ("smoke", the wrecks' dark, or "exhaust", the wisps' grey)}
 # A key that is missing is forgotten: its next puff starts afresh.
 var sources: Array = []
 
@@ -82,6 +106,8 @@ func _ready() -> void:
 	_materials = {
 		# The tanks' MT_Smoke, which their exhaust was.
 		"exhaust": _lit(Color8(132, 130, 126)),
+		# The tanks' MT_SmokeDark, which their wrecks' smoke was.
+		"smoke": _lit(Color8(58, 56, 54)),
 		"ground": _lit(Color(0.93, 0.76, 0.48)),
 		"hard": _lit(Color(0.66, 0.65, 0.62)),
 		"forest": _lit(Color(0.52, 0.42, 0.26)),
@@ -103,6 +129,8 @@ func tick() -> void:
 			_seen[emitter.key] = true
 			if emitter.kind == "exhaust":
 				_exhaust(emitter, dt)
+			elif emitter.kind == "smoke":
+				_smoke(emitter, dt)
 			else:
 				_dust(emitter)
 	for table in [_next, _last]:
@@ -133,6 +161,31 @@ func _exhaust(e: Dictionary, dt: float) -> void:
 		var p := at + blown * k + sway * k + Vector3.UP * rise * pow(k, 0.8)
 		puff.global_transform = Transform3D(Basis(Vector3.UP, spin + k).scaled(Vector3.ONE * maxf(size * _grow(k), 0.001)), p)
 	_start(puff, drift, life)
+
+
+# Smoke goes by time, as the exhaust does, and rises from where it was made:
+# the source goes on without it.
+func _smoke(e: Dictionary, dt: float) -> void:
+	var every: float = e.every
+	var left: float = _next.get(e.key, _rng.randf() * every) - dt
+	if left > 0.0:
+		_next[e.key] = left
+		return
+	_next[e.key] = every * (1.0 + _rng.randf_range(-SMOKE_JITTER, SMOKE_JITTER))
+	var at: Vector3 = e.at
+	var size: float = e.size / GROW_PEAK * _rng.randf_range(0.85, 1.15)
+	var rise: float = e.rise * _rng.randf_range(0.9, 1.1)
+	var blown := WIND * rise * SMOKE_BLOWN
+	var sway := Vector3(_rng.randf_range(-1, 1), 0.0, _rng.randf_range(-1, 1)) * size * GROW_PEAK * SMOKE_SWAY
+	var life: float = e.life * _rng.randf_range(0.9, 1.1)
+	var puff := _puff(e.colour)
+	var spin := _rng.randf() * TAU
+	var billow := func(t: float):
+		var k := t / life
+		# Up at once and slowing, blown over more the higher it is.
+		var p := at + Vector3.UP * rise * pow(k, 0.8) + (blown + sway) * k * k
+		puff.global_transform = Transform3D(Basis(Vector3.UP, spin + k).scaled(Vector3.ONE * maxf(size * _grow(k), 0.001)), p)
+	_start(puff, billow, life)
 
 
 func _dust(e: Dictionary) -> void:

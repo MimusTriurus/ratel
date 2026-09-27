@@ -24,8 +24,12 @@
 #     Here the tank is the sprite's blue throughout, and the round shows in its
 #     shape: Breach, played once with Damage for the jolt -- three skirt
 #     plates and an armour plate blown off, three holes torn open with fire in
-#     them -- then Breached, held: the holes glowing and smoking. The model's
-#     damage layer (jackal_heavy_tank.py) is made for this.
+#     them -- then Breached, held: the plates gone and the holes open. The
+#     model's damage layer (jackal_heavy_tank.py) is made for this. What the
+#     holes do is drawn here rather than in the model (EFFECTS): each glows,
+#     a ball of the blasts' fire that flares as it is torn open and flickers
+#     after (_burn); throws three sparks then and one every so often after;
+#     and smokes, Level3DPuffs' wisps out of it (puffs).
 #   * It is the sprite's size and, from above, its shape (SCALE): it was drawn
 #     half as big again, on an 8 m hull twice as long as wide, with boxes
 #     grown to match, and it is not any more.
@@ -49,7 +53,8 @@
 #     tanks' do; the rounds still go the way the hull faces. Its exhaust and
 #     its dust are Level3DPuffs', as theirs are (puffs).
 #   * The game removes a destroyed tank and draws an Explosion; here it plays
-#     Death in the blast and stays, burnt black and smoking. GameMode's
+#     Death in the blast and stays, burnt black and smoking -- Level3DPuffs'
+#     column, as a brown tank's wreck's (Level3DTanks). GameMode's
 #     destroy_all when the fourth goes is not done: the preview has nothing
 #     else in the arena.
 class_name Level3DBoss
@@ -98,27 +103,53 @@ const TRACK_PADS := 2.0
 # each layer's clips are cut down to its own bones.
 const LAYERS := {
 	"tracks": {"bones": ["Pad.", "Wheel."], "clips": ["Tracks", "Spin_L", "Spin_R"]},
-	"hull": {"bones": ["Hull", "Ring", "Blast."], "clips": ["Idle", "Drive", "Damage", "Death"]},
-	"weapon": {"bones": ["Gun", "Barrel", "Flash"], "clips": ["Shoot"]},
-	"smoke": {"bones": ["Smoke."], "clips": ["Smoke", "Burn"]},
-	"damage": {"bones": ["Skirt.", "Fender.", "Breach.", "Glow.", "Spark.", "Wisp."],
-			"clips": ["Breach", "Breached"]},
+	"hull": {"bones": ["Hull", "Ring"], "clips": ["Idle", "Drive", "Damage", "Death"]},
+	"weapon": {"bones": ["Gun", "Barrel"], "clips": ["Shoot"]},
+	"damage": {"bones": ["Skirt.", "Fender.", "Breach."], "clips": ["Breach", "Breached"]},
 }
-const LOOPS := ["Tracks", "Spin_L", "Spin_R", "Idle", "Drive", "Smoke", "Burn", "Breached"]
-# Made here, as the brown tanks' Off is: neither survives the glTF export.
-# Intact matters more -- a damage layer left unplayed shows the breaches.
-const OFF := "Off"
+const LOOPS := ["Tracks", "Spin_L", "Spin_R", "Idle", "Drive", "Breached"]
+# The model's effects, by bone, as the brown tanks' (Level3DTanks.EFFECTS),
+# and the holes' glow, sparks and wisps with them.
+const EFFECTS := ["Blast.", "Flash", "Smoke.", "Glow.", "Spark.", "Wisp."]
+# Made here: it does not survive the glTF export, and a damage layer left
+# unplayed shows the breaches.
 const INTACT := "Intact"
 const LOST := ["Skirt.", "Fender."]
 const BLEND := 0.25
 const CHAR_TIME := 1.2
 const CHAR := 0.28
-const KEEP_COLOUR := ["HT_Fire", "HT_Flash", "HT_Smoke", "HT_SmokeDark"]
 # Level3DPuffs': a puff's radius, level metres, out of the exhausts standing,
 # and off the tracks -- the brown tanks', grown with the tank.
 const EXHAUST_SIZE := 0.1
 const DUST_SIZE := 0.22
-
+# Level3DPuffs' smoke, in the model's metres scaled, as Level3DTanks': the
+# wreck's column off Smoke.0, as Burn drew it (the bone's 2.1 times the 0.6 m
+# ball, rising 3.85 m in a second); and each hole's wisps off its Glow bone,
+# as Breached drew them, two to a hole on a 0.75 s loop, 0.4 m across and
+# rising 1.75 m, from WISP_AFTER into Breach.
+const WRECK_SMOKE := {"kind": "smoke", "colour": "smoke", "every": 0.2, "life": 1.0,
+		"size": 1.26 * SCALE, "rise": 3.85 * SCALE}
+const WISP := {"kind": "smoke", "colour": "exhaust", "every": 0.375, "life": 0.75,
+		"size": 0.41 * SCALE, "rise": 1.75 * SCALE}
+const WISP_AFTER := 0.3
+# A hole's glow: the fire's ball GLOW_SIZE across, model metres (the model's
+# was 0.24), flaring to GLOW_FLARE times that as it is torn open and back
+# over GLOW_SETTLE seconds, then flickering by GLOW_FLICKER; its fire's age,
+# which is its colour (level3d_fire.gdshader), about GLOW_AGE, the yellow and
+# orange of the model's HT_Flash and HT_Fire.
+const GLOW_SIZE := 0.24
+const GLOW_FLARE := 1.7
+const GLOW_SETTLE := 0.5
+const GLOW_FLICKER := 0.15
+const GLOW_AGE := 0.45
+# Its sparks, level metres and seconds: three off each hole as it is torn
+# open, and one every SPARK_EVERY or so after, smaller and shorter. Out from
+# the hull and up, falling.
+const BURST_SPARKS := 3
+const BURST_SPARK := {"size": 0.036, "life": 0.55, "speed": 0.9}
+const SPARK := {"size": 0.022, "life": 0.22, "speed": 0.6}
+const SPARK_EVERY := 0.35
+const SPARK_FALL := 1.5
 var map: Level3DMap
 var guns: Level3DGuns
 # `frame.call()`: the frame the player sees, Rect2 in level x, z.
@@ -138,6 +169,12 @@ var _turret_pivot: Vector3        # model metres, Godot axes
 var _muzzle_from_turret: Vector3
 var _exhaust_bones := PackedInt32Array()
 var _dust_bones := PackedInt32Array()
+var _smoke_bone := -1
+var _glow_bones := PackedInt32Array()
+var _effect_bones := PackedInt32Array()
+var _fire_material: ShaderMaterial
+var _glow_mesh: ArrayMesh
+var _spark_mesh: ArrayMesh
 var _trigger_row := -1
 var _armed := false               # the trigger has fired: the pan, then the fight
 var _pan_top := -1.0              # the frame's top, map px, while armed
@@ -180,6 +217,9 @@ class Tank:
 	var turret_bone := -1
 	var dead_time := 0.0
 	var charred: Array = []
+	var breach_time := -1.0          # seconds since it was breached
+	var glows: Array[MeshInstance3D] = []
+	var spark_next := PackedFloat32Array()
 
 
 func _ready() -> void:
@@ -188,6 +228,9 @@ func _ready() -> void:
 		push_error("Cannot load %s -- run export() in jackal_heavy_tank_lowpoly.blend" % TANK_PATH)
 		return
 	_make_libraries()
+	_fire_material = Level3DFx.fire()
+	_glow_mesh = Level3DFx.ball(1, 0.06, 6)
+	_spark_mesh = Level3DFx.ball(0, 0.25, 2)
 	for row in map.stage.trigger_map[0].size():
 		for t in map.stage.trigger_map[0][row]:
 			if t[0] == Triggers.BOSS_BLUE_TANKS:
@@ -226,7 +269,6 @@ func _make_libraries() -> void:
 				a.remove_track(i)
 		a.loop_mode = Animation.LOOP_LINEAR if clip in LOOPS else Animation.LOOP_NONE
 		(_libraries[layer] as AnimationLibrary).add_animation(clip, a)
-	(_libraries.smoke as AnimationLibrary).add_animation(OFF, _still(skeleton, prefix, "smoke", []))
 	# Intact: the plates the first round blows off where they were modelled,
 	# every breach bone scaled to nothing.
 	(_libraries.damage as AnimationLibrary).add_animation(INTACT, _still(skeleton, prefix, "damage", LOST))
@@ -235,6 +277,13 @@ func _make_libraries() -> void:
 	for side in ["L", "R"]:
 		_exhaust_bones.append(skeleton.find_bone("Exhaust." + side))
 		_dust_bones.append(skeleton.find_bone("Dust." + side))
+	_smoke_bone = skeleton.find_bone("Smoke.0")
+	for i in 3:
+		_glow_bones.append(skeleton.find_bone("Glow.%d" % i))
+	for i in skeleton.get_bone_count():
+		var bone := skeleton.get_bone_name(i)
+		if EFFECTS.any(func(e: String): return bone == e or (e.ends_with(".") and bone.begins_with(e))):
+			_effect_bones.append(i)
 	probe.free()
 
 
@@ -275,9 +324,17 @@ func track_contacts() -> Array:
 	return contacts
 
 
-# Level3DPuffs' emitters, as the brown tanks' (Level3DTanks.puffs).
+# Level3DPuffs' emitters, as the brown tanks' (Level3DTanks.puffs): the
+# exhausts and the tracks of every tank running, the column off every wreck,
+# and the wisps out of the holes of every tank breached, wreck or not.
 func puffs() -> Array:
 	var out := []
+	for t in _wrecks:
+		out.append(_smoke_from(t, _smoke_bone, WRECK_SMOKE, "s"))
+	for t in tanks + _wrecks:
+		if t.breach_time >= WISP_AFTER:
+			for i in _glow_bones.size():
+				out.append(_smoke_from(t, _glow_bones[i], WISP, "w%d" % i))
 	for t in tanks:
 		var id := t.root.get_instance_id()
 		var mouths: Array[Vector3] = []
@@ -297,7 +354,21 @@ func puffs() -> Array:
 	return out
 
 
+func _smoke_from(t: Tank, bone: int, smoke: Dictionary, key: String) -> Dictionary:
+	var e := smoke.duplicate()
+	e.key = "%d:%s" % [t.root.get_instance_id(), key]
+	e.at = _bone_at(t, bone)
+	return e
+
+
+func _bone_at(t: Tank, bone: int) -> Vector3:
+	return t.skeleton.global_transform * t.skeleton.get_bone_global_pose(bone).origin
+
+
 func reset() -> void:
+	for child in get_children():
+		if child.has_meta("spark"):
+			child.queue_free()
 	for t in tanks + _wrecks:
 		t.root.queue_free()
 	tanks.clear()
@@ -373,6 +444,9 @@ func _spawn(x: float, y: float, from_top: bool) -> void:
 	Level3DFx.flash_lit(t.root, Level3DFx.ENEMY_FLASH_LAYER)
 	_split_players(t)
 	t.skeleton = t.root.find_child("Skeleton3D", true, false) as Skeleton3D
+	# No clip keys them any more, so this holds.
+	for bone in _effect_bones:
+		t.skeleton.set_bone_pose_scale(bone, Vector3.ONE * 0.001)
 	t.turret_bone = t.skeleton.find_bone("Turret")
 	_place(t)
 	t.turret_yaw = t.root.rotation.y
@@ -446,7 +520,6 @@ func _split_players(t: Tank) -> void:
 	hull.play("Idle")
 	damage.play(INTACT)
 	(t.players.tracks as AnimationPlayer).play("Tracks")
-	(t.players.smoke as AnimationPlayer).play(OFF)
 	var weapon: AnimationPlayer = t.players.weapon
 	weapon.play("Shoot")
 	weapon.seek(weapon.current_animation_length, true)
@@ -683,6 +756,7 @@ func _process(delta: float) -> void:
 		t.turret_yaw = rotate_toward(t.turret_yaw, Level3DTanks._heading(t.target_angle), TURRET_TURN * delta)
 		_run_tracks(t, delta)
 		_pose(t, delta)
+		_burn(t, delta)
 	for t in _wrecks:
 		t.dead_time += delta
 		var k := lerpf(1.0, CHAR, clampf(t.dead_time / CHAR_TIME, 0.0, 1.0))
@@ -690,6 +764,7 @@ func _process(delta: float) -> void:
 			var c: Color = pair[1]
 			(pair[0] as StandardMaterial3D).albedo_color = Color(c.r * k, c.g * k, c.b * k, c.a)
 		_pose(t, delta)
+		_burn(t, delta)
 
 
 func _run_tracks(t: Tank, delta: float) -> void:
@@ -710,7 +785,7 @@ func _run_tracks(t: Tank, delta: float) -> void:
 
 
 func _pose(t: Tank, delta: float) -> void:
-	for layer in ["hull", "weapon", "smoke", "damage"]:
+	for layer in ["hull", "weapon", "damage"]:
 		(t.players[layer] as AnimationPlayer).advance(delta)
 	t.skeleton.set_bone_pose_rotation(t.turret_bone,
 			Quaternion(Vector3.UP, t.turret_yaw - t.root.rotation.y))
@@ -728,6 +803,7 @@ func _attacked(i: int, by: String) -> void:
 		t.breached = true
 		(t.players.hull as AnimationPlayer).play("Damage", 0.05)
 		(t.players.damage as AnimationPlayer).play("Breach")
+		_breach(t)
 		if verbose:
 			print("boss tank breached (%s) at %.0f, %.0f, tick %d" % [by, t.x, t.y, Engine.get_physics_frames()])
 		return
@@ -736,7 +812,6 @@ func _attacked(i: int, by: String) -> void:
 	guns.blast.call(at + Vector3.UP * BLAST_HEIGHT, BLAST_SCALE)
 	guns.explode(at)
 	(t.players.hull as AnimationPlayer).play("Death", 0.05)
-	(t.players.smoke as AnimationPlayer).play("Burn", 0.3)
 	_char(t)
 	_wrecks.append(t)
 	scored.call(POINTS)
@@ -747,12 +822,81 @@ func _attacked(i: int, by: String) -> void:
 			print("boss: all four destroyed, stage completed")
 
 
+# The holes torn open: a glow in each, under the tank's root so that it goes
+# with it, and a burst of sparks out of each.
+func _breach(t: Tank) -> void:
+	t.breach_time = 0.0
+	t.spark_next.resize(_glow_bones.size())
+	for i in _glow_bones.size():
+		var glow := MeshInstance3D.new()
+		glow.mesh = _glow_mesh
+		glow.material_override = _fire_material
+		glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		t.root.add_child(glow)
+		t.glows.append(glow)
+		t.spark_next[i] = _rng.randf_range(0.5, 1.5) * SPARK_EVERY + GLOW_SETTLE
+	_burn(t, 0.0)
+	for i in _glow_bones.size():
+		for k in BURST_SPARKS:
+			_spark(t, i, BURST_SPARK)
+
+
+# Per rendered frame, once it is breached: each glow put on its hole, flared
+# and then flickering, and a spark out of each hole when its time comes.
+func _burn(t: Tank, delta: float) -> void:
+	if t.breach_time < 0.0:
+		return
+	t.breach_time += delta
+	var flare := 1.0 + (GLOW_FLARE - 1.0) * clampf(1.0 - t.breach_time / GLOW_SETTLE, 0.0, 1.0)
+	var grow := smoothstep(0.0, 0.08, t.breach_time)
+	for i in t.glows.size():
+		var glow := t.glows[i]
+		var phase := t.breach_time * 11.0 + i * 2.1
+		var flicker := 1.0 + GLOW_FLICKER * (0.6 * sin(phase) + 0.4 * sin(phase * 2.3 + 1.0))
+		var r := GLOW_SIZE * SCALE * flare * flicker * grow
+		glow.global_transform = Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * maxf(r, 0.001)),
+				_bone_at(t, _glow_bones[i]))
+		glow.set_instance_shader_parameter("age", GLOW_AGE + 0.1 * sin(phase * 0.7))
+		t.spark_next[i] -= delta
+		if t.spark_next[i] <= 0.0:
+			t.spark_next[i] = _rng.randf_range(0.5, 1.5) * SPARK_EVERY
+			_spark(t, i, SPARK)
+
+
+# A spark out of hole `i`: a speck of fire out from the hull and up, falling
+# and cooling as it goes, as the jeep's rounds strike off a wall (Level3DGun).
+func _spark(t: Tank, i: int, kind: Dictionary) -> void:
+	var at := _bone_at(t, _glow_bones[i])
+	var off := at - t.root.global_position
+	var out := Vector3(off.x, 0.0, off.z).normalized()
+	var way := (out + Vector3.UP * 0.7 + Vector3(_rng.randf_range(-0.5, 0.5), _rng.randf_range(-0.2, 0.3),
+			_rng.randf_range(-0.5, 0.5))).normalized()
+	var velocity: Vector3 = way * float(kind.speed) * _rng.randf_range(0.7, 1.2)
+	var life: float = float(kind.life) * _rng.randf_range(0.8, 1.2)
+	var size: float = float(kind.size) * _rng.randf_range(0.8, 1.2)
+	var spark := MeshInstance3D.new()
+	spark.mesh = _spark_mesh
+	spark.material_override = _fire_material
+	spark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	spark.set_meta("spark", true)
+	add_child(spark)
+	var fly := func(s: float):
+		var k := s / life
+		spark.global_transform = Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * maxf(size * (1.0 - k), 0.001)),
+				at + velocity * s + Vector3.DOWN * SPARK_FALL * s * s)
+		spark.set_instance_shader_parameter("age", k)
+	fly.call(0.0)
+	var tween := spark.create_tween()
+	tween.tween_method(fly, 0.0, life, life)
+	tween.tween_callback(spark.queue_free)
+
+
 func _char(t: Tank) -> void:
 	for node in t.root.find_children("*", "MeshInstance3D", true, false):
 		var mi := node as MeshInstance3D
 		for s in mi.mesh.get_surface_count():
 			var m := mi.mesh.surface_get_material(s) as StandardMaterial3D
-			if m == null or m.resource_name in KEEP_COLOUR:
+			if m == null:
 				continue
 			var own := m.duplicate() as StandardMaterial3D
 			mi.set_surface_override_material(s, own)

@@ -38,13 +38,20 @@
 #     say what it does, one layer each on a player of its own, as the boat's
 #     two are: the tracks run as far as it drives and spin as far as it
 #     turns, the hull rocks over the ground while it moves and idles while it
-#     does not, a hit knocks it about and leaves it smoking, and Shoot recoils
-#     the barrel. Its exhaust and the dust off its tracks are Level3DPuffs',
-#     out of the model's Exhaust and Dust bones (puffs).
+#     does not, a hit knocks it about, and Shoot recoils the barrel. Its
+#     exhaust and the dust off its tracks are Level3DPuffs', out of the
+#     model's Exhaust and Dust bones (puffs), and so is its smoke: a thin
+#     column once a hit has left it smoking, a thick one off its wreck, out
+#     of the Smoke.0 bone.
 #   * The game removes it and draws an Explosion. Here the blast is drawn over
-#     it, it plays Death -- the turret blown off in a fireball -- and it stays
-#     where it was, burnt black and smoking, until it is left behind. A wreck
-#     is neither solid nor a mine.
+#     it, it plays Death -- the turret blown off -- and it stays where it was,
+#     burnt black and smoking, until it is left behind. A wreck is neither
+#     solid nor a mine.
+#   * The model's own fire and smoke are not drawn (EFFECTS): the fireball
+#     in Death, the flash in Shoot and the smoke in Burn and Smoke, which the
+#     preview's fire and Level3DPuffs draw instead -- the blast, the muzzle's
+#     flash (Level3DGuns.muzzle_flash) and the columns. Their bones stay, to
+#     say where from.
 class_name Level3DTanks
 extends Node3D
 
@@ -80,23 +87,30 @@ const TRACK_PADS := 2.0
 # bone any clip moves, so each layer's clips are cut down to its own bones.
 const LAYERS := {
 	"tracks": {"bones": ["Pad.", "Wheel."], "clips": ["Tracks", "Spin_L", "Spin_R"]},
-	"hull": {"bones": ["Hull", "Ring", "Blast."], "clips": ["Idle", "Drive", "Damage", "Death"]},
-	"weapon": {"bones": ["Gun", "Barrel", "Flash"], "clips": ["Shoot"]},
-	"smoke": {"bones": ["Smoke."], "clips": ["Smoke", "Burn"]},
+	"hull": {"bones": ["Hull", "Ring"], "clips": ["Idle", "Drive", "Damage", "Death"]},
+	"weapon": {"bones": ["Gun", "Barrel"], "clips": ["Shoot"]},
 }
-const LOOPS := ["Tracks", "Spin_L", "Spin_R", "Idle", "Drive", "Smoke", "Burn"]
-# The smoke has an Off, made here: jackal_tank.py bakes one, but a two-frame
-# clip does not come through the glTF export.
-const OFF := "Off"
+const LOOPS := ["Tracks", "Spin_L", "Spin_R", "Idle", "Drive"]
+# The model's effects, by bone, which no layer keys and every tank holds
+# scaled to nothing (_hide_effects): Death's fireball, Shoot's flash, and the
+# smoke of Burn and Smoke, which are not played any more.
+const EFFECTS := ["Blast.", "Flash", "Smoke."]
 const BLEND := 0.25
-# A wreck goes black over this long, all but its fireball and its smoke.
+# A wreck goes black over this long.
 const CHAR_TIME := 1.2
 const CHAR := 0.28
-const KEEP_COLOUR := ["MT_Fire", "MT_Flash", "MT_SmokeDark"]
 # Level3DPuffs': a puff's radius, level metres, out of the exhausts standing,
 # and off the tracks.
 const EXHAUST_SIZE := 0.09
 const DUST_SIZE := 0.2
+# Level3DPuffs' smoke, off the Smoke.0 bone: what Burn drew off a wreck, a
+# puff every fifth of a second rising 3.7 model metres in a second and 1.05
+# across at its biggest (the bone's 2.1 times the 0.5 m ball), and what Smoke
+# drew off a tank a hit has left smoking, 2.45 and 0.64.
+const WRECK_SMOKE := {"kind": "smoke", "colour": "smoke", "every": 0.2, "life": 1.0,
+		"size": 1.05 * SCALE, "rise": 3.7 * SCALE}
+const HIT_SMOKE := {"kind": "smoke", "colour": "smoke", "every": 0.2, "life": 1.0,
+		"size": 0.64 * SCALE, "rise": 2.45 * SCALE}
 
 var map: Level3DMap
 var guns: Level3DGuns
@@ -117,6 +131,8 @@ var _turret_pivot: Vector3        # model metres, Godot axes
 var _muzzle_from_turret: Vector3
 var _exhaust_bones := PackedInt32Array()
 var _dust_bones := PackedInt32Array()
+var _smoke_bone := -1
+var _effect_bones := PackedInt32Array()
 var _trigger_y := -1
 var _furthest_top := INF
 var _rng := RandomNumberGenerator.new()
@@ -139,6 +155,7 @@ class Tank:
 	var trail := PackedInt32Array([0, -1, -2, -3, -4, -5, -6, -7])
 	var trail_index := 7
 	var bullet_hits := 4
+	var smoking := false    # a hit has left it smoking
 	var turret_yaw := 0.0   # the turret's facing, level radians as root.rotation.y
 	var moved := 0.0        # level metres driven this tick
 	var turned := 0.0       # degrees turned this tick, + clockwise on the map
@@ -193,16 +210,6 @@ func _make_libraries() -> void:
 				a.remove_track(i)
 		a.loop_mode = Animation.LOOP_LINEAR if clip in LOOPS else Animation.LOOP_NONE
 		(_libraries[layer] as AnimationLibrary).add_animation(clip, a)
-	for layer in ["smoke"]:
-		var off := Animation.new()
-		off.length = 1.0 / 24.0
-		for i in skeleton.get_bone_count():
-			var bone := skeleton.get_bone_name(i)
-			if _layer_of(bone) == layer:
-				var t := off.add_track(Animation.TYPE_SCALE_3D)
-				off.track_set_path(t, NodePath("%s:%s" % [prefix, bone]))
-				off.scale_track_insert_key(t, 0.0, Vector3.ONE * 0.001)
-		(_libraries[layer] as AnimationLibrary).add_animation(OFF, off)
 	# The turret's pivot and the muzzle, from the skeleton rather than written
 	# out again here: the Flash bone is at the muzzle.
 	_turret_pivot = skeleton.get_bone_global_rest(skeleton.find_bone("Turret")).origin
@@ -210,6 +217,11 @@ func _make_libraries() -> void:
 	for side in ["L", "R"]:
 		_exhaust_bones.append(skeleton.find_bone("Exhaust." + side))
 		_dust_bones.append(skeleton.find_bone("Dust." + side))
+	_smoke_bone = skeleton.find_bone("Smoke.0")
+	for i in skeleton.get_bone_count():
+		var bone := skeleton.get_bone_name(i)
+		if EFFECTS.any(func(e: String): return bone == e or (e.ends_with(".") and bone.begins_with(e))):
+			_effect_bones.append(i)
 	probe.free()
 
 
@@ -227,10 +239,15 @@ func track_contacts() -> Array:
 
 
 # Level3DPuffs' emitters: the exhausts' mouths, which ride on the hull, and
-# the back of each track, of every tank still running. A wreck has neither.
+# the back of each track, of every tank still running, and the smoke of every
+# one smoking. A wreck has only the smoke.
 func puffs() -> Array:
 	var out := []
+	for t in _wrecks:
+		out.append(_smoke_from(t, WRECK_SMOKE))
 	for t in tanks:
+		if t.smoking:
+			out.append(_smoke_from(t, HIT_SMOKE))
 		var id := t.root.get_instance_id()
 		var mouths: Array[Vector3] = []
 		for bone in _exhaust_bones:
@@ -247,6 +264,13 @@ func puffs() -> Array:
 			at.y = t.root.global_position.y
 			out.append({"key": "%d:d%d" % [id, i], "kind": "dust", "at": at, "size": DUST_SIZE})
 	return out
+
+
+func _smoke_from(t: Tank, smoke: Dictionary) -> Dictionary:
+	var e := smoke.duplicate()
+	e.key = "%d:s" % t.root.get_instance_id()
+	e.at = t.skeleton.global_transform * t.skeleton.get_bone_global_pose(_smoke_bone).origin
+	return e
 
 
 func reset() -> void:
@@ -306,6 +330,9 @@ func _spawn(x: float, y: float) -> void:
 	Level3DFx.flash_lit(t.root, Level3DFx.ENEMY_FLASH_LAYER)
 	_split_players(t)
 	t.skeleton = t.root.find_child("Skeleton3D", true, false) as Skeleton3D
+	# No clip keys them any more, so this holds.
+	for bone in _effect_bones:
+		t.skeleton.set_bone_pose_scale(bone, Vector3.ONE * 0.001)
 	t.turret_bone = t.skeleton.find_bone("Turret")
 	_place(t)
 	t.turret_yaw = t.root.rotation.y
@@ -338,7 +365,6 @@ func _split_players(t: Tank) -> void:
 			hull.play(_base(t), BLEND))
 	hull.play("Idle")
 	(t.players.tracks as AnimationPlayer).play("Tracks")
-	(t.players.smoke as AnimationPlayer).play(OFF)
 	# Shoot's last frame is the gun at rest with no flash: held there until
 	# the first round.
 	var weapon: AnimationPlayer = t.players.weapon
@@ -607,7 +633,7 @@ func _run_tracks(t: Tank, delta: float) -> void:
 
 
 func _pose(t: Tank, delta: float) -> void:
-	for layer in ["hull", "weapon", "smoke"]:
+	for layer in ["hull", "weapon"]:
 		(t.players[layer] as AnimationPlayer).advance(delta)
 	t.skeleton.set_bone_pose_rotation(t.turret_bone,
 			Quaternion(Vector3.UP, t.turret_yaw - t.root.rotation.y))
@@ -625,7 +651,6 @@ func _kill(i: int, by: String) -> void:
 	guns.blast.call(at + Vector3.UP * BLAST_HEIGHT, BLAST_SCALE)
 	guns.explode(at)
 	(t.players.hull as AnimationPlayer).play("Death", 0.05)
-	(t.players.smoke as AnimationPlayer).play("Burn", 0.3)
 	_char(t)
 	_wrecks.append(t)
 	scored.call(POINTS)
@@ -639,7 +664,7 @@ func _char(t: Tank) -> void:
 		var mi := node as MeshInstance3D
 		for s in mi.mesh.get_surface_count():
 			var m := mi.mesh.surface_get_material(s) as StandardMaterial3D
-			if m == null or m.resource_name in KEEP_COLOUR:
+			if m == null:
 				continue
 			var own := m.duplicate() as StandardMaterial3D
 			mi.set_surface_override_material(s, own)
@@ -692,9 +717,7 @@ func bullet_attack(found: Dictionary) -> void:
 	var hull: AnimationPlayer = t.players.hull
 	if hull.current_animation != "Damage":
 		hull.play("Damage", 0.05)
-	var smoke: AnimationPlayer = t.players.smoke
-	if smoke.current_animation != "Smoke":
-		smoke.play("Smoke", 0.3)
+	t.smoking = true
 
 
 # Enemy.attack from a grenade or missile: gone at once.
