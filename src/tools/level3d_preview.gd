@@ -206,6 +206,10 @@ var chinook: Level3DChinook     # while it is flying the BTR in
 var level_aabb: AABB
 var focus := Vector2.ZERO       # x, z the camera is centred on
 var following := true
+# What is left of the way from where the Chinook had the frame to the BTR
+# (_process), and the time it takes to close most of it.
+const CATCH_UP := 0.25
+var _catch_up := Vector2.ZERO
 var mouse_aim := false  # M; off, classic fires as the game's jeep does
 var zoom := 1.0
 var tilted := true      # Tab; the top view is the game's
@@ -324,6 +328,7 @@ func _start_intro() -> void:
 	chinook.enlarge = not tilted
 	chinook.finished = func():
 		chinook = null
+		_catch_up = focus - Vector2(btr.position.x, btr.position.z)
 		following = true
 		# Player.make_invincible.
 		_invincible = Player.INVINCIBLE_DELAY
@@ -1766,8 +1771,19 @@ func _process(delta: float) -> void:
 	if scroll != 0.0:
 		following = false
 		focus.y -= scroll * SCROLL_SPEED / zoom * delta
+	# Standing where the Chinook has it while it flies the BTR in (frame_centre):
+	# the BTR stands at START unseen until the Chinook is down, then is put in
+	# its cabin, and a frame following it jumped there, 6.4 m in one frame.
+	# After the hand-over the frame comes on to the BTR over CATCH_UP seconds,
+	# where it was not over it already.
 	if following:
-		focus = Vector2(btr.position.x, btr.position.z)
+		if chinook != null:
+			focus = chinook.frame_centre(level_aabb.size.x / zoom * 9.0 / 32.0)
+		else:
+			_catch_up *= exp(-delta / CATCH_UP)
+			focus = Vector2(btr.position.x, btr.position.z) + _catch_up
+	else:
+		_catch_up = Vector2.ZERO
 	# The boss's pan and the arena after it: the frame's top where the boss
 	# has it, as GameMode's boss_camera_pan and max_camera_y = 0 hold it.
 	var boss_top := boss.camera_top() if boss != null else -1.0

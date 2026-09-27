@@ -366,12 +366,33 @@ func _unload_completed() -> void:
 func _hand_over() -> void:
 	state = DONE
 	btr.visible = true
-	var at := Level3DMap.to_level(Vector2(IntroPlayer.FINAL_X, IntroPlayer.FINAL_Y))
+	var at := hand_over_at()
 	btr.place(Vector3(at.x, 0.0, at.y), PI / 2.0)
 	if _sound != null:
 		_sound.stop()
 	queue_free()
 	finished.call()
+
+
+# Where the BTR is the player's, level x, z: IntroPlayer's FINAL_X, FINAL_Y.
+static func hand_over_at() -> Vector2:
+	return Level3DMap.to_level(Vector2(IntroPlayer.FINAL_X, IntroPlayer.FINAL_Y))
+
+
+# Where the preview's frame stands for the whole run, `half_height` metres
+# either side (Level3DPreview's _process), as the game's stands still until
+# the player is updated: over hand_over_at(), so that it need not move when
+# the BTR is handed over, unless the frame is too short for the landing, 6.6 m
+# north of it, to be in it as well -- zoomed in past 2 or so; then as far
+# north as keeps the landing FRAME_MARGIN inside the top edge, and the frame
+# catches up with the BTR once it has it.
+const FRAME_MARGIN := 2.0
+
+func frame_centre(half_height: float) -> Vector2:
+	var at := hand_over_at()
+	var landing := Level3DMap.to_level(ARC_LANDING + Vector2(0.0, _shift))
+	at.y = minf(at.y, landing.y + half_height - FRAME_MARGIN)
+	return at
 
 
 func _play_ramp(clip: String) -> void:
