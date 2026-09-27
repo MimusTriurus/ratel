@@ -141,9 +141,8 @@
 # instead (level3d_btr.gd, VEHICLES): the same driving, stiffer springs and
 # no aerials.
 #
-# The soldiers are the model sheet's trooper; --sprite-soldiers, with or
-# without --shot, draws them as the figure made from the game's sprite
-# (level3d_soldiers.gd, MODELS). The dead lie where they fell; --fade-corpses
+# The soldiers are the model sheet's trooper (level3d_soldiers.gd, MODEL).
+# The dead lie where they fell; --fade-corpses
 # sinks them away as the game fades them (level3d_soldiers.gd, fade_corpses).
 extends Node3D
 
@@ -1242,7 +1241,7 @@ var _invincible := 0
 var _immortal := false  # --immortal: rounds pass the BTR by, for --shot runs
 var _blink := 0
 var _score := 0
-var _score_label: Label
+var _hud_line: Level3DHud
 var _banner: Label      # GAME OVER
 var _hud: CanvasLayer
 # The spare lives, as Main.extra_lives: the game's four on normal. The last
@@ -1557,9 +1556,8 @@ func _make_hud() -> void:
 	_hud.layer = HUD_LAYER
 	var layer := _hud
 	add_child(layer)
-	_score_label = Label.new()
-	_score_label.add_theme_color_override("font_outline_color", Color.BLACK)
-	layer.add_child(_score_label)
+	_hud_line = Level3DHud.new()
+	layer.add_child(_hud_line)
 	_banner = Label.new()
 	_banner.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1580,27 +1578,36 @@ func _make_hud() -> void:
 	_set_score(0)
 
 
-# The line's corner and size, from Level3DSettings: anchored to the corner and
-# grown away from it, so a longer line or a bigger font never runs off it.
-const HUD_MARGIN := Vector2(16, 12)
-const HUD_FONT_SIZE := 22
-const HUD_OUTLINE := 6
-
+# The line's corner and size, from Level3DSettings (Level3DHud draws it), and
+# its icons rendered again for a new size.
 func _layout_hud() -> void:
-	var label := _score_label
-	var bottom := settings.hud_corner == Level3DSettings.HudCorner.BOTTOM
-	label.anchor_left = 0.0
-	label.anchor_right = 0.0
-	label.anchor_top = 1.0 if bottom else 0.0
-	label.anchor_bottom = label.anchor_top
-	label.grow_vertical = Control.GROW_DIRECTION_BEGIN if bottom else Control.GROW_DIRECTION_END
-	label.offset_left = HUD_MARGIN.x
-	label.offset_right = HUD_MARGIN.x
-	label.offset_top = -HUD_MARGIN.y if bottom else HUD_MARGIN.y
-	label.offset_bottom = label.offset_top
-	label.add_theme_font_size_override("font_size", roundi(HUD_FONT_SIZE * settings.hud_scale))
-	label.add_theme_constant_override("outline_size", roundi(HUD_OUTLINE * settings.hud_scale))
-	label.reset_size()
+	_hud_line.bottom = settings.hud_corner == Level3DSettings.HudCorner.BOTTOM
+	_hud_line.scale_factor = settings.hud_scale
+	_hud_line.queue_redraw()
+	if btr != null and sun != null and _hud_line.icon_pixels() != _icon_pixels:
+		_render_icons()
+
+
+# The HUD's icons off the preview's own models (Level3DIcons), lit by its sun.
+# A few frames' work, so a size changed again before it is done starts over,
+# and only the last one's are kept.
+var _icons: Level3DIcons
+var _icon_pixels := -1
+var _icon_run := 0
+
+func _render_icons() -> void:
+	if _icons == null:
+		_icons = Level3DIcons.new()
+		add_child(_icons)
+	_icons.sun_energy = sun.light_energy
+	_icons.shade = SHADE
+	_icon_pixels = _hud_line.icon_pixels()
+	_icon_run += 1
+	var run := _icon_run
+	var rendered: Dictionary = await _icons.render_all(btr.vehicle, _icon_pixels)
+	if run == _icon_run:
+		_hud_line.icons = rendered
+		_hud_line.queue_redraw()
 
 
 const FIRING_NAMES := ["CLASSIC", "CURSOR", "COMBINED"]
@@ -1610,24 +1617,47 @@ var _modes_flash := 0   # the flashes still running; the modes show while > 0
 
 func _set_score(score: int) -> void:
 	_score = score
-	var parts: Array[String] = []
-	if settings.hud:
-		if settings.hud_score:
-			parts.append("SCORE %06d" % score)
-		if settings.hud_lives:
-			parts.append("LIVES %s" % ("∞" if settings.infinite_lives else str(_lives)))
-		if friends != null and settings.hud_pows:
-			parts.append("POW %d" % friends.pows)
-		if friends != null and settings.hud_weapon:
-			parts.append(friends.weapon_name().to_upper())
+	var line := _hud_line
+	var on := settings.hud
+	line.parts = {"score": on and settings.hud_score, "lives": on and settings.hud_lives,
+			"pows": on and settings.hud_pows and friends != null,
+			"weapon": on and settings.hud_weapon and friends != null}
+	line.score = score
+	line.lives = -1 if settings.infinite_lives else _lives
+	if friends != null:
+		line.pows = friends.pows
+		line.has_missiles = friends.has_missiles
+		line.missile_power = friends.missile_power
 	# The flash shows with the HUD off as well: a key that changes the driving
 	# has to say what it changed it to.
-	if btr != null and (settings.hud and settings.hud_modes or _modes_flash > 0):
-		parts.append("%s DRIVE   %s FIRE" % ["CLASSIC" if btr.classic else "FREE",
-				FIRING_NAMES[settings.firing]])
-	_score_label.text = "   ".join(parts)
-	_score_label.visible = not parts.is_empty()
-	_score_label.reset_size()
+	line.modes = ""
+	if btr != null and (on and settings.hud_modes or _modes_flash > 0):
+		line.modes = "%s DRIVE  %s FIRE" % ["CLASSIC" if btr.classic else "FREE",
+				FIRING_NAMES[settings.firing]]
+	line.cheats = _cheats_text() if on and settings.hud_cheats else ""
+	line.show_state()
+
+
+# The cheats that are on, in words the font has and short enough for the
+# line at 150% (Level3DSettings: the Cheats tab), or "" for none.
+func _cheats_text() -> String:
+	var on: Array[String] = []
+	if settings.infinite_lives:
+		on.append("LIVES")
+	if settings.wall_hack:
+		on.append("WALLS")
+	if settings.bullet_hack:
+		on.append("BULLETS")
+	if settings.gun_rate != 1.0:
+		on.append("GUN X" + _rate_text(settings.gun_rate))
+	if settings.launcher_rate != 1.0:
+		on.append("ROCKET X" + _rate_text(settings.launcher_rate))
+	return "" if on.is_empty() else "CHEATS: " + "  ".join(on)
+
+
+# 2, not 2.0; 0.5 as it is.
+static func _rate_text(rate: float) -> String:
+	return str(int(rate)) if rate == floorf(rate) else str(rate)
 
 
 # The arrow to the rescue helicopter's pad: while there are prisoners aboard
@@ -2297,7 +2327,7 @@ func _screenshot_mode() -> void:
 		args.remove_at(immortal)
 	# Level3DSoldiers and Level3DBtr read these for themselves; they are not
 	# waypoints.
-	for own in ["--sprite-soldiers", "--fade-corpses", "--btr", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
+	for own in ["--fade-corpses", "--btr", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
 			"--no-wind", "--wind-steps", "--spots"]:
 		var at := args.find(own)
 		if at >= 0:

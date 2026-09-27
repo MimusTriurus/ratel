@@ -1,5 +1,5 @@
 # The enemy soldiers on the 3D stage 1 preview: jackal.EnemySoldier and
-# jackal.DeadEnemySoldier, on jackal_trooper.glb or jackal_soldier.glb (MODELS).
+# jackal.DeadEnemySoldier, on jackal_trooper.glb (MODEL).
 #
 # Nothing here is part of the game, and all of it is the game's: the soldiers
 # are stage-0.json's SOLDIER_WALKER and SOLDIER_STATIONARY triggers on normal,
@@ -27,12 +27,9 @@
 #     the preview is given --fade-corpses.
 #
 # He is drawn as the trooper of the soldier model sheet (jackal_trooper.glb,
-# jackal_soldier_lowpoly.blend) unless the preview is given --sprite-soldiers,
-# which brings back the figure made from the game's sprite (jackal_soldier.glb,
-# jackal_units.blend). The same flag does the prisoners (level3d_friends.gd).
-# Both are the same soldier to everything above: MODELS
-# says what differs -- the trooper is a 1.8 m man shrunk to the sprite
-# figure's metre, blinks his khaki, and walks by the ground he covers.
+# jackal_soldier_lowpoly.blend): a 1.8 m man shrunk to the metre the first
+# figure, made from the game's sprite, stood at, who blinks his khaki and
+# walks by the ground he covers (MODEL). That first figure is gone.
 #
 # Where this departs from the game, and why:
 #   * The hit and mine boxes are the game's 32 x 60 px, but centred on him
@@ -51,27 +48,22 @@
 class_name Level3DSoldiers
 extends Node3D
 
-const SOLDIER_PATH := "res://resources/3d/jackal_soldier.glb"
 const TROOPER_PATH := "res://resources/3d/jackal_trooper.glb"
 const PX := Level3DMap.PX
 
-# What the two figures need said about them:
-#   scale        to the sprite figure's metre -- what keeps him in proportion
-#                with the BTR and the bunkers (jackal_units.blend)
+# What the figure needs said about it:
+#   scale        to the first, sprite-made figure's metre -- what keeps him in
+#                proportion with the BTR and the bunkers
 #   brown, dark  the materials his blink recolours, as the yellow sheet does
 #                the sprite's brown and black
 #   stride       metres a Walk cycle covers, unscaled, for a walk driven by the
-#                ground covered; 0 steps it by the game's leg frames, which is
-#                right for the sprite figure's two-frame walk and slides the
-#                trooper's feet (his cycle is 0.8 m, the game's 26 ticks 13 px)
-#   loop_pad     seconds the looping clips are short of their repeat: the
-#                trooper's are exported up to the frame before the first again
-const MODELS := {
-	"trooper": {"path": TROOPER_PATH, "scale": 0.55,
-			"brown": "T_Uniform", "dark": "T_UniformDark", "stride": 0.8, "loop_pad": 1.0 / 24.0},
-	"sprite": {"path": SOLDIER_PATH, "scale": 1.0,
-			"brown": "J_SoldierBrown", "dark": "J_SoldierDark", "stride": 0.0, "loop_pad": 0.0},
-}
+#                ground covered; 0 steps it by the game's leg frames, which
+#                would slide his feet (his cycle is 0.8 m, the game's 26 ticks
+#                13 px)
+#   loop_pad     seconds the looping clips are short of their repeat: they
+#                are exported up to the frame before the first again
+const MODEL := {"path": TROOPER_PATH, "scale": 0.55,
+		"brown": "T_Uniform", "dark": "T_UniformDark", "stride": 0.8, "loop_pad": 1.0 / 24.0}
 
 # EnemySoldier.init()'s boxes, pixels from his position. Solid is the game's,
 # for walking round each other; hit and mine are the same size, centred.
@@ -107,9 +99,8 @@ const KNOCK_CLEAR := 0.1
 const KNOCK_TIME := 0.25
 const KNOCK_SPEED := 2.0
 # A corpse the BTR then drives over, however he died, is flattened to this much
-# of his height over CRUSH_TIME, and stays so: the trooper lies 0.31 m high, the
-# sprite figure 0.24, and the lowest of the BTR's belly, its differentials, is
-# 0.15 m off the ground. It is run over when the BTR covers any of his bones.
+# of his height over CRUSH_TIME, and stays so: he lies 0.31 m high, and the
+# lowest of the BTR's belly, its differentials, is 0.15 m off the ground. It is run over when the BTR covers any of his bones.
 const CRUSH := 0.35
 const CRUSH_TIME := 0.06
 # The BTR's body reaching this far from where he stands runs him over as well
@@ -145,8 +136,7 @@ var verbose := false
 # back up to.
 var fade_corpses := false
 
-# MODELS' entry for the figure he is drawn as.
-var model: Dictionary
+var model := MODEL
 var soldiers: Array[Soldier] = []
 var _corpses: Array[Soldier] = []
 var _scene: PackedScene
@@ -204,7 +194,6 @@ class Soldier:
 
 func _ready() -> void:
 	_rng.seed = 3
-	model = MODELS["sprite" if OS.get_cmdline_user_args().has("--sprite-soldiers") else "trooper"]
 	fade_corpses = OS.get_cmdline_user_args().has("--fade-corpses")
 	_scene = load(model.path)
 	if _scene == null:

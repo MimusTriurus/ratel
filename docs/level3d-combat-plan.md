@@ -97,7 +97,8 @@
     пандусе наклон корпуса ограничен `RAMP_TILT_STEP`, а не `TILT_STEP`.
   - Проверка: `--shot` печатает события, `--immortal` пропускает пули.
 - **Шаг 7 сделан** (`src/tools/level3d_soldiers.gd`, `level3d_map.gd`).
-  Солдаты — это `EnemySoldier` и `DeadEnemySoldier` на `jackal_soldier.glb`.
+  Солдаты — это `EnemySoldier` и `DeadEnemySoldier` на `jackal_soldier.glb`
+  (фигура из спрайта; теперь `jackal_trooper.glb`, а она удалена).
   - **Откуда берутся.** Это триггеры `SOLDIER_WALKER` и `SOLDIER_STATIONARY`
     из `stage-0.json` на normal, их 38. Появляются так же, как в
     `GameMode._process_triggers`.
@@ -119,7 +120,8 @@
     - клетки взорванной хижины остаются непроходимыми.
 
 - **Шаг 8 сделан** (`src/tools/level3d_friends.gd`). Пленные — это
-  `FriendlySoldier`, `Hut`, `House` и `Help` на `jackal_pow.glb`, по тем же
+  `FriendlySoldier`, `Hut`, `House` и `Help` на `jackal_pow.glb` (теперь
+  `jackal_trooper_pow.glb`), по тем же
   правилам и на той же карте игры, что и солдаты.
   - **Казарма** — это HUT игры. Из разрушенной выходит носитель оружия,
     переливается четырьмя листами цветов, машет и бродит. 300 очков.

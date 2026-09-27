@@ -1,6 +1,5 @@
 # The prisoners on the 3D stage 1 preview: jackal.FriendlySoldier, and what
-# lets them out -- Hut, House and Help -- on jackal_trooper_pow.glb or
-# jackal_pow.glb (MODELS).
+# lets them out -- Hut, House and Help -- on jackal_trooper_pow.glb (MODEL).
 #
 # Nothing here is part of the game, and the rules are the game's, run as the
 # soldiers' are (level3d_soldiers.gd): in map pixels and ticks on the game's
@@ -30,33 +29,26 @@
 # in the stage file for it.
 #
 # He is drawn as the model sheet's trooper in the game's green, unarmed
-# (jackal_trooper_pow.glb, jackal_soldier_lowpoly.blend), unless the preview is
-# given --sprite-soldiers, which brings back the figure made from the sprite
-# (jackal_pow.glb, jackal_units.blend) -- the enemies' flag, the same choice
-# for both. MODELS says what differs, as Level3DSoldiers' does.
+# (jackal_trooper_pow.glb, jackal_soldier_lowpoly.blend); MODEL says what his
+# code needs to know, as Level3DSoldiers' does.
 #
 # The weapon upgrade, from a weapon carrier or from the rescues that give one,
 # goes to the launcher as the game's missile and its two upgrades.
 class_name Level3DFriends
 extends Node3D
 
-const POW_PATH := "res://resources/3d/jackal_pow.glb"
 const TROOPER_POW_PATH := "res://resources/3d/jackal_trooper_pow.glb"
 const PX := Level3DMap.PX
 
-# As Level3DSoldiers.MODELS: scale to the sprite figure's metre; `colour` the
-# material the weapon carrier's sheets recolour and `dark` the one the yellow
-# sheet does; `stride` metres a Pow_Walk cycle covers, unscaled, 0 to step it
-# by LEG_FRAMES; `wave_seconds` how long a Pow_Wave swing takes, 0 to step it
-# by LEG_FRAMES as the sprite's two waving frames do -- a man waving four
-# times a second is frantic; `loop_pad` what the clips are short of their
-# repeat.
-const MODELS := {
-	"trooper": {"path": TROOPER_POW_PATH, "scale": 0.55, "colour": "F_Uniform", "dark": "F_UniformDark",
-			"stride": 0.8, "wave_seconds": 1.0, "loop_pad": 1.0 / 24.0},
-	"sprite": {"path": POW_PATH, "scale": 1.0, "colour": "J_PowColor", "dark": "J_SoldierDark",
-			"stride": 0.0, "wave_seconds": 0.0, "loop_pad": 0.0},
-}
+# As Level3DSoldiers.MODEL: scale to the first, sprite-made figure's metre;
+# `colour` the material the weapon carrier's sheets recolour and `dark` the
+# one the yellow sheet does; `stride` metres a Pow_Walk cycle covers,
+# unscaled, 0 to step it by LEG_FRAMES; `wave_seconds` how long a Pow_Wave
+# swing takes, 0 to step it by LEG_FRAMES as the sprite's two waving frames
+# do -- a man waving four times a second is frantic; `loop_pad` what the
+# clips are short of their repeat.
+const MODEL := {"path": TROOPER_POW_PATH, "scale": 0.55, "colour": "F_Uniform", "dark": "F_UniformDark",
+		"stride": 0.8, "wave_seconds": 1.0, "loop_pad": 1.0 / 24.0}
 
 # FriendlySoldier.init(): a zero-width hit and mine box, 20 px tall -- the
 # player has to drive over his middle. Centred on him here, as the enemy
@@ -76,8 +68,8 @@ const WAVE := "Pow_Wave"
 
 # FriendlySoldier's colour sheets, green first: what the colour and the black
 # become as a weapon carrier flashes. Only the yellow sheet changes the black.
-# The green is the model's own (Color() -- the sprite figure's J_PowColor is
-# that green, the trooper's is the same green toned down to cloth).
+# The green is the model's own (Color() -- the sheet's green toned down to
+# cloth).
 const SHEETS := [
 	[Color(), Color()],
 	[Color8(153, 78, 0), Color()],
@@ -108,8 +100,7 @@ var missile_power := 0
 var friends: Array[Friend] = []
 var _helps := []
 var _bound := {}                # destructible name -> map building
-# MODELS' entry for the figure he is drawn as.
-var model: Dictionary
+var model := MODEL
 var _scene: PackedScene
 var _rng := RandomNumberGenerator.new()
 var _furthest_top := INF
@@ -156,7 +147,6 @@ class Friend:
 
 func _ready() -> void:
 	_rng.seed = 4
-	model = MODELS["sprite" if OS.get_cmdline_user_args().has("--sprite-soldiers") else "trooper"]
 	_scene = load(model.path)
 	if _scene == null:
 		push_error("Cannot load %s -- run its .blend's export" % model.path)

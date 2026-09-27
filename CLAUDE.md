@@ -568,8 +568,9 @@ intro drop only incidentally — the real gate there is `GameMode.playing`, whic
   and `docs/level3d-pipeline.md`. Only the jeep, the BTR, the Chinook,
   the Little Bird (`jackal_littlebird_lowpoly.blend`, the preview's rescue
   helicopter, `level3d_rescue.gd`), the model-sheet soldiers, the boat, the two tanks, the bunker with its
-  gun, and all of stage 1 are done; only the sprite soldier
-  (`jackal_units.blend`, `--sprite-soldiers`) is left. The 3D preview lights
+  gun, and all of stage 1 are done, which is every model in the preview: the
+  first, sprite-made soldier (`jackal_units.blend`, `--sprite-soldiers`) was
+  deleted rather than converted. The 3D preview lights
   every material two-tone (`_toon` in `level3d_preview.gd`), the terrain's
   only lines are `Shore_Lines` along the beach's bands, and the water is
   deliberately left soft: a cel-shaded version was tried and reverted.

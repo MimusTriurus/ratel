@@ -1,0 +1,198 @@
+# The 3D preview's HUD line, drawn with the game's own font and with icons
+# rendered from the preview's own models (level3d_preview.gd, _set_score
+# hands it the run's state, _render_icons the icons):
+#
+#     1P 004500   [jeep][jeep][jeep]   [prisoner] 3   [missile]
+#     CLASSIC DRIVE  CURSOR FIRE
+#     CHEATS: LIVES  WALLS  GUN X2
+#
+#   * the score as GameMode._draw_score writes it, "1P" and the number, in
+#     the font's white (the sheet calls it black: white glyphs, dark shadow);
+#   * the spare lives as the vehicle the preview drives, one each -- the game
+#     shows a count, "P 4", which a row of them says without a letter to
+#     learn. With the infinite lives cheat, one and an infinity drawn after
+#     it: the font has no glyph for it;
+#   * the prisoners aboard as a prisoner and the count, dimmed with none
+#     aboard;
+#   * the weapon as its round -- the mortar's bomb, the missile, the heavy
+#     missile, the staged one -- each its own outline, so the level needs
+#     nothing beside it; a change of weapon blinks it for UPGRADE_BLINK_TIME,
+#     the only way it is noticed;
+#   * on lines of their own, a size smaller, in the font's gray: the driving
+#     and firing modes when shown, and the cheats that are on
+#     (Level3DSettings.hud_cheats).
+#
+# Sizes are whole multiples of a pixel. A glyph is 32 px at 100%, as the
+# game's own HUD draws it on the same 2048x1152 frame, 24 to 48 through
+# Level3DSettings.hud_scale, 8 of the font's pixels either way. The icons
+# (Level3DIcons) are rendered ICON_HEIGHT glyphs tall, ICON_PIXEL of the
+# frame's pixels to one of theirs, and drawn at that: re-rendered when the size
+# changes, so the factor holds. At 2 -- a quarter of the glyph's pixel -- they
+# read coarse beside the models on the stage; at 1 they keep the hard edge and
+# the line of a sprite with the detail of the model. Until they are rendered,
+# the game's sprites stand in, as they did before there were icons. The
+# project's canvas filter is nearest, so the pixels stay square.
+class_name Level3DHud
+extends Control
+
+const GLYPH := 32.0                     # at 100%
+const MARGIN := Vector2(16, 12)
+const GAP := 1.0                        # between groups, in glyphs
+const ICON_HEIGHT := 1.5                # glyphs: the line's height
+const ICON_PIXEL := 1.0                 # frame pixels to an icon's pixel
+const LIFE_SPRITE := "player-green-2.png"
+const POW_SPRITE := "friendly-soldier-green-1.png"
+const GRENADE_SPRITE := "grenade-large.png"
+const MISSILE_SPRITE := "player-missile-1.png"
+const COLOURS := ["black", "gray"]
+enum { WHITE, GRAY }
+# The glyphs' shadow, under the infinity: white on the font's dark, since
+# stage 1's sand is the font's orange, near enough.
+const SHADOW := Color(0.2, 0.2, 0.2)
+const UPGRADE_BLINK_TIME := 1.5
+const UPGRADE_BLINK := 0.1
+
+# What the line shows, set whole by `show_state` and drawn by _draw.
+var score := 0
+var lives := 0              # spare lives; -1 for the infinite lives cheat
+var pows := 0
+var has_missiles := false
+var missile_power := 0
+var modes := ""             # "" for none
+var cheats := ""            # the cheats on, "" for none or not shown
+var parts := {"score": true, "lives": true, "pows": true, "weapon": true}
+var bottom := false         # the bottom left corner rather than the top left
+var scale_factor := 1.0
+# Level3DIcons.render_all's: {"lives", "pow", "weapons": [4]}, or empty.
+var icons := {}
+
+var _fonts: Array = []      # [colour] -> {code point -> Spr}
+var _sprites := {}          # sprite name -> Spr, until the icons come
+var _weapon := ""           # the weapon last shown, for the blink
+var _blink_left := 0.0
+
+
+func _init() -> void:
+	set_anchors_preset(Control.PRESET_FULL_RECT)
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var font := Atlas.new(Main.IMAGES + "font.png", Main.IMAGES + "font.xml")
+	for colour in COLOURS:
+		var glyphs := {}
+		for i in Main.CHARS.length():
+			var c := Main.CHARS.unicode_at(i)
+			glyphs[c] = font.get_sprite("font-%s-%s.png" % [colour, Main._character_name(c)])
+		_fonts.append(glyphs)
+	var bank := SpriteBank.new(Main.SPRITES)
+	for name in [LIFE_SPRITE, POW_SPRITE, GRENADE_SPRITE, MISSILE_SPRITE]:
+		_sprites[name] = bank.get_sprite(name)
+
+
+# The icons' height in their own pixels at the current size: ICON_HEIGHT
+# glyphs, ICON_PIXEL frame pixels to each.
+func icon_pixels() -> int:
+	return roundi(GLYPH * scale_factor * ICON_HEIGHT / ICON_PIXEL)
+
+
+func show_state() -> void:
+	var weapon := "%s%d" % [has_missiles, missile_power]
+	if _weapon != "" and weapon != _weapon:
+		_blink_left = UPGRADE_BLINK_TIME
+	_weapon = weapon
+	queue_redraw()
+
+
+func _process(delta: float) -> void:
+	if _blink_left > 0.0:
+		_blink_left = maxf(_blink_left - delta, 0.0)
+		queue_redraw()
+
+
+func _draw() -> void:
+	var g := GLYPH * scale_factor
+	var row := g * ICON_HEIGHT
+	var top := size.y - MARGIN.y - row if bottom else MARGIN.y
+	var y := top + roundf((row - g) * 0.5)      # the glyphs' top
+	var x := MARGIN.x
+	var groups := 0
+	if parts.score:
+		x = _text("1P %06d" % score, x, y, g, WHITE)
+		groups += 1
+	if parts.lives:
+		x = _gap(x, g, groups)
+		groups += 1
+		for i in (1 if lives < 0 else lives):
+			x = _icon(icons.get("lives"), LIFE_SPRITE, x, top, row, 1.0) + g * 0.125
+		if lives < 0:
+			x = _infinity(x, y, g)
+	if parts.pows:
+		x = _gap(x, g, groups)
+		groups += 1
+		var dim := 1.0 if pows > 0 else 0.45
+		x = _icon(icons.get("pow"), POW_SPRITE, x, top, row, dim) + g * 0.25
+		x = _text(str(pows), x, y, g, WHITE, dim)
+	if parts.weapon:
+		x = _gap(x, g, groups)
+		groups += 1
+		# Blinking, it is hidden every other beat but keeps its place.
+		var alpha := 1.0 if _blink_left <= 0.0 or int(_blink_left / UPGRADE_BLINK) % 2 == 0 else 0.0
+		var level := 1 + missile_power if has_missiles else 0
+		var rounds: Array = icons.get("weapons", [])
+		x = _icon(rounds[level] if level < rounds.size() else null,
+				MISSILE_SPRITE if has_missiles else GRENADE_SPRITE, x, top, row, alpha)
+	# The modes and the cheats on lines of their own, smaller, stacked away
+	# from the corner: they are several words each and would run the main line
+	# off the frame at the bigger sizes.
+	var small := roundf(g * 0.75 / 8.0) * 8.0 if g >= 32.0 else g
+	var gap := roundf(g * 0.25)
+	var at := top - gap - small if bottom else top + row + gap
+	for line in [modes, cheats]:
+		if line == "":
+			continue
+		_text(line, MARGIN.x, at, small, GRAY)
+		at += -(small + gap) if bottom else small + gap
+
+
+func _gap(x: float, g: float, groups: int) -> float:
+	return x + g * GAP if groups > 0 else x
+
+
+# The game's draw_text: a glyph every GLYPH, missing ones left as spaces.
+func _text(text: String, x: float, y: float, g: float, colour: int, alpha := 1.0) -> float:
+	var glyphs: Dictionary = _fonts[colour]
+	for i in text.length():
+		var s: Spr = glyphs.get(text.to_upper().unicode_at(i))
+		if s != null:
+			draw_texture_rect_region(s.tex, Rect2(x, y, g, g), s.region, Color(1, 1, 1, alpha))
+		x += g
+	return x
+
+
+# A rendered icon at the line's height, its own proportions kept, or the
+# game's sprite at the glyphs' until the icons are there. Returns where it
+# ends.
+func _icon(icon: Texture2D, sprite: String, x: float, top: float, row: float, alpha: float) -> float:
+	if icon != null:
+		var factor := row / icon.get_height()
+		var w := roundf(icon.get_width() * factor)
+		draw_texture_rect(icon, Rect2(x, top, w, row), false, Color(1, 1, 1, alpha))
+		return x + w
+	var s: Spr = _sprites.get(sprite)
+	if s == null:
+		return x
+	var h := row * 0.8
+	var sw := roundf(s.w * h / s.h)
+	draw_texture_rect_region(s.tex, Rect2(x, top + (row - h) * 0.5, sw, h), s.region, Color(1, 1, 1, alpha))
+	return x + sw
+
+
+# The infinity the font does not have: two rings in the glyphs' white with
+# their shadow under them, a glyph and a half wide.
+func _infinity(x: float, y: float, g: float) -> float:
+	var r := g * 0.3
+	var width := maxf(roundf(g / 8.0), 1.0)
+	for pass_colour in [SHADOW, Color.WHITE]:
+		var offset := Vector2(width, width) if pass_colour != Color.WHITE else Vector2.ZERO
+		var centre := Vector2(x + r + width, y + g * 0.5) + offset
+		draw_arc(centre, r, 0.0, TAU, 24, pass_colour, width)
+		draw_arc(centre + Vector2(r * 2.0, 0.0), r, 0.0, TAU, 24, pass_colour, width)
+	return x + r * 4.0 + width * 2.0
