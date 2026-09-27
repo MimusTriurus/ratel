@@ -15,6 +15,12 @@ class_name Level3DMenu
 extends CanvasLayer
 
 const FONT_SIZE := 24
+# The headings' colour, and a ticked box's.
+const ACCENT := Color(1.0, 0.8, 0.3)
+# The boxes' size in pixels of the 2048x1152 layout; drawn at ICON_OVERSAMPLE
+# times that, so that they stay sharp scaled up to a bigger screen.
+const ICON_SIZE := 26
+const ICON_OVERSAMPLE := 2
 const ACTION_NAMES := {
 	"up": "Вперёд / вверх", "down": "Назад / вниз", "left": "Влево", "right": "Вправо",
 	"gun": "Пулемёт", "rocket": "Ракета", "turret_left": "Башня влево",
@@ -31,6 +37,7 @@ var _tabs: TabContainer
 var _camera: OptionButton
 var _look: OptionButton
 var _crt: CheckBox
+var _resolution: OptionButton
 var _driving: OptionButton
 var _firing: OptionButton
 var _reach: OptionButton
@@ -50,6 +57,11 @@ func _ready() -> void:
 	visible = false
 	var theme := Theme.new()
 	theme.default_font_size = FONT_SIZE
+	for state in ["unchecked", "unchecked_disabled"]:
+		theme.set_icon(state, "CheckBox", _box_icon(false))
+	for state in ["checked", "checked_disabled"]:
+		theme.set_icon(state, "CheckBox", _box_icon(true))
+	theme.set_constant("h_separation", "CheckBox", 10)
 	var root := Control.new()
 	root.theme = theme
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -105,6 +117,7 @@ func refresh() -> void:
 	_camera.select(settings.camera)
 	_look.select(settings.look)
 	_crt.set_pressed_no_signal(settings.crt)
+	_resolution.select(settings.resolution)
 	_driving.select(settings.driving)
 	_firing.select(settings.firing)
 	_reach.select(settings.reach)
@@ -163,12 +176,31 @@ func _make_graphics_tab() -> Control:
 			func(i: int): settings.camera = i)
 	_look = _choice(grid, "Визуализация", ["Современный", "Пиксели"],
 			func(i: int): settings.look = i)
+	_resolution = _choice(grid, "Разрешение 3D", ["Как у экрана", "2048×1152 (как в игре)", "1920×1080", "1280×720"],
+			func(i: int): settings.resolution = i)
 	_crt = _check(tab, "ЭЛТ-монитор", func(on: bool): settings.crt = on)
 	return tab.get_parent().get_parent()
 
 
 func _make_controls_tab() -> Control:
 	var tab := _tab("Управление")
+	# The modes first: they are changed far more often than the keys.
+	var modes := _grid(tab)
+	_driving = _choice(modes, "Режим езды", ["Классический", "Современный"],
+			func(i: int): settings.driving = i)
+	_note(tab, "Классический: джип едет туда, куда нажато направление, как в игре. "
+			+ "Современный: газ и руль, как у настоящей машины.")
+	var firing := _grid(tab)
+	_firing = _choice(firing, "Режим стрельбы", ["Классический", "Современный", "Комбинированный"],
+			func(i: int): settings.firing = i)
+	_note(tab, "Классический: пулемёт вперёд, ракеты по направлению джипа. "
+			+ "Современный: всё по курсору. Комбинированный: пулемёт всегда вверх по экрану, ракеты по курсору.")
+	var reach := _grid(tab)
+	_reach = _choice(reach, "Дальность стрельбы", ["Классическая", "Не ограничена"],
+			func(i: int): settings.reach = i)
+	_note(tab, "Классическая: как в игре, пули и ракеты летят недалеко. "
+			+ "Не ограничена: летят, пока во что-нибудь не попадут; ракета, наведённая курсором, взрывается у курсора.")
+	tab.add_child(HSeparator.new())
 	_heading(tab, "Настройка управления")
 	var keys := _grid(tab)
 	for action in Level3DSettings.ACTIONS:
@@ -189,22 +221,6 @@ func _make_controls_tab() -> Control:
 		settings.reset_keys()
 		_changed())
 	tab.add_child(defaults)
-	tab.add_child(HSeparator.new())
-	var modes := _grid(tab)
-	_driving = _choice(modes, "Режим езды", ["Классический", "Современный"],
-			func(i: int): settings.driving = i)
-	_note(tab, "Классический: джип едет туда, куда нажато направление, как в игре. "
-			+ "Современный: газ и руль, как у настоящей машины.")
-	var firing := _grid(tab)
-	_firing = _choice(firing, "Режим стрельбы", ["Классический", "Современный", "Комбинированный"],
-			func(i: int): settings.firing = i)
-	_note(tab, "Классический: пулемёт вперёд, ракеты по направлению джипа. "
-			+ "Современный: всё по курсору. Комбинированный: пулемёт всегда вверх по экрану, ракеты по курсору.")
-	var reach := _grid(tab)
-	_reach = _choice(reach, "Дальность стрельбы", ["Классическая", "Не ограничена"],
-			func(i: int): settings.reach = i)
-	_note(tab, "Классическая: как в игре, пули и ракеты летят недалеко. "
-			+ "Не ограничена: летят, пока во что-нибудь не попадут; ракета, наведённая курсором, взрывается у курсора.")
 	return tab.get_parent().get_parent()
 
 
@@ -313,7 +329,7 @@ func _grid(parent: Control) -> GridContainer:
 func _heading(parent: Control, text: String) -> void:
 	var label := Label.new()
 	label.text = text
-	label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.3))
+	label.add_theme_color_override("font_color", ACCENT)
 	parent.add_child(label)
 
 
@@ -351,3 +367,42 @@ func _check(parent: Control, text: String, toggled: Callable) -> CheckBox:
 		_changed())
 	parent.add_child(check)
 	return check
+
+
+# A check box's icon, drawn rather than the default theme's, which is black on
+# the panel's near black when it is not ticked: a light frame either way,
+# filled with ACCENT and ticked in the panel's dark when it is.
+func _box_icon(ticked: bool) -> ImageTexture:
+	var side := ICON_SIZE * ICON_OVERSAMPLE
+	var image := Image.create(side, side, false, Image.FORMAT_RGBA8)
+	var frame := Color(0.85, 0.85, 0.85)
+	var dark := Color(0.12, 0.1, 0.08)
+	var line := 2.0 * ICON_OVERSAMPLE        # the frame's and the tick's width
+	var inset := 1.5 * ICON_OVERSAMPLE
+	var tick: Array[Vector2] = [Vector2(0.24, 0.52), Vector2(0.43, 0.7), Vector2(0.77, 0.3)]
+	for y in side:
+		for x in side:
+			var p := Vector2(x + 0.5, y + 0.5)
+			# How far inside the frame's outer edge, and so what covers it.
+			var edge := minf(minf(p.x, p.y), minf(side - p.x, side - p.y)) - inset
+			var outside := clampf(0.5 - edge, 0.0, 1.0)
+			var on_frame := clampf(line - edge + 0.5, 0.0, 1.0) * (1.0 - outside)
+			var colour := Color(0, 0, 0, 0)
+			if ticked:
+				colour = ACCENT
+				colour.a = 1.0 - outside
+				var d := minf(_to_segment(p, tick[0] * side, tick[1] * side),
+						_to_segment(p, tick[1] * side, tick[2] * side))
+				colour = colour.lerp(dark, clampf(line * 0.75 - d + 0.5, 0.0, 1.0) * colour.a)
+			else:
+				colour = Color(frame, on_frame)
+			image.set_pixel(x, y, colour)
+	var texture := ImageTexture.create_from_image(image)
+	texture.set_size_override(Vector2i(ICON_SIZE, ICON_SIZE))
+	return texture
+
+
+static func _to_segment(p: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab := b - a
+	var t := clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+	return p.distance_to(a + ab * t)

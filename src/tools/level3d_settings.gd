@@ -12,6 +12,11 @@ const SAVE_PATH := "user://preview3d.cfg"
 
 enum Camera { TOP, TILTED }
 enum Look { MODERN, PIXELS }
+# How many pixels the 3D is drawn at: the screen's own, or a width of its
+# own, RESOLUTIONS[i], scaled to the screen. The HUD and the menu are drawn at
+# the screen's either way (level3d_preview.gd, _apply_resolution).
+enum Resolution { NATIVE, GAME, FULL_HD, HD }
+const RESOLUTIONS := [Vector2i.ZERO, Vector2i(2048, 1152), Vector2i(1920, 1080), Vector2i(1280, 720)]
 enum Driving { CLASSIC, FREE }
 # Classic: the gun up the screen and the launcher the way the BTR drives, as
 # the game's jeep fires; driving free, both along the hull. Modern: both at the
@@ -35,6 +40,7 @@ var camera := Camera.TILTED
 var look := Look.MODERN
 # The CRT monitor, over either look.
 var crt := false
+var resolution := Resolution.NATIVE
 var driving := Driving.CLASSIC
 var firing := Firing.CLASSIC
 var reach := Reach.CLASSIC
@@ -79,6 +85,7 @@ func load_saved() -> void:
 	if config.load(SAVE_PATH) != OK:
 		return
 	camera = clampi(config.get_value("graphics", "camera", camera), 0, Camera.size() - 1)
+	resolution = clampi(config.get_value("graphics", "resolution", resolution), 0, Resolution.size() - 1)
 	if config.has_section_key("graphics", "render"):
 		look = clampi(config.get_value("graphics", "render", look), 0, Look.size() - 1)
 		crt = config.get_value("graphics", "crt", crt)
@@ -109,6 +116,7 @@ func save() -> void:
 	var config := ConfigFile.new()
 	config.set_value("graphics", "camera", camera)
 	config.set_value("graphics", "render", look)
+	config.set_value("graphics", "resolution", resolution)
 	config.set_value("graphics", "crt", crt)
 	config.set_value("controls", "driving", driving)
 	config.set_value("controls", "firing", firing)

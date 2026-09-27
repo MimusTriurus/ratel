@@ -1626,6 +1626,37 @@ func _screen_pass(layer_index: int, mode: int) -> ColorRect:
 	return rect
 
 
+# The 3D at the screen's own pixels. The project draws everything into
+# 2048x1152 and scales that to the window (stretch mode "viewport"), which is
+# right for the 2D game, whose frame is the map's width, and left the 3D a
+# little soft on a bigger screen. Here the window's content is scaled as
+# canvas items instead: the 3D is drawn at the window's size, and the HUD and
+# the menu, which were laid out on 2048x1152, are scaled up to it as before.
+# A resolution of its own (Level3DSettings.resolution) is Viewport's 3D
+# scaling, from the width the 3D actually has in the window.
+#
+# Not for a --shot, whose image stays 2048x1152 whatever window it was taken in.
+var _window_watched := false
+
+func _apply_resolution() -> void:
+	if not _persist:
+		return
+	var window := get_window()
+	if not _window_watched:
+		_window_watched = true
+		window.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+		window.size_changed.connect(_apply_resolution)
+	var viewport := get_viewport()
+	var wanted: Vector2i = Level3DSettings.RESOLUTIONS[settings.resolution]
+	var base := Vector2(window.content_scale_size)
+	var drawn := base.x * minf(window.size.x / base.x, window.size.y / base.y)
+	if wanted == Vector2i.ZERO or drawn <= 0.0:
+		viewport.scaling_3d_scale = 1.0
+	else:
+		viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+		viewport.scaling_3d_scale = clampf(wanted.x / drawn, 0.25, 2.0)
+
+
 # From the menu, and from the keys that change the same things (Tab, V, M).
 func _settings_changed() -> void:
 	_apply_settings()
@@ -1641,6 +1672,7 @@ func _apply_settings() -> void:
 	launcher.unlimited = gun.unlimited
 	gun.rate = settings.gun_rate
 	launcher.rate = settings.launcher_rate
+	_apply_resolution()
 	_pixels.visible = settings.look == Level3DSettings.Look.PIXELS
 	_crt.visible = settings.crt
 	_set_score(_score)
