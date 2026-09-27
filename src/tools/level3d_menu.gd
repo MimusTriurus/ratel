@@ -1,7 +1,8 @@
 # The 3D preview's Escape menu: continue, settings, quit, over the stage
-# frozen by pausing the tree. The settings are three tabs of
-# Level3DSettings -- graphics (the camera and the look), controls (the keys,
-# how the BTR drives and how it fires) and cheats -- and every change is handed
+# frozen by pausing the tree. The settings are four tabs of
+# Level3DSettings -- graphics (the camera and the look), interface (what the
+# HUD shows, where and how big), controls (the keys, how the BTR drives and
+# how it fires) and cheats -- and every change is handed
 # back through `changed` at once, the menu staying open, so a switch shows
 # what it does behind it.
 #
@@ -23,8 +24,7 @@ const ICON_SIZE := 26
 const ICON_OVERSAMPLE := 2
 const ACTION_NAMES := {
 	"up": "Вперёд / вверх", "down": "Назад / вниз", "left": "Влево", "right": "Вправо",
-	"gun": "Пулемёт", "rocket": "Ракета", "turret_left": "Башня влево",
-	"turret_right": "Башня вправо",
+	"gun": "Пулемёт", "rocket": "Ракета",
 }
 
 var settings: Level3DSettings
@@ -46,6 +46,16 @@ var _wall_hack: CheckBox
 var _bullet_hack: CheckBox
 var _gun_rate: OptionButton
 var _launcher_rate: OptionButton
+var _hud: CheckBox
+var _hud_score: CheckBox
+var _hud_lives: CheckBox
+var _hud_pows: CheckBox
+var _hud_weapon: CheckBox
+var _hud_modes: CheckBox
+var _hud_pad_arrow: CheckBox
+var _hud_crosshair: CheckBox
+var _hud_corner: OptionButton
+var _hud_scale: OptionButton
 var _key_buttons := {}       # action -> Button
 var _waiting := ""           # the action a key prompt is open for
 var _continue: Button
@@ -126,6 +136,20 @@ func refresh() -> void:
 	_bullet_hack.set_pressed_no_signal(settings.bullet_hack)
 	_gun_rate.select(Level3DSettings.RATES.find(settings.gun_rate))
 	_launcher_rate.select(Level3DSettings.RATES.find(settings.launcher_rate))
+	_hud.set_pressed_no_signal(settings.hud)
+	_hud_score.set_pressed_no_signal(settings.hud_score)
+	_hud_lives.set_pressed_no_signal(settings.hud_lives)
+	_hud_pows.set_pressed_no_signal(settings.hud_pows)
+	_hud_weapon.set_pressed_no_signal(settings.hud_weapon)
+	_hud_modes.set_pressed_no_signal(settings.hud_modes)
+	_hud_pad_arrow.set_pressed_no_signal(settings.hud_pad_arrow)
+	_hud_crosshair.set_pressed_no_signal(settings.hud_crosshair)
+	_hud_corner.select(settings.hud_corner)
+	_hud_scale.select(Level3DSettings.HUD_SCALES.find(settings.hud_scale))
+	# Greyed out, not hidden, with the HUD off: what it would show stays set.
+	for widget in [_hud_score, _hud_lives, _hud_pows, _hud_weapon, _hud_modes, _hud_pad_arrow,
+			_hud_corner, _hud_scale]:
+		widget.disabled = not settings.hud
 	for action in _key_buttons:
 		var button: Button = _key_buttons[action]
 		button.text = "..." if action == _waiting else OS.get_keycode_string(settings.key(action))
@@ -158,11 +182,12 @@ func _make_main_page() -> Control:
 func _make_settings_page() -> Control:
 	var panel := PanelContainer.new()
 	var box := _padded_box(panel, 12)
-	box.custom_minimum_size = Vector2(760, 620)
+	box.custom_minimum_size = Vector2(760, 820)
 	_tabs = TabContainer.new()
 	_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(_tabs)
 	_tabs.add_child(_make_graphics_tab())
+	_tabs.add_child(_make_interface_tab())
 	_tabs.add_child(_make_controls_tab())
 	_tabs.add_child(_make_cheats_tab())
 	_button(box, "Назад", _show_main)
@@ -179,6 +204,32 @@ func _make_graphics_tab() -> Control:
 	_resolution = _choice(grid, "Разрешение 3D", ["Как у экрана", "2048×1152 (как в игре)", "1920×1080", "1280×720"],
 			func(i: int): settings.resolution = i)
 	_crt = _check(tab, "ЭЛТ-монитор", func(on: bool): settings.crt = on)
+	return tab.get_parent().get_parent()
+
+
+func _make_interface_tab() -> Control:
+	var tab := _tab("Интерфейс")
+	_hud = _check(tab, "Показывать HUD", func(on: bool): settings.hud = on)
+	tab.add_child(HSeparator.new())
+	_heading(tab, "Что показывать")
+	_hud_score = _check(tab, "Счёт", func(on: bool): settings.hud_score = on)
+	_hud_lives = _check(tab, "Жизни", func(on: bool): settings.hud_lives = on)
+	_hud_pows = _check(tab, "Пленные на борту", func(on: bool): settings.hud_pows = on)
+	_hud_weapon = _check(tab, "Оружие", func(on: bool): settings.hud_weapon = on)
+	_hud_modes = _check(tab, "Режимы езды и стрельбы", func(on: bool): settings.hud_modes = on)
+	_note(tab, "Выключено: режим появляется на пару секунд, когда его меняют клавишами V и M.")
+	_hud_pad_arrow = _check(tab, "Стрелка к вертолёту", func(on: bool): settings.hud_pad_arrow = on)
+	_note(tab, "Пока на борту пленные, а вертолёт, который их заберёт, за краем экрана.")
+	tab.add_child(HSeparator.new())
+	_hud_crosshair = _check(tab, "Прицел вместо курсора", func(on: bool): settings.hud_crosshair = on)
+	_note(tab, "В современном и комбинированном режимах стрельбы, где целятся мышью. Работает и без HUD.")
+	tab.add_child(HSeparator.new())
+	var layout := _grid(tab)
+	_hud_corner = _choice(layout, "Положение", ["Сверху слева", "Снизу слева"],
+			func(i: int): settings.hud_corner = i)
+	_hud_scale = _choice(layout, "Размер",
+			Level3DSettings.HUD_SCALES.map(func(s: float): return "%d%%" % roundi(s * 100.0)),
+			func(i: int): settings.hud_scale = Level3DSettings.HUD_SCALES[i])
 	return tab.get_parent().get_parent()
 
 

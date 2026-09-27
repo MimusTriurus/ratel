@@ -1,5 +1,6 @@
 # What the 3D preview's Escape menu sets (level3d_menu.gd): the camera, the
-# look, how the BTR drives and fires, the keys, and three cheats. Kept in
+# look, what the HUD shows, how the BTR drives and fires, the keys, and the
+# cheats. Kept in
 # user://preview3d.cfg, apart from the game's buttons.cfg and audio.cfg: the
 # preview is not the game, and its keys are not the game's.
 #
@@ -28,9 +29,11 @@ enum Firing { CLASSIC, MODERN, COMBINED }
 enum Reach { CLASSIC, UNLIMITED }
 
 # The keys that can be rebound, in the order the menu lists them, and what
-# they start as: the preview's keys from before there was a menu.
-const ACTIONS: Array[String] = ["up", "down", "left", "right", "gun", "rocket",
-		"turret_left", "turret_right"]
+# they start as: the preview's keys from before there was a menu. The turret's
+# are in DEFAULT_KEYS but not here: the mouse aims it now, and Q and E stay
+# as fixed keys for turning it by hand (level3d_preview.gd, _turret_key), not
+# bound, not saved.
+const ACTIONS: Array[String] = ["up", "down", "left", "right", "gun", "rocket"]
 const DEFAULT_KEYS := {
 	"up": KEY_W, "down": KEY_S, "left": KEY_A, "right": KEY_D,
 	"gun": KEY_L, "rocket": KEY_P, "turret_left": KEY_Q, "turret_right": KEY_E,
@@ -52,6 +55,24 @@ var bullet_hack := false
 const RATES: Array[float] = [0.5, 1.0, 2.0, 4.0]
 var gun_rate := 1.0
 var launcher_rate := 1.0
+# The HUD (level3d_preview.gd, _set_score): a master switch, then each of its
+# pieces. Minimal by default, as the game's own HUD is: the driving and firing
+# modes are settings rather than the state of the run, so they are off, and V
+# and M show them for a moment instead (_flash_modes).
+enum HudCorner { TOP, BOTTOM }
+const HUD_SCALES: Array[float] = [0.75, 1.0, 1.25, 1.5]
+var hud := true
+var hud_score := true
+var hud_lives := true
+var hud_pows := true
+var hud_weapon := true
+var hud_modes := false
+var hud_pad_arrow := true   # to the rescue helicopter, prisoners aboard
+# The reticle in place of the cursor while the mouse aims (Level3DCrosshair).
+# Not under `hud`: it is how the mouse is seen, not something the HUD reports.
+var hud_crosshair := true
+var hud_corner := HudCorner.TOP
+var hud_scale := 1.0
 var keys := DEFAULT_KEYS.duplicate()
 
 
@@ -102,6 +123,17 @@ func load_saved() -> void:
 	bullet_hack = config.get_value("cheats", "bullet_hack", bullet_hack)
 	gun_rate = _rate(config.get_value("cheats", "gun_rate", gun_rate))
 	launcher_rate = _rate(config.get_value("cheats", "launcher_rate", launcher_rate))
+	hud = config.get_value("interface", "hud", hud)
+	hud_score = config.get_value("interface", "score", hud_score)
+	hud_lives = config.get_value("interface", "lives", hud_lives)
+	hud_pows = config.get_value("interface", "pows", hud_pows)
+	hud_weapon = config.get_value("interface", "weapon", hud_weapon)
+	hud_modes = config.get_value("interface", "modes", hud_modes)
+	hud_pad_arrow = config.get_value("interface", "pad_arrow", hud_pad_arrow)
+	hud_crosshair = config.get_value("interface", "crosshair", hud_crosshair)
+	hud_corner = clampi(config.get_value("interface", "corner", hud_corner), 0, HudCorner.size() - 1)
+	var scale = config.get_value("interface", "scale", hud_scale)
+	hud_scale = float(scale) if (scale is int or scale is float) and HUD_SCALES.has(float(scale)) else 1.0
 	for action in ACTIONS:
 		var saved = config.get_value("keys", action, DEFAULT_KEYS[action])
 		if saved is int and saved != KEY_NONE:
@@ -126,6 +158,16 @@ func save() -> void:
 	config.set_value("cheats", "bullet_hack", bullet_hack)
 	config.set_value("cheats", "gun_rate", gun_rate)
 	config.set_value("cheats", "launcher_rate", launcher_rate)
+	config.set_value("interface", "hud", hud)
+	config.set_value("interface", "score", hud_score)
+	config.set_value("interface", "lives", hud_lives)
+	config.set_value("interface", "pows", hud_pows)
+	config.set_value("interface", "weapon", hud_weapon)
+	config.set_value("interface", "modes", hud_modes)
+	config.set_value("interface", "pad_arrow", hud_pad_arrow)
+	config.set_value("interface", "crosshair", hud_crosshair)
+	config.set_value("interface", "corner", hud_corner)
+	config.set_value("interface", "scale", hud_scale)
 	for action in ACTIONS:
 		config.set_value("keys", action, key(action))
 	config.save(SAVE_PATH)

@@ -37,7 +37,7 @@
 #
 #   Esc                    the menu (level3d_menu.gd): continue, settings,
 #                          quit. The settings -- camera, look (modern or
-#                          pixels, a CRT over either), keys, driving,
+#                          pixels, a CRT over either), the HUD, keys, driving,
 #                          firing, reach (the game's or unlimited), and the
 #                          cheats: infinite lives, wall hack, bullet hack,
 #                          the gun's and the launcher's rate -- are
@@ -46,7 +46,8 @@
 #   W / A / S / D          classic: up, left, down, right, and the diagonals
 #                          free: drive and steer by hand
 #                          either: cancels the order
-#   V                      classic / free driving, shown by the score
+#   V                      classic / free driving, shown by the score for a
+#                          moment (for good: the menu's Interface tab)
 #   M                      the firing: classic, the game's -- driving classic
 #                          the gun up the screen and the rocket the way the
 #                          BTR drives, driving free both along the hull;
@@ -62,7 +63,9 @@
 #                          rocket goes while the button is held, one at a time
 #   middle click           drive there (shift: add a waypoint)
 #   Backspace              stop
-#   Q / E                  turn the turret by hand while held
+#   Q / E                  turn the turret by hand while held; fixed keys,
+#                          not in the menu, and given up to any action
+#                          bound to them there
 #   R                      fly the BTR in again, rebuild what was blown up
 #                          and bring the bunkers' guns, the soldiers, the boats,
 #                          the tanks and the boss back
@@ -1555,10 +1558,7 @@ func _make_hud() -> void:
 	var layer := _hud
 	add_child(layer)
 	_score_label = Label.new()
-	_score_label.position = Vector2(16, 12)
-	_score_label.add_theme_font_size_override("font_size", 22)
 	_score_label.add_theme_color_override("font_outline_color", Color.BLACK)
-	_score_label.add_theme_constant_override("outline_size", 6)
 	layer.add_child(_score_label)
 	_banner = Label.new()
 	_banner.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -1569,20 +1569,97 @@ func _make_hud() -> void:
 	_banner.add_theme_constant_override("outline_size", 12)
 	_banner.visible = false
 	layer.add_child(_banner)
+	_pad_arrow = Level3DArrow.new()
+	layer.add_child(_pad_arrow)
+	var crosshair := Level3DCrosshair.new()
+	crosshair.wanted = _crosshair_wanted
+	layer.add_child(crosshair)
+	_layout_hud()
 	_set_score(0)
 
 
+# The line's corner and size, from Level3DSettings: anchored to the corner and
+# grown away from it, so a longer line or a bigger font never runs off it.
+const HUD_MARGIN := Vector2(16, 12)
+const HUD_FONT_SIZE := 22
+const HUD_OUTLINE := 6
+
+func _layout_hud() -> void:
+	var label := _score_label
+	var bottom := settings.hud_corner == Level3DSettings.HudCorner.BOTTOM
+	label.anchor_left = 0.0
+	label.anchor_right = 0.0
+	label.anchor_top = 1.0 if bottom else 0.0
+	label.anchor_bottom = label.anchor_top
+	label.grow_vertical = Control.GROW_DIRECTION_BEGIN if bottom else Control.GROW_DIRECTION_END
+	label.offset_left = HUD_MARGIN.x
+	label.offset_right = HUD_MARGIN.x
+	label.offset_top = -HUD_MARGIN.y if bottom else HUD_MARGIN.y
+	label.offset_bottom = label.offset_top
+	label.add_theme_font_size_override("font_size", roundi(HUD_FONT_SIZE * settings.hud_scale))
+	label.add_theme_constant_override("outline_size", roundi(HUD_OUTLINE * settings.hud_scale))
+	label.reset_size()
+
+
 const FIRING_NAMES := ["CLASSIC", "CURSOR", "COMBINED"]
+# How long V and M show the modes when the HUD does not (hud_modes off).
+const MODES_FLASH_TIME := 2.0
+var _modes_flash := 0   # the flashes still running; the modes show while > 0
 
 func _set_score(score: int) -> void:
 	_score = score
-	_score_label.text = "SCORE %06d   LIVES %s" % [score,
-			"∞" if settings.infinite_lives else str(_lives)]
-	if friends != null:
-		_score_label.text += "   POW %d   %s" % [friends.pows, friends.weapon_name().to_upper()]
-	if btr != null:
-		_score_label.text += "   %s DRIVE   %s FIRE" % ["CLASSIC" if btr.classic else "FREE",
-				FIRING_NAMES[settings.firing]]
+	var parts: Array[String] = []
+	if settings.hud:
+		if settings.hud_score:
+			parts.append("SCORE %06d" % score)
+		if settings.hud_lives:
+			parts.append("LIVES %s" % ("∞" if settings.infinite_lives else str(_lives)))
+		if friends != null and settings.hud_pows:
+			parts.append("POW %d" % friends.pows)
+		if friends != null and settings.hud_weapon:
+			parts.append(friends.weapon_name().to_upper())
+	# The flash shows with the HUD off as well: a key that changes the driving
+	# has to say what it changed it to.
+	if btr != null and (settings.hud and settings.hud_modes or _modes_flash > 0):
+		parts.append("%s DRIVE   %s FIRE" % ["CLASSIC" if btr.classic else "FREE",
+				FIRING_NAMES[settings.firing]])
+	_score_label.text = "   ".join(parts)
+	_score_label.visible = not parts.is_empty()
+	_score_label.reset_size()
+
+
+# The arrow to the rescue helicopter's pad: while there are prisoners aboard
+# and it is there, or on its way, to take them. Every frame, after the camera
+# has moved; the arrow itself hides while the pad is in the frame.
+var _pad_arrow: Level3DArrow
+
+func _update_pad_arrow() -> void:
+	_pad_arrow.shown = settings.hud and settings.hud_pad_arrow \
+			and friends.pows > 0 and rescue.is_waiting()
+	if _pad_arrow.shown:
+		_pad_arrow.camera = camera
+		_pad_arrow.target = rescue.pad_position()
+	_pad_arrow.queue_redraw()
+
+
+# The reticle: while the mouse aims something and there is a BTR to aim it --
+# not over the Escape menu, not while the Chinook flies it in, not while it is
+# gone -- as the game's is gated on playing, unpaused and aiming.
+func _crosshair_wanted() -> bool:
+	return _live and settings.hud_crosshair \
+			and settings.firing != Level3DSettings.Firing.CLASSIC \
+			and not _menu.is_open() and chinook == null and _respawning == 0
+
+
+# V and M: the modes on the HUD line for MODES_FLASH_TIME after the last press
+# -- each press starts a timer of its own, and the line drops the modes when
+# the last one runs out.
+func _flash_modes() -> void:
+	_modes_flash += 1
+	_set_score(_score)
+	get_tree().create_timer(MODES_FLASH_TIME, false).timeout.connect(func():
+		_modes_flash -= 1
+		_set_score(_score))
 
 
 # The Escape menu, and under it the look it picks: two rects over the whole
@@ -1675,6 +1752,7 @@ func _apply_settings() -> void:
 	_apply_resolution()
 	_pixels.visible = settings.look == Level3DSettings.Look.PIXELS
 	_crt.visible = settings.crt
+	_layout_hud()
 	_set_score(_score)
 	# At once, under the menu, which has the tree paused and _process with it.
 	if camera != null:
@@ -1828,7 +1906,7 @@ func _physics_process(delta: float) -> void:
 		btr.steer = float(_key("left")) - float(_key("right"))
 	# By hand while held; let go, the aim below has the turret again, except
 	# driving free with the classic firing, which leaves it where it is.
-	btr.turret_input = float(_key("turret_left")) - float(_key("turret_right"))
+	btr.turret_input = float(_turret_key("turret_left")) - float(_turret_key("turret_right"))
 	# The firing (Level3DSettings.Firing). Classic is the game's: driving
 	# classic, the gun up the screen whatever the jeep does and the grenade
 	# the way it drives or faces; driving free, both along the hull. Modern
@@ -1973,6 +2051,15 @@ func _process(delta: float) -> void:
 		btr.blink(_blink % 4 < 2)
 	_shake_left = maxf(_shake_left - delta, 0.0)
 	_update_camera()
+	_update_pad_arrow()
+
+
+# Q and E, the turret by hand: fixed keys, not among the ones the menu binds
+# (Level3DSettings.ACTIONS), so one of those bound to Q or E takes it from the
+# turret, as the game's direction keys shadow its fallback gun keys.
+func _turret_key(action: String) -> bool:
+	var keycode := settings.key(action)
+	return settings.action_of(keycode) == "" and Input.is_key_pressed(keycode)
 
 
 # An action's key (Level3DSettings.ACTIONS) held on the keyboard, or the action
@@ -2033,6 +2120,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_M:
 				settings.firing = (settings.firing + 1) % Level3DSettings.Firing.size()
 				_settings_changed()
+				_flash_modes()
 			KEY_T:
 				gun.turbo = not gun.turbo
 			KEY_G:
@@ -2045,6 +2133,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				settings.driving = Level3DSettings.Driving.FREE if btr.classic \
 						else Level3DSettings.Driving.CLASSIC
 				_settings_changed()
+				_flash_modes()
 			KEY_SPACE:
 				if chinook != null:
 					chinook.skip()

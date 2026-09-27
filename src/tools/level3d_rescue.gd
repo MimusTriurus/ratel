@@ -425,6 +425,19 @@ func _friendly_soldier_picked_up() -> void:
 		print("prisoner rescued: %d so far, weapon %s" % [rescued, friends.weapon_name()])
 
 
+# Whether prisoners brought now would be taken: from the moment it is on its
+# way in until it revs up to leave (the HUD's arrow to the pad).
+func is_waiting() -> bool:
+	return state != NONE and state <= PICK_UP
+
+
+# The pad it waits on, in level x, height, z.
+func pad_position() -> Vector3:
+	var at := Level3DMap.to_level(pad)
+	var height: float = _pad_height if not is_nan(_pad_height) else ground.call(at.x, at.y).height
+	return Vector3(at.x, height, at.y)
+
+
 # Main.play_sound_if_not_playing.
 func _play_sound() -> void:
 	if not _sound.playing:
