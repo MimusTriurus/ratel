@@ -394,6 +394,51 @@ that does not leave when an entry is picked, so its labels carry the state and
 `Menu`'s one-shot `selection_made` latch is released after every toggle. The
 same trick drives the in-game menu's options page.
 
+The 3D preview has its own sound, `Level3DAudio` (`src/tools/level3d_audio.gd`):
+one table, `SOUNDS`, of every effect it plays, with its bus (sub-buses of
+`Sfx`; the enemies' guns on `EnemyFire` under `Weapons`), gain, variants and
+whether it is positional; engines and rotors are loops on the unit, heard
+through a listener over the frame's centre. The Escape menu's Sound tab picks
+classic -- the original's effects, flat, at the game's gains, throttled as
+`Main.play_sound` throttles them, and nothing the original had no sound for --
+or modern, and sets the master, music, effects and enemy-fire volumes, the
+last with a switch of its own since the original's enemies fired in silence;
+under them, a 0–200 % slider for each of the modern mode's sounds
+(`Level3DMenu.SOUND_GROUPS`, which must list every sound in `SOUNDS` but the
+classic-only `enemy_hit` -- the verify script checks).
+The music is the original's in both, chained as `Song` chains it: `intro_song`
+at the start, `stage_song0` after a restart, `boss_song` from the boss's
+trigger, stopped when it is beaten or the last life goes. The placeholders'
+`db` were set from their measured loudness (the loudest 50 ms, RMS) to a level
+per kind, so a file swapped in wants measuring again
+(`tools/measure_loudness.gd -- <paths>`). The files
+are **temporary placeholders** from War Thunder's FMOD project for modders,
+which is licensed for War Thunder mods only, so they must never reach git or a
+build: `tools/wt_placeholders.py <that checkout>` copies them into
+`assets/sfx_wt/`, which is in `.gitignore`, in the export preset's
+`exclude_filter` and has a `.gdignore`, and they are read off the disk rather
+than imported. Without them each sound falls back to the original's effect, or
+to silence where the original had none, and nothing else changes. The script
+holds the name → file list, and is what is committed. Check both ways:
+
+```bash
+godot --path . --headless --script tools/verify_level3d_audio.gd
+```
+
+When the preview is silent, `-- --audio-debug` prints every bus's mute, gain and
+peak once a second, which says whether Godot is producing anything, and
+`tools/audio_check.ps1` says what Windows does with it: the output device, its
+volume, and every app's mute in the volume mixer. Windows remembers a mute per
+executable, so muting the editor once mutes every game it runs.
+
+```bash
+godot --path . --windowed --resolution 1280x720 src/tools/level3d_preview.tscn -- --audio-debug
+```
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools/audio_check.ps1
+```
+
 `HumanInput.snap()` samples level-triggered state once per logic tick; edge
 triggers derive from the previous snap, which is what makes
 `clear_key_pressed_record()` work. `ButtonMapping` persists to

@@ -1,8 +1,9 @@
 # The 3D preview's Escape menu: continue, settings, quit, over the stage
-# frozen by pausing the tree. The settings are four tabs of
+# frozen by pausing the tree. The settings are five tabs of
 # Level3DSettings -- graphics (the camera and the look), interface (what the
-# HUD shows, where and how big), controls (the keys, how the BTR drives and
-# how it fires) and cheats -- and every change is handed
+# HUD shows, where and how big), sound (classic or modern, the volumes, the
+# enemies' fire), controls (the keys, how the BTR drives and how it fires) and
+# cheats -- and every change is handed
 # back through `changed` at once, the menu staying open, so a switch shows
 # what it does behind it.
 #
@@ -22,6 +23,26 @@ const ACCENT := Color(1.0, 0.8, 0.3)
 # times that, so that they stay sharp scaled up to a bigger screen.
 const ICON_SIZE := 26
 const ICON_OVERSAMPLE := 2
+# The Sound tab's sliders, one for each of the modern mode's sounds
+# (Level3DAudio.SOUNDS), under a heading for each kind. enemy_hit is left out:
+# it is only the original's layer under explode, which the modern mode's
+# "blast" replaces. tools/verify_level3d_audio.gd checks that nothing else is.
+const SOUND_GROUPS := [
+	["Оружие BTR", [["gun", "Пулемёт"], ["grenade_launch", "Пуск гранаты"], ["rocket_launch", "Пуск ракеты"]]],
+	["Попадания", [["hit_ground", "По земле"], ["hit_water", "По воде"], ["hit_hard", "По бетону и стенам"],
+			["hit_armor", "По броне"]]],
+	["Выстрелы врагов", [["enemy_mg", "Пулемёты солдат"], ["enemy_cannon", "Пушки: бункеры, танки, лодки"]]],
+	["Взрывы", [["blast_small", "Граната"], ["blast_missile", "Ракета"], ["blast_water", "В воде"],
+			["blast", "Уничтожение врага"], ["building", "Разрушение здания"], ["breach", "Пробитие танка босса"],
+			["player_explodes", "Гибель BTR"], ["soldier_death", "Гибель солдата"]]],
+	["Двигатели", [["btr_idle", "BTR на холостых"], ["btr_drive", "BTR в движении"], ["tank_engine", "Танки"],
+			["boat_engine", "Лодки"], ["chinook", "Chinook"], ["rescue_rotor", "Спасательный вертолёт"]]],
+	["Интерфейс", [["pickup", "Пленный подобран"], ["rescue_pickup", "Пленный в вертолёте"],
+			["upgrade", "Улучшение оружия"], ["warning", "Предупреждение о боссе"], ["pause", "Пауза"]]],
+	["Окружение", [["ambient_sea", "Море"], ["ambient_jungle", "Джунгли"]]],
+]
+# Level3DSettings.Reach as the menu lists it, shortest first.
+const REACH_ORDER := [Level3DSettings.Reach.CLASSIC, Level3DSettings.Reach.LONG, Level3DSettings.Reach.UNLIMITED]
 const ACTION_NAMES := {
 	"up": "Вперёд / вверх", "down": "Назад / вниз", "left": "Влево", "right": "Вправо",
 	"gun": "Пулемёт", "rocket": "Ракета",
@@ -60,6 +81,14 @@ var _banner_warning: CheckBox
 var _banner_mission: CheckBox
 var _hud_corner: OptionButton
 var _hud_scale: OptionButton
+var _sound_mode: OptionButton
+var _master_volume: HSlider
+var _music_volume: HSlider
+var _effects_volume: HSlider
+var _enemy_fire: CheckBox
+var _enemy_fire_volume: HSlider
+var _gain_sliders := {}      # sound -> HSlider
+var _gains_reset: Button
 var _key_buttons := {}       # action -> Button
 var _waiting := ""           # the action a key prompt is open for
 var _continue: Button
@@ -97,9 +126,11 @@ func is_open() -> bool:
 	return visible
 
 
+# With GameMode's pause sound, which its pause key plays both ways.
 func open() -> void:
 	visible = true
 	get_tree().paused = true
+	Level3DAudio.play("pause")
 	_show_main()
 
 
@@ -107,6 +138,7 @@ func close() -> void:
 	_waiting = ""
 	visible = false
 	get_tree().paused = false
+	Level3DAudio.play("pause")
 	if resumed.is_valid():
 		resumed.call()
 
@@ -134,7 +166,7 @@ func refresh() -> void:
 	_resolution.select(settings.resolution)
 	_driving.select(settings.driving)
 	_firing.select(settings.firing)
-	_reach.select(settings.reach)
+	_reach.select(REACH_ORDER.find(settings.reach))
 	_infinite_lives.set_pressed_no_signal(settings.infinite_lives)
 	_wall_hack.set_pressed_no_signal(settings.wall_hack)
 	_bullet_hack.set_pressed_no_signal(settings.bullet_hack)
@@ -154,6 +186,24 @@ func refresh() -> void:
 	_banner_mission.set_pressed_no_signal(settings.banner_mission)
 	_hud_corner.select(settings.hud_corner)
 	_hud_scale.select(Level3DSettings.HUD_SCALES.find(settings.hud_scale))
+	_sound_mode.select(settings.sound_mode)
+	_master_volume.set_value_no_signal(settings.master_volume * 100.0)
+	_music_volume.set_value_no_signal(settings.music_volume * 100.0)
+	_effects_volume.set_value_no_signal(settings.effects_volume * 100.0)
+	_enemy_fire.set_pressed_no_signal(settings.enemy_fire)
+	_enemy_fire_volume.set_value_no_signal(settings.enemy_fire_volume * 100.0)
+	# The classic mode has no enemies' fire to switch: the original had none.
+	var modern := settings.sound_mode == Level3DSettings.SoundMode.MODERN
+	_enemy_fire.disabled = not modern
+	_enemy_fire_volume.editable = modern and settings.enemy_fire
+	for sound in _gain_sliders:
+		var slider: HSlider = _gain_sliders[sound]
+		slider.set_value_no_signal(float(settings.sound_gains.get(sound, 1.0)) * 100.0)
+		slider.editable = modern
+		_show_percent(slider)
+	_gains_reset.disabled = not modern
+	for slider in [_master_volume, _music_volume, _effects_volume, _enemy_fire_volume]:
+		_show_percent(slider)
 	# Greyed out, not hidden, with the HUD off: what it would show stays set.
 	for widget in [_hud_score, _hud_lives, _hud_pows, _hud_weapon, _hud_modes, _hud_cheats, _hud_pad_arrow,
 			_banner_stage, _banner_warning, _banner_mission, _hud_corner, _hud_scale]:
@@ -196,6 +246,7 @@ func _make_settings_page() -> Control:
 	box.add_child(_tabs)
 	_tabs.add_child(_make_graphics_tab())
 	_tabs.add_child(_make_interface_tab())
+	_tabs.add_child(_make_sound_tab())
 	_tabs.add_child(_make_controls_tab())
 	_tabs.add_child(_make_cheats_tab())
 	_button(box, "Назад", _show_main)
@@ -248,6 +299,68 @@ func _make_interface_tab() -> Control:
 	return tab.get_parent().get_parent()
 
 
+func _make_sound_tab() -> Control:
+	var tab := _tab("Звук")
+	var modes := _grid(tab)
+	_sound_mode = _choice(modes, "Звук", ["Классический", "Новый"],
+			func(i: int):
+				settings.sound_mode = i
+				_preview("pickup"))
+	_note(tab, "Классический: звуки оригинальной игры, как в ней. "
+			+ "Новый: объёмный звук, двигатели, окружение и выстрелы врагов. Музыка в обоих одна.")
+	tab.add_child(HSeparator.new())
+	_heading(tab, "Громкость")
+	var volumes := _grid(tab)
+	_master_volume = _slider(volumes, "Общая", func(v: float): settings.master_volume = v)
+	_music_volume = _slider(volumes, "Музыка", func(v: float): settings.music_volume = v)
+	_effects_volume = _slider(volumes, "Эффекты",
+			func(v: float):
+				settings.effects_volume = v
+				_preview("pickup"))
+	tab.add_child(HSeparator.new())
+	_heading(tab, "Выстрелы врагов")
+	_enemy_fire = _check(tab, "Слышны выстрелы врагов",
+			func(on: bool):
+				settings.enemy_fire = on
+				_preview("enemy_mg"))
+	var enemy := _grid(tab)
+	_enemy_fire_volume = _slider(enemy, "Громкость",
+			func(v: float):
+				settings.enemy_fire_volume = v
+				_preview("enemy_mg"))
+	_note(tab, "В оригинале враги стреляли беззвучно. Только в новом режиме.")
+	tab.add_child(HSeparator.new())
+	_heading(tab, "Каждый звук нового режима")
+	_note(tab, "100% — громкость, под которую звук подобран. До 200% — громче. "
+			+ "Звуки без своего файла играют звук оригинала, и ползунок действует и на него.")
+	for group in SOUND_GROUPS:
+		var title := Label.new()
+		title.text = group[0]
+		tab.add_child(title)
+		var grid := _grid(tab)
+		for pair in group[1]:
+			var sound: String = pair[0]
+			_gain_sliders[sound] = _slider(grid, "    " + pair[1], _gain_moved(sound),
+					Level3DAudio.MAX_GAIN * 100.0)
+	_gains_reset = Button.new()
+	_gains_reset.text = "Все на 100%"
+	_gains_reset.size_flags_horizontal = Control.SIZE_SHRINK_END
+	_gains_reset.pressed.connect(func():
+		settings.sound_gains = {}
+		_changed())
+	tab.add_child(_gains_reset)
+	return tab.get_parent().get_parent()
+
+
+# A sound's slider: its gain into the settings, and the sound itself to hear
+# it by -- not a loop, which is heard as it is, where it plays.
+func _gain_moved(sound: String) -> Callable:
+	return func(v: float):
+		settings.sound_gains[sound] = v
+		if not Level3DAudio.SOUNDS[sound].get("loop", false):
+			_preview(sound)
+
+
 func _make_controls_tab() -> Control:
 	var tab := _tab("Управление")
 	# The modes first: they are changed far more often than the keys.
@@ -262,10 +375,12 @@ func _make_controls_tab() -> Control:
 	_note(tab, "Классический: пулемёт вперёд, ракеты по направлению джипа. "
 			+ "Современный: всё по курсору. Комбинированный: пулемёт всегда вверх по экрану, ракеты по курсору.")
 	var reach := _grid(tab)
-	_reach = _choice(reach, "Дальность стрельбы", ["Классическая", "Не ограничена"],
-			func(i: int): settings.reach = i)
-	_note(tab, "Классическая: как в игре, пули и ракеты летят недалеко. "
-			+ "Не ограничена: летят, пока во что-нибудь не попадут; ракета, наведённая курсором, взрывается у курсора.")
+	_reach = _choice(reach, "Дальность стрельбы", ["Классическая", "Увеличенная", "Не ограничена"],
+			func(i: int): settings.reach = REACH_ORDER[i])
+	_note(tab, "При любом режиме езды и стрельбы. Классическая: как в игре, около 5 м. "
+			+ "Увеличенная: пулемёт 12 м, ракеты 16 м. "
+			+ "Не ограничена: летят, пока во что-нибудь не попадут. "
+			+ "Наведённые курсором пули и ракеты останавливаются у курсора, но не дальше дальности.")
 	tab.add_child(HSeparator.new())
 	_heading(tab, "Настройка управления")
 	var keys := _grid(tab)
@@ -423,6 +538,45 @@ func _choice(grid: GridContainer, text: String, items: Array, picked: Callable) 
 		_changed())
 	grid.add_child(option)
 	return option
+
+
+# A volume, 0 to `top` % on the slider and 0 to top / 100 to `moved`, with
+# the percentage beside it. A row of the grid: the label, then the two.
+func _slider(grid: GridContainer, text: String, moved: Callable, top := 100.0) -> HSlider:
+	var label := Label.new()
+	label.text = text
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_child(label)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = top
+	slider.step = 5.0
+	slider.custom_minimum_size = Vector2(260, 0)
+	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(slider)
+	var value := Label.new()
+	value.name = "Percent"
+	value.custom_minimum_size = Vector2(68, 0)
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(value)
+	slider.set_meta("percent", value)
+	slider.value_changed.connect(func(v: float):
+		moved.call(v / 100.0)
+		_changed())
+	grid.add_child(row)
+	return slider
+
+
+# A sound to hear a change by, once the change is on the buses: the menu's
+# callbacks run before _changed hands it to the preview.
+func _preview(sound: String) -> void:
+	(func(): Level3DAudio.play(sound)).call_deferred()
+
+
+func _show_percent(slider: HSlider) -> void:
+	(slider.get_meta("percent") as Label).text = "%d%%" % roundi(slider.value)
 
 
 func _check(parent: Control, text: String, toggled: Callable) -> CheckBox:

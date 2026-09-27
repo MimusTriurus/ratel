@@ -536,13 +536,16 @@ func bump(player_box: Rect2) -> void:
 			continue
 		_remove(f)
 		if f.type == FriendlySoldierType.WEAPON_CARRIER or f.type == FriendlySoldierType.WEAPON_CARRIER_WANDERER:
-			# Player.pick_up_flashing_soldier
+			# Player.pick_up_flashing_soldier, whose upgrade_weapon(true)
+			# plays the sound whether or not there was anything to upgrade.
 			pows += 1
 			upgrade_weapon()
+			Level3DAudio.play("upgrade")
 		else:
 			# Player.collect_pow
 			pows += 1
 			releaseable_pows += 1
+			Level3DAudio.play("pickup")
 		if f.brother != null:
 			_promote(f.brother)
 		if verbose:

@@ -29,7 +29,8 @@
 # tile it comes to, PlayerMissile's is_missile_target, and a grenade asks no
 # tile at all -- Grenade goes over every wall, and off only on an enemy or at
 # the end of its throw. The scene is asked only how high it strikes. It flies
-# at the ground under the cursor, no further than RANGE.
+# at the ground under the cursor, no further than its reach: the game's, or
+# RANGE with the long reach (Level3DSettings.Reach).
 #
 # From the tank bench (BlenderMCP/godot, docs/combat.md): an explosion shakes
 # the camera -- the one shake the bench leaves on, because without it a blast
@@ -219,6 +220,7 @@ var strike: Callable
 var btr: Level3DBtr
 var aim_point = null        # Vector3 or null
 var unlimited := false      # the preview's unlimited reach, see _launch
+var long_reach := false     # RANGE rather than the game's, see _launch
 # The preview's rate cheat (Level3DSettings.launcher_rate): the reload that
 # many times faster, see fire.
 var rate := 1.0
@@ -464,18 +466,20 @@ func _launch() -> void:
 	# raised for the lob, rolled with the hull, point off to the side -- the
 	# round went off wherever the ground had rocked the jeep. How steeply it
 	# rises is the rails' elevation on the hull, for the same reason.
+	Level3DAudio.play("rocket_launch" if has_missiles else "grenade_launch", start)
 	var bearing := btr.heading + yaw
 	var flat := Vector3(cos(bearing), 0.0, -sin(bearing))
 	var hull_up := (_base.get_parent() as Node3D).global_basis.y.normalized()
 	var elevation := asin(clampf(heading.dot(hull_up), -1.0, 1.0))
 	var launch := flat * cos(elevation) + Vector3.UP * sin(elevation)
 	var classic := btr.classic
-	var reach := RANGE
-	if classic:
-		reach = MISSILE_RANGE if has_missiles else GRENADE_RANGE
-	elif aim_point != null:
+	# The reach is the setting's, however the BTR drives (Level3DSettings.Reach);
+	# the cursor only brings it in.
+	var most := RANGE if long_reach else (MISSILE_RANGE if has_missiles else GRENADE_RANGE)
+	var reach := most
+	if not classic and aim_point != null:
 		var to: Vector3 = aim_point - start
-		reach = clampf(Vector2(to.x, to.z).length(), MIN_RANGE, RANGE)
+		reach = clampf(Vector2(to.x, to.z).length(), minf(MIN_RANGE, most), most)
 	# Unlimited (Level3DGun.UNLIMITED_RANGE): aimed at the cursor it still goes
 	# off there, however far that is; otherwise it flies until it strikes.
 	if unlimited:
@@ -537,7 +541,7 @@ func _launch() -> void:
 			"scale": frame.basis.get_scale().x, "classic": classic, "rearm": rearm,
 			"axis": _axis, "nose": _nose, "tail": _tail, "lob": _lob,
 			"stages": stages, "stage_tails": _stage_tails, "dropped": 0,
-			"power": missile_power if has_missiles else 0,
+			"power": missile_power if has_missiles else 0, "missile": has_missiles,
 			"from": start, "to": target, "run": run, "gone": 0.0,
 			"hump": maxf(run * rise - (target.y - start.y), 0.0),
 			"heading": heading, "basis": frame.basis}
@@ -820,6 +824,7 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3) -> void:
 		_reload_left = rocket.rearm
 	var there: Dictionary = ground.call(at.x, at.z)
 	var on_water: bool = there.hit and there.kind == "water" and at.y <= there.height + 0.05
+	Level3DAudio.play("blast_water" if on_water else "blast_missile" if rocket.missile else "blast_small", at)
 	# Asked first: a building that goes down brings its own soot, and a crater
 	# of the rocket's on top of it is a second, darker scorch.
 	var destroyed: bool = exploded.call(at) if exploded.is_valid() else false

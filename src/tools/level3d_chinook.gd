@@ -49,7 +49,8 @@ class_name Level3DChinook
 extends Node3D
 
 const MODEL_PATH := "res://resources/3d/jackal_chinook.glb"
-const SOUND_PATH := "res://assets/soundeffects/helicopter.ogg"
+# Level3DAudio's: the placeholder, or helicopter.ogg, the original's.
+const SOUND := "chinook"
 const MODEL_SCALE := Level3DBtr.MODEL_SCALE
 const PX := Level3DMap.PX
 
@@ -171,7 +172,6 @@ func _ready() -> void:
 	var landing := Level3DMap.to_level(ARC_LANDING + Vector2(0.0, _shift))
 	_landed_height = ground.call(landing.x, landing.y).height
 	_sound = AudioStreamPlayer.new()
-	_sound.stream = load(SOUND_PATH)
 	add_child(_sound)
 	btr.visible = false
 	# Chinook.update's first tick has not run: where it starts from.
@@ -491,9 +491,19 @@ func _ramp_dust() -> void:
 
 
 # Main.play_sound_if_not_playing.
+#
+# The volume is set every time, not only when it starts: a looped placeholder
+# never runs out to be started again, and would keep the volume it began at.
+# The stream is asked for every tick, since the menu can change the sound's
+# mode under it: a new one replaces the old at once.
 func _play_sound(volume: float) -> void:
-	if not _sound.playing:
-		_sound.volume_db = linear_to_db(clampf(volume, 0.0001, 1.0))
+	var wanted := Level3DAudio.stream(SOUND)
+	if _sound.stream != wanted:
+		_sound.stop()
+		_sound.stream = wanted
+		_sound.bus = Level3DAudio.bus(SOUND)
+	_sound.volume_db = Level3DAudio.volume_db(SOUND) + linear_to_db(clampf(volume, 0.0001, 1.0))
+	if wanted != null and not _sound.playing:
 		_sound.play()
 
 

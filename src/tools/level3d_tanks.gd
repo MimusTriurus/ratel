@@ -337,6 +337,7 @@ func _spawn(x: float, y: float) -> void:
 	_place(t)
 	t.turret_yaw = t.root.rotation.y
 	tanks.append(t)
+	Level3DAudio.attach_loop("tank_engine", t.root)
 	if verbose:
 		print("tank appears at %.0f, %.0f" % [x, y])
 
@@ -650,6 +651,7 @@ func _kill(i: int, by: String) -> void:
 	var at := t.root.position
 	guns.blast.call(at + Vector3.UP * BLAST_HEIGHT, BLAST_SCALE)
 	guns.explode(at)
+	Level3DAudio.stop_loop(t.root, "tank_engine")
 	(t.players.hull as AnimationPlayer).play("Death", 0.05)
 	_char(t)
 	_wrecks.append(t)
@@ -712,6 +714,7 @@ func bullet_attack(found: Dictionary) -> void:
 	if t.bullet_hits <= 0:
 		_kill(i, "machine gun")
 		return
+	Level3DAudio.play("hit_armor", t.root.global_position)
 	if verbose:
 		print("tank hit, %d left" % t.bullet_hits)
 	var hull: AnimationPlayer = t.players.hull

@@ -1,6 +1,6 @@
 # What the 3D preview's Escape menu sets (level3d_menu.gd): the camera, the
-# look, what the HUD shows, how the BTR drives and fires, the keys, and the
-# cheats. Kept in
+# look, what the HUD shows, the sound, how the BTR drives and fires, the keys,
+# and the cheats. Kept in
 # user://preview3d.cfg, apart from the game's buttons.cfg and audio.cfg: the
 # preview is not the game, and its keys are not the game's.
 #
@@ -24,9 +24,15 @@ enum Driving { CLASSIC, FREE }
 # cursor. Combined: the gun up the screen however the BTR drives, the launcher
 # at the cursor.
 enum Firing { CLASSIC, MODERN, COMBINED }
-# Classic: the game's reach, driving classic, and to the cursor or RANGE
-# driving free. Unlimited: until something stops it (Level3DGun.unlimited).
-enum Reach { CLASSIC, UNLIMITED }
+# How far the gun and the launcher reach, however the BTR drives and fires --
+# it used to be the game's only driving classic, and RANGE driving free
+# whatever this said. Classic: the game's, PlayerBullet's, Grenade's and
+# PlayerMissile's, about 5 m. Long: the preview's own Level3DGun.RANGE and
+# Level3DLauncher.RANGE, 12 and 16 m. Unlimited: until something stops it
+# (Level3DGun.unlimited). Aimed at the cursor, a round stops there, no further
+# than the reach. LONG is last so that a saved 1 is still UNLIMITED; the menu
+# lists them in order of reach (Level3DMenu.REACH_ORDER).
+enum Reach { CLASSIC, UNLIMITED, LONG }
 
 # The keys that can be rebound, in the order the menu lists them, and what
 # they start as: the preview's keys from before there was a menu. The turret's
@@ -80,6 +86,21 @@ var hud_crosshair := true
 var hud_corner := HudCorner.TOP
 var hud_scale := 1.0
 var keys := DEFAULT_KEYS.duplicate()
+# The sound (Level3DAudio): classic, the original's effects as the game plays
+# them, or modern, the placeholders in 3D with the engines, the ambience and
+# the enemies' fire the original never had. The volumes are 0 to 1, onto the
+# buses; the enemies' fire has a switch and a volume of its own, since the
+# original fired in silence.
+enum SoundMode { CLASSIC, MODERN }
+var sound_mode := SoundMode.MODERN
+var master_volume := 1.0
+var music_volume := 0.8
+var effects_volume := 1.0
+var enemy_fire := true
+var enemy_fire_volume := 0.8
+# Each of the modern mode's sounds on its own, Level3DAudio.SOUNDS' name ->
+# 0 to Level3DAudio.MAX_GAIN over the level it was set to; one left out is at 1.
+var sound_gains := {}
 
 
 func key(action: String) -> Key:
@@ -144,10 +165,26 @@ func load_saved() -> void:
 	hud_corner = clampi(config.get_value("interface", "corner", hud_corner), 0, HudCorner.size() - 1)
 	var scale = config.get_value("interface", "scale", hud_scale)
 	hud_scale = float(scale) if (scale is int or scale is float) and HUD_SCALES.has(float(scale)) else 1.0
+	sound_mode = clampi(config.get_value("sound", "mode", sound_mode), 0, SoundMode.size() - 1)
+	master_volume = _volume(config.get_value("sound", "master", master_volume))
+	music_volume = _volume(config.get_value("sound", "music", music_volume))
+	effects_volume = _volume(config.get_value("sound", "effects", effects_volume))
+	enemy_fire = config.get_value("sound", "enemy_fire", enemy_fire)
+	enemy_fire_volume = _volume(config.get_value("sound", "enemy_fire_volume", enemy_fire_volume))
+	sound_gains = {}
+	if config.has_section("sound_gains"):
+		for name in config.get_section_keys("sound_gains"):
+			var saved = config.get_value("sound_gains", name)
+			if Level3DAudio.SOUNDS.has(name) and (saved is int or saved is float):
+				sound_gains[name] = clampf(float(saved), 0.0, Level3DAudio.MAX_GAIN)
 	for action in ACTIONS:
 		var saved = config.get_value("keys", action, DEFAULT_KEYS[action])
 		if saved is int and saved != KEY_NONE:
 			keys[action] = saved
+
+
+static func _volume(saved) -> float:
+	return clampf(float(saved), 0.0, 1.0) if saved is int or saved is float else 1.0
 
 
 static func _rate(saved) -> float:
@@ -182,6 +219,16 @@ func save() -> void:
 	config.set_value("interface", "banner_mission", banner_mission)
 	config.set_value("interface", "corner", hud_corner)
 	config.set_value("interface", "scale", hud_scale)
+	config.set_value("sound", "mode", sound_mode)
+	config.set_value("sound", "master", master_volume)
+	config.set_value("sound", "music", music_volume)
+	config.set_value("sound", "effects", effects_volume)
+	config.set_value("sound", "enemy_fire", enemy_fire)
+	config.set_value("sound", "enemy_fire_volume", enemy_fire_volume)
+	# Only what was moved off 1, so that a sound added later starts at its level.
+	for name in sound_gains:
+		if not is_equal_approx(sound_gains[name], 1.0):
+			config.set_value("sound_gains", name, sound_gains[name])
 	for action in ACTIONS:
 		config.set_value("keys", action, key(action))
 	config.save(SAVE_PATH)

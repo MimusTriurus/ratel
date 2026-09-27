@@ -98,6 +98,7 @@ func stage_over() -> void:
 
 func warning() -> void:
 	_start(WARNING, ["WARNING"] as Array[String])
+	Level3DAudio.play("warning")
 
 
 func warning_over() -> void:

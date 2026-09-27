@@ -58,9 +58,12 @@ class_name Level3DRescue
 extends Node3D
 
 const MODEL_PATH := "res://resources/3d/jackal_littlebird.glb"
-const SOUND_PATH := "res://assets/soundeffects/helicopter2.ogg"
-const PICKUP_SOUND_PATH := "res://assets/soundeffects/helicopter_pickup.ogg"
-const UPGRADE_SOUND_PATH := "res://assets/soundeffects/weapon_upgrade.ogg"
+# Level3DAudio's: the placeholders, or helicopter2.ogg, helicopter_pickup.ogg
+# and weapon_upgrade.ogg, the original's. The rotor is a player of its own,
+# kept playing while it flies; the other two are one-shots.
+const SOUND := "rescue_rotor"
+const PICKUP_SOUND := "rescue_pickup"
+const UPGRADE_SOUND := "upgrade"
 const MODEL_SCALE := Level3DBtr.MODEL_SCALE
 const PX := Level3DMap.PX
 
@@ -125,8 +128,6 @@ var _model: Node3D
 var _shadow: Node3D
 var _players: Array[AnimationPlayer] = []
 var _sound: AudioStreamPlayer
-var _pickup_sound: AudioStreamPlayer
-var _upgrade_sound: AudioStreamPlayer
 
 # The port's lamps: the level's two materials, one for every red lamp and one
 # for every blue, and LandingPort's two indices into ALPHAS.
@@ -149,9 +150,8 @@ func _ready() -> void:
 		return
 	_model = _instance(scene, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 	_shadow = _instance(scene, GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY)
-	_sound = _player(SOUND_PATH)
-	_pickup_sound = _player(PICKUP_SOUND_PATH)
-	_upgrade_sound = _player(UPGRADE_SOUND_PATH)
+	_sound = AudioStreamPlayer.new()
+	add_child(_sound)
 	_find_port()
 	reset()
 
@@ -166,13 +166,6 @@ func _instance(scene: PackedScene, shadows: int) -> Node3D:
 	clips.play("Fly")
 	_players.append(clips)
 	return root
-
-
-func _player(path: String) -> AudioStreamPlayer:
-	var p := AudioStreamPlayer.new()
-	p.stream = load(path)
-	add_child(p)
-	return p
 
 
 # GameMode.process_trigger's LANDING_PORT_*, and LandingPort._init's spot for
@@ -418,9 +411,9 @@ func _friendly_soldier_picked_up() -> void:
 	scored.call(POINTS)
 	rescued += 1
 	if rescued in UPGRADES and friends.upgrade_weapon():
-		_upgrade_sound.play()
+		Level3DAudio.play(UPGRADE_SOUND)
 	else:
-		_pickup_sound.play()
+		Level3DAudio.play(PICKUP_SOUND)
 	if verbose:
 		print("prisoner rescued: %d so far, weapon %s" % [rescued, friends.weapon_name()])
 
@@ -439,8 +432,17 @@ func pad_position() -> Vector3:
 
 
 # Main.play_sound_if_not_playing.
+#
+# The stream is asked for every tick, since the menu can change the sound's
+# mode under it: a new one replaces the old at once.
 func _play_sound() -> void:
-	if not _sound.playing:
+	var wanted := Level3DAudio.stream(SOUND)
+	if _sound.stream != wanted:
+		_sound.stop()
+		_sound.stream = wanted
+		_sound.volume_db = Level3DAudio.volume_db(SOUND)
+		_sound.bus = Level3DAudio.bus(SOUND)
+	if wanted != null and not _sound.playing:
 		_sound.play()
 
 

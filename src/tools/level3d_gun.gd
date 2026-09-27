@@ -106,6 +106,7 @@ var btr: Level3DBtr
 var trigger := false
 var turbo := true
 var unlimited := false      # UNLIMITED_RANGE rather than a reach of its own
+var long_reach := false     # RANGE rather than the game's CLASSIC_RANGE
 # The preview's rate cheat (Level3DSettings.gun_rate): that many times the
 # rounds a second, and classic, that many times Player.MAX_BULLETS in flight,
 # which would hold turbo to its old rate otherwise.
@@ -212,13 +213,15 @@ func _fire() -> void:
 	var from := muzzle.origin
 	var bearing := Vector3(muzzle.basis.x.x, 0.0, muzzle.basis.x.z).normalized()
 	var direction := bearing
-	var reach := CLASSIC_RANGE
+	# The reach is the setting's, however the BTR drives (Level3DSettings.Reach);
+	# the cursor only brings it in.
+	var most := RANGE if long_reach else CLASSIC_RANGE
+	var reach := most
 	if not btr.classic:
 		direction = bearing.rotated(Vector3.UP, _rng.randf_range(-SPREAD, SPREAD))
-		reach = RANGE
 		if aim_point != null:
 			var to: Vector3 = aim_point - from
-			reach = clampf(Vector2(to.x, to.z).length(), MIN_RANGE, RANGE)
+			reach = clampf(Vector2(to.x, to.z).length(), minf(MIN_RANGE, most), most)
 		reach *= 1.0 + _rng.randf_range(-RANGE_JITTER, RANGE_JITTER)
 	# Not even at the cursor: a stream of rounds is not aimed at a point.
 	if unlimited:
@@ -248,6 +251,7 @@ func _fire() -> void:
 	Level3DFx.set_fire(_flash_parts, 0.0)
 	_flash_left = FLASH_TIME
 	btr.recoil(direction, RECOIL_KICK)
+	Level3DAudio.play("gun", from)
 
 
 # Where a round that flew its whole reach to `at` comes down: on the ground
@@ -314,6 +318,17 @@ func _round(from: Vector3, to: Vector3, kind: String, normal: Vector3, travel: V
 # What a round leaves where it lands, by what it landed on -- the jeep's and,
 # through Level3DGuns, the enemies'.
 func impact(at: Vector3, kind: String, normal: Vector3, travel: Vector3) -> void:
+	# On a unit it is the unit's own to say (hit_armor, from its bullet_attack),
+	# and only while the round has not killed it.
+	match kind:
+		"water":
+			Level3DAudio.play("hit_water", at)
+		"wall", "building", "hard":
+			Level3DAudio.play("hit_hard", at)
+		"unit":
+			pass
+		_:
+			Level3DAudio.play("hit_ground", at)
 	match kind:
 		"water":
 			_puffs(at, "splash", 3, 0.22, 0.35)

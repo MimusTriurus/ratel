@@ -632,6 +632,7 @@ func _kill(i: int, by: String, knock := Vector3.ZERO) -> void:
 		s.knock_left = KNOCK_TIME
 		s.yaw = atan2(-knock.x, -knock.z)
 	_corpses.append(s)
+	Level3DAudio.play("soldier_death", s.root.global_position)
 	scored.call(POINTS)
 	if verbose:
 		print("soldier killed (%s) at %.0f, %.0f, tick %d" % [by, s.x, s.y, Engine.get_physics_frames()])

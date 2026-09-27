@@ -38,7 +38,7 @@
 #   Esc                    the menu (level3d_menu.gd): continue, settings,
 #                          quit. The settings -- camera, look (modern or
 #                          pixels, a CRT over either), the HUD, keys, driving,
-#                          firing, reach (the game's or unlimited), and the
+#                          firing, reach (the game's, long or unlimited), and the
 #                          cheats: infinite lives, wall hack, bullet hack,
 #                          the gun's and the launcher's rate -- are
 #                          Level3DSettings, kept in user://preview3d.cfg; the
@@ -241,6 +241,12 @@ var _crt: ColorRect
 var _gun_locked := false
 
 var _live := false
+# The BTR's engine, two loops on it mixed by speed (_update_engine_sound).
+var _engine_level := 0.0
+# The music's edges (_update_music): the boss armed, the boss beaten.
+var _saw_boss := false
+var _saw_beaten := false
+const ENGINE_RISE := 2.5         # the mix's travel a second, 0 to 1
 var _forced_aim = null  # --fire's or --rocket's target
 var _hold_fire := false # --fire: the gun's trigger held throughout
 # How much longer a right click waits to be a rocket; see _physics_process.
@@ -263,6 +269,9 @@ func _ready() -> void:
 	if _persist:
 		settings.load_saved()
 	get_tree().node_added.connect(_toon)
+	# First, so that everything added after it has something to be heard
+	# through (Level3DAudio.play is a no-op until then).
+	add_child(Level3DAudio.new())
 	Level3DHull.creases = OS.get_cmdline_user_args().has("--engine-creases")
 	Level3DHull.drawn = not OS.get_cmdline_user_args().has("--no-contour")
 	Level3DFx.real_shadows = not OS.get_cmdline_user_args().has("--spots")
@@ -302,6 +311,8 @@ func _ready() -> void:
 	btr = Btr.new()
 	btr.ground = _hull_ground_at
 	add_child(btr)
+	Level3DAudio.attach_loop("btr_idle", btr)
+	Level3DAudio.attach_loop("btr_drive", btr)
 	gun = Level3DGun.new()
 	gun.btr = btr
 	gun.ground = _ground_at
@@ -342,6 +353,8 @@ func _ready() -> void:
 	_live = true
 
 	var args := OS.get_cmdline_user_args()
+	# intro_song, IntroMapMode's: the start jingle running on into stage 1.
+	Level3DAudio.play_music("intro")
 	if args.has("--intro") or not (args.has("--shot") or args.has("--obstacle-map")):
 		_start_intro()
 	_screenshot_mode()
@@ -1118,6 +1131,7 @@ func _set_destroyed(building: String, destroyed: bool) -> void:
 		player.pause()
 	else:
 		if launcher != null and entry.has("footprint"):
+			Level3DAudio.play("building", entry.centre)
 			var footprint: Rect2 = entry.footprint
 			launcher.blast(entry.centre, clampf(minf(footprint.size.x, footprint.size.y) * BUILDING_BLAST,
 					BUILDING_BLAST_RADIUS.x, BUILDING_BLAST_RADIUS.y), CHAIN_DELAY)
@@ -1484,7 +1498,8 @@ static func _nearest(found: Array) -> Dictionary:
 # (Level3DLauncher.blast) for its flash and smoke. A unit is brought down by a
 # round, whose own blast goes first; the BTR by a round or a collision, which
 # has none, so its goes off at once.
-func _spawn_blast(at: Vector3, size: float, delay := CHAIN_DELAY) -> void:
+func _spawn_blast(at: Vector3, size: float, delay := CHAIN_DELAY, sound := "blast") -> void:
+	Level3DAudio.play(sound, at)
 	var root := _blast_scene.instantiate() as Node3D
 	add_child(root)
 	root.global_position = at
@@ -1534,7 +1549,10 @@ func _player_box() -> Rect2:
 # it went, invincible, for one of its lives (_physics_process). Under the blast a copy of it comes apart and burns until it is back
 # (Level3DWreck); the game's jeep is simply gone.
 func _explode_btr(by: String) -> void:
-	_spawn_blast(btr.position + Vector3.UP * 0.6, 1.0, 0.0)
+	_spawn_blast(btr.position + Vector3.UP * 0.6, 1.0, 0.0, "player_explodes")
+	# Player.explode: the last life going takes the music with it.
+	if _lives == 0 and not settings.infinite_lives:
+		Level3DAudio.stop_music()
 	var wreck := Level3DWreck.new()
 	wreck.ground = launcher.ground
 	wreck.launcher = launcher
@@ -1808,6 +1826,8 @@ func _apply_settings() -> void:
 	btr.ghost = settings.wall_hack
 	gun.unlimited = settings.reach == Level3DSettings.Reach.UNLIMITED
 	launcher.unlimited = gun.unlimited
+	gun.long_reach = settings.reach == Level3DSettings.Reach.LONG
+	launcher.long_reach = gun.long_reach
 	gun.rate = settings.gun_rate
 	launcher.rate = settings.launcher_rate
 	_apply_resolution()
@@ -1815,6 +1835,11 @@ func _apply_settings() -> void:
 	_crt.visible = settings.crt
 	_layout_hud()
 	_set_score(_score)
+	Level3DAudio.set_mode(Level3DAudio.Mode.CLASSIC if settings.sound_mode == Level3DSettings.SoundMode.CLASSIC
+			else Level3DAudio.Mode.MODERN)
+	Level3DAudio.set_volumes(settings.master_volume, settings.music_volume, settings.effects_volume,
+			settings.enemy_fire_volume, settings.enemy_fire)
+	Level3DAudio.set_gains(settings.sound_gains)
 	# At once, under the menu, which has the tree paused and _process with it.
 	if camera != null:
 		_update_camera()
@@ -1902,6 +1927,44 @@ func _update_camera() -> void:
 		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
 		sun.directional_shadow_max_distance = height + TOP_CAMERA_HEIGHT
 	_apply_shake(width)
+
+
+# GameMode's songs: boss_song from the boss's trigger, which is when it arms
+# and the camera starts for its arena, and nothing once it is beaten
+# (mark_stage_completed's stop_song).
+func _update_music() -> void:
+	var armed := boss != null and boss.camera_top() >= 0.0
+	if armed and not _saw_boss:
+		Level3DAudio.play_music("boss")
+	_saw_boss = armed
+	var beaten := boss != null and boss.is_defeated()
+	if beaten and not _saw_beaten:
+		Level3DAudio.stop_music()
+	_saw_beaten = beaten
+
+
+# The BTR's engine: idling at rest, pulling as it goes, the pull's pitch up
+# with the speed. Quiet while the Chinook has it and while it is a wreck. The
+# classic drive's speed jumps from nothing to top in a tick, so the mix
+# follows it at ENGINE_RISE rather than jumping with it.
+#
+# Looked up every frame, not kept: a change of the sound's mode replaces them,
+# and without the placeholders, or in the classic mode, there are none.
+func _update_engine_sound(delta: float) -> void:
+	var idle := Level3DAudio.loop_on(btr, "btr_idle")
+	var drive := Level3DAudio.loop_on(btr, "btr_drive")
+	if idle == null and drive == null:
+		return
+	var running := btr.visible and _respawning == 0 and chinook == null
+	var ratio := clampf(absf(btr.speed) / btr.top_speed(), 0.0, 1.0) if running else 0.0
+	_engine_level = move_toward(_engine_level, ratio, ENGINE_RISE * delta)
+	if idle != null:
+		idle.stream_paused = not running
+		idle.volume_db = Level3DAudio.volume_db("btr_idle") + linear_to_db(1.0 - 0.7 * _engine_level)
+	if drive != null:
+		drive.stream_paused = not running
+		drive.volume_db = Level3DAudio.volume_db("btr_drive") + linear_to_db(maxf(_engine_level, 0.001))
+		drive.pitch_scale = 0.85 + 0.35 * _engine_level
 
 
 # The tank bench's CameraShake.Blast: two sines per axis so it does not read as
@@ -2112,6 +2175,9 @@ func _process(delta: float) -> void:
 		btr.blink(_blink % 4 < 2)
 	_shake_left = maxf(_shake_left - delta, 0.0)
 	_update_camera()
+	Level3DAudio.listen(Vector3(focus.x, 0.0, focus.y))
+	_update_engine_sound(delta)
+	_update_music()
 	_update_pad_arrow()
 	_update_banners()
 
@@ -2249,9 +2315,13 @@ func _restart() -> void:
 	_saw_chinook = false
 	_saw_pan = false
 	_saw_defeat = false
+	_saw_boss = false
+	_saw_beaten = false
 	btr.visible = true
 	btr.blink(true)
 	_set_score(0)
+	# stage_song0, the Chinook's after a continue: no start jingle again.
+	Level3DAudio.play_music("stage")
 	_start_intro()
 
 
@@ -2325,10 +2395,10 @@ func _screenshot_mode() -> void:
 	if immortal >= 0:
 		_immortal = true
 		args.remove_at(immortal)
-	# Level3DSoldiers and Level3DBtr read these for themselves; they are not
-	# waypoints.
+	# Level3DSoldiers, Level3DBtr and Level3DAudio read these for themselves;
+	# they are not waypoints.
 	for own in ["--fade-corpses", "--btr", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
-			"--no-wind", "--wind-steps", "--spots"]:
+			"--no-wind", "--wind-steps", "--spots", "--audio-debug"]:
 		var at := args.find(own)
 		if at >= 0:
 			args.remove_at(at)

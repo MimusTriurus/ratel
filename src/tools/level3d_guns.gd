@@ -325,6 +325,9 @@ func _fire(gun: Gun) -> void:
 # (enemy_bullet's `behind_flash`): drawn over everything, it would sit on the
 # flame's root.
 func muzzle_flash(at: Vector3, direction: Vector3, size := 1.0) -> void:
+	# Every enemy's shot comes through here: the soldiers' is a machine gun's,
+	# as their rounds come in the game's stream, the rest a cannon's.
+	Level3DAudio.play("enemy_mg" if size <= RIFLE_FLASH else "enemy_cannon", at)
 	var ahead := at + direction * Level3DFx.FLASH_LENGTH * 0.4 * size
 	var holder := Node3D.new()
 	add_child(holder)
@@ -579,6 +582,8 @@ func bullet_attack(i: int) -> void:
 		print("gun %s hit, %d left" % [gun.name, maxi(gun.bullet_hits, 0)])
 	if gun.bullet_hits <= 0:
 		_destroy(gun, "machine gun")
+	else:
+		Level3DAudio.play("hit_armor", Vector3(gun.at.x, ROUND_HEIGHT, gun.at.y))
 
 
 # Enemy.attack from a grenade or missile: gone at once.
