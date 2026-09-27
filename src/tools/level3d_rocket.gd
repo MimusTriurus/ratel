@@ -218,6 +218,7 @@ var surface: Callable
 var strike: Callable
 var btr: Level3DBtr
 var aim_point = null        # Vector3 or null
+var unlimited := false      # the preview's unlimited reach, see _launch
 # `exploded.call(point)` at each explosion, returning whether it destroyed
 # anything.
 var exploded: Callable
@@ -462,6 +463,13 @@ func _launch() -> void:
 	elif aim_point != null:
 		var to: Vector3 = aim_point - start
 		reach = clampf(Vector2(to.x, to.z).length(), MIN_RANGE, RANGE)
+	# Unlimited (Level3DGun.UNLIMITED_RANGE): aimed at the cursor it still goes
+	# off there, however far that is; otherwise it flies until it strikes.
+	if unlimited:
+		reach = Level3DGun.UNLIMITED_RANGE
+		if not classic and aim_point != null:
+			var to: Vector3 = aim_point - start
+			reach = maxf(Vector2(to.x, to.z).length(), MIN_RANGE)
 	var target := start + flat * reach
 	# Classic comes back to the height it left at, as the game's weapons fly
 	# flat, and goes off on the ground under the end of it (_fly). Dropping on

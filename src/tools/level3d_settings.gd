@@ -11,12 +11,16 @@ extends RefCounted
 const SAVE_PATH := "user://preview3d.cfg"
 
 enum Camera { TOP, TILTED }
-enum Look { MODERN, CRT, PIXELS }
+enum Look { MODERN, PIXELS }
 enum Driving { CLASSIC, FREE }
 # Classic: the gun up the screen and the launcher the way the BTR drives, as
 # the game's jeep fires; driving free, both along the hull. Modern: both at the
-# cursor. Combined: the gun as classic, the launcher at the cursor.
+# cursor. Combined: the gun up the screen however the BTR drives, the launcher
+# at the cursor.
 enum Firing { CLASSIC, MODERN, COMBINED }
+# Classic: the game's reach, driving classic, and to the cursor or RANGE
+# driving free. Unlimited: until something stops it (Level3DGun.unlimited).
+enum Reach { CLASSIC, UNLIMITED }
 
 # The keys that can be rebound, in the order the menu lists them, and what
 # they start as: the preview's keys from before there was a menu.
@@ -29,8 +33,11 @@ const DEFAULT_KEYS := {
 
 var camera := Camera.TILTED
 var look := Look.MODERN
+# The CRT monitor, over either look.
+var crt := false
 var driving := Driving.CLASSIC
 var firing := Firing.CLASSIC
+var reach := Reach.CLASSIC
 var infinite_lives := false
 var wall_hack := false
 var bullet_hack := false
@@ -67,9 +74,17 @@ func load_saved() -> void:
 	if config.load(SAVE_PATH) != OK:
 		return
 	camera = clampi(config.get_value("graphics", "camera", camera), 0, Camera.size() - 1)
-	look = clampi(config.get_value("graphics", "look", look), 0, Look.size() - 1)
+	if config.has_section_key("graphics", "render"):
+		look = clampi(config.get_value("graphics", "render", look), 0, Look.size() - 1)
+		crt = config.get_value("graphics", "crt", crt)
+	else:
+		# Saved when the CRT was a third look: 0 modern, 1 CRT, 2 pixels.
+		var old: int = config.get_value("graphics", "look", 0)
+		look = Look.PIXELS if old == 2 else Look.MODERN
+		crt = old == 1
 	driving = clampi(config.get_value("controls", "driving", driving), 0, Driving.size() - 1)
 	firing = clampi(config.get_value("controls", "firing", firing), 0, Firing.size() - 1)
+	reach = clampi(config.get_value("controls", "reach", reach), 0, Reach.size() - 1)
 	infinite_lives = config.get_value("cheats", "infinite_lives", infinite_lives)
 	wall_hack = config.get_value("cheats", "wall_hack", wall_hack)
 	bullet_hack = config.get_value("cheats", "bullet_hack", bullet_hack)
@@ -82,9 +97,11 @@ func load_saved() -> void:
 func save() -> void:
 	var config := ConfigFile.new()
 	config.set_value("graphics", "camera", camera)
-	config.set_value("graphics", "look", look)
+	config.set_value("graphics", "render", look)
+	config.set_value("graphics", "crt", crt)
 	config.set_value("controls", "driving", driving)
 	config.set_value("controls", "firing", firing)
+	config.set_value("controls", "reach", reach)
 	config.set_value("cheats", "infinite_lives", infinite_lives)
 	config.set_value("cheats", "wall_hack", wall_hack)
 	config.set_value("cheats", "bullet_hack", bullet_hack)

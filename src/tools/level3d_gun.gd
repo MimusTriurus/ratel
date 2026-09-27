@@ -75,6 +75,10 @@ const RECOIL_KICK := 0.12
 # tick its count passes TRAVEL_TIME, so it covers TRAVEL_TIME + 1 moves.
 const CLASSIC_RANGE := (PlayerBullet.TRAVEL_TIME + 1) * PlayerBullet.VELOCITY * Level3DMap.PX
 const CLASSIC_ROUND_SPEED := PlayerBullet.VELOCITY * 100.0 * Level3DMap.PX
+# The preview's unlimited reach (Level3DSettings.Reach): a round flies until
+# the grid or an enemy stops it, or this far, well off the top of the frame
+# at any zoom -- the frame is 24.6 m tall at zoom 1. The launcher's too.
+const UNLIMITED_RANGE := 40.0
 # What a round does to the plants (Level3DWind), as a blast of its own: one in
 # a palm's trunk knocks that palm on, set TRUNK_BACK behind the hit so that it
 # throws it along the round's way and reaches no other; one in the forest
@@ -101,6 +105,7 @@ var strike: Callable
 var btr: Level3DBtr
 var trigger := false
 var turbo := true
+var unlimited := false      # UNLIMITED_RANGE rather than a reach of its own
 var aim_point = null        # Vector3 or null
 # `intercept.call(from, to)`: the first enemy on the round's flight before the
 # grid stops it -- a bunker's gun, a soldier, a boat or a tank -- as {"t": 0-1
@@ -202,6 +207,9 @@ func _fire() -> void:
 			var to: Vector3 = aim_point - from
 			reach = clampf(Vector2(to.x, to.z).length(), MIN_RANGE, RANGE)
 		reach *= 1.0 + _rng.randf_range(-RANGE_JITTER, RANGE_JITTER)
+	# Not even at the cursor: a stream of rounds is not aimed at a point.
+	if unlimited:
+		reach = UNLIMITED_RANGE
 	var stop := _grid_stop(from, direction, reach)
 	var struck_at := landed(from + direction * reach) if stop < 0.0 \
 			else stopped(from + direction * stop, direction)

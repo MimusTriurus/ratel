@@ -36,8 +36,10 @@
 # or free, a throttle and a wheel:
 #
 #   Esc                    the menu (level3d_menu.gd): continue, settings,
-#                          quit. The settings -- camera, look (modern, CRT,
-#                          pixels), keys, driving, firing, and the cheats:
+#                          quit. The settings -- camera, look (modern or
+#                          pixels, a CRT over either), keys, driving,
+#                          firing, reach (the game's or unlimited), and the
+#                          cheats:
 #                          infinite lives, wall hack, bullet hack -- are
 #                          Level3DSettings, kept in user://preview3d.cfg; the
 #                          keys below are its defaults, and a --shot ignores it
@@ -48,8 +50,8 @@
 #   M                      the firing: classic, the game's -- driving classic
 #                          the gun up the screen and the rocket the way the
 #                          BTR drives, driving free both along the hull;
-#                          modern, both at the cursor; combined, the gun as
-#                          classic and the rocket at the cursor
+#                          modern, both at the cursor; combined, the gun up
+#                          the screen and the rocket at the cursor
 #   left button (held), L  machine gun, level3d_gun.gd
 #   right click, P         rocket, level3d_rocket.gd -- L and P are for
 #                          classic driving with the mouse off, under the
@@ -230,7 +232,8 @@ var tilted := true      # Tab; the top view is the game's
 var settings := Level3DSettings.new()
 var _persist := false
 var _menu: Level3DMenu
-var _look: ColorRect
+var _pixels: ColorRect
+var _crt: ColorRect
 # A click that closed the menu is not a round fired: the left button is not
 # the gun's again until it has been let go of.
 var _gun_locked := false
@@ -1548,6 +1551,7 @@ func _explode_btr(by: String) -> void:
 
 func _make_hud() -> void:
 	_hud = CanvasLayer.new()
+	_hud.layer = HUD_LAYER
 	var layer := _hud
 	add_child(layer)
 	_score_label = Label.new()
@@ -1581,26 +1585,45 @@ func _set_score(score: int) -> void:
 				FIRING_NAMES[settings.firing]]
 
 
-# The Escape menu, and under it the look it picks: a rect over the whole frame,
-# the HUD included, drawing the frame again through level3d_screen.gdshader.
-const LOOK_LAYER := 50
+# The Escape menu, and under it the look it picks: two rects over the whole
+# frame, each drawing it again through level3d_screen.gdshader -- the pixels,
+# then the HUD, then the CRT's glass over all of it. The HUD is over the pixels
+# because they would make it unreadable, and under the glass because it is on
+# the screen.
+const PIXELS_LAYER := 50
+const HUD_LAYER := 51
+const CRT_LAYER := 52
 
 func _make_menu() -> void:
-	var layer := CanvasLayer.new()
-	layer.layer = LOOK_LAYER
-	add_child(layer)
-	_look = ColorRect.new()
-	_look.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_look.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var material := ShaderMaterial.new()
-	material.shader = SCREEN_SHADER
-	_look.material = material
-	layer.add_child(_look)
+	_pixels = _screen_pass(PIXELS_LAYER, 2)
+	_crt = _screen_pass(CRT_LAYER, 1)
 	_menu = Level3DMenu.new()
 	_menu.settings = settings
 	_menu.changed = _settings_changed
 	_menu.resumed = func(): _gun_locked = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	add_child(_menu)
+
+
+# A rect on a layer of its own drawing the frame through the shader's `mode`.
+# The back buffer is copied again for each: without it the CRT would read the
+# frame as it was before the pixels and the HUD.
+func _screen_pass(layer_index: int, mode: int) -> ColorRect:
+	var layer := CanvasLayer.new()
+	layer.layer = layer_index
+	add_child(layer)
+	var copy := BackBufferCopy.new()
+	copy.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+	layer.add_child(copy)
+	var rect := ColorRect.new()
+	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var material := ShaderMaterial.new()
+	material.shader = SCREEN_SHADER
+	material.set_shader_parameter("mode", mode)
+	rect.material = material
+	rect.visible = false
+	layer.add_child(rect)
+	return rect
 
 
 # From the menu, and from the keys that change the same things (Tab, V, M).
@@ -1614,11 +1637,10 @@ func _apply_settings() -> void:
 	tilted = settings.camera == Level3DSettings.Camera.TILTED
 	btr.classic = settings.driving == Level3DSettings.Driving.CLASSIC
 	btr.ghost = settings.wall_hack
-	_look.visible = settings.look != Level3DSettings.Look.MODERN
-	(_look.material as ShaderMaterial).set_shader_parameter("mode", settings.look)
-	# The HUD is behind the CRT's glass, but over the pixels, which make it
-	# unreadable at a fifth of its size.
-	_hud.layer = LOOK_LAYER + 1 if settings.look == Level3DSettings.Look.PIXELS else 1
+	gun.unlimited = settings.reach == Level3DSettings.Reach.UNLIMITED
+	launcher.unlimited = gun.unlimited
+	_pixels.visible = settings.look == Level3DSettings.Look.PIXELS
+	_crt.visible = settings.crt
 	_set_score(_score)
 	# At once, under the menu, which has the tree paused and _process with it.
 	if camera != null:
@@ -1776,7 +1798,8 @@ func _physics_process(delta: float) -> void:
 	# The firing (Level3DSettings.Firing). Classic is the game's: driving
 	# classic, the gun up the screen whatever the jeep does and the grenade
 	# the way it drives or faces; driving free, both along the hull. Modern
-	# has both at the cursor, combined only the launcher.
+	# has both at the cursor. Combined has the launcher at the cursor and the
+	# turret up the screen, however the BTR drives.
 	var firing := settings.firing
 	var cursor = null
 	if _forced_aim == null and firing != Level3DSettings.Firing.CLASSIC:
@@ -1785,7 +1808,7 @@ func _physics_process(delta: float) -> void:
 		btr.aim_point = _forced_aim
 	elif firing == Level3DSettings.Firing.MODERN:
 		btr.aim_point = cursor
-	elif btr.classic:
+	elif btr.classic or firing == Level3DSettings.Firing.COMBINED:
 		btr.aim_point = btr.position + _game_direction(270.0) * Level3DGun.RANGE
 	else:
 		btr.aim_point = null

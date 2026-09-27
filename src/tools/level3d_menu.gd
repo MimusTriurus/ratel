@@ -30,8 +30,10 @@ var _settings_page: Control
 var _tabs: TabContainer
 var _camera: OptionButton
 var _look: OptionButton
+var _crt: CheckBox
 var _driving: OptionButton
 var _firing: OptionButton
+var _reach: OptionButton
 var _infinite_lives: CheckBox
 var _wall_hack: CheckBox
 var _bullet_hack: CheckBox
@@ -100,8 +102,10 @@ func _show_settings() -> void:
 func refresh() -> void:
 	_camera.select(settings.camera)
 	_look.select(settings.look)
+	_crt.set_pressed_no_signal(settings.crt)
 	_driving.select(settings.driving)
 	_firing.select(settings.firing)
+	_reach.select(settings.reach)
 	_infinite_lives.set_pressed_no_signal(settings.infinite_lives)
 	_wall_hack.set_pressed_no_signal(settings.wall_hack)
 	_bullet_hack.set_pressed_no_signal(settings.bullet_hack)
@@ -153,8 +157,9 @@ func _make_graphics_tab() -> Control:
 	var grid := _grid(tab)
 	_camera = _choice(grid, "Камера", ["Вид сверху", "Вид сверху под наклоном"],
 			func(i: int): settings.camera = i)
-	_look = _choice(grid, "Визуализация", ["Современный", "ЭЛТ-монитор", "Пиксели"],
+	_look = _choice(grid, "Визуализация", ["Современный", "Пиксели"],
 			func(i: int): settings.look = i)
+	_crt = _check(tab, "ЭЛТ-монитор", func(on: bool): settings.crt = on)
 	return tab.get_parent().get_parent()
 
 
@@ -190,7 +195,12 @@ func _make_controls_tab() -> Control:
 	_firing = _choice(firing, "Режим стрельбы", ["Классический", "Современный", "Комбинированный"],
 			func(i: int): settings.firing = i)
 	_note(tab, "Классический: пулемёт вперёд, ракеты по направлению джипа. "
-			+ "Современный: всё по курсору. Комбинированный: пулемёт вперёд, ракеты по курсору.")
+			+ "Современный: всё по курсору. Комбинированный: пулемёт всегда вверх по экрану, ракеты по курсору.")
+	var reach := _grid(tab)
+	_reach = _choice(reach, "Дальность стрельбы", ["Классическая", "Не ограничена"],
+			func(i: int): settings.reach = i)
+	_note(tab, "Классическая: как в игре, пули и ракеты летят недалеко. "
+			+ "Не ограничена: летят, пока во что-нибудь не попадут; ракета, наведённая курсором, взрывается у курсора.")
 	return tab.get_parent().get_parent()
 
 

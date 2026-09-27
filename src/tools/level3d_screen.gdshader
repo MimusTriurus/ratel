@@ -1,6 +1,8 @@
-// The 3D preview's look (Level3DSettings.Look), drawn over the finished frame
-// by a ColorRect on a CanvasLayer of its own (level3d_menu.gd): 1 a CRT
-// monitor, 2 big pixels. 0, the modern look, is no rect at all.
+// The 3D preview's look, drawn over the finished frame by ColorRects on
+// CanvasLayers of their own (level3d_preview.gd, _screen_pass): mode 2 the
+// pixels (Level3DSettings.Look.PIXELS), mode 1 a CRT monitor
+// (Level3DSettings.crt), which goes over either look. The modern look is no
+// rect at all.
 shader_type canvas_item;
 
 uniform sampler2D screen : hint_screen_texture, filter_linear;
@@ -11,8 +13,11 @@ uniform int mode = 1;
 uniform float curve = 0.08;
 uniform float lines = 270.0;
 // Pixels: how many the frame is wide, and the levels each channel is cut to.
-uniform float columns = 384.0;
-uniform float levels = 10.0;
+// The port's frame is 512 of the NES's pixels across (2048 at 4x); 640 is a
+// little finer than that, and 24 levels keep the water's and the shadows'
+// shades from banding the way a palette would.
+uniform float columns = 640.0;
+uniform float levels = 24.0;
 
 vec2 bulge(vec2 uv) {
 	vec2 c = uv * 2.0 - 1.0;
