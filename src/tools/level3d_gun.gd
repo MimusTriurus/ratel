@@ -106,6 +106,11 @@ var btr: Level3DBtr
 var trigger := false
 var turbo := true
 var unlimited := false      # UNLIMITED_RANGE rather than a reach of its own
+# The preview's rate cheat (Level3DSettings.gun_rate): that many times the
+# rounds a second, and classic, that many times Player.MAX_BULLETS in flight,
+# which would hold turbo to its old rate otherwise.
+var rate := 1.0
+var _slowed := 0            # ticks until a press may fire again, rate < 1
 var aim_point = null        # Vector3 or null
 # `intercept.call(from, to)`: the first enemy on the round's flight before the
 # grid stops it -- a bunker's gun, a soldier, a boat or a tank -- as {"t": 0-1
@@ -166,10 +171,18 @@ func step(delta: float) -> void:
 		# Player.update, one tick of it.
 		if _gun_armed > 0:
 			_gun_armed -= 1
+		if _slowed > 0:
+			_slowed -= 1
 		if trigger:
-			if (_shoot_released or _gun_armed == 0) and _in_flight < Player.MAX_BULLETS:
+			if (_shoot_released or _gun_armed == 0) and _in_flight < Player.MAX_BULLETS * maxf(rate, 1.0) \
+					and _slowed == 0:
 				_fire()
-				_gun_armed = Player.TURBO_DELAY if turbo else Player.GUN_ARMED_DELAY
+				# Slower than the game's, a press waits too, or tapping would
+				# fire as fast as ever: no two rounds closer than turbo's
+				# delay over the rate, half turbo's cap at 0.5.
+				if rate < 1.0:
+					_slowed = roundi(Player.TURBO_DELAY / rate)
+				_gun_armed = maxi(floori((Player.TURBO_DELAY if turbo else Player.GUN_ARMED_DELAY) / rate), 1)
 			_shoot_released = false
 		else:
 			_shoot_released = true
@@ -180,7 +193,7 @@ func step(delta: float) -> void:
 		if trigger:
 			while _cooldown <= 0.0:
 				_fire()
-				_cooldown += FIRE_INTERVAL
+				_cooldown += FIRE_INTERVAL / rate
 		else:
 			_cooldown = maxf(_cooldown, 0.0)
 	_flash_left -= delta

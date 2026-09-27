@@ -41,6 +41,11 @@ var reach := Reach.CLASSIC
 var infinite_lives := false
 var wall_hack := false
 var bullet_hack := false
+# The rate cheats: how many times faster the gun fires and the launcher
+# reloads, one of RATES -- half as fast as well.
+const RATES: Array[float] = [0.5, 1.0, 2.0, 4.0]
+var gun_rate := 1.0
+var launcher_rate := 1.0
 var keys := DEFAULT_KEYS.duplicate()
 
 
@@ -88,10 +93,16 @@ func load_saved() -> void:
 	infinite_lives = config.get_value("cheats", "infinite_lives", infinite_lives)
 	wall_hack = config.get_value("cheats", "wall_hack", wall_hack)
 	bullet_hack = config.get_value("cheats", "bullet_hack", bullet_hack)
+	gun_rate = _rate(config.get_value("cheats", "gun_rate", gun_rate))
+	launcher_rate = _rate(config.get_value("cheats", "launcher_rate", launcher_rate))
 	for action in ACTIONS:
 		var saved = config.get_value("keys", action, DEFAULT_KEYS[action])
 		if saved is int and saved != KEY_NONE:
 			keys[action] = saved
+
+
+static func _rate(saved) -> float:
+	return float(saved) if (saved is int or saved is float) and RATES.has(float(saved)) else 1.0
 
 
 func save() -> void:
@@ -105,6 +116,8 @@ func save() -> void:
 	config.set_value("cheats", "infinite_lives", infinite_lives)
 	config.set_value("cheats", "wall_hack", wall_hack)
 	config.set_value("cheats", "bullet_hack", bullet_hack)
+	config.set_value("cheats", "gun_rate", gun_rate)
+	config.set_value("cheats", "launcher_rate", launcher_rate)
 	for action in ACTIONS:
 		config.set_value("keys", action, key(action))
 	config.save(SAVE_PATH)

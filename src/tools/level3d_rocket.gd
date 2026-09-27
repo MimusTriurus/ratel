@@ -219,6 +219,9 @@ var strike: Callable
 var btr: Level3DBtr
 var aim_point = null        # Vector3 or null
 var unlimited := false      # the preview's unlimited reach, see _launch
+# The preview's rate cheat (Level3DSettings.launcher_rate): the reload that
+# many times faster, see fire.
+var rate := 1.0
 # `exploded.call(point)` at each explosion, returning whether it destroyed
 # anything.
 var exploded: Callable
@@ -398,7 +401,17 @@ func fire() -> bool:
 	_launch()
 	loaded = false
 	# Classic: not loaded again until the rocket has gone off; see _explode.
-	_reload_left = INF if btr.classic else RELOAD
+	# Under the preview's rate cheat, classic reloads on the clock instead, so
+	# that more than one can be in the air: the game's cycle, the whole flight
+	# and the explosion after it, that many times faster or slower.
+	if not btr.classic:
+		_reload_left = RELOAD / rate
+	elif rate == 1.0:
+		_reload_left = INF
+	else:
+		var flight := MISSILE_RANGE / MISSILE_SPEED if has_missiles else GRENADE_RANGE / GRENADE_SPEED
+		var rearm := TRAVELING_EXPLOSION_TIME if has_missiles and missile_power > 0 else EXPLOSION_TIME
+		_reload_left = (flight + rearm) / rate
 	for part in _parts:
 		part.visible = false
 	return true
@@ -803,7 +816,7 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3) -> void:
 	_rockets.erase(rocket)
 	(rocket.node as Node3D).queue_free()
 	(rocket.blob as Node3D).queue_free()
-	if rocket.classic and not loaded:
+	if rocket.classic and not loaded and rate == 1.0:
 		_reload_left = rocket.rearm
 	var there: Dictionary = ground.call(at.x, at.z)
 	var on_water: bool = there.hit and there.kind == "water" and at.y <= there.height + 0.05

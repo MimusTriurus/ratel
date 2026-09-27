@@ -39,8 +39,8 @@
 #                          quit. The settings -- camera, look (modern or
 #                          pixels, a CRT over either), keys, driving,
 #                          firing, reach (the game's or unlimited), and the
-#                          cheats:
-#                          infinite lives, wall hack, bullet hack -- are
+#                          cheats: infinite lives, wall hack, bullet hack,
+#                          the gun's and the launcher's rate -- are
 #                          Level3DSettings, kept in user://preview3d.cfg; the
 #                          keys below are its defaults, and a --shot ignores it
 #   W / A / S / D          classic: up, left, down, right, and the diagonals
@@ -1639,6 +1639,8 @@ func _apply_settings() -> void:
 	btr.ghost = settings.wall_hack
 	gun.unlimited = settings.reach == Level3DSettings.Reach.UNLIMITED
 	launcher.unlimited = gun.unlimited
+	gun.rate = settings.gun_rate
+	launcher.rate = settings.launcher_rate
 	_pixels.visible = settings.look == Level3DSettings.Look.PIXELS
 	_crt.visible = settings.crt
 	_set_score(_score)

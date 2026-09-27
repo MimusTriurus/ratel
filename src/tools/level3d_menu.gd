@@ -37,6 +37,8 @@ var _reach: OptionButton
 var _infinite_lives: CheckBox
 var _wall_hack: CheckBox
 var _bullet_hack: CheckBox
+var _gun_rate: OptionButton
+var _launcher_rate: OptionButton
 var _key_buttons := {}       # action -> Button
 var _waiting := ""           # the action a key prompt is open for
 var _continue: Button
@@ -109,6 +111,8 @@ func refresh() -> void:
 	_infinite_lives.set_pressed_no_signal(settings.infinite_lives)
 	_wall_hack.set_pressed_no_signal(settings.wall_hack)
 	_bullet_hack.set_pressed_no_signal(settings.bullet_hack)
+	_gun_rate.select(Level3DSettings.RATES.find(settings.gun_rate))
+	_launcher_rate.select(Level3DSettings.RATES.find(settings.launcher_rate))
 	for action in _key_buttons:
 		var button: Button = _key_buttons[action]
 		button.text = "..." if action == _waiting else OS.get_keycode_string(settings.key(action))
@@ -211,6 +215,13 @@ func _make_cheats_tab() -> Control:
 	_bullet_hack = _check(tab, "Bullet hack: неуязвимость к снарядам",
 			func(on: bool): settings.bullet_hack = on)
 	_note(tab, "Таран пушки или танка по-прежнему убивает.")
+	tab.add_child(HSeparator.new())
+	var rates := _grid(tab)
+	var names := Level3DSettings.RATES.map(func(r: float): return "×1 (как в игре)" if r == 1.0 else "×%s" % String.num(r).replace(".", ","))
+	_gun_rate = _choice(rates, "Скорострельность пулемёта", names,
+			func(i: int): settings.gun_rate = Level3DSettings.RATES[i])
+	_launcher_rate = _choice(rates, "Скорострельность пусковой", names,
+			func(i: int): settings.launcher_rate = Level3DSettings.RATES[i])
 	return tab.get_parent().get_parent()
 
 
