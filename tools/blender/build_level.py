@@ -306,8 +306,14 @@ def build_ground(doc, materials):
                     columns += 1
             step += 1
             s += COLUMN[0] + (COLUMN[1] - COLUMN[0]) * hash01(n, step, 0, 13)
-    # The foot: under the water, the bed where the foot's table reaches it.
+    # The foot: under the water, the bed where the foot's table reaches it --
+    # a line of points, joined into a chain of constraints along each run of
+    # shore, so that the drop from the waterline to the bed is one narrow wall
+    # as the old cliff was. Loose, the triangulation fanned out from each
+    # waterline vertex to the bed, long thin facets each lit its own way,
+    # which the clear water near the shore shows as dark rays.
     feet = 0
+    last = None
     for p, q in shore_edges:
         along = q - p
         length = along.length
@@ -320,8 +326,13 @@ def build_ground(doc, materials):
         while s < length:
             c = p + along * (s / length) + normal * foot_reach
             if in_water(c) and not in_land(c):
-                vertex(c, bed)
+                k = vertex(c, bed)
+                if last is not None and (coords[last] - c).length < FOOT_STEP * 2.5:
+                    edges.append((last, k))
+                last = k
                 feet += 1
+            else:
+                last = None
             s += FOOT_STEP
     # The bed: a point every BED_STEP of open water, so that no triangle runs
     # from a shore far out over it.
@@ -373,10 +384,26 @@ def build_ground(doc, materials):
             dw, _ = shores.nearest(p, SEARCH)
             z[k] = profile_at(slope, db / max(db + dw, 1e-6)) if db < SEARCH or dw < SEARCH else 0.0
 
-    # The sand one object, flat; the slopes and the bed another.
+    # The sand one object, flat; the slopes and the bed another. The sea has
+    # no bed, as it had none on the hand-built stage: the water's shader shows
+    # the ground through the shallows (level3d_ocean.gdshader, clarity), and a
+    # bed 30 cm under the whole sea came through as blotches. The river keeps
+    # its bed, which it always had.
+    sea = Inside([r for polygon in doc.get("water", []) if polygon.get("kind") == "sea"
+                  for r in rings_of(polygon)])
     parts = {"land": [], "rest": []}
+    dropped = 0
     for k, face in enumerate(out_faces):
-        parts["land" if face_kind[k] == "land" else "rest"].append(k)
+        if face_kind[k] == "land":
+            parts["land"].append(k)
+            continue
+        if face_kind[k] == "water" and all(z[v] <= bed + 1e-4 for v in face):
+            middle = sum((Vector(out_coords[v]) for v in face), Vector((0, 0))) / len(face)
+            if sea(middle):
+                dropped += 1
+                continue
+        parts["rest"].append(k)
+    say("ground: %d faces of sea bed left out" % dropped)
     objects = {}
     for part, name in (("land", SAND_OBJECT), ("rest", SLOPE_OBJECT)):
         bm = bmesh.new()
@@ -410,16 +437,15 @@ def _paint_ground(sand, rest, bed, materials):
     sand.materials.append(materials["J_Sand"])
     for name in ("J_BeachBrown", "J_RockDark", "J_RiverBed"):
         rest.materials.append(materials[name])
-    # Slope facets: the DARK share turned furthest from the sun dark. Under
-    # the water, the foot rock-dark and the bed the river's bed.
+    # Slope facets: the DARK share turned furthest from the sun dark; the
+    # river's bed its own colour.
+    # The foot, the wall from the waterline down, is rock as the face is:
+    # jackal_rock_face.py painted the old cliff so.
     slope_faces = []
     for p in rest.polygons:
-        lowest = min(rest.vertices[v].co.z for v in p.vertices)
         highest = max(rest.vertices[v].co.z for v in p.vertices)
         if highest <= bed + 1e-4:
             p.material_index = 2
-        elif highest <= -1.0 + 1e-4:
-            p.material_index = 1
         else:
             slope_faces.append(p)
     # Dark by its neighbours, as jackal_rock_face.py did: a facet is dark when
