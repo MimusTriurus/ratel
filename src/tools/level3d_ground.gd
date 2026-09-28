@@ -5,8 +5,9 @@
 #           river's rather than the sea's) and FOREST bits. A cell that is
 #           neither land nor water is shore slope, which Level3DTerrain
 #           builds off the profile between the two.
-#   rise    a byte per cell, RISE_STEP a step: how far the ground is raised
-#           above its level -- hills on the land, fading out down the slope.
+#   rise    how far the ground is raised above its level, in metres -- hills
+#           on the land, fading out down the slope. RISE_STEP a step, 0 to
+#           MAX_RISE, in its PNG.
 #
 # Both lie on one Level3DTerrain.Grid over terrain.bounds, cell
 # terrain.raster.cell, and are saved as PNGs next to the level file, where an
@@ -28,6 +29,7 @@ const FOREST := 8
 
 const CELL := 0.05
 const RISE_STEP := 0.05
+const MAX_RISE := 255 * RISE_STEP
 # How wide a shore the water and land brushes leave between the two.
 const SHORE := 0.8
 const RASTER_DIR := "rasters/"
@@ -39,7 +41,7 @@ const FOREST_RULE := {"spacing": 0.55, "jitter": 0.22, "pines": 0.12}
 
 var grid: Level3DTerrain.Grid
 var ground := PackedByteArray()
-var rise := PackedByteArray()
+var rise := PackedFloat32Array()
 
 
 static func bounds_of(doc: Dictionary) -> Rect2:
@@ -91,13 +93,19 @@ static func load_for(doc: Dictionary, dir: String) -> Level3DGround:
 			if blue < 192:
 				bits |= RIVER
 		out.ground[k] = bits
-	out.rise = rise_image.get_data()
+	var steps := rise_image.get_data()
+	for k in steps.size():
+		out.rise[k] = steps[k] * RISE_STEP
 	return out
 
 
 # Writes the two PNGs under `dir` and names them in the document's
 # terrain.raster, by the level file's name: <name>-ground.png, <name>-height.png.
 func save_rasters(doc: Dictionary, dir: String, name: String) -> Error:
+	var steps := PackedByteArray()
+	steps.resize(rise.size())
+	for k in rise.size():
+		steps[k] = clampi(roundi(rise[k] / RISE_STEP), 0, 255)
 	var rgb := PackedByteArray()
 	rgb.resize(ground.size() * 3)
 	for k in ground.size():
@@ -113,7 +121,7 @@ func save_rasters(doc: Dictionary, dir: String, name: String) -> Error:
 	var error := Image.create_from_data(grid.w, grid.h, false, Image.FORMAT_RGB8, rgb) \
 			.save_png(dir.path_join(raster["ground"]))
 	if error == OK:
-		error = Image.create_from_data(grid.w, grid.h, false, Image.FORMAT_L8, rise) \
+		error = Image.create_from_data(grid.w, grid.h, false, Image.FORMAT_L8, steps) \
 				.save_png(dir.path_join(raster["height"]))
 	if error == OK:
 		doc["terrain"]["raster"] = raster
@@ -170,6 +178,167 @@ static func from_polygons(doc: Dictionary, cell := CELL) -> Level3DGround:
 			out.ground[k] |= FOREST
 	return out
 
+
+# --- Painting ---------------------------------------------------------------------
+#
+# A brush is a dab at a time: a disc of `radius` metres round a point, what
+# it does by the tool. Land and water are hard-edged, and each leaves a band
+# of `shore` round itself where the other one was, which becomes slope: water
+# painted into the land cuts a shore, land painted into the water builds one.
+# The forest grows on land only, and goes where land does. The rise is soft,
+# `strength` metres at the middle of a dab and nothing at its rim.
+#
+# A stroke keeps what it painted over, a TILE-cell square at a time, the
+# first time it touches one; end_stroke() hands that over as the stroke's
+# undo, and swap() puts it back.
+
+enum Tool { LAND, SEA, RIVER, FOREST, CLEAR_FOREST, RAISE, LOWER, SMOOTH, FLATTEN }
+const TILE := 64
+
+var _stroke := {}           # Vector2i tile -> [ground, rise] as they were
+
+
+func begin_stroke() -> void:
+	_stroke = {}
+
+
+func end_stroke() -> Dictionary:
+	var out := _stroke
+	_stroke = {}
+	return out
+
+
+# Puts back the tiles of a stroke's undo, and returns what they held, which
+# undoes the undo, and the cells they cover.
+func swap(tiles: Dictionary) -> Array:
+	var out := {}
+	var changed := Rect2i()
+	for tile in tiles:
+		var r := _tile_rect(tile)
+		out[tile] = _copy(r)
+		_paste(r, tiles[tile][0], tiles[tile][1])
+		changed = r if not changed.has_area() else changed.merge(r)
+	return [out, changed]
+
+
+func _tile_rect(tile: Vector2i) -> Rect2i:
+	return Rect2i(tile * TILE, Vector2i(TILE, TILE)).intersection(Rect2i(0, 0, grid.w, grid.h))
+
+
+func _copy(r: Rect2i) -> Array:
+	var g := PackedByteArray()
+	var f := PackedFloat32Array()
+	for j in range(r.position.y, r.end.y):
+		var k := j * grid.w
+		g.append_array(ground.slice(k + r.position.x, k + r.end.x))
+		f.append_array(rise.slice(k + r.position.x, k + r.end.x))
+	return [g, f]
+
+
+func _paste(r: Rect2i, g: PackedByteArray, f: PackedFloat32Array) -> void:
+	var n := 0
+	for j in range(r.position.y, r.end.y):
+		var k := j * grid.w
+		for i in range(r.position.x, r.end.x):
+			ground[k + i] = g[n]
+			rise[k + i] = f[n]
+			n += 1
+
+
+func _touch(r: Rect2i) -> void:
+	for ty in range(r.position.y / TILE, (r.end.y - 1) / TILE + 1):
+		for tx in range(r.position.x / TILE, (r.end.x - 1) / TILE + 1):
+			var tile := Vector2i(tx, ty)
+			if not _stroke.has(tile):
+				_stroke[tile] = _copy(_tile_rect(tile))
+
+
+# The cells a disc of `reach` metres round `at` covers, clipped to the grid.
+func _disc_rect(at: Vector2, reach: float) -> Rect2i:
+	var lo := grid.cell_of(at - Vector2(reach, reach))
+	var hi := grid.cell_of(at + Vector2(reach, reach)) + Vector2i.ONE
+	return Rect2i(lo, hi - lo).intersection(Rect2i(0, 0, grid.w, grid.h))
+
+
+# One dab; returns the cells it may have changed. `target` is FLATTEN's
+# height, the rise where its stroke began.
+func dab(tool: Tool, at: Vector2, radius: float, strength := 0.1, shore := SHORE,
+		target := 0.0) -> Rect2i:
+	var hard := tool in [Tool.LAND, Tool.SEA, Tool.RIVER]
+	var reach := radius + (shore if hard else 0.0)
+	var r := _disc_rect(at, reach)
+	if not r.has_area():
+		return r
+	_touch(r)
+	var w := grid.w
+	var r2 := radius * radius
+	var reach2 := reach * reach
+	var before := PackedFloat32Array()
+	var bw := r.size.x
+	if tool == Tool.SMOOTH:
+		before = _copy(r)[1]
+	# SMOOTH averages over a ring this many cells out.
+	var spread := maxi(1, roundi(radius / grid.r / 4.0))
+	var blend := clampf(strength * 4.0, 0.0, 1.0)
+	for j in range(r.position.y, r.end.y):
+		var z := grid.z0 + (j + 0.5) * grid.r - at.y
+		for i in range(r.position.x, r.end.x):
+			var x := grid.x0 + (i + 0.5) * grid.r - at.x
+			var d2 := x * x + z * z
+			if d2 > reach2:
+				continue
+			var k := j * w + i
+			var bits := ground[k]
+			match tool:
+				Tool.LAND:
+					if d2 <= r2:
+						ground[k] = (bits & FOREST) | LAND
+					elif bits & WATER:
+						ground[k] = 0
+				Tool.SEA, Tool.RIVER:
+					if d2 <= r2:
+						ground[k] = WATER | (RIVER if tool == Tool.RIVER else 0)
+					elif bits & LAND:
+						ground[k] = 0
+				Tool.FOREST:
+					if bits & LAND:
+						ground[k] = bits | FOREST
+				Tool.CLEAR_FOREST:
+					ground[k] = bits & ~FOREST
+				_:
+					var fall := 1.0 - d2 / r2
+					fall *= fall
+					match tool:
+						Tool.RAISE:
+							rise[k] = minf(rise[k] + strength * fall, MAX_RISE)
+						Tool.LOWER:
+							rise[k] = maxf(rise[k] - strength * fall, 0.0)
+						Tool.FLATTEN:
+							rise[k] = lerpf(rise[k], target, blend * fall)
+						Tool.SMOOTH:
+							var sum := 0.0
+							for dj in [-spread, 0, spread]:
+								for di in [-spread, 0, spread]:
+									var ii: int = clampi(i + di, r.position.x, r.end.x - 1) - r.position.x
+									var jj: int = clampi(j + dj, r.position.y, r.end.y - 1) - r.position.y
+									sum += before[jj * bw + ii]
+							rise[k] = lerpf(rise[k], sum / 9.0, blend * fall)
+	return r
+
+
+func rise_at(at: Vector2) -> float:
+	var c := grid.cell_of(at)
+	return rise[c.y * grid.w + c.x] if grid.has(c) else 0.0
+
+
+func bits_at(at: Vector2) -> int:
+	var c := grid.cell_of(at)
+	return ground[c.y * grid.w + c.x] if grid.has(c) else 0
+
+
+# Every cell one kind: a level started as land, or as water.
+func fill(bits: int) -> void:
+	ground.fill(bits)
 
 # --- Polygons ---------------------------------------------------------------------
 

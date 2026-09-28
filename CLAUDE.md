@@ -453,7 +453,23 @@ godot --path . --headless --script tools/level_terrain_from_glb.gd -- --glb res:
 blender-launcher -b build/level3d/jackal_stage1_gen.blend --python tools/blender/render_top.py -- --render build/level3d/top_gen.png 50
 ```
 
-The editor is `src/tools/level3d_editor.tscn` with the `addons/level3d_editor`
+The level editor proper is a program of its own, `src/tools/level_editor.tscn`
+(`level_editor.gd`, and `Level3DGroundView` for its picture of the ground):
+File -> New, Open, Save, and brushes for land, sea, river, forest and the
+rise of the ground, a stroke to an undo. It saves the level file, its two
+rasters and the polygons traced off them. Its check drives it without anyone
+at it -- with a window it also writes what it drew to `build/level_editor/`:
+
+```bash
+godot --path . src/tools/level_editor.tscn
+```
+
+```bash
+godot --path . --windowed --resolution 1600x900 --script tools/verify_level_editor.gd
+```
+
+The first editor, which places entities and objects and is still the only
+one that does, is `src/tools/level3d_editor.tscn` with the `addons/level3d_editor`
 plugin (enabled in `project.godot`), opened in the editor (`-e`; the plugin
 goes to the 3D screen for it and selects the root, since its bar shows only
 while a node of the level is selected -- run as a scene instead, it only shows the level from above to

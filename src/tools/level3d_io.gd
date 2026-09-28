@@ -31,7 +31,11 @@ static func flow_field_path(stage_index: int) -> String:
 
 
 static func read(stage_index: int) -> Dictionary:
-	var file_path := path(stage_index)
+	return read_path(path(stage_index))
+
+
+# Any level file, a stage's or one the level editor made.
+static func read_path(file_path: String) -> Dictionary:
 	var f := FileAccess.open(file_path, FileAccess.READ)
 	if f == null:
 		push_error("Cannot open %s (error %d)" % [file_path, FileAccess.get_open_error()])
@@ -49,7 +53,10 @@ static func read(stage_index: int) -> Dictionary:
 
 
 static func save(doc: Dictionary) -> Error:
-	var file_path := path(int(doc["stage"]))
+	return save_path(doc, path(int(doc["stage"])))
+
+
+static func save_path(doc: Dictionary, file_path: String) -> Error:
 	# A script error inside serialize does not stop it; it returns what it had
 	# got to. So the text is read back before it replaces the file, and has to
 	# hold what the document does.
@@ -71,6 +78,38 @@ static func save(doc: Dictionary) -> Error:
 	f.store_string(text)
 	f.close()
 	return OK
+
+
+# A level with nothing on it yet, `rows` map rows long: the game's 64 tiles
+# across, the grid where stage 1's is, empty nav, no entities, no objects,
+# and the ground's bounds and frame laid round the map as stage 1's are --
+# the sea's width to the west, a strip to the east, the forest's depth past
+# the north end. Its ground is Level3DGround's to paint; `profile` is the
+# shore's, which stage 1's measured one is a fair start for. "stage" is -1:
+# it is not one of the game's.
+static func new_level(rows: int, profile: Dictionary) -> Dictionary:
+	var px := Level3DMap.PX
+	var origin := Level3DMap.ORIGIN
+	var length := rows * 32 * px
+	var nav: Array = []
+	for j in rows:
+		nav.append(".".repeat(64))
+	var snap := func(v: float) -> float: return snappedf(v, 0.05)
+	return {
+		"format": FORMAT, "version": VERSION, "stage": -1,
+		"grid": {"width": 64, "height": rows, "tile_px": 32, "m_per_px": px,
+				"origin": [origin.x, origin.y]},
+		"nav": nav, "groups": [], "entities": [], "objects": [],
+		"terrain": {
+			"bounds": [snap.call(origin.x - 12.0), snap.call(origin.y - 7.0),
+					snap.call(origin.x + 34.2), snap.call(origin.y + length + 0.3)],
+			"frame": [snap.call(origin.x - 12.0), round_mm(origin.y),
+					round_mm(origin.x + 31.929), round_mm(origin.y + length + 0.37)],
+			"profile": "shore", "profiles": {"shore": profile.duplicate(true)},
+			"land": [],
+		},
+		"water": [], "forest": [],
+	}
 
 
 # --- The grid ---------------------------------------------------------------
@@ -292,9 +331,12 @@ static func serialize(doc: Dictionary) -> String:
 		for polygon in terrain["land"]:
 			rows.append(_polygon(polygon, '"id": "%s", "height": %s, "profile": "%s"'
 					% [polygon["id"], _num(float(polygon["height"])), polygon["profile"]], "    "))
-		out.append('    "land": [')
-		out.append(",\n".join(rows))
-		out.append("    ]")
+		if rows.is_empty():
+			out.append('    "land": []')
+		else:
+			out.append('    "land": [')
+			out.append(",\n".join(rows))
+			out.append("    ]")
 		out.append("  }," if ground.size() > 1 else "  }")
 	if doc.has("water"):
 		rows = PackedStringArray()
