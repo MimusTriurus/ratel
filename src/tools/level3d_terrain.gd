@@ -37,10 +37,13 @@ class Grid:
 		x0 = bounds.position.x
 		z0 = bounds.position.y
 		r = cell
-		# Rounded before the ceiling: 46.2 / 0.1 is 462.00000000000006, and a
-		# column past the bounds is ground nobody built.
-		w = ceili(snappedf(bounds.size.x / cell, 1e-4))
-		h = ceili(snappedf(bounds.size.y / cell, 1e-4))
+		# A hair under before the ceiling: 46.2 / 0.1 is 462.00000000000006,
+		# and a column past the bounds is ground nobody built. A thousandth of
+		# a cell, because a Rect2 is single precision: its 175.6 is
+		# 175.600006, 3512.0001 cells of 5 cm. (snappedf does not do it:
+		# 3512.0000000000005 snaps to itself.)
+		w = ceili(bounds.size.x / cell - 1e-3)
+		h = ceili(bounds.size.y / cell - 1e-3)
 
 	func centre(i: int, j: int) -> Vector2:
 		return Vector2(x0 + (i + 0.5) * r, z0 + (j + 0.5) * r)
@@ -269,31 +272,45 @@ static func heights(grid: Grid, terrain: Dictionary, water: Array) -> Dictionary
 static func contours(grid: Grid, field: PackedFloat32Array) -> Array[PackedVector2Array]:
 	var w := grid.w
 	var h := grid.h
+	# The field bordered by -1 all round, so that the loop below reads it
+	# straight: (i', j') = (i + 1, j + 1) at bw * j' + i'.
+	var bw := w + 2
+	var f := PackedFloat32Array()
+	var edge := PackedFloat32Array()
+	edge.resize(bw)
+	edge.fill(-1.0)
+	f.append_array(edge)
+	var one := PackedFloat32Array([-1.0])
+	for j in h:
+		f.append_array(one)
+		f.append_array(field.slice(j * w, (j + 1) * w))
+		f.append_array(one)
+	f.append_array(edge)
 	# Crossing points by edge: key 2 * (j' * (w + 2) + i') + axis over the
-	# bordered grid, i' = i + 1, axis 0 along x and 1 along z.
+	# bordered grid, axis 0 along x and 1 along z.
 	var points := {}
 	var links := {}
-	var value := func(i: int, j: int) -> float:
-		if i < 0 or j < 0 or i >= w or j >= h:
-			return -1.0
-		return field[j * w + i]
-	var key := func(i: int, j: int, axis: int) -> int:
-		return 2 * ((j + 1) * (w + 2) + (i + 1)) + axis
-	for j in range(-1, h):
-		for i in range(-1, w):
-			var va: float = value.call(i, j)
-			var vb: float = value.call(i + 1, j)
-			var vc: float = value.call(i + 1, j + 1)
-			var vd: float = value.call(i, j + 1)
-			var case_ := (8 if va > 0 else 0) | (4 if vb > 0 else 0) \
-					| (2 if vc > 0 else 0) | (1 if vd > 0 else 0)
+	for jb in h + 1:
+		var row := jb * bw
+		var below := row + bw
+		# The cell's corners a b / d c, carried along the row.
+		var va := f[row]
+		var vd := f[below]
+		for ib in w + 1:
+			var vb := f[row + ib + 1]
+			var vc := f[below + ib + 1]
+			var case_ := (8 if va > 0 else 0) | (4 if vb > 0 else 0) 					| (2 if vc > 0 else 0) | (1 if vd > 0 else 0)
 			if case_ == 0 or case_ == 15:
+				va = vb
+				vd = vc
 				continue
+			var i := ib - 1
+			var j := jb - 1
 			# The cell's four edges: top a-b, right b-c, bottom d-c, left a-d.
-			var top: int = key.call(i, j, 0)
-			var bottom: int = key.call(i, j + 1, 0)
-			var left: int = key.call(i, j, 1)
-			var right: int = key.call(i + 1, j, 1)
+			var top := 2 * (row + ib)
+			var bottom := 2 * (below + ib)
+			var left := top + 1
+			var right := 2 * (row + ib + 1) + 1
 			var a := grid.centre(i, j)
 			var crossed := {}
 			if (va > 0) != (vb > 0):
@@ -321,6 +338,8 @@ static func contours(grid: Grid, field: PackedFloat32Array) -> Array[PackedVecto
 			for pair in pairs:
 				_link(links, pair[0], pair[1])
 				_link(links, pair[1], pair[0])
+			va = vb
+			vd = vc
 
 	var rings: Array[PackedVector2Array] = []
 	var seen := {}

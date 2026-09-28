@@ -10,6 +10,9 @@
 #   entities, are its trigger list in order. A Stage filled from the level is
 #   the Stage MapIO fills.
 # - The grid block is Level3DMap's transform, which the preview converts by.
+# - The ground polygons are the rasters' (Level3DGround): traced again off
+#   the PNGs the file names, they come out exactly as the file has them, so
+#   nobody has edited the one without the other.
 # - Level3DIO.check finds nothing: the map editor's Check stage and the
 #   references -- ids unique, every type a trigger in the catalogue, every
 #   asset in the catalogue, every "entity" an entity, every group the one the
@@ -38,6 +41,7 @@ func _init() -> void:
 			_fail("  cannot read %s" % Level3DIO.path(index))
 			continue
 		_check_round_trip(index, doc)
+		_check_rasters(doc)
 		if index == Level3DMap.STAGE:
 			_check_preview_grid(doc)
 		_check_against_map(index, doc, sizes)
@@ -65,6 +69,22 @@ func _check_round_trip(index: int, doc: Dictionary) -> void:
 					% [i + 1, a[i], b[i]])
 			return
 	_fail("  round trip: %d lines read, %d written" % [a.size(), b.size()])
+
+
+func _check_rasters(doc: Dictionary) -> void:
+	if not doc.get("terrain", {}).has("raster"):
+		print("  rasters: none, the polygons are the source")
+		return
+	var ground := Level3DGround.load_for(doc, Level3DIO.DIR)
+	if ground == null:
+		_fail("  rasters: cannot read %s" % doc["terrain"]["raster"])
+		return
+	var traced := doc.duplicate(true)
+	ground.trace(traced)
+	if Level3DIO.serialize(traced) == Level3DIO.serialize(doc):
+		print("  rasters: %dx%d at %.2f m, trace to the file's polygons" % [ground.grid.w, ground.grid.h, ground.grid.r])
+	else:
+		_fail("  rasters: traced again, they are not the file's polygons -- one was edited without the other")
 
 
 # The preview converts with Level3DMap's constants, not the file's grid, so the

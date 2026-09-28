@@ -397,7 +397,14 @@ godot --path . --headless --script tools/verify_level3d.gd
 The ground is in the file too: land polygons along the brow, water polygons
 along the waterline, a measured slope profile between them, and forest
 polygons with a scatter rule (`Level3DTerrain`, `src/tools/level3d_terrain.gd`,
-which also builds the editor's proxy of it). Stage 0's was traced off the
+which also builds the editor's proxy of it). The polygons are traced off two
+rasters the file names, `assets/level3d/rasters/stage-N-ground.png` (red land,
+blue water, half blue a river, green forest) and `-height.png` (the rise of
+the ground, 5 cm a step), which are what the level editor paints and the
+source from now on (`Level3DGround`, `src/tools/level3d_ground.gd`, part 2 of
+the plan); `verify_level3d.gd` checks that the two still agree, and
+`tools/level_ground_rasters.gd -- N` gave stage 0 its rasters off its
+polygons, once. Stage 0's was traced off the
 hand-built glb, by a tool that keeps everything else in the file, as
 `level_from_stage.gd` keeps the ground. The glb is built from the file now,
 so run bare the tool only compares the file with it; its header says how

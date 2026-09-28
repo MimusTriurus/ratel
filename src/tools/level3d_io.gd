@@ -280,6 +280,14 @@ static func serialize(doc: Dictionary) -> String:
 					% [name, _table(profile["slope"]), _table(profile["foot"])])
 		out.append(",\n".join(profiles))
 		out.append("    },")
+		# The rasters the editor paints (Level3DGround), which the polygons
+		# below are traced off: named, not held, and absent from a level that
+		# has only its polygons.
+		if terrain.has("raster"):
+			var raster: Dictionary = terrain["raster"]
+			out.append('    "raster": {"cell": %s, "shore": %s, "ground": "%s", "height": "%s"},'
+					% [_num(float(raster["cell"])), _num(float(raster["shore"])),
+						raster["ground"], raster["height"]])
 		rows = PackedStringArray()
 		for polygon in terrain["land"]:
 			rows.append(_polygon(polygon, '"id": "%s", "height": %s, "profile": "%s"'
