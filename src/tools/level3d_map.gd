@@ -63,8 +63,6 @@ var stage := Stage.new()
 # Triggers constant), "x", "y" (map px, the trigger's corner), "group" (the
 # destruction group they rewrite)}.
 var buildings: Array = []
-# The gate's destruction group, as Gate finds it, or -1.
-var gate_group := -1
 var _pristine: Array = []
 var _triggered := {}
 
@@ -88,8 +86,6 @@ func _init() -> void:
 	for row in stage.trigger_map[0]:
 		for t in row:
 			match t[0]:
-				Triggers.GATE:
-					gate_group = stage.groups_map[t[2] >> 5][(t[1] >> 5) + 1]
 				Triggers.HUT:
 					buildings.append({"type": t[0], "x": t[1], "y": t[2],
 							"group": stage.groups_map[(t[2] >> 5) + 1][(t[1] >> 5) + 1]})

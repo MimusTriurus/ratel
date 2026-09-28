@@ -662,7 +662,10 @@ func _release_drag() -> void:
 
 # A gate opens the middle of its footprint when it is blown: a destruction
 # group of those cells, made for it the first time and moved with it. Stage
-# 1's is group 6, which this rewrites to the same cells.
+# 1's is group 6, which this rewrites to the same cells. Every gate has its
+# own, and none has group 0: BossHeadquarters blows groups[0] by number, and
+# groups_map reads 0 wherever no group is. A level with no groups yet gets an
+# empty group 0 first, which is nobody's.
 func _gate_group(e: Dictionary) -> void:
 	if e["type"] != "GATE":
 		return
@@ -670,15 +673,36 @@ func _gate_group(e: Dictionary) -> void:
 	var groups: Array = doc["groups"]
 	var index := int(e.get("group", -1))
 	for g in groups:
-		if int(g["index"]) == index:
+		if index > 0 and int(g["index"]) == index:
 			g["cells"] = cells
 			_derived = []
 			return
-	index = 0
+	if groups.is_empty():
+		groups.append({"index": 0, "cells": []})
+	index = 1
 	for g in groups:
 		index = maxi(index, int(g["index"]) + 1)
 	groups.append({"index": index, "cells": cells})
 	e["group"] = index
+	_derived = []
+
+
+# A deleted gate takes its group with it. A group is its place in the list
+# (Level3DIO.load_stage), so the ones after it move down one, and so do the
+# entities that name them. Group 0 stays.
+func _drop_group(index: int) -> void:
+	if index <= 0:
+		return
+	var groups: Array = doc["groups"]
+	for g in groups.duplicate():
+		if int(g["index"]) == index:
+			groups.erase(g)
+		elif int(g["index"]) > index:
+			g["index"] = int(g["index"]) - 1
+	for other in doc["entities"]:
+		if other.has("group") and int(other["group"]) > index:
+			other["group"] = int(other["group"]) - 1
+			items.update_entity(other)
 	_derived = []
 
 
@@ -697,7 +721,7 @@ func _delete_selected() -> void:
 	var id := items.selected()
 	if id == "":
 		return
-	_record(["entities", "objects", "walls", "bridges"] if doc.has("walls") else ["entities", "objects"])
+	_record(["entities", "objects", "groups", "walls", "bridges"] if doc.has("walls") else ["entities", "objects", "groups"])
 	var st := items.find_structure(id)
 	if not st.is_empty():
 		(doc["walls" if items.is_wall(st) else "bridges"] as Array).erase(st)
@@ -713,6 +737,8 @@ func _delete_selected() -> void:
 			items.remove_object(o["id"])
 		(doc["entities"] as Array).erase(e)
 		items.remove_entity(id)
+		if e["type"] == "GATE":
+			_drop_group(int(e.get("group", -1)))
 	else:
 		var o := items.find_object(id)
 		if o.is_empty():

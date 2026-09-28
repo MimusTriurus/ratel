@@ -1054,17 +1054,30 @@ const DESTRUCTION_SETTLE := 3.0
 var destructibles := {}
 
 
-# The buildings that are blown up, each [its name, where it is moved from
-# where stage 1 has it]. Stage 1 has all of DESTRUCTIBLE_NAMES where they
-# are; another level has its gate, if it has one: the destructible part of
-# the Gate object, turned and moved from the catalogue's pivot to the
-# object's place, as the builder moves the gate's frame. One gate a level:
-# Level3DMap keeps one gate group.
+# The buildings that are blown up, each {"name" (what destructibles and
+# --destroy call it), "kind" (its jackal_dest_<kind>.glb), "move" (from where
+# stage 1 has it), "group" (the destruction group a gate opens, or -1)}.
+# Stage 1 has all of DESTRUCTIBLE_NAMES where they are; another level has a
+# gate for every Gate object: the destructible part of it, turned and moved
+# from the catalogue's pivot to the object's place, as the builder moves the
+# gate's frame, and named by the object's id. Every gate opens the group of
+# the GATE entity its object belongs to, which is the group Gate would probe
+# for (Level3DIO.check holds the two together), stage 1's gate_0 group 6.
 static func _destructibles_here() -> Array:
-	if Level3DMap.is_stage_one():
-		return DESTRUCTIBLE_NAMES.map(func(n): return [n, Transform3D.IDENTITY])
 	var catalog := Level3DIO.read_catalog()
-	for o in Level3DIO.read_path(Level3DMap.level_path())["objects"]:
+	var doc := Level3DIO.read_path(Level3DMap.level_path())
+	var groups := {}
+	for e in doc["entities"]:
+		groups[e["id"]] = int(e.get("group", -1))
+	if Level3DMap.is_stage_one():
+		var gate_group := -1
+		for o in doc["objects"]:
+			if o["asset"] == "Gate":
+				gate_group = groups.get(o.get("entity", ""), -1)
+		return DESTRUCTIBLE_NAMES.map(func(n): return {"name": n, "kind": n, "move": Transform3D.IDENTITY,
+				"group": gate_group if n == "Gate" else -1})
+	var out: Array = []
+	for o in doc["objects"]:
 		var asset: Dictionary = catalog["assets"].get(o["asset"], {})
 		if not asset.has("destructible"):
 			continue
@@ -1072,24 +1085,29 @@ static func _destructibles_here() -> Array:
 		var at := Vector3(float(o["pos"][0]), float(o["pos"][1]), float(o["pos"][2]))
 		var move := Transform3D(Basis(Vector3.UP, deg_to_rad(float(o["yaw"]))), at) \
 				* Transform3D(Basis.IDENTITY, -pivot)
-		return [[asset["destructible"], move]]
-	return []
+		out.append({"name": o["id"], "kind": asset["destructible"], "move": move,
+				"group": groups.get(o.get("entity", ""), -1)})
+	return out
 
 
 func _add_destructibles() -> void:
-	for pair in _destructibles_here():
-		var building: String = pair[0]
-		var path := DESTRUCTIBLE_PATH % building
+	for here in _destructibles_here():
+		var building: String = here.name
+		var path := DESTRUCTIBLE_PATH % here.kind
 		var scene: PackedScene = load(path)
 		if scene == null:
 			push_error("Cannot load %s -- run export_all() in the stage's Blender file" % path)
 			continue
 		var root := scene.instantiate()
 		root.name = "Dest_" + building
-		(root as Node3D).transform = pair[1]
+		(root as Node3D).transform = here.move
 		add_child(root)
 		var player := root.find_child("AnimationPlayer", true, false) as AnimationPlayer
-		_sharpen_visibility(player.get_animation(DESTRUCTION_ANIMATION))
+		# The animation is the scene's, shared by every gate made of it.
+		var animation := player.get_animation(DESTRUCTION_ANIMATION)
+		if not animation.has_meta("sharpened"):
+			_sharpen_visibility(animation)
+			animation.set_meta("sharpened", true)
 		var flash := _find_by_prefix(root, FLASH_NAMES)
 		_hide_baked_fire(root)
 		_cast_both_sides_of_planes(root)
@@ -1100,6 +1118,7 @@ func _add_destructibles() -> void:
 			bodies.append([body.get_parent(), body, body.collision_layer])
 		destructibles[building] = {
 			"root": root, "player": player, "destroyed": false, "bodies": bodies,
+			"kind": here.kind, "group": here.group,
 			"centre": flash.global_position if flash else _mesh_aabb(root).get_center(),
 		}
 		_set_destroyed(building, false)
@@ -1195,8 +1214,8 @@ func _set_destroyed(building: String, destroyed: bool) -> void:
 			friends.building_destroyed(building)
 	# Gate.attack: the gate's group opens the way on the grid, which is what
 	# the BTR drives by.
-	if destroyed and building == "Gate" and map != null and map.gate_group >= 0:
-		map.trigger_group(map.gate_group)
+	if destroyed and entry.kind == "Gate" and map != null and entry.group >= 0:
+		map.trigger_group(entry.group)
 	_sync_bodies(entry)
 	_ruin_craters(building, destroyed)
 
@@ -1273,7 +1292,7 @@ func _on_exploded(at: Vector3) -> bool:
 func _on_travel_hit(box: Rect2) -> void:
 	for building in destructibles:
 		var entry: Dictionary = destructibles[building]
-		if not entry.destroyed and building != "Gate" and box.intersects(entry.footprint):
+		if not entry.destroyed and entry.kind != "Gate" and box.intersects(entry.footprint):
 			_set_destroyed(building, true)
 
 

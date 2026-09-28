@@ -22,7 +22,8 @@
 #   dragging it moves it whole; delete and undo; a wall makes its tiles solid
 #   and a bridge its deck empty in a grid from the ground. A gate comes with
 #   its Gate and a destruction group of the middle of its footprint, which
-#   moves with it.
+#   moves with it and is never group 0; a second gate has a group of its
+#   own, and deleting the first takes its group and moves the next down.
 # - The nav grid: on a new level painting keeps a tile over the ground's and
 #   Auto gives it back; on stage 1 it paints the grid itself, and undo puts
 #   the row back.
@@ -243,6 +244,28 @@ func _run() -> void:
 	_expect(int(group[0]["cells"][0][0]) == int(first_cell[0]) + 3, "which moves with it")
 	var gate_tile: Vector2i = editor.items.entity_tile(editor.items.find_entity(gate["id"]))
 	_expect(editor._nav_rows()[gate_tile.y + 1][gate_tile.x + 2] == "#", "the gate is solid until it is blown")
+	_expect(int(gate["group"]) != 0 and editor.doc["groups"][0]["cells"].is_empty(),
+			"not group 0, which the level keeps empty")
+	# Any number of gates, each with a group of its own.
+	editor._press(Vector2(origin.x + 22.0, origin.y + 52.0))
+	editor._release()
+	var second: Dictionary = editor.doc["entities"][-1]
+	_expect(second["type"] == "GATE" and int(second["group"]) == int(gate["group"]) + 1
+			and editor._belonging_to(second["id"]).size() == 1, "a second gate, with its own Gate and group")
+	var gate_problems := _group_problems(editor.doc)
+	_expect(gate_problems.is_empty(), "and the two pass the check: %s" % [gate_problems])
+	var groups_before: int = editor.doc["groups"].size()
+	editor._press(Vector2(gate["pos"][0], gate["pos"][1]))
+	editor._release()
+	editor._delete_selected()
+	second = editor.items.find_entity(second["id"])
+	_expect(editor.doc["groups"].size() == groups_before - 1 and int(second["group"]) == int(gate["group"])
+			and editor.doc["groups"][int(second["group"])]["cells"] == Level3DStructures.gate_cells(editor.items.entity_tile(second)),
+			"deleting a gate takes its group, and the next moves down to its place")
+	_expect(_group_problems(editor.doc).is_empty(), "which still passes the check")
+	editor._undo_step(editor._undo, editor._redo)
+	_expect(editor.doc["groups"].size() == groups_before and not editor.items.find_entity(gate["id"]).is_empty(),
+			"and undo brings the gate and its group back")
 	editor._set_mode(M.OBJECTS)
 
 	# The nav grid, over the ground.
@@ -291,7 +314,7 @@ func _run() -> void:
 			back.trace(traced)
 			_expect(Level3DIO.serialize(traced) == Level3DIO.serialize(doc), "traced again, the same file")
 		_expect(doc["nav"][land_tile.y][land_tile.x] == "%", "the saved grid has the tile painted over the ground's")
-		_expect(doc["entities"].size() == count + 1 and doc["objects"].size() == objects + 1, "the entities and objects saved")
+		_expect(doc["entities"].size() == count + 2 and doc["objects"].size() == objects + 2, "the entities and objects saved, both gates too")
 		_expect(doc["walls"].size() == 2 and doc["bridges"].size() == 1, "the walls and the bridge saved")
 		var problems := Level3DIO.check(doc, Level3DIO.read_catalog())
 		_expect(problems.is_empty(), "Level3DIO.check finds nothing: %s" % [problems])
@@ -368,6 +391,12 @@ func _shot(file: String) -> void:
 	await RenderingServer.frame_post_draw
 	var error := root.get_texture().get_image().save_png(file)
 	print("  %s %s" % [file, "written" if error == OK else "FAILED"])
+
+
+# What Level3DIO.check finds about groups, the rest of a level half made
+# being none of this test's business.
+func _group_problems(doc: Dictionary) -> Array:
+	return Array(Level3DIO.check(doc, Level3DIO.read_catalog())).filter(func(p): return "group" in p)
 
 
 func _expect(ok: bool, what: String) -> void:

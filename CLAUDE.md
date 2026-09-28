@@ -474,8 +474,11 @@ by the object's `"entity"`, which is how the preview finds another level's
 guns -- stage 1's it finds by its bunkers' names. Objects also draws walls
 and bridges, a drag from end to end, laid out as stage 1's are
 (`Level3DStructures`, `src/tools/level3d_structures.gd`); a GATE entity
-brings its Gate and the destruction group of its passage, and the preview
-moves `jackal_dest_Gate.glb` to it on a level that is not stage 1. Everything is one undo a
+brings its Gate and the destruction group of its passage, as many gates as
+wanted, each with a group of its own and never group 0 (the headquarters
+blows `groups[0]` by number, so a level's first gate starts an empty one),
+and the preview moves a `jackal_dest_Gate.glb` to each on a level that is
+not stage 1. Everything is one undo a
 stroke or a move. A save writes the level file, its two rasters and the
 polygons traced off them. Stage 1's nav grid is the game's and is painted
 as it is; a level made here plays the grid its ground makes (land empty,

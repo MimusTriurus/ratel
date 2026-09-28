@@ -501,6 +501,7 @@ static func check(doc: Dictionary, catalog: Dictionary) -> PackedStringArray:
 	load_stage(doc, stage, trigger_sizes)
 
 	var ids := {}
+	var gates: Array = []
 	var arrivals := {}
 	var rows := {}
 	for d in DIFFICULTIES:
@@ -560,6 +561,20 @@ static func check(doc: Dictionary, catalog: Dictionary) -> PackedStringArray:
 		elif stage.groups_map[cell.y][cell.x] != group:
 			problems.append("%s names group %d, but the game would probe %s and find group %d"
 					% [id, group, cell, stage.groups_map[cell.y][cell.x]])
+		if index == Triggers.GATE:
+			gates.append(entity)
+
+	# Any number of gates, each opening its own group; not group 0 where the
+	# headquarters is, which blows groups[0] by number (BossHeadquarters).
+	var headquarters := (doc["entities"] as Array).any(func(e): return e["type"] == "BOSS_HEADQUARTERS")
+	var opened := {}
+	for gate in gates:
+		var group := int(gate.get("group", -1))
+		if opened.has(group):
+			problems.append("%s opens group %d, which %s opens too" % [gate["id"], group, opened[group]])
+		opened[group] = gate["id"]
+		if group == 0 and headquarters:
+			problems.append("%s opens group 0, which the headquarters blows as well" % gate["id"])
 
 	# Every stage brings the player in exactly once, by parking the jeep
 	# (PLAYER) or flying it in (CHINOOK, which stage 1 uses). A row fires all
