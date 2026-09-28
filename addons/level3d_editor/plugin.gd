@@ -135,10 +135,21 @@ var _first_scene := true
 func _on_scene_changed(scene_root: Node) -> void:
 	if scene_root is Level3DEditRoot:
 		EditorInterface.set_main_screen_editor("3D")
+		# The bar is there while a node of the level is selected, and with
+		# nothing selected it is nowhere to be found: start with the root.
+		if EditorInterface.get_selection().get_selected_nodes().is_empty():
+			_select_root.call_deferred(scene_root)
 		if _first_scene:
 			_to_3d_until = Time.get_ticks_msec() + TO_3D_FOR
 	if scene_root:
 		_first_scene = false
+
+
+func _select_root(scene_root: Node) -> void:
+	if is_instance_valid(scene_root) and EditorInterface.get_edited_scene_root() == scene_root:
+		EditorInterface.get_selection().clear()
+		EditorInterface.get_selection().add_node(scene_root)
+		EditorInterface.edit_node(scene_root)
 
 
 func _on_main_screen_changed(screen_name: String) -> void:

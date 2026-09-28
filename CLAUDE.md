@@ -448,8 +448,8 @@ blender-launcher -b build/level3d/jackal_stage1_gen.blend --python tools/blender
 
 The editor is `src/tools/level3d_editor.tscn` with the `addons/level3d_editor`
 plugin (enabled in `project.godot`), opened in the editor (`-e`; the plugin
-goes to the 3D screen for it, and its bar shows once a node of the level is
-selected -- run as a scene instead, it only shows the level from above to
+goes to the 3D screen for it and selects the root, since its bar shows only
+while a node of the level is selected -- run as a scene instead, it only shows the level from above to
 scroll about): the scene is one `Level3DEditRoot` that
 builds entities and objects from the level file on open, and Ctrl+S writes
 them back to it — they are disowned for the save, so the `.tscn` stays one
