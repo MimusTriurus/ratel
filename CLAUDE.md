@@ -396,8 +396,7 @@ godot --path . --headless --script tools/verify_level3d.gd
 
 The ground is in the file too: land polygons along the brow, water polygons
 along the waterline, a measured slope profile between them, and forest
-polygons with a scatter rule (`Level3DTerrain`, `src/tools/level3d_terrain.gd`,
-which also builds the editor's proxy of it). The polygons are traced off two
+polygons with a scatter rule (`Level3DTerrain`, `src/tools/level3d_terrain.gd`). The polygons are traced off two
 rasters the file names, `assets/level3d/rasters/stage-N-ground.png` (red land,
 blue water, half blue a river, green forest) and `-height.png` (the rise of
 the ground, 5 cm a step), which are what the level editor paints and the
@@ -457,19 +456,27 @@ godot --path . --headless --script tools/level_terrain_from_glb.gd -- --glb res:
 blender-launcher -b build/level3d/jackal_stage1_gen.blend --python tools/blender/render_top.py -- --render build/level3d/top_gen.png 50
 ```
 
-The level editor proper is a program of its own, `src/tools/level_editor.tscn`
-(`level_editor.gd`, and `Level3DGroundView` for its picture of the ground):
-File -> New, Open, Save, and brushes for land, sea, river, forest and the
-rise of the ground, a stroke to an undo. It saves the level file, its two
-rasters and the polygons traced off them, and a level that is not stage 0
-its nav grid off its ground (land empty, forest solid, slope and water
-water). Level -> Build runs the Blender builder on it in the background
-into `build/level3d/<name>.glb` and imports that; Play opens the preview on
-it -- `-- --file <level> --level <glb>`, which moves the start and the
-Chinook's landing to the level's south end and leaves out stage 1's own
-buildings. Its check drives it without anyone at it -- with a window it
-also writes what it drew to `build/level_editor/`, and `-- --build` builds
-through the menu too:
+The level editor is a program of its own, `src/tools/level_editor.tscn`
+(`level_editor.gd`; `Level3DGroundView` draws its ground, `LevelEditorItems`
+what stands on it): File -> New, Open, Save, and four modes. Ground paints
+land, sea, river, forest and the rise of the ground; Nav paints the grid;
+Entities and Objects put down, pick, drag, turn and delete from the
+catalogue, entities snapped to the tiles their footprint covers and a
+building given the group its probe cell is in. Everything is one undo a
+stroke or a move. A save writes the level file, its two rasters and the
+polygons traced off them. Stage 1's nav grid is the game's and is painted
+as it is; a level made here plays the grid its ground makes (land empty,
+forest solid, slope and water water) with what was painted over it,
+`nav_paint` in the file, `-` where the ground's stands. Level -> Build runs
+the Blender builder in the background into `build/level3d/<name>.glb` and
+imports that; Play opens the preview on it -- `-- --file <level> --level
+<glb>`, which moves the start and the Chinook's landing to the level's
+south end and leaves out stage 1's own buildings; Check is
+`Level3DIO.check`, and Rebuild flow field writes stage 1's own
+`assets/level3d/dirs-0.dat`, which `Level3DMap` prefers to the game's
+(another level's is built when the preview loads it). Its check drives it
+without anyone at it -- with a window it also writes what it drew to
+`build/level_editor/`, and `-- --build` builds through the menu too:
 
 ```bash
 godot --path . src/tools/level_editor.tscn
@@ -477,32 +484,6 @@ godot --path . src/tools/level_editor.tscn
 
 ```bash
 godot --path . --windowed --resolution 1600x900 --script tools/verify_level_editor.gd
-```
-
-The first editor, which places entities and objects and is still the only
-one that does, is `src/tools/level3d_editor.tscn` with the `addons/level3d_editor`
-plugin (enabled in `project.godot`), opened in the editor (`-e`; the plugin
-goes to the 3D screen for it and selects the root, since its bar shows only
-while a node of the level is selected -- run as a scene instead, it only shows the level from above to
-scroll about): the scene is one `Level3DEditRoot` that
-builds entities and objects from the level file on open, and Ctrl+S writes
-them back to it — they are disowned for the save, so the `.tscn` stays one
-node. The plugin's bar in the viewport menu paints the nav grid, places
-entities and objects, runs `Level3DIO.check` and rebuilds the level's own
-`assets/level3d/dirs-N.dat`, which `Level3DMap` prefers to the game's. The
-check drives the nodes without the editor; a `--shot` frames the scene from
-above:
-
-```bash
-godot --path . -e src/tools/level3d_editor.tscn
-```
-
-```bash
-godot --path . --headless --script tools/verify_level3d_editor.gd
-```
-
-```bash
-godot --path . --windowed --resolution 1280x720 src/tools/level3d_editor.tscn -- --shot out.png 0,-14 34 gate_0
 ```
 
 ### Audio and input

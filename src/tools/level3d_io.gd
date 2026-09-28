@@ -92,14 +92,16 @@ static func new_level(rows: int, profile: Dictionary) -> Dictionary:
 	var origin := Level3DMap.ORIGIN
 	var length := rows * 32 * px
 	var nav: Array = []
+	var paint: Array = []
 	for j in rows:
 		nav.append(".".repeat(64))
+		paint.append("-".repeat(64))
 	var snap := func(v: float) -> float: return snappedf(v, 0.05)
 	return {
 		"format": FORMAT, "version": VERSION, "stage": -1,
 		"grid": {"width": 64, "height": rows, "tile_px": 32, "m_per_px": px,
 				"origin": [origin.x, origin.y]},
-		"nav": nav, "groups": [], "entities": [], "objects": [],
+		"nav": nav, "nav_paint": paint, "groups": [], "entities": [], "objects": [],
 		"terrain": {
 			"bounds": [snap.call(origin.x - 12.0), snap.call(origin.y - 7.0),
 					snap.call(origin.x + 34.2), snap.call(origin.y + length + 0.3)],
@@ -263,6 +265,14 @@ static func serialize(doc: Dictionary) -> String:
 	for row in doc["nav"]:
 		rows.append('    "%s"' % row)
 	_block(out, "nav", rows)
+	# A level the editor made plays the grid its ground makes, with what was
+	# painted over it: this, "-" where the ground's stands. "nav" is the
+	# result, written for the preview, which reads no rasters.
+	if doc.has("nav_paint"):
+		rows = PackedStringArray()
+		for row in doc["nav_paint"]:
+			rows.append('    "%s"' % row)
+		_block(out, "nav_paint", rows)
 
 	rows = PackedStringArray()
 	for g in doc["groups"]:

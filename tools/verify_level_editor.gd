@@ -14,8 +14,15 @@
 # - The brushes do what they say: land is land, the sea cuts a shore round
 #   itself, the forest keeps to land, raise lifts the middle of the brush and
 #   not its rim.
+# - Entities and objects: one put down lands where it is snapped to and is
+#   picked, a drag moves it, undo takes it away and redo brings it back; an
+#   object turns, scales and is deleted, and undo puts it back.
+# - The nav grid: on a new level painting keeps a tile over the ground's and
+#   Auto gives it back; on stage 1 it paints the grid itself, and undo puts
+#   the row back.
 # - A save writes the level file and both rasters, and reading them back and
-#   tracing again gives the same file; the saved level passes Level3DIO.check.
+#   tracing again gives the same file; the saved level passes Level3DIO.check
+#   -- a new level comes with the Chinook it needs.
 extends SceneTree
 
 const DIR := "res://build/level_editor/"
@@ -86,6 +93,83 @@ func _run() -> void:
 	_expect(absf(editor.view.height_at(hill) - ground.rise_at(hill)) < 0.3,
 			"the picture stands the hill where the rise is")
 
+	# Entities.
+	var M = editor.Mode
+	editor._set_mode(M.ENTITIES)
+	_expect(editor.doc["entities"].size() == 1 and editor.doc["entities"][0]["type"] == "CHINOOK",
+			"a new level has its Chinook")
+	editor._entity_list.select(editor._entity_types.find("SOLDIER_WALKER"))
+	var spot := Vector2(origin.x + 12.03, origin.y + 50.02)
+	editor._press(spot)
+	editor._release()
+	var walker: Dictionary = editor.doc["entities"][-1]
+	var snapped: Vector2 = editor.items.snap_entity("SOLDIER_WALKER", spot)
+	_expect(walker["type"] == "SOLDIER_WALKER" and Vector2(walker["pos"][0], walker["pos"][1]) == snapped
+			and editor.items.selected() == walker["id"], "a click puts an entity down, snapped, and picks it")
+	var tile_m: float = editor.items.tile_m()
+	editor._press(Vector2(walker["pos"][0], walker["pos"][1]))
+	editor._move(Vector2(walker["pos"][0], walker["pos"][1]) + Vector2(tile_m * 3.0, -tile_m * 2.0))
+	editor._release()
+	var moved: Dictionary = editor.items.find_entity(walker["id"])
+	var by := Vector2(float(moved["pos"][0]) - snapped.x, float(moved["pos"][1]) - snapped.y) / tile_m
+	print("  dragged by %.4f, %.4f tiles" % [by.x, by.y])
+	_expect(by.distance_to(Vector2(3.0, -2.0)) < 0.01, "a drag moves it by whole tiles")
+	var count: int = editor.doc["entities"].size()
+	editor._undo_step(editor._undo, editor._redo)
+	_expect(Vector2(editor.items.find_entity(walker["id"])["pos"][0], editor.items.find_entity(walker["id"])["pos"][1]) == snapped,
+			"undo moves it back")
+	editor._undo_step(editor._undo, editor._redo)
+	_expect(editor.doc["entities"].size() == count - 1, "undo again takes it away")
+	editor._redo_step()
+	editor._redo_step()
+	_expect(editor.doc["entities"].size() == count and not editor.items.find_entity(walker["id"]).is_empty(),
+			"redo brings both back")
+	editor._press(spot + Vector2(10.0, 0.0))
+	editor._release()
+	var picked: String = editor.items.selected()
+	editor._delete_selected()
+	_expect(editor.items.find_entity(picked).is_empty(), "Delete removes the picked one")
+
+	# Objects.
+	editor._set_mode(M.OBJECTS)
+	editor._asset_list.select(editor._assets.find("Palm_1"))
+	var palm_at := Vector2(origin.x + 4.0, origin.y + 20.0)
+	editor._press(palm_at)
+	editor._release()
+	var palm: Dictionary = editor.doc["objects"][-1]
+	_expect(palm["asset"] == "Palm_1" and is_equal_approx(float(palm["pos"][0]), palm_at.x), "a click puts an object down")
+	_expect(editor.items._templates.get("Palm_1") != null, "it is drawn as the stage's glb draws it")
+	editor._turn_selected(15.0)
+	editor._scale_selected(1.1)
+	palm = editor.items.find_object(palm["id"])
+	_expect(is_equal_approx(float(palm["yaw"]), 15.0) and is_equal_approx(float(palm["scale"]), 1.1),
+			"R turns it and ] scales it")
+	var objects: int = editor.doc["objects"].size()
+	editor._delete_selected()
+	editor._undo_step(editor._undo, editor._redo)
+	_expect(editor.doc["objects"].size() == objects and not editor.items.find_object(palm["id"]).is_empty(),
+			"undo brings a deleted object back")
+
+	# The nav grid, over the ground.
+	editor._set_mode(M.NAV)
+	var land_tile: Vector2i = editor.items.tile_at(palm_at + Vector2(2.0, 3.0))
+	var land_p := palm_at + Vector2(2.0, 3.0)
+	_expect(editor._nav_rows()[land_tile.y][land_tile.x] == ".", "land is empty in the ground's grid")
+	editor._set_nav_type(MapIO.TYPE_SOLID)
+	editor.nav_brush = 1
+	editor._press(land_p)
+	editor._release()
+	_expect(editor.doc["nav_paint"][land_tile.y][land_tile.x] == "#" and editor._nav_rows()[land_tile.y][land_tile.x] == "#",
+			"painting keeps a tile over the ground's")
+	editor._set_nav_type(editor.NAV_AUTO)
+	editor._press(land_p)
+	editor._release()
+	_expect(editor._nav_rows()[land_tile.y][land_tile.x] == ".", "Auto gives it back to the ground")
+	editor._set_nav_type(MapIO.TYPE_SWAMP)
+	editor._press(land_p)
+	editor._release()
+	editor._set_mode(M.GROUND)
+
 	var file := DIR + "verify.json"
 	await editor._save_to(file)
 	var doc := Level3DIO.read_path(file)
@@ -111,10 +195,10 @@ func _run() -> void:
 			var traced := doc.duplicate(true)
 			back.trace(traced)
 			_expect(Level3DIO.serialize(traced) == Level3DIO.serialize(doc), "traced again, the same file")
-		# A level with nobody on it yet: the one thing check has to say.
-		var problems := Array(Level3DIO.check(doc, Level3DIO.read_catalog())).filter(
-				func(p): return not p.contains("PLAYER/CHINOOK"))
-		_expect(problems.is_empty(), "Level3DIO.check finds nothing but the missing player: %s" % [problems])
+		_expect(doc["nav"][land_tile.y][land_tile.x] == "%", "the saved grid has the tile painted over the ground's")
+		_expect(doc["entities"].size() == count and doc["objects"].size() == objects, "the entities and objects saved")
+		var problems := Level3DIO.check(doc, Level3DIO.read_catalog())
+		_expect(problems.is_empty(), "Level3DIO.check finds nothing: %s" % [problems])
 
 	# -- --build: Level -> Build, Blender and the import, as the menu runs them.
 	if args.has("--build"):
@@ -129,8 +213,36 @@ func _run() -> void:
 		for f in ["_verify_build.json", "rasters/_verify_build-ground.png", "rasters/_verify_build-height.png"]:
 			DirAccess.remove_absolute("res://assets/level3d/" + f)
 
+	# Stage 1's own grid, painted and undone, not saved.
+	editor._open(Level3DIO.path(0))
+	editor._set_mode(M.NAV)
+	var stage_p := Vector2(0.0, -60.0)
+	var stage_tile: Vector2i = editor.items.tile_at(stage_p)
+	var row_before: String = editor.doc["nav"][stage_tile.y]
+	editor._set_nav_type(MapIO.TYPE_SHIELD)
+	editor._press(stage_p)
+	editor._release()
+	_expect(editor.doc["nav"][stage_tile.y][stage_tile.x] == "S" and not editor.doc.has("nav_paint"),
+			"on stage 1 the brush paints the grid itself")
+	editor._undo_step(editor._undo, editor._redo)
+	_expect(editor.doc["nav"][stage_tile.y] == row_before, "and undo puts the row back")
+	_expect(editor.doc["entities"].size() == 120 and editor.doc["objects"].size() == 726,
+			"stage 1 opens with its 120 entities and 726 objects")
+	editor.dirty = false
+
 	if shots:
 		DirAccess.make_dir_recursive_absolute(shot_dir)
+		editor._set_mode(M.ENTITIES)
+		editor.items.select("gray_gun_13")
+		editor._focus = Vector2(-5.0, -20.0)
+		editor._distance = 18.0
+		editor._pitch = 60.0
+		editor._yaw = 0.0
+		editor._place_camera()
+		await _shot(shot_dir.path_join("editor_stage_items.png"))
+		editor._set_mode(M.NAV)
+		await _shot(shot_dir.path_join("editor_stage_nav.png"))
+		editor._open(DIR + "verify.json")
 		editor._frame_level()
 		await _shot(shot_dir.path_join("editor_top.png"))
 		editor._focus = bay + Vector2(4.0, 6.0)

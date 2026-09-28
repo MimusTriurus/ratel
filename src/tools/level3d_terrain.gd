@@ -11,9 +11,10 @@
 #   foot    under the water, the slope goes on down to the bed: the profile's
 #           "foot" table, by distance past the waterline, ends at the bed.
 #
-# This is what the editor draws as a proxy and what the Blender builder
-# builds with a better hand; tools/level_terrain_from_glb.gd wrote stage 1's
-# from its glb, and measures how close it comes.
+# This is what the Blender builder builds, and what the level editor's
+# picture of the ground follows (Level3DGroundView);
+# tools/level_terrain_from_glb.gd wrote stage 1's from its glb, and measures
+# how close it comes.
 #
 # Rasters here are row-major over a Grid, cell (i, j) sampled at its centre.
 class_name Level3DTerrain
@@ -455,153 +456,7 @@ static func _wound(points: PackedVector2Array, outer: bool) -> PackedVector2Arra
 	return points
 
 
-# --- The proxy ------------------------------------------------------------------
-#
-# What the editor draws in the file's place: the ground as a height grid of
-# `cell`, coloured by what each cell is; the water as its polygons at their
-# level; the forest as cones and balls where its rule puts trees. Rough on
-# purpose -- the Blender builder makes the real thing out of the same file --
-# but every height is Level3DTerrain.heights', so it is right where it is.
-
-const SAND := Color(0.94, 0.56, 0.0)
-const FLOOR := Color(0.2, 0.38, 0.16)
-const SLOPE_COLOUR := Color(0.55, 0.36, 0.18)
-const BED_COLOUR := Color(0.3, 0.24, 0.18)
-const SEA := Color(0.05, 0.3, 0.65, 0.75)
-const RIVER := Color(0.15, 0.55, 0.75, 0.75)
-const FLOOR_LIFT := 0.015
-
-
-static func proxy(doc: Dictionary, cell: float) -> Node3D:
-	var terrain: Dictionary = doc["terrain"]
-	var water: Array = doc.get("water", [])
-	var forests: Array = doc.get("forest", [])
-	var b: Array = terrain["bounds"]
-	var grid := Grid.new(Rect2(b[0], b[1], float(b[2]) - float(b[0]), float(b[3]) - float(b[1])), cell)
-	var field := heights(grid, terrain, water)
-	var h: PackedFloat32Array = field["height"]
-	var kinds: PackedByteArray = field["kind"]
-	var floor_mask := rasterize_all(grid, forests)
-
-	var root := Node3D.new()
-	root.name = "GroundProxy"
-	var vertices := PackedVector3Array()
-	var colours := PackedColorArray()
-	vertices.resize(grid.w * grid.h)
-	colours.resize(grid.w * grid.h)
-	for j in grid.h:
-		for i in grid.w:
-			var k := j * grid.w + i
-			var p := grid.centre(i, j)
-			var y := h[k]
-			var colour: Color = [SAND, SLOPE_COLOUR, BED_COLOUR][kinds[k]]
-			if kinds[k] == LAND and floor_mask[k]:
-				colour = FLOOR
-				y += FLOOR_LIFT
-			vertices[k] = Vector3(p.x, y, p.y)
-			colours[k] = colour
-	var indices := PackedInt32Array()
-	indices.resize((grid.w - 1) * (grid.h - 1) * 6)
-	var n := 0
-	for j in grid.h - 1:
-		for i in grid.w - 1:
-			var k := j * grid.w + i
-			indices[n] = k
-			indices[n + 1] = k + 1
-			indices[n + 2] = k + grid.w
-			indices[n + 3] = k + 1
-			indices[n + 4] = k + grid.w + 1
-			indices[n + 5] = k + grid.w
-			n += 6
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_COLOR] = colours
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	var st := SurfaceTool.new()
-	st.create_from(mesh, 0)
-	st.generate_normals()
-	var ground := MeshInstance3D.new()
-	ground.name = "Ground"
-	ground.mesh = st.commit()
-	var material := StandardMaterial3D.new()
-	material.vertex_color_use_as_albedo = true
-	material.roughness = 1.0
-	ground.material_override = material
-	root.add_child(ground)
-
-	for polygon in water:
-		var outer := ring(polygon["outer"])
-		var triangles := Geometry2D.triangulate_polygon(outer)
-		if triangles.is_empty():
-			continue
-		var surface := SurfaceTool.new()
-		surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-		surface.set_normal(Vector3.UP)
-		var y := float(polygon.get("level", -1.0))
-		for t in triangles:
-			surface.add_vertex(Vector3(outer[t].x, y, outer[t].y))
-		var sheet := MeshInstance3D.new()
-		sheet.name = "Water_" + str(polygon["id"])
-		sheet.mesh = surface.commit()
-		var wet := StandardMaterial3D.new()
-		wet.albedo_color = SEA if polygon.get("kind") == "sea" else RIVER
-		wet.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		wet.cull_mode = BaseMaterial3D.CULL_DISABLED
-		wet.roughness = 0.3
-		sheet.material_override = wet
-		sheet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		root.add_child(sheet)
-
-	root.add_child(_trees(grid, forests))
-	return root
-
-
-# The trees a forest's rule puts down, as tree_positions says.
-static func _trees(grid: Grid, forests: Array) -> Node3D:
-	var crowns := MultiMesh.new()
-	crowns.transform_format = MultiMesh.TRANSFORM_3D
-	var pines := MultiMesh.new()
-	pines.transform_format = MultiMesh.TRANSFORM_3D
-	var broad: Array[Transform3D] = []
-	var tall: Array[Transform3D] = []
-	for polygon in forests:
-		for tree in tree_positions(grid, polygon):
-			var xf := Transform3D(Basis(Vector3.UP, tree.yaw).scaled(Vector3.ONE * tree.scale),
-					Vector3(tree.at.x, FLOOR_LIFT, tree.at.y))
-			(tall if tree.pine else broad).append(xf)
-	var ball := SphereMesh.new()
-	ball.radius = 0.32
-	ball.height = 0.5
-	ball.radial_segments = 8
-	ball.rings = 4
-	var cone := CylinderMesh.new()
-	cone.top_radius = 0.0
-	cone.bottom_radius = 0.26
-	cone.height = 0.9
-	cone.radial_segments = 8
-	var root := Node3D.new()
-	root.name = "Trees"
-	for kind in [[crowns, broad, ball, Color(0.16, 0.45, 0.2), 0.55], [pines, tall, cone, Color(0.1, 0.32, 0.18), 0.45]]:
-		var multi: MultiMesh = kind[0]
-		var list: Array = kind[1]
-		var shape: Mesh = kind[2]
-		var material := StandardMaterial3D.new()
-		material.albedo_color = kind[3]
-		material.roughness = 1.0
-		shape.surface_set_material(0, material)
-		multi.mesh = shape
-		multi.instance_count = list.size()
-		for k in list.size():
-			var xf: Transform3D = list[k]
-			xf.origin.y += float(kind[4]) * xf.basis.get_scale().y
-			multi.set_instance_transform(k, xf)
-		var instance := MultiMeshInstance3D.new()
-		instance.multimesh = multi
-		root.add_child(instance)
-	return root
+# --- The forest's rule ------------------------------------------------------------
 
 
 # Where a forest's trees stand: one to each square of its spacing on a grid

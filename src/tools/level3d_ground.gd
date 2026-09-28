@@ -118,6 +118,11 @@ func save_rasters(doc: Dictionary, dir: String, name: String) -> Error:
 		"ground": RASTER_DIR + name + "-ground.png", "height": RASTER_DIR + name + "-height.png",
 	}
 	DirAccess.make_dir_recursive_absolute(dir.path_join(RASTER_DIR))
+	# Not Godot's to import: the rasters are read as files, here and by the
+	# builder.
+	var ignore := dir.path_join(RASTER_DIR).path_join(".gdignore")
+	if not FileAccess.file_exists(ignore):
+		FileAccess.open(ignore, FileAccess.WRITE)
 	var error := Image.create_from_data(grid.w, grid.h, false, Image.FORMAT_RGB8, rgb) \
 			.save_png(dir.path_join(raster["ground"]))
 	if error == OK:

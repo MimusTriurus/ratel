@@ -3,62 +3,91 @@
 #
 #     godot --path . src/tools/level_editor.tscn
 #
-# New makes a level of a given length, the game's 64 tiles across; Open
-# reads any level file under assets/level3d/; Save writes it back with its
-# two rasters beside it and the polygons traced off them, which is what the
-# Blender builder builds from (tools/blender/build_level.py).
+# New makes a level of a given length, the game's 64 tiles across, with the
+# Chinook that flies the player in; Open reads any level file under
+# assets/level3d/; Save writes it back with its two rasters beside it and the
+# polygons traced off them, which is what the Blender builder builds from
+# (tools/blender/build_level.py).
 #
-# The ground is painted. Land and sea and river are hard-edged brushes, each
-# leaving a band of shore round itself that the slope is built on; forest
-# grows on land; raise, lower, smooth and flatten work the rise of the ground
-# for hills. All of it is Level3DGround's, and what is drawn is
-# Level3DGroundView's picture of it. A stroke is one undo.
+# Four modes, F1 to F4, each with its page of the sidebar:
 #
-#   left drag         paint
+#   Ground    painted. Land and sea and river are hard-edged brushes, each
+#             leaving a band of shore round itself that the slope is built
+#             on; forest grows on land; raise, lower, smooth and flatten work
+#             the rise of the ground for hills. All of it is Level3DGround's,
+#             and what is drawn is Level3DGroundView's picture of it.
+#   Nav       the game's grid, painted a square of tiles at a time. On stage
+#             1 it is the game's own; on a level made here it comes from the
+#             ground (Level3DGround.derive_nav), and what is painted is kept
+#             over it -- "nav_paint" in the file, "-" where the ground says --
+#             so that painting the ground later still moves it. Auto takes a
+#             tile back to the ground's.
+#   Entities  the game's triggers, from the list: a click puts one down, on
+#             the difficulties ticked, snapped to the tiles its footprint
+#             covers; a click on one picks it, and dragging moves it. A
+#             building finds the destruction group its probe cell is in. The
+#             line across the map is the row the picked one fires on.
+#   Objects   scenery from the catalogue, the same way; R and Shift+R turn
+#             the picked one, [ and ] scale it.
+#
+# Delete removes what is picked, Esc lets go of it. Every stroke, placing,
+# move and removal is one undo. LevelEditorItems draws what is over the
+# ground.
+#
+#   left drag         paint / place, pick and move
 #   middle drag, WASD pan          right drag   turn and tilt
-#   wheel             zoom          [ ]          brush size
-#   1-9               tools         T            top down / tilted
-#   F                 the whole level
+#   wheel             zoom          [ ]          brush size (objects: scale)
+#   1-9               ground tools  T            top down / tilted
+#   F1-F4             modes         F            the whole level
 #   Ctrl+Z, Ctrl+Y    undo, redo    Ctrl+N/O/S   new, open, save
 #   Ctrl+B            build         F5           play
 #
 # Level -> Build saves, then runs the Blender builder in the background on
 # the level file, into build/level3d/<name>.glb, and imports what it made;
 # Play opens the preview on the level and that glb (src/tools/level3d_preview
-# .tscn, --file and --level). Blender is the Store build's launcher unless
-# user://level_editor.cfg says otherwise ([editor] blender="...").
-#
-# Everything else in the file -- nav, entities, objects, groups -- comes
-# through a save untouched; placing them is the next step of the plan.
+# .tscn, --file and --level). Check lists what Level3DIO.check finds, and on
+# stage 1 Rebuild flow field writes its assets/level3d/dirs-0.dat from the
+# grid (another level's is built when the preview loads it). Blender is the
+# Store build's launcher unless user://level_editor.cfg says otherwise
+# ([editor] blender="...").
 extends Node3D
+
+enum Mode { GROUND, NAV, ENTITIES, OBJECTS }
+const MODE_NAMES := ["Ground", "Nav", "Entities", "Objects"]
 
 const LEVEL_DIR := "res://assets/level3d/"
 const SETTINGS := "user://level_editor.cfg"
-const SIDEBAR_WIDTH := 250.0
+const SIDEBAR_WIDTH := 270.0
 const HEADER_HEIGHT := 30.0
 const FOOTER_HEIGHT := 26.0
 
+const T := Level3DGround.Tool
 const TOOL_NAMES := {
-	Level3DGround.Tool.LAND: "Land", Level3DGround.Tool.SEA: "Sea", Level3DGround.Tool.RIVER: "River", Level3DGround.Tool.FOREST: "Forest",
-	Level3DGround.Tool.CLEAR_FOREST: "Clear forest", Level3DGround.Tool.RAISE: "Raise", Level3DGround.Tool.LOWER: "Lower",
-	Level3DGround.Tool.SMOOTH: "Smooth", Level3DGround.Tool.FLATTEN: "Flatten",
+	T.LAND: "Land", T.SEA: "Sea", T.RIVER: "River", T.FOREST: "Forest",
+	T.CLEAR_FOREST: "Clear forest", T.RAISE: "Raise", T.LOWER: "Lower",
+	T.SMOOTH: "Smooth", T.FLATTEN: "Flatten",
 }
-const TOOL_ORDER: Array = [Level3DGround.Tool.LAND, Level3DGround.Tool.SEA, Level3DGround.Tool.RIVER, Level3DGround.Tool.FOREST, Level3DGround.Tool.CLEAR_FOREST,
-		Level3DGround.Tool.RAISE, Level3DGround.Tool.LOWER, Level3DGround.Tool.SMOOTH, Level3DGround.Tool.FLATTEN]
+const TOOL_ORDER: Array = [T.LAND, T.SEA, T.RIVER, T.FOREST, T.CLEAR_FOREST,
+		T.RAISE, T.LOWER, T.SMOOTH, T.FLATTEN]
 const TOOL_TIPS := {
-	Level3DGround.Tool.LAND: "Land, flat at the sand's height; where it meets water it leaves a shore",
-	Level3DGround.Tool.SEA: "Sea, with surf; where it meets land it cuts a shore",
-	Level3DGround.Tool.RIVER: "River: water as the sea is, without the surf",
-	Level3DGround.Tool.FOREST: "Forest on land: trees by the level's rule",
-	Level3DGround.Tool.CLEAR_FOREST: "Takes the forest away",
-	Level3DGround.Tool.RAISE: "Raises the ground, most at the middle of the brush",
-	Level3DGround.Tool.LOWER: "Lowers what was raised, down to the land's own height",
-	Level3DGround.Tool.SMOOTH: "Evens out the rise",
-	Level3DGround.Tool.FLATTEN: "Brings the rise to what it was where the stroke began",
+	T.LAND: "Land, flat at the sand's height; where it meets water it leaves a shore",
+	T.SEA: "Sea, with surf; where it meets land it cuts a shore",
+	T.RIVER: "River: water as the sea is, without the surf",
+	T.FOREST: "Forest on land: trees by the level's rule",
+	T.CLEAR_FOREST: "Takes the forest away",
+	T.RAISE: "Raises the ground, most at the middle of the brush",
+	T.LOWER: "Lowers what was raised, down to the land's own height",
+	T.SMOOTH: "Evens out the rise",
+	T.FLATTEN: "Brings the rise to what it was where the stroke began",
 }
+const HEIGHT_TOOLS: Array = [T.RAISE, T.LOWER, T.SMOOTH, T.FLATTEN]
+const SHORE_TOOLS: Array = [T.LAND, T.SEA, T.RIVER]
+# The nav brush's choices: "auto" (the ground's), then MapIO's types.
+const NAV_AUTO := -1
 # How far apart the dabs of a stroke are, in brush radii.
 const DAB_SPACING := 0.25
 const REFRESH_EVERY := 0.06
+const TURN := 15.0
 const BASE_BLEND := "res://resources/3d/jackal_stage1_lowpoly.blend"
 const BUILDER := "res://tools/blender/build_level.py"
 const BUILD_DIR := "res://build/level3d/"
@@ -68,12 +97,18 @@ var doc := {}
 var path := ""
 var ground: Level3DGround
 var view: Level3DGroundView
+var items: LevelEditorItems
 var dirty := false
-var tool: Level3DGround.Tool = Level3DGround.Tool.LAND
+var mode: Mode = Mode.GROUND
+var tool: Level3DGround.Tool = T.LAND
 var radius := 1.5
 var strength := 0.1
 var shore := Level3DGround.SHORE
+var nav_type := MapIO.TYPE_SOLID
+var nav_brush := 1
 
+# Each entry either {"ground": tiles} (a stroke's, Level3DGround.swap) or
+# {"doc": key, "value": what doc[key] was}.
 var _undo: Array = []
 var _redo: Array = []
 var _painting := false
@@ -81,6 +116,17 @@ var _last_dab := Vector2.INF
 var _flat_target := 0.0
 var _pending := Rect2i()
 var _since_refresh := 0.0
+# The nav the ground makes, worked out when it is wanted after the ground
+# changed; empty until then.
+var _derived: Array = []
+
+# Picking and moving: what is being dragged, from how far off its middle, and
+# whether the drag has changed anything yet (a click that only picks is no
+# undo).
+var _drag_id := ""
+var _drag_offset := Vector2.ZERO
+var _drag_changed := false
+var _nav_painting := false
 
 var _camera: Camera3D
 var _focus := Vector2.ZERO
@@ -93,10 +139,31 @@ var _mouse := Vector2.ZERO
 
 var _ui: Control
 var _footer: Label
+var _pages := {}
+var _mode_buttons := {}
 var _tool_buttons := {}
 var _radius_slider: HSlider
 var _strength_slider: HSlider
 var _shore_slider: HSlider
+var _nav_buttons := {}
+var _nav_auto: Button
+var _nav_brush: SpinBox
+var _entity_list: ItemList
+var _entity_types: Array = []
+var _new_normal: CheckBox
+var _new_hard: CheckBox
+var _entity_info: Label
+var _entity_normal: CheckBox
+var _entity_hard: CheckBox
+var _entity_group: SpinBox
+var _entity_box: Control
+var _asset_list: ItemList
+var _assets: Array = []
+var _object_info: Label
+var _object_yaw: SpinBox
+var _object_scale: SpinBox
+var _object_box: Control
+var _syncing := false
 var _open_dialog: FileDialog
 var _save_dialog: FileDialog
 var _new_dialog: ConfirmationDialog
@@ -129,6 +196,9 @@ func _build_world() -> void:
 	view = Level3DGroundView.new()
 	view.name = "Ground"
 	add_child(view)
+	items = LevelEditorItems.new()
+	items.name = "Items"
+	add_child(items)
 	_camera = Camera3D.new()
 	_camera.fov = 40.0
 	_camera.far = 800.0
@@ -195,7 +265,52 @@ func _hit(at: Vector2) -> Variant:
 	return p
 
 
-# --- Painting ------------------------------------------------------------------
+# --- Undo ------------------------------------------------------------------------
+
+
+# Keeps what doc[key] is now as the undo of what is about to be done to it.
+func _record(key: String) -> void:
+	_undo.append({"doc": key, "value": (doc[key] as Array).duplicate(true)})
+	_redo.clear()
+	_set_dirty(true)
+
+
+func _undo_step(from: Array, to: Array) -> void:
+	if from.is_empty() or _painting or _drag_id != "" or _nav_painting:
+		return
+	var entry: Dictionary = from.pop_back()
+	if entry.has("ground"):
+		var swapped := ground.swap(entry["ground"])
+		to.append({"ground": swapped[0]})
+		var r: Rect2i = swapped[1]
+		_pending = r if not _pending.has_area() else _pending.merge(r)
+		_flush()
+	else:
+		var key: String = entry["doc"]
+		to.append({"doc": key, "value": (doc[key] as Array).duplicate(true)})
+		doc[key] = entry["value"]
+		_refresh_doc(key)
+	_set_dirty(true)
+
+
+# Draws a list of the document again after it was replaced whole.
+func _refresh_doc(key: String) -> void:
+	match key:
+		"entities", "objects":
+			var picked := items.selected()
+			items.setup(doc, view.height_at, ground.rise_at)
+			if not items.find_entity(picked).is_empty() or not items.find_object(picked).is_empty():
+				items.select(picked)
+			_sync_selection()
+		"nav", "nav_paint":
+			_show_nav()
+
+
+func _redo_step() -> void:
+	_undo_step(_redo, _undo)
+
+
+# --- Painting the ground ---------------------------------------------------------
 
 
 func _begin_stroke(at: Vector2) -> void:
@@ -230,7 +345,7 @@ func _end_stroke() -> void:
 	_painting = false
 	var tiles := ground.end_stroke()
 	if not tiles.is_empty():
-		_undo.append(tiles)
+		_undo.append({"ground": tiles})
 		_redo.clear()
 	_flush()
 
@@ -239,18 +354,280 @@ func _flush() -> void:
 	if _pending.has_area():
 		view.refresh(_pending)
 		_pending = Rect2i()
+		_derived = []
+		_lift_items()
 	_since_refresh = 0.0
 
 
-func _undo_step(from: Array, to: Array) -> void:
-	if from.is_empty() or _painting:
+# The entities and objects stand on the ground; when it moves under them they
+# are put back on it.
+func _lift_items() -> void:
+	for e in doc["entities"]:
+		items.update_entity(e)
+	for o in doc["objects"]:
+		items.update_object(o)
+
+
+# --- The nav grid ----------------------------------------------------------------
+
+
+func _derives_nav() -> bool:
+	return doc.has("nav_paint")
+
+
+# The grid as it plays: stage 1's as painted; another level's the ground's
+# with what was painted over it.
+func _nav_rows() -> Array:
+	if not _derives_nav():
+		return doc["nav"]
+	if _derived.is_empty():
+		_derived = ground.derive_nav(doc)
+	var out: Array = []
+	var paint: Array = doc["nav_paint"]
+	for y in _derived.size():
+		var row: String = _derived[y]
+		var over: String = paint[y]
+		if over.count("-") == over.length():
+			out.append(row)
+			continue
+		var chars := ""
+		for x in row.length():
+			chars += row[x] if over[x] == "-" else over[x]
+		out.append(chars)
+	return out
+
+
+func _show_nav() -> void:
+	items.show_nav(_nav_rows() if mode == Mode.NAV else [], mode == Mode.NAV)
+
+
+func _paint_nav(p: Vector2) -> void:
+	var centre := items.tile_at(p)
+	if centre.x < 0:
 		return
-	var swapped := ground.swap(from.pop_back())
-	to.append(swapped[0])
-	var r: Rect2i = swapped[1]
-	_pending = r if not _pending.has_area() else _pending.merge(r)
-	_flush()
-	_set_dirty(true)
+	var key := "nav_paint" if _derives_nav() else "nav"
+	var rows: Array = doc[key]
+	var char_ := "-" if nav_type == NAV_AUTO else MapIO.TYPE_CHAR[nav_type]
+	var reach := nav_brush / 2
+	var changed := false
+	for y in range(maxi(centre.y - reach, 0), mini(centre.y + reach + 1, rows.size())):
+		var row: String = rows[y]
+		var chars := row
+		for x in range(maxi(centre.x - reach, 0), mini(centre.x + reach + 1, row.length())):
+			if chars[x] != char_:
+				chars = chars.substr(0, x) + char_ + chars.substr(x + 1)
+		if chars != row:
+			rows[y] = chars
+			changed = true
+	if changed:
+		_set_dirty(true)
+		_show_nav()
+
+
+# --- Entities and objects ---------------------------------------------------------
+
+
+func _unique_id(stem: String) -> String:
+	var taken := {}
+	for e in doc["entities"]:
+		taken[e["id"]] = true
+	for o in doc["objects"]:
+		taken[o["id"]] = true
+	var n := 0
+	while taken.has("%s_%d" % [stem, n]):
+		n += 1
+	return "%s_%d" % [stem, n]
+
+
+func _press_entity(p: Vector2) -> void:
+	var id := items.entity_under(p)
+	_record("entities")
+	if id == "":
+		if _entity_list.get_selected_items().is_empty():
+			_undo.pop_back()
+			return
+		var type: String = _entity_types[_entity_list.get_selected_items()[0]]
+		var difficulty: Array = []
+		if _new_normal.button_pressed:
+			difficulty.append("normal")
+		if _new_hard.button_pressed:
+			difficulty.append("hard")
+		var at := items.snap_entity(type, p)
+		var e := {"id": _unique_id(type.to_lower()), "type": type, "pos": [at.x, at.y],
+				"difficulty": difficulty}
+		(doc["entities"] as Array).append(e)
+		_reprobe(e)
+		items.update_entity(e)
+		id = e["id"]
+		_drag_changed = true
+	else:
+		_drag_changed = false
+	var e := items.find_entity(id)
+	_drag_id = id
+	_drag_offset = Vector2(float(e["pos"][0]), float(e["pos"][1])) - p
+	items.select(id)
+	_sync_selection()
+
+
+func _press_object(p: Vector2) -> void:
+	var id := items.object_under(p)
+	_record("objects")
+	if id == "":
+		if _asset_list.get_selected_items().is_empty():
+			_undo.pop_back()
+			return
+		var asset: String = _assets[_asset_list.get_selected_items()[0]]
+		var o := {"id": _unique_id(asset.to_lower()), "asset": asset,
+				"pos": _object_pos(p), "yaw": 0.0, "scale": 1.0}
+		(doc["objects"] as Array).append(o)
+		items.update_object(o)
+		id = o["id"]
+		_drag_changed = true
+	else:
+		_drag_changed = false
+	var o := items.find_object(id)
+	_drag_id = id
+	_drag_offset = Vector2(float(o["pos"][0]), float(o["pos"][2])) - p
+	items.select(id)
+	_sync_selection()
+
+
+# An object's place in the file: its height over the ground, which on the
+# slope is the slope's and on a hill nothing -- the builder adds the rise.
+func _object_pos(p: Vector2) -> Array:
+	return [Level3DIO.round_mm(p.x), Level3DIO.round_mm(view.height_at(p) - ground.rise_at(p)),
+			Level3DIO.round_mm(p.y)]
+
+
+func _drag_to(p: Vector2) -> void:
+	var target := p + _drag_offset
+	if mode == Mode.ENTITIES:
+		var e := items.find_entity(_drag_id)
+		var at := items.snap_entity(e["type"], target)
+		if at.x != float(e["pos"][0]) or at.y != float(e["pos"][1]):
+			e["pos"] = [at.x, at.y]
+			_reprobe(e)
+			items.update_entity(e)
+			_drag_changed = true
+			_sync_selection()
+	else:
+		var o := items.find_object(_drag_id)
+		var pos := _object_pos(target)
+		if pos != o["pos"]:
+			o["pos"] = pos
+			items.update_object(o)
+			_drag_changed = true
+
+
+func _release_drag() -> void:
+	if not _drag_changed:
+		_undo.pop_back()
+	_drag_id = ""
+
+
+# A building's group is the one its probe cell is in, wherever it goes.
+func _reprobe(e: Dictionary) -> void:
+	var group := items.probed_group(e["type"], items.entity_tile(e))
+	var index: int = MapIO.trigger_constants().get(e["type"], -1)
+	if MapIO.GROUP_PROBES.has(index):
+		if group >= 0:
+			e["group"] = group
+		else:
+			e.erase("group")
+
+
+func _delete_selected() -> void:
+	var id := items.selected()
+	if id == "":
+		return
+	for key in ["entities", "objects"]:
+		var list: Array = doc[key]
+		for k in list.size():
+			if list[k]["id"] == id:
+				_record(key)
+				(doc[key] as Array).remove_at(k)
+				if key == "entities":
+					items.remove_entity(id)
+				else:
+					items.remove_object(id)
+				_sync_selection()
+				return
+
+
+func _turn_selected(degrees: float) -> void:
+	var o := items.find_object(items.selected())
+	if o.is_empty():
+		return
+	_record("objects")
+	o["yaw"] = snappedf(wrapf(float(o["yaw"]) + degrees, -180.0, 180.0), 0.001)
+	items.update_object(o)
+	_sync_selection()
+
+
+func _scale_selected(factor: float) -> void:
+	var o := items.find_object(items.selected())
+	if o.is_empty():
+		return
+	_record("objects")
+	o["scale"] = snappedf(clampf(float(o["scale"]) * factor, 0.1, 10.0), 0.001)
+	items.update_object(o)
+	_sync_selection()
+
+
+# The picked item's page of the sidebar, to what it is now.
+func _sync_selection() -> void:
+	_syncing = true
+	var e := items.find_entity(items.selected())
+	_entity_box.visible = not e.is_empty()
+	if not e.is_empty():
+		var tile := items.entity_tile(e)
+		_entity_info.text = "%s\n%s, %s\nrow %d col %d" % [e["id"], e["type"], items.kind_of(e["type"]),
+				tile.y, tile.x]
+		_entity_normal.button_pressed = (e["difficulty"] as Array).has("normal")
+		_entity_hard.button_pressed = (e["difficulty"] as Array).has("hard")
+		_entity_group.value = int(e.get("group", -1))
+		_entity_group.editable = MapIO.GROUP_PROBES.has(MapIO.trigger_constants().get(e["type"], -1))
+	var o := items.find_object(items.selected())
+	_object_box.visible = not o.is_empty()
+	if not o.is_empty():
+		_object_info.text = "%s\n%s%s" % [o["id"], o["asset"],
+				("\nbelongs to " + o["entity"]) if o.has("entity") else ""]
+		_object_yaw.value = float(o["yaw"])
+		_object_scale.value = float(o["scale"])
+	_syncing = false
+
+
+func _edit_entity(field: String, value: Variant) -> void:
+	var e := items.find_entity(items.selected())
+	if _syncing or e.is_empty():
+		return
+	_record("entities")
+	match field:
+		"normal", "hard":
+			var difficulty: Array = []
+			for d in ["normal", "hard"]:
+				var on: bool = value if d == field else (e["difficulty"] as Array).has(d)
+				if on:
+					difficulty.append(d)
+			e["difficulty"] = difficulty
+		"group":
+			if int(value) < 0:
+				e.erase("group")
+			else:
+				e["group"] = int(value)
+	items.update_entity(e)
+
+
+func _edit_object(field: String, value: float) -> void:
+	var o := items.find_object(items.selected())
+	if _syncing or o.is_empty():
+		return
+	_record("objects")
+	o[field] = snappedf(value, 0.001)
+	items.update_object(o)
+
+
+# --- Input ------------------------------------------------------------------------
 
 
 func _process(delta: float) -> void:
@@ -276,23 +653,35 @@ func _process(delta: float) -> void:
 
 func _update_cursor() -> void:
 	var hit: Variant = _hit(_mouse) if ground else null
-	_cursor.visible = hit != null and not _over_ui()
+	_cursor.visible = hit != null and not _over_ui() and mode in [Mode.GROUND, Mode.NAV]
 	if hit == null:
 		_footer_text(null)
 		return
 	var p: Vector2 = hit
 	_cursor.position = Vector3(p.x, view.height_at(p) + 0.02, p.y)
-	_cursor.scale = Vector3(radius, 1.0, radius)
+	var r := radius if mode == Mode.GROUND else nav_brush * items.tile_m() * 0.5
+	_cursor.scale = Vector3(r, 1.0, r)
 	_footer_text(p)
 
 
 func _footer_text(p: Variant) -> void:
+	if not _job.is_empty():
+		return
 	var name := path.get_file() if path != "" else "(new level)"
-	var text := "%s%s   %s  r %.1f m" % [name, " *" if dirty else "", TOOL_NAMES[tool], radius]
-	if tool in [Level3DGround.Tool.RAISE, Level3DGround.Tool.LOWER, Level3DGround.Tool.SMOOTH, Level3DGround.Tool.FLATTEN]:
-		text += "  strength %.2f" % strength
-	if tool in [Level3DGround.Tool.LAND, Level3DGround.Tool.SEA, Level3DGround.Tool.RIVER]:
-		text += "  shore %.1f m" % shore
+	var text := "%s%s   %s" % [name, " *" if dirty else "", MODE_NAMES[mode]]
+	match mode:
+		Mode.GROUND:
+			text += ": %s  r %.1f m" % [TOOL_NAMES[tool], radius]
+			if tool in HEIGHT_TOOLS:
+				text += "  strength %.2f" % strength
+			if tool in SHORE_TOOLS:
+				text += "  shore %.1f m" % shore
+		Mode.NAV:
+			text += ": %s  %d tiles" % ["auto" if nav_type == NAV_AUTO else MapIO.TYPE_NAME[nav_type], nav_brush]
+		Mode.ENTITIES:
+			text += ": %d, %s picked" % [(doc["entities"] as Array).size(), items.selected() if items.selected() != "" else "none"]
+		Mode.OBJECTS:
+			text += ": %d, %s picked" % [(doc["objects"] as Array).size(), items.selected() if items.selected() != "" else "none"]
 	if p != null:
 		var at: Vector2 = p
 		var bits := ground.bits_at(at)
@@ -300,9 +689,13 @@ func _footer_text(p: Variant) -> void:
 				("river" if bits & Level3DGround.RIVER else "sea") if bits & Level3DGround.WATER else "slope"
 		if bits & Level3DGround.FOREST:
 			kind += ", forest"
-		var tile := Level3DIO.to_map(doc["grid"], at) / float(doc["grid"]["tile_px"])
-		text += "   |  %.2f, %.2f  row %d col %d  %s  height %.2f m" % [at.x, at.y,
-				floori(tile.y), floori(tile.x), kind, view.height_at(at)]
+		var tile := items.tile_at(at)
+		text += "   |  %.2f, %.2f" % [at.x, at.y]
+		if tile.x >= 0:
+			var nav: String = (_nav_rows()[tile.y] as String)[tile.x] if mode == Mode.NAV else ""
+			text += "  row %d col %d%s" % [tile.y, tile.x,
+					(" " + MapIO.TYPE_NAME[MapIO.TYPE_CHARS.get(nav, 1)]) if nav != "" else ""]
+		text += "  %s  height %.2f m" % [kind, view.height_at(at)]
 	_footer.text = text
 
 
@@ -327,9 +720,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				if button.pressed:
 					var hit: Variant = _hit(button.position)
 					if hit != null:
-						_begin_stroke(hit)
-				elif _painting:
-					_end_stroke()
+						_press(hit)
+				else:
+					_release()
 			MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT:
 				_dragging = button.button_index if button.pressed else -1
 			MOUSE_BUTTON_WHEEL_UP:
@@ -353,25 +746,57 @@ func _unhandled_input(event: InputEvent) -> void:
 			_yaw -= motion.relative.x * 0.3
 			_pitch = clampf(_pitch + motion.relative.y * 0.3, 25.0, 90.0)
 			_place_camera()
-		elif _painting:
+		elif _painting or _drag_id != "" or _nav_painting:
 			var hit: Variant = _hit(motion.position)
 			if hit != null:
-				_stroke_to(hit)
+				_move(hit)
 		return
 	var key := event as InputEventKey
 	if key and key.pressed and not key.echo:
 		_key(key)
 
 
+func _press(p: Vector2) -> void:
+	match mode:
+		Mode.GROUND:
+			_begin_stroke(p)
+		Mode.NAV:
+			_record("nav_paint" if _derives_nav() else "nav")
+			_nav_painting = true
+			_paint_nav(p)
+		Mode.ENTITIES:
+			_press_entity(p)
+		Mode.OBJECTS:
+			_press_object(p)
+
+
+func _move(p: Vector2) -> void:
+	if _painting:
+		_stroke_to(p)
+	elif _nav_painting:
+		_paint_nav(p)
+	elif _drag_id != "":
+		_drag_to(p)
+
+
+func _release() -> void:
+	if _painting:
+		_end_stroke()
+	elif _nav_painting:
+		_nav_painting = false
+	elif _drag_id != "":
+		_release_drag()
+
+
 func _key(key: InputEventKey) -> void:
 	var ctrl := key.ctrl_pressed or key.meta_pressed
 	match key.keycode:
 		KEY_Z when ctrl and key.shift_pressed:
-			_undo_step(_redo, _undo)
+			_redo_step()
 		KEY_Z when ctrl:
 			_undo_step(_undo, _redo)
 		KEY_Y when ctrl:
-			_undo_step(_redo, _undo)
+			_redo_step()
 		KEY_S when ctrl and key.shift_pressed:
 			_save_dialog.popup_centered_ratio(0.6)
 		KEY_S when ctrl:
@@ -380,22 +805,41 @@ func _key(key: InputEventKey) -> void:
 			_guard(func(): _open_dialog.popup_centered_ratio(0.6))
 		KEY_N when ctrl:
 			_guard(func(): _new_dialog.popup_centered())
+		KEY_B when ctrl:
+			_build()
+		KEY_F1, KEY_F2, KEY_F3, KEY_F4:
+			_set_mode(key.keycode - KEY_F1)
+		KEY_F5:
+			_play()
 		KEY_BRACKETLEFT:
-			_radius_slider.value = radius / 1.2
+			if mode == Mode.OBJECTS:
+				_scale_selected(1.0 / 1.1)
+			elif mode == Mode.NAV:
+				_nav_brush.value = nav_brush - 2
+			else:
+				_radius_slider.value = radius / 1.2
 		KEY_BRACKETRIGHT:
-			_radius_slider.value = radius * 1.2
+			if mode == Mode.OBJECTS:
+				_scale_selected(1.1)
+			elif mode == Mode.NAV:
+				_nav_brush.value = nav_brush + 2
+			else:
+				_radius_slider.value = radius * 1.2
+		KEY_R when mode == Mode.OBJECTS:
+			_turn_selected(-TURN if key.shift_pressed else TURN)
+		KEY_DELETE, KEY_BACKSPACE:
+			_delete_selected()
+		KEY_ESCAPE:
+			items.select("")
+			_sync_selection()
 		KEY_T:
 			_pitch = 55.0 if _pitch > 80.0 else 90.0
 			_place_camera()
 		KEY_F:
 			_frame_level()
-		KEY_B when ctrl:
-			_build()
-		KEY_F5:
-			_play()
 		_:
 			var n := key.keycode - KEY_1
-			if n >= 0 and n < TOOL_ORDER.size() and not ctrl:
+			if mode == Mode.GROUND and n >= 0 and n < TOOL_ORDER.size() and not ctrl:
 				_set_tool(TOOL_ORDER[n])
 
 
@@ -423,7 +867,11 @@ func _start(new_doc: Dictionary, of: Level3DGround, file_path: String) -> void:
 	_undo.clear()
 	_redo.clear()
 	_pending = Rect2i()
+	_derived = []
 	view.setup(doc, ground)
+	items.setup(doc, view.height_at, ground.rise_at)
+	_show_nav()
+	_sync_selection()
 	_frame_level()
 	get_window().title = "Level editor -- %s" % (path.get_file() if path != "" else "new level")
 
@@ -443,10 +891,10 @@ func _save_to(file_path: String) -> void:
 	var error := ground.save_rasters(doc, file_path.get_base_dir(), file_path.get_file().get_basename())
 	if error == OK:
 		ground.trace(doc)
-		# Stage 1's grid is the game's, and stays; a level made here takes its
-		# grid from its ground until the grid can be painted.
-		if int(doc["stage"]) != Level3DMap.STAGE:
-			doc["nav"] = ground.derive_nav(doc)
+		# Stage 1's grid is the game's, and stays; a level made here plays the
+		# ground's, with what was painted over it.
+		if _derives_nav():
+			doc["nav"] = _nav_rows()
 		error = Level3DIO.save_path(doc, file_path)
 	if error != OK:
 		_tell("Saving %s failed (error %d)." % [file_path, error])
@@ -455,9 +903,9 @@ func _save_to(file_path: String) -> void:
 	get_window().title = "Level editor -- %s" % path.get_file()
 	_set_dirty(false)
 	_remember(path)
-	_footer.text = "Saved %s in %.1f s: %d land, %d water, %d forest polygons" % [path.get_file(),
-			(Time.get_ticks_msec() - started) / 1000.0, doc["terrain"]["land"].size(),
-			doc["water"].size(), doc["forest"].size()]
+	_footer.text = "Saved %s in %.1f s: %d land, %d water, %d forest polygons, %d entities, %d objects" % [
+			path.get_file(), (Time.get_ticks_msec() - started) / 1000.0, doc["terrain"]["land"].size(),
+			doc["water"].size(), doc["forest"].size(), doc["entities"].size(), doc["objects"].size()]
 
 
 func _new_level(name: String, rows: int, start: int) -> void:
@@ -482,6 +930,19 @@ func _new_level(name: String, rows: int, start: int) -> void:
 						of.ground[j * of.grid.w + i] = 0
 		2:
 			of.fill(Level3DGround.WATER)
+	# The Chinook that flies the player in, where stage 1 has it from its
+	# south end.
+	if not stage.is_empty():
+		for e in stage["entities"]:
+			if e["type"] == "CHINOOK":
+				var sizes := Level3DIO.footprints()
+				var tile := Level3DIO.entity_tile(stage["grid"], sizes["CHINOOK"],
+						Vector2(float(e["pos"][0]), float(e["pos"][1])))
+				tile.y += rows - int(stage["grid"]["height"])
+				var at := Level3DIO.entity_pos(new_doc["grid"], sizes["CHINOOK"], tile)
+				new_doc["entities"].append({"id": "chinook_0", "type": "CHINOOK",
+						"pos": [Level3DIO.round_mm(at.x), Level3DIO.round_mm(at.y)],
+						"difficulty": ["normal", "hard"]})
 	var file_path := LEVEL_DIR + name + ".json"
 	_start(new_doc, of, "")
 	if not FileAccess.file_exists(file_path):
@@ -520,7 +981,34 @@ func _notification(what: int) -> void:
 		_guard(func(): get_tree().quit())
 
 
-# --- Building and playing ------------------------------------------------------
+# --- Checking, building and playing ------------------------------------------------
+
+
+func _check() -> void:
+	var checked := doc.duplicate()
+	checked["nav"] = _nav_rows()
+	var problems := Level3DIO.check(checked, items.catalog)
+	if problems.is_empty():
+		_tell("Level3DIO.check finds nothing wrong with %s." % (path.get_file() if path else "the level"))
+	else:
+		_tell("%d problems:\n\n%s" % [problems.size(), "\n".join(problems.slice(0, 30))])
+
+
+# Stage 1's flow field, from its grid as painted, into assets/level3d/,
+# where Level3DMap prefers it to the game's. Another level's is built when
+# the preview loads it.
+func _rebuild_flow_field() -> void:
+	if _derives_nav() or int(doc["stage"]) != Level3DMap.STAGE:
+		_tell("Only stage 1 keeps a flow field; the preview builds any other level's as it loads it.")
+		return
+	_footer.text = "Building the flow field ..."
+	await get_tree().process_frame
+	var built := Stage.new()
+	Level3DIO.load_stage(doc, built, MapIO.load_trigger_sizes())
+	FlowField.build(built)
+	var error := FlowField.save(Level3DMap.STAGE, built, Level3DIO.DIR)
+	_tell("Flow field %s: %s" % ["written" if error == OK else "FAILED (%d)" % error,
+			Level3DIO.flow_field_path(Level3DMap.STAGE)])
 
 
 func _level_name() -> String:
@@ -623,6 +1111,8 @@ func _build_ui() -> void:
 	_build_footer()
 	_build_dialogs()
 	_set_tool(tool)
+	_set_nav_type(nav_type)
+	_set_mode(mode)
 
 
 func _build_header() -> void:
@@ -652,25 +1142,24 @@ func _build_header() -> void:
 	edit.name = "Edit"
 	edit.add_item("Undo              Ctrl+Z", 0)
 	edit.add_item("Redo              Ctrl+Y", 1)
-	edit.id_pressed.connect(func(id: int) -> void:
-		if id == 0:
-			_undo_step(_undo, _redo)
-		else:
-			_redo_step())
+	edit.add_separator()
+	edit.add_item("Delete picked     Del", 2)
+	edit.id_pressed.connect(_on_edit_menu)
 	bar.add_child(edit)
 
 	var level := PopupMenu.new()
 	level.name = "Level"
 	level.add_item("Build in Blender  Ctrl+B", 0)
 	level.add_item("Play              F5", 1)
+	level.add_separator()
+	level.add_item("Check", 2)
+	level.add_item("Rebuild flow field (stage 1)", 3)
 	level.set_item_tooltip(0, "Saves, then builds the level in Blender into build/level3d/, "
 			+ "and imports it -- half a minute or so")
 	level.set_item_tooltip(1, "Opens the preview on the level as it was last built")
-	level.id_pressed.connect(func(id: int) -> void:
-		if id == 0:
-			_build()
-		else:
-			_play())
+	level.set_item_tooltip(2, "What Level3DIO.check finds: an enemy in a wall, a building off "
+			+ "its group, an asset the catalogue does not know, no Chinook")
+	level.id_pressed.connect(_on_level_menu)
 	bar.add_child(level)
 	_level_menu = level
 
@@ -687,6 +1176,28 @@ func _build_header() -> void:
 	bar.add_child(view_menu)
 
 
+func _on_edit_menu(id: int) -> void:
+	match id:
+		0:
+			_undo_step(_undo, _redo)
+		1:
+			_redo_step()
+		2:
+			_delete_selected()
+
+
+func _on_level_menu(id: int) -> void:
+	match id:
+		0:
+			_build()
+		1:
+			_play()
+		2:
+			_check()
+		3:
+			_rebuild_flow_field()
+
+
 func _on_file_menu(id: int) -> void:
 	match id:
 		0:
@@ -701,10 +1212,6 @@ func _on_file_menu(id: int) -> void:
 			_guard(func(): get_tree().quit())
 
 
-func _redo_step() -> void:
-	_undo_step(_redo, _undo)
-
-
 func _build_sidebar() -> void:
 	var panel := PanelContainer.new()
 	panel.anchor_bottom = 1.0
@@ -716,27 +1223,51 @@ func _build_sidebar() -> void:
 	for side in ["left", "right", "top", "bottom"]:
 		margin.add_theme_constant_override("margin_" + side, 10)
 	panel.add_child(margin)
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 4)
-	margin.add_child(box)
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", 6)
+	margin.add_child(outer)
 
-	box.add_child(_heading("Ground"))
+	var modes := GridContainer.new()
+	modes.columns = 2
+	var group := ButtonGroup.new()
+	for m in MODE_NAMES.size():
+		var button := _toggle("F%d %s" % [m + 1, MODE_NAMES[m]], group)
+		button.pressed.connect(_set_mode.bind(m))
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		modes.add_child(button)
+		_mode_buttons[m] = button
+	outer.add_child(modes)
+	outer.add_child(HSeparator.new())
+
+	for m in MODE_NAMES.size():
+		var page := VBoxContainer.new()
+		page.add_theme_constant_override("separation", 4)
+		page.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		outer.add_child(page)
+		_pages[m] = page
+	_build_ground_page(_pages[Mode.GROUND])
+	_build_nav_page(_pages[Mode.NAV])
+	_build_entity_page(_pages[Mode.ENTITIES])
+	_build_object_page(_pages[Mode.OBJECTS])
+
+	var help := Label.new()
+	help.text = "Middle drag or WASD pans, right drag\nturns and tilts, wheel zooms."
+	help.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	help.add_theme_font_size_override("font_size", 12)
+	outer.add_child(help)
+
+
+func _build_ground_page(box: VBoxContainer) -> void:
 	var group := ButtonGroup.new()
 	for n in TOOL_ORDER.size():
 		var t: Level3DGround.Tool = TOOL_ORDER[n]
-		if t == Level3DGround.Tool.RAISE:
+		if t == T.RAISE:
 			box.add_child(_heading("Height"))
-		var button := Button.new()
-		button.text = "%d  %s" % [n + 1, TOOL_NAMES[t]]
-		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.toggle_mode = true
-		button.button_group = group
-		button.focus_mode = Control.FOCUS_NONE
+		var button := _toggle("%d  %s" % [n + 1, TOOL_NAMES[t]], group)
 		button.tooltip_text = TOOL_TIPS[t]
 		button.pressed.connect(_set_tool.bind(t))
 		box.add_child(button)
 		_tool_buttons[t] = button
-
 	box.add_child(_heading("Brush"))
 	_radius_slider = _slider(box, "Size (radius, m)  [ ]", 0.2, 12.0, 0.05, radius, true,
 			func(v: float) -> void: radius = v)
@@ -745,11 +1276,151 @@ func _build_sidebar() -> void:
 	_shore_slider = _slider(box, "Shore width (m)", 0.2, 3.0, 0.05, shore, false,
 			func(v: float) -> void: shore = v)
 
-	var help := Label.new()
-	help.text = ("\nLeft drag paints.\nMiddle drag or WASD pans,\nright drag turns and tilts,"
-			+ "\nwheel zooms. T top/tilted,\nF the whole level.")
-	help.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	box.add_child(help)
+
+func _build_nav_page(box: VBoxContainer) -> void:
+	box.add_child(_heading("Paint the grid"))
+	var group := ButtonGroup.new()
+	_nav_auto = _toggle("Auto (the ground's)", group)
+	_nav_auto.tooltip_text = "Takes a tile back to what the ground makes it: land empty, forest solid, water and slope water"
+	_nav_auto.pressed.connect(_set_nav_type.bind(NAV_AUTO))
+	box.add_child(_nav_auto)
+	for t in MapIO.TYPE_NAME.size():
+		var button := _toggle("%s  %s" % [MapIO.TYPE_CHAR[t], MapIO.TYPE_NAME[t]], group)
+		button.add_theme_color_override("font_color", Color(LevelEditorItems.TYPE_COLORS[t], 1.0).lightened(0.35) \
+				if t != MapIO.TYPE_EMPTY else Color.WHITE)
+		button.pressed.connect(_set_nav_type.bind(t))
+		box.add_child(button)
+		_nav_buttons[t] = button
+	box.add_child(_label("Brush, tiles  [ ]"))
+	_nav_brush = SpinBox.new()
+	_nav_brush.min_value = 1
+	_nav_brush.max_value = 15
+	_nav_brush.step = 2
+	_nav_brush.value = nav_brush
+	_nav_brush.focus_mode = Control.FOCUS_NONE
+	_nav_brush.get_line_edit().focus_mode = Control.FOCUS_NONE
+	_nav_brush.value_changed.connect(func(v: float) -> void: nav_brush = int(v))
+	box.add_child(_nav_brush)
+
+
+func _build_entity_page(box: VBoxContainer) -> void:
+	box.add_child(_heading("Put down"))
+	_entity_list = ItemList.new()
+	_entity_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_entity_list.custom_minimum_size.y = 180
+	_entity_list.focus_mode = Control.FOCUS_NONE
+	var catalog := Level3DIO.read_catalog()
+	var kinds: Array = catalog["entity_kinds"]
+	var names: Array = MapIO.trigger_constants().keys()
+	names.sort_custom(func(a, b):
+		var ka := kinds.find(catalog["entities"].get(a, {}).get("kind", "enemy"))
+		var kb := kinds.find(catalog["entities"].get(b, {}).get("kind", "enemy"))
+		return ka < kb or (ka == kb and a < b))
+	for name in names:
+		var kind: String = catalog["entities"].get(name, {}).get("kind", "enemy")
+		var index := _entity_list.add_item(name)
+		_entity_list.set_item_custom_fg_color(index, LevelEditorItems.KIND_COLORS.get(kind, Color.WHITE).lightened(0.3))
+		_entity_list.set_item_tooltip(index, kind)
+		_entity_types.append(name)
+	_entity_list.select(maxi(_entity_types.find("SOLDIER_WALKER"), 0))
+	box.add_child(_entity_list)
+	var on := HBoxContainer.new()
+	_new_normal = _checkbox("normal", true)
+	_new_hard = _checkbox("hard", true)
+	on.add_child(_new_normal)
+	on.add_child(_new_hard)
+	box.add_child(on)
+
+	_entity_box = VBoxContainer.new()
+	_entity_box.add_child(_heading("Picked"))
+	_entity_info = _label("")
+	_entity_box.add_child(_entity_info)
+	var difficulty := HBoxContainer.new()
+	_entity_normal = _checkbox("normal", true)
+	_entity_hard = _checkbox("hard", true)
+	_entity_normal.toggled.connect(func(v: bool) -> void: _edit_entity("normal", v))
+	_entity_hard.toggled.connect(func(v: bool) -> void: _edit_entity("hard", v))
+	difficulty.add_child(_entity_normal)
+	difficulty.add_child(_entity_hard)
+	_entity_box.add_child(difficulty)
+	var group_row := HBoxContainer.new()
+	group_row.add_child(_label("Group"))
+	_entity_group = SpinBox.new()
+	_entity_group.min_value = -1
+	_entity_group.max_value = 99
+	_entity_group.tooltip_text = "The destruction group a building sets off; found from its probe cell when it is put down or moved"
+	_entity_group.value_changed.connect(func(v: float) -> void: _edit_entity("group", v))
+	group_row.add_child(_entity_group)
+	_entity_box.add_child(group_row)
+	var remove := Button.new()
+	remove.text = "Delete  (Del)"
+	remove.focus_mode = Control.FOCUS_NONE
+	remove.pressed.connect(_delete_selected)
+	_entity_box.add_child(remove)
+	box.add_child(_entity_box)
+
+
+func _build_object_page(box: VBoxContainer) -> void:
+	box.add_child(_heading("Put down"))
+	_asset_list = ItemList.new()
+	_asset_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_asset_list.custom_minimum_size.y = 180
+	_asset_list.focus_mode = Control.FOCUS_NONE
+	var catalog := Level3DIO.read_catalog()
+	_assets = catalog["assets"].keys()
+	_assets.sort()
+	for name in _assets:
+		var index := _asset_list.add_item(name)
+		_asset_list.set_item_tooltip(index, "collision: %s" % catalog["assets"][name].get("collision", "none"))
+	_asset_list.select(maxi(_assets.find("Palm_0"), 0))
+	box.add_child(_asset_list)
+
+	_object_box = VBoxContainer.new()
+	_object_box.add_child(_heading("Picked"))
+	_object_info = _label("")
+	_object_box.add_child(_object_info)
+	var yaw_row := HBoxContainer.new()
+	yaw_row.add_child(_label("Turn (R)"))
+	_object_yaw = SpinBox.new()
+	_object_yaw.min_value = -180
+	_object_yaw.max_value = 180
+	_object_yaw.step = 0.5
+	_object_yaw.value_changed.connect(func(v: float) -> void: _edit_object("yaw", v))
+	yaw_row.add_child(_object_yaw)
+	_object_box.add_child(yaw_row)
+	var scale_row := HBoxContainer.new()
+	scale_row.add_child(_label("Scale  [ ]"))
+	_object_scale = SpinBox.new()
+	_object_scale.min_value = 0.1
+	_object_scale.max_value = 10
+	_object_scale.step = 0.01
+	_object_scale.value_changed.connect(func(v: float) -> void: _edit_object("scale", v))
+	scale_row.add_child(_object_scale)
+	_object_box.add_child(scale_row)
+	var remove := Button.new()
+	remove.text = "Delete  (Del)"
+	remove.focus_mode = Control.FOCUS_NONE
+	remove.pressed.connect(_delete_selected)
+	_object_box.add_child(remove)
+	box.add_child(_object_box)
+
+
+func _toggle(text: String, group: ButtonGroup) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	button.toggle_mode = true
+	button.button_group = group
+	button.focus_mode = Control.FOCUS_NONE
+	return button
+
+
+func _checkbox(text: String, on: bool) -> CheckBox:
+	var box := CheckBox.new()
+	box.text = text
+	box.button_pressed = on
+	box.focus_mode = Control.FOCUS_NONE
+	return box
 
 
 func _heading(text: String) -> Label:
@@ -797,14 +1468,14 @@ func _build_footer() -> void:
 
 
 func _build_dialogs() -> void:
-	for mode in [FileDialog.FILE_MODE_OPEN_FILE, FileDialog.FILE_MODE_SAVE_FILE]:
+	for dialog_mode in [FileDialog.FILE_MODE_OPEN_FILE, FileDialog.FILE_MODE_SAVE_FILE]:
 		var dialog := FileDialog.new()
-		dialog.file_mode = mode
+		dialog.file_mode = dialog_mode
 		dialog.access = FileDialog.ACCESS_RESOURCES
 		dialog.root_subfolder = LEVEL_DIR.trim_prefix("res://")
 		dialog.filters = PackedStringArray(["*.json ; Level files"])
 		_ui.add_child(dialog)
-		if mode == FileDialog.FILE_MODE_OPEN_FILE:
+		if dialog_mode == FileDialog.FILE_MODE_OPEN_FILE:
 			dialog.title = "Open a level"
 			dialog.file_selected.connect(_open)
 			_open_dialog = dialog
@@ -864,13 +1535,40 @@ func _label(text: String) -> Label:
 	return label
 
 
+func _set_mode(m: int) -> void:
+	if _painting or _drag_id != "" or _nav_painting:
+		return
+	mode = m as Mode
+	for k in _pages:
+		(_pages[k] as Control).visible = k == mode
+	if _mode_buttons.has(mode):
+		(_mode_buttons[mode] as Button).button_pressed = true
+	if doc.is_empty():
+		return
+	if mode in [Mode.GROUND, Mode.NAV]:
+		items.select("")
+		_sync_selection()
+	_show_nav()
+	# Auto is a tile given back to the ground, which stage 1's grid is not.
+	_nav_auto.disabled = not _derives_nav()
+	if nav_type == NAV_AUTO and not _derives_nav():
+		_set_nav_type(MapIO.TYPE_SOLID)
+
+
 func _set_tool(t: Level3DGround.Tool) -> void:
 	tool = t
 	if _tool_buttons.has(t):
 		(_tool_buttons[t] as Button).button_pressed = true
-	var height := t in [Level3DGround.Tool.RAISE, Level3DGround.Tool.LOWER, Level3DGround.Tool.SMOOTH, Level3DGround.Tool.FLATTEN]
+	var height := t in HEIGHT_TOOLS
 	if _strength_slider:
 		_strength_slider.get_parent().get_child(_strength_slider.get_index() - 1).modulate.a = 1.0 if height else 0.45
 		_strength_slider.modulate.a = 1.0 if height else 0.45
 		_shore_slider.get_parent().get_child(_shore_slider.get_index() - 1).modulate.a = 0.45 if height else 1.0
 		_shore_slider.modulate.a = 0.45 if height else 1.0
+
+
+func _set_nav_type(t: int) -> void:
+	nav_type = t
+	var button: Button = _nav_auto if t == NAV_AUTO else _nav_buttons.get(t)
+	if button:
+		button.button_pressed = true
