@@ -25,7 +25,9 @@
 #   Entities  the game's triggers, from the list: a click puts one down, on
 #             the difficulties ticked, snapped to the tiles its footprint
 #             covers; a click on one picks it, and dragging moves it. A
-#             building finds the destruction group its probe cell is in. The
+#             building finds the destruction group its probe cell is in. One
+#             the catalogue gives an object -- a gun its bunker, the landing
+#             port its pad -- comes with it, and goes where it goes. The
 #             line across the map is the row the picked one fires on.
 #   Objects   scenery from the catalogue, the same way; R and Shift+R turn
 #             the picked one, [ and ] scale it.
@@ -108,7 +110,7 @@ var nav_type := MapIO.TYPE_SOLID
 var nav_brush := 1
 
 # Each entry either {"ground": tiles} (a stroke's, Level3DGround.swap) or
-# {"doc": key, "value": what doc[key] was}.
+# {"doc": {key: what doc[key] was, ...}}.
 var _undo: Array = []
 var _redo: Array = []
 var _painting := false
@@ -268,9 +270,13 @@ func _hit(at: Vector2) -> Variant:
 # --- Undo ------------------------------------------------------------------------
 
 
-# Keeps what doc[key] is now as the undo of what is about to be done to it.
-func _record(key: String) -> void:
-	_undo.append({"doc": key, "value": (doc[key] as Array).duplicate(true)})
+# Keeps what the document's lists are now as the undo of what is about to be
+# done to them: one key, or several changed together.
+func _record(keys: Variant) -> void:
+	var was := {}
+	for key in ([keys] if keys is String else keys):
+		was[key] = (doc[key] as Array).duplicate(true)
+	_undo.append({"doc": was})
 	_redo.clear()
 	_set_dirty(true)
 
@@ -286,10 +292,13 @@ func _undo_step(from: Array, to: Array) -> void:
 		_pending = r if not _pending.has_area() else _pending.merge(r)
 		_flush()
 	else:
-		var key: String = entry["doc"]
-		to.append({"doc": key, "value": (doc[key] as Array).duplicate(true)})
-		doc[key] = entry["value"]
-		_refresh_doc(key)
+		var now := {}
+		for key in entry["doc"]:
+			now[key] = (doc[key] as Array).duplicate(true)
+			doc[key] = entry["doc"][key]
+		to.append({"doc": now})
+		for key in entry["doc"]:
+			_refresh_doc(key)
 	_set_dirty(true)
 
 
@@ -441,7 +450,7 @@ func _unique_id(stem: String) -> String:
 
 func _press_entity(p: Vector2) -> void:
 	var id := items.entity_under(p)
-	_record("entities")
+	_record(["entities", "objects"])
 	if id == "":
 		if _entity_list.get_selected_items().is_empty():
 			_undo.pop_back()
@@ -459,6 +468,12 @@ func _press_entity(p: Vector2) -> void:
 		_reprobe(e)
 		items.update_entity(e)
 		id = e["id"]
+		var asset: String = items.catalog["entities"].get(type, {}).get("object", "")
+		if asset != "":
+			var o := {"id": _unique_id(asset.to_lower()), "asset": asset,
+					"pos": _object_pos(at), "yaw": 0.0, "scale": 1.0, "entity": id}
+			(doc["objects"] as Array).append(o)
+			items.update_object(o)
 		_drag_changed = true
 	else:
 		_drag_changed = false
@@ -505,9 +520,13 @@ func _drag_to(p: Vector2) -> void:
 		var e := items.find_entity(_drag_id)
 		var at := items.snap_entity(e["type"], target)
 		if at.x != float(e["pos"][0]) or at.y != float(e["pos"][1]):
+			var by := at - Vector2(float(e["pos"][0]), float(e["pos"][1]))
 			e["pos"] = [at.x, at.y]
 			_reprobe(e)
 			items.update_entity(e)
+			for o in _belonging_to(e["id"]):
+				o["pos"] = _object_pos(Vector2(float(o["pos"][0]), float(o["pos"][2])) + by)
+				items.update_object(o)
 			_drag_changed = true
 			_sync_selection()
 	else:
@@ -517,6 +536,11 @@ func _drag_to(p: Vector2) -> void:
 			o["pos"] = pos
 			items.update_object(o)
 			_drag_changed = true
+
+
+# The objects that belong to an entity: a gun's bunker, the landing port's pad.
+func _belonging_to(id: String) -> Array:
+	return (doc["objects"] as Array).filter(func(o): return o.get("entity", "") == id)
 
 
 func _release_drag() -> void:
@@ -540,18 +564,23 @@ func _delete_selected() -> void:
 	var id := items.selected()
 	if id == "":
 		return
-	for key in ["entities", "objects"]:
-		var list: Array = doc[key]
-		for k in list.size():
-			if list[k]["id"] == id:
-				_record(key)
-				(doc[key] as Array).remove_at(k)
-				if key == "entities":
-					items.remove_entity(id)
-				else:
-					items.remove_object(id)
-				_sync_selection()
-				return
+	_record(["entities", "objects"])
+	var e := items.find_entity(id)
+	if not e.is_empty():
+		# And what belongs to it.
+		for o in _belonging_to(id):
+			(doc["objects"] as Array).erase(o)
+			items.remove_object(o["id"])
+		(doc["entities"] as Array).erase(e)
+		items.remove_entity(id)
+	else:
+		var o := items.find_object(id)
+		if o.is_empty():
+			_undo.pop_back()
+			return
+		(doc["objects"] as Array).erase(o)
+		items.remove_object(id)
+	_sync_selection()
 
 
 func _turn_selected(degrees: float) -> void:

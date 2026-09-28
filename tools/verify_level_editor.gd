@@ -15,8 +15,9 @@
 #   itself, the forest keeps to land, raise lifts the middle of the brush and
 #   not its rim.
 # - Entities and objects: one put down lands where it is snapped to and is
-#   picked, a drag moves it, undo takes it away and redo brings it back; an
-#   object turns, scales and is deleted, and undo puts it back.
+#   picked, a drag moves it, undo takes it away and redo brings it back; a
+#   gun comes with its bunker, which moves and goes with it; an object turns,
+#   scales and is deleted, and undo puts it back.
 # - The nav grid: on a new level painting keeps a tile over the ground's and
 #   Auto gives it back; on stage 1 it paints the grid itself, and undo puts
 #   the row back.
@@ -129,6 +130,31 @@ func _run() -> void:
 	var picked: String = editor.items.selected()
 	editor._delete_selected()
 	_expect(editor.items.find_entity(picked).is_empty(), "Delete removes the picked one")
+
+	# A gun comes with its bunker, which goes where it goes and with it.
+	editor._entity_list.select(editor._entity_types.find("GRAY_GUN"))
+	var gun_at := Vector2(origin.x + 20.0, origin.y + 55.0)
+	var objects_before: int = editor.doc["objects"].size()
+	editor._press(gun_at)
+	editor._release()
+	var gun: Dictionary = editor.doc["entities"][-1]
+	var bunkers: Array = editor._belonging_to(gun["id"])
+	_expect(bunkers.size() == 1 and bunkers[0]["asset"] == "Bunker"
+			and is_equal_approx(float(bunkers[0]["pos"][0]), float(gun["pos"][0])), "a gun is put down on a bunker of its own")
+	editor._press(Vector2(gun["pos"][0], gun["pos"][1]))
+	editor._move(Vector2(gun["pos"][0], gun["pos"][1]) + Vector2(tile_m * 4.0, 0.0))
+	editor._release()
+	gun = editor.items.find_entity(gun["id"])
+	bunkers = editor._belonging_to(gun["id"])
+	_expect(absf(float(bunkers[0]["pos"][0]) - float(gun["pos"][0])) < 0.002, "the bunker moves with its gun")
+	editor.items.select(gun["id"])
+	editor._delete_selected()
+	_expect(editor.doc["objects"].size() == objects_before and editor.items.find_entity(gun["id"]).is_empty(),
+			"deleting the gun takes its bunker too")
+	editor._undo_step(editor._undo, editor._redo)
+	_expect(editor._belonging_to(gun["id"]).size() == 1 and not editor.items.find_entity(gun["id"]).is_empty(),
+			"and undo brings both back")
+	count = editor.doc["entities"].size()
 
 	# Objects.
 	editor._set_mode(M.OBJECTS)

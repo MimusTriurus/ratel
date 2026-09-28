@@ -560,6 +560,19 @@ static func check(doc: Dictionary, catalog: Dictionary) -> PackedStringArray:
 			var owner: Variant = ids.get(object["entity"])
 			if owner == null or not (owner as Dictionary).has("type"):
 				problems.append("%s belongs to %s, which is not an entity" % [id, object["entity"]])
+	# An entity the catalogue gives an object -- a gun its bunker, the landing
+	# port its pad -- has one of that asset belonging to it: the preview sets
+	# the gun on the bunker it finds that way, and without one there is none.
+	for e in doc["entities"]:
+		var wanted: String = catalog["entities"].get(e["type"], {}).get("object", "")
+		if wanted == "":
+			continue
+		var found := 0
+		for o in doc["objects"]:
+			if o.get("entity", "") == e["id"] and o["asset"] == wanted:
+				found += 1
+		if found != 1:
+			problems.append("%s has %d %s objects belonging to it; it needs one" % [e["id"], found, wanted])
 
 	problems.append_array(_check_ground(doc, ids))
 	return problems

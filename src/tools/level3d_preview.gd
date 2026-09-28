@@ -1279,6 +1279,25 @@ const GUN_BUNKERS: Array[String] = ["Bunker_0", "Bunker_1", "Bunker_2", "Bunker_
 		"BunkerN_0", "BunkerN_1", "BunkerN3_0", "BunkerN3_1", "BunkerN3_2", "BunkerN3_3",
 		"BunkerN3_4", "BunkerN3_5", "BunkerN3_6", "BunkerN3_7"]
 const YELLOW_GUN_BUNKER := "BunkerN3_5"
+
+
+# The bunkers that get a gun, each [its node's name, whether the gun is the
+# gray one rather than the yellow]. Stage 1's are GUN_BUNKERS, by the names
+# the hand-built level gave them; another level's are its gun entities',
+# each on the Bunker object that belongs to it in the level file, which the
+# builder names by its id (the level editor puts the two down together).
+static func _gun_bunkers() -> Array:
+	if Level3DMap.is_stage_one():
+		return GUN_BUNKERS.map(func(n): return [n, n != YELLOW_GUN_BUNKER])
+	var doc := Level3DIO.read_path(Level3DMap.level_path())
+	var out: Array = []
+	for e in doc["entities"]:
+		if e["type"] != "GRAY_GUN" and e["type"] != "YELLOW_GUN":
+			continue
+		for o in doc["objects"]:
+			if o.get("entity", "") == e["id"] and o["asset"] == "Bunker":
+				out.append([o["id"], e["type"] == "GRAY_GUN"])
+	return out
 const BLAST_PATH := "res://resources/3d/jackal_fx_blast.glb"
 
 # Player.update's two counters, in ticks: while `_respawning` the BTR is gone
@@ -1443,8 +1462,8 @@ func _add_guns(level: Node) -> void:
 	if scene == null or _blast_scene == null:
 		push_error("Cannot load the gun or the blast -- run export() in jackal_assets.blend and jackal_fx.blend")
 		return
-	# Stage 1's bunkers, by name; another level's guns are its entities'.
-	for bunker_name in GUN_BUNKERS if Level3DMap.is_stage_one() else []:
+	for pair in _gun_bunkers():
+		var bunker_name: String = pair[0]
 		var bunker := level.find_child(bunker_name, true, false) as Node3D
 		if bunker == null:
 			push_warning("No %s in %s; it gets no gun" % [bunker_name, level_path])
@@ -1464,7 +1483,7 @@ func _add_guns(level: Node) -> void:
 			base_bodies.append([body, body.collision_layer])
 		# Switched with the ruin's bodies: on once the gun is gone.
 		base_bodies.append([_add_bunker_ramp(bunker), RAMP_LAYER])
-		guns.add(bunker_name, root, player, bunker_name != YELLOW_GUN_BUNKER, base_bodies)
+		guns.add(bunker_name, root, player, pair[1], base_bodies)
 
 
 # A bunker whose gun is gone is floor in the game -- its cells were empty all
