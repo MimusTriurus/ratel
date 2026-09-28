@@ -394,6 +394,18 @@ godot --path . --headless --script tools/level_from_stage.gd
 godot --path . --headless --script tools/verify_level3d.gd
 ```
 
+The ground is in the file too: land polygons along the brow, water polygons
+along the waterline, a measured slope profile between them, and forest
+polygons with a scatter rule (`Level3DTerrain`, `src/tools/level3d_terrain.gd`,
+which also builds the editor's proxy of it). Stage 0's was traced off the glb,
+and the tool prints how close the file comes to it — rerun it after the glb's
+ground changes; it keeps everything else in the file, as
+`level_from_stage.gd` keeps the ground:
+
+```bash
+godot --path . --headless --script tools/level_terrain_from_glb.gd
+```
+
 The editor is `src/tools/level3d_editor.tscn` with the `addons/level3d_editor`
 plugin (enabled in `project.godot`): the scene is one `Level3DEditRoot` that
 builds entities and objects from the level file on open, and Ctrl+S writes

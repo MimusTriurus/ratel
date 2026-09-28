@@ -62,6 +62,22 @@ const ROW_COLOR := Color(0.2, 1.0, 1.0)
 	set(value):
 		show_all_rows = value
 		update_rows()
+# What the ground under the nodes is drawn from: the stage's glb, as Blender
+# built it, or the file's terrain, water and forest (Level3DTerrain.proxy),
+# rebuilt as the shapes under Ground are edited.
+@export_enum("glb", "file") var backdrop := "glb":
+	set(value):
+		backdrop = value
+		_apply_backdrop()
+# The proxy's cell, in metres: finer is closer to the file and slower to redo.
+@export_range(0.05, 1.0, 0.05) var proxy_cell := 0.2
+@export_tool_button("Rebuild ground", "Reload") var rebuild_button := rebuild_ground
+
+# The glb's ground, water and forest, which the file's replace under
+# backdrop "file"; its walls, bridge and gate stay.
+const GLB_GROUND: Array[String] = ["Sand", "Beach_", "Cliff", "Terrain_", "Beyond_",
+		"Forest_Floor", "ForestTree", "Ocean", "Shore_Lines", "Land_Base", "Skirt_"]
+const REBUILD_DELAY := 0.5
 
 var doc := {}
 var catalog := {}
@@ -70,6 +86,7 @@ var fire_rows := []         # Triggers index -> rows from the footprint's top to
 var nav: Array = []         # Array[PackedByteArray], MapIO.TYPE_* per cell
 var entities: Node3D
 var objects: Node3D
+var ground: Node3D          # Level3DEditShape per land, water and forest polygon
 var selected: Array = []    # nodes whose firing line is drawn bright
 
 var _backdrop: Node3D
@@ -79,6 +96,8 @@ var _nav_mesh: MeshInstance3D
 var _nav_image: Image
 var _nav_texture: ImageTexture
 var _rows_mesh: MeshInstance3D
+var _proxy: Node3D
+var _rebuild_due := false
 
 
 func _ready() -> void:
@@ -103,9 +122,11 @@ func _notification(what: int) -> void:
 # level from straight above and writes it out, which is how it gets checked
 # without anyone at the editor (a real window: --headless reads nothing back):
 #
-#     godot --path . --windowed --resolution 1280x720 src/tools/level3d_editor.tscn #         -- --shot out.png <x>,<z> <width m> [<entity id> ...]
+#     godot --path . --windowed --resolution 1280x720 src/tools/level3d_editor.tscn \
+#         -- --shot out.png <x>,<z> <width m> [--file] [<entity id> ...]
 #
-# The entities named are drawn selected, their firing lines bright.
+# The entities named are drawn selected, their firing lines bright; --file
+# draws the ground from the file (backdrop "file") instead of the glb.
 func _shot() -> void:
 	var args := OS.get_cmdline_user_args()
 	var at := args.find("--shot")
@@ -113,6 +134,8 @@ func _shot() -> void:
 		return
 	var centre := args[at + 2].split_floats(",")
 	var picked: Array = []
+	if args.has("--file"):
+		backdrop = "file"
 	for id in args.slice(at + 4):
 		var node := entities.get_node_or_null(NodePath(id))
 		if node:
@@ -209,8 +232,20 @@ func reload() -> void:
 		var original := _level.get_node_or_null(NodePath(o["id"]))
 		if original:
 			original.visible = false
+	ground = Node3D.new()
+	ground.name = "Ground"
+	add_child(ground)
+	if doc.has("terrain"):
+		for polygon in doc["terrain"]["land"]:
+			ground.add_child(Level3DEditShape.from_doc(polygon, "land", self))
+		for polygon in doc.get("water", []):
+			ground.add_child(Level3DEditShape.from_doc(polygon, "water", self))
+		for polygon in doc.get("forest", []):
+			ground.add_child(Level3DEditShape.from_doc(polygon, "forest", self))
+	_proxy = null
 	_set_owned(true)
 	update_rows()
+	_apply_backdrop()
 
 
 # Entities and objects belong to the edited scene, so that the editor lets
@@ -219,12 +254,16 @@ func _set_owned(owned: bool) -> void:
 	var scene_root := _scene_root()
 	if scene_root == null:
 		return
-	for container in [entities, objects]:
+	for container in [entities, objects, ground]:
 		if container == null:
 			continue
 		container.owner = scene_root if owned else null
 		for child in container.get_children():
 			child.owner = scene_root if owned else null
+			# A shape's rings, which the path tools edit.
+			for ring in child.get_children():
+				if ring is Path3D:
+					ring.owner = scene_root if owned else null
 
 
 func _scene_root() -> Node:
@@ -372,6 +411,49 @@ func select(nodes: Array) -> void:
 	update_rows()
 
 
+# --- The ground -----------------------------------------------------------------
+
+
+func _apply_backdrop() -> void:
+	if _level == null:
+		return
+	var from_file := backdrop == "file" and doc.has("terrain")
+	for child in _level.get_children():
+		var name := String(child.name)
+		if GLB_GROUND.any(func(prefix): return name.begins_with(prefix)):
+			(child as Node3D).visible = not from_file
+	if from_file and _proxy == null:
+		rebuild_ground()
+	if _proxy:
+		_proxy.visible = from_file
+
+
+# Level3DTerrain.proxy of the ground as the shapes have it now.
+func rebuild_ground() -> void:
+	_rebuild_due = false
+	if _backdrop == null or not doc.has("terrain"):
+		return
+	var started := Time.get_ticks_msec()
+	if _proxy:
+		_backdrop.remove_child(_proxy)
+		_proxy.queue_free()
+	_proxy = Level3DTerrain.proxy(to_doc(), proxy_cell)
+	_proxy.visible = backdrop == "file"
+	_backdrop.add_child(_proxy)
+	print("Level3DEditRoot: ground rebuilt in %d ms" % (Time.get_ticks_msec() - started))
+
+
+# A shape was edited: the proxy is redone once the edits stop for a moment,
+# not on every step of a drag.
+func ground_changed() -> void:
+	if backdrop != "file" or _rebuild_due or not is_inside_tree():
+		return
+	_rebuild_due = true
+	get_tree().create_timer(REBUILD_DELAY).timeout.connect(func():
+		if _rebuild_due:
+			rebuild_ground())
+
+
 # --- Saving -------------------------------------------------------------------
 
 
@@ -402,10 +484,23 @@ func to_doc() -> Dictionary:
 	_assign_ids(listed_objects, "asset", taken)
 	out["entities"] = list
 	out["objects"] = listed_objects
+	if doc.has("terrain"):
+		var shapes := {"land": [], "water": [], "forest": []}
+		for node in ground.get_children():
+			if node is Level3DEditShape:
+				var shape := node as Level3DEditShape
+				(shapes[shape.kind] as Array).append(shape.to_doc())
+		for kind in shapes:
+			_assign_ids(shapes[kind], "", taken, kind)
+		var terrain: Dictionary = (doc["terrain"] as Dictionary).duplicate()
+		terrain["land"] = shapes["land"]
+		out["terrain"] = terrain
+		out["water"] = shapes["water"]
+		out["forest"] = shapes["forest"]
 	return out
 
 
-static func _assign_ids(items: Array, key: String, taken: Dictionary) -> void:
+static func _assign_ids(items: Array, key: String, taken: Dictionary, fixed_stem := "") -> void:
 	var pending: Array = []
 	for item in items:
 		var id: String = item["id"]
@@ -414,7 +509,7 @@ static func _assign_ids(items: Array, key: String, taken: Dictionary) -> void:
 		else:
 			taken[id] = true
 	for item in pending:
-		var stem := (item[key] as String).to_lower()
+		var stem := fixed_stem if fixed_stem != "" else (item[key] as String).to_lower()
 		var n := 0
 		while taken.has("%s_%d" % [stem, n]):
 			n += 1
@@ -442,6 +537,14 @@ func save() -> Error:
 			if node is Level3DEditObject:
 				(node as Level3DEditObject).object_id = list[i]["id"]
 				i += 1
+		if out.has("terrain"):
+			var settled := {"land": out["terrain"]["land"], "water": out["water"], "forest": out["forest"]}
+			var at := {"land": 0, "water": 0, "forest": 0}
+			for node in ground.get_children():
+				if node is Level3DEditShape:
+					var shape := node as Level3DEditShape
+					shape.shape_id = settled[shape.kind][at[shape.kind]]["id"]
+					at[shape.kind] += 1
 		print("Level3DEditRoot: wrote %s" % Level3DIO.path(stage))
 	return error
 

@@ -50,12 +50,25 @@ static func read(stage_index: int) -> Dictionary:
 
 static func save(doc: Dictionary) -> Error:
 	var file_path := path(int(doc["stage"]))
+	# A script error inside serialize does not stop it; it returns what it had
+	# got to. So the text is read back before it replaces the file, and has to
+	# hold what the document does.
+	var text := serialize(doc)
+	var back: Variant = JSON.parse_string(text)
+	if typeof(back) != TYPE_DICTIONARY:
+		push_error("Not writing %s: what serialize wrote does not parse" % file_path)
+		return ERR_INVALID_DATA
+	for key in doc:
+		var want: Variant = doc[key]
+		if not back.has(key) or (want is Array and (back[key] as Array).size() != (want as Array).size()):
+			push_error("Not writing %s: %s did not come through" % [file_path, key])
+			return ERR_INVALID_DATA
 	var f := FileAccess.open(file_path, FileAccess.WRITE)
 	if f == null:
 		var error := FileAccess.get_open_error()
 		push_error("Cannot write %s (error %d)" % [file_path, error])
 		return error
-	f.store_string(serialize(doc))
+	f.store_string(text)
 	f.close()
 	return OK
 
@@ -246,10 +259,82 @@ static func serialize(doc: Dictionary) -> String:
 		if object.has("entity"):
 			line += ', "entity": "%s"' % object["entity"]
 		rows.append(line + "}")
-	_block(out, "objects", rows, true)
+	var ground := ["terrain", "water", "forest"].filter(func(key): return doc.has(key))
+	_block(out, "objects", rows, ground.is_empty())
+
+	# The ground (Level3DTerrain), when the level has one: a polygon's header on
+	# its first line and then one point to a line, so that moving a point of a
+	# shore touches that line and adding one adds one.
+	if doc.has("terrain"):
+		var terrain: Dictionary = doc["terrain"]
+		out.append('  "terrain": {')
+		out.append('    "bounds": %s,' % _vec(terrain["bounds"]))
+		out.append('    "profile": "%s",' % terrain["profile"])
+		out.append('    "profiles": {')
+		var profiles := PackedStringArray()
+		for name in terrain["profiles"]:
+			var profile: Dictionary = terrain["profiles"][name]
+			profiles.append('      "%s": {"slope": %s,\n        "foot": %s}'
+					% [name, _table(profile["slope"]), _table(profile["foot"])])
+		out.append(",\n".join(profiles))
+		out.append("    },")
+		rows = PackedStringArray()
+		for polygon in terrain["land"]:
+			rows.append(_polygon(polygon, '"id": "%s", "height": %s, "profile": "%s"'
+					% [polygon["id"], _num(float(polygon["height"])), polygon["profile"]], "    "))
+		out.append('    "land": [')
+		out.append(",\n".join(rows))
+		out.append("    ]")
+		out.append("  }," if ground.size() > 1 else "  }")
+	if doc.has("water"):
+		rows = PackedStringArray()
+		for polygon in doc["water"]:
+			rows.append(_polygon(polygon, '"id": "%s", "kind": "%s", "level": %s'
+					% [polygon["id"], polygon["kind"], _num(float(polygon["level"]))], "  "))
+		_block(out, "water", rows, not doc.has("forest"))
+	if doc.has("forest"):
+		rows = PackedStringArray()
+		for polygon in doc["forest"]:
+			rows.append(_polygon(polygon, '"id": "%s", "spacing": %s, "jitter": %s, "pines": %s, "seed": %d'
+					% [polygon["id"], _num(float(polygon["spacing"])), _num(float(polygon["jitter"])),
+						_num(float(polygon["pines"])), int(polygon["seed"])], "  "))
+		_block(out, "forest", rows, true)
 
 	out.append("}")
 	return "\n".join(out) + "\n"
+
+
+# One polygon of the ground, indented under its list: the header, the outer
+# ring a point to a line, and the holes after it the same way.
+static func _polygon(polygon: Dictionary, header: String, indent: String) -> String:
+	var lines := PackedStringArray()
+	lines.append('%s  {%s, "outer": [' % [indent, header])
+	lines.append(_points(polygon["outer"], indent + "    "))
+	var holes: Array = polygon.get("holes", [])
+	if holes.is_empty():
+		lines.append('%s  ], "holes": []}' % indent)
+	else:
+		lines.append('%s  ], "holes": [' % indent)
+		var rings := PackedStringArray()
+		for hole in holes:
+			rings.append("%s    [\n%s\n%s    ]" % [indent, _points(hole, indent + "      "), indent])
+		lines.append(",\n".join(rings))
+		lines.append("%s  ]}" % indent)
+	return "\n".join(lines)
+
+
+static func _points(points: Array, indent: String) -> String:
+	var lines := PackedStringArray()
+	for p in points:
+		lines.append("%s[%s, %s]" % [indent, _num(float(p[0])), _num(float(p[1]))])
+	return ",\n".join(lines)
+
+
+static func _table(rows: Array) -> String:
+	var parts := PackedStringArray()
+	for row in rows:
+		parts.append(_vec(row))
+	return "[%s]" % ", ".join(parts)
 
 
 static func _block(out: PackedStringArray, key: String, rows: PackedStringArray,
@@ -413,4 +498,56 @@ static func check(doc: Dictionary, catalog: Dictionary) -> PackedStringArray:
 			var owner: Variant = ids.get(object["entity"])
 			if owner == null or not (owner as Dictionary).has("type"):
 				problems.append("%s belongs to %s, which is not an entity" % [id, object["entity"]])
+
+	problems.append_array(_check_ground(doc, ids))
+	return problems
+
+
+const WATER_KINDS: Array[String] = ["sea", "river"]
+
+
+# The ground blocks, when there are any: rings that are rings, ids nobody else
+# has, profiles that exist and run forward, water of a kind the shader knows.
+static func _check_ground(doc: Dictionary, ids: Dictionary) -> PackedStringArray:
+	var problems := PackedStringArray()
+	if not doc.has("terrain"):
+		if doc.has("water") or doc.has("forest"):
+			problems.append("the level has water or forest but no terrain")
+		return problems
+	var terrain: Dictionary = doc["terrain"]
+	var profiles: Dictionary = terrain.get("profiles", {})
+	if not profiles.has(terrain.get("profile", "")):
+		problems.append("terrain's profile %s is not among its profiles" % terrain.get("profile"))
+	for name in profiles:
+		for table in ["slope", "foot"]:
+			var rows: Array = profiles[name].get(table, [])
+			if rows.size() < 2:
+				problems.append("profile %s: %s has %d rows, it needs two" % [name, table, rows.size()])
+			for k in range(1, rows.size()):
+				if float(rows[k][0]) <= float(rows[k - 1][0]):
+					problems.append("profile %s: %s does not run forward at row %d" % [name, table, k])
+					break
+	var polygons: Array = []
+	for polygon in terrain.get("land", []):
+		polygons.append(polygon)
+		if not profiles.has(polygon.get("profile", "")):
+			problems.append("%s: no profile %s" % [polygon["id"], polygon.get("profile")])
+	for polygon in doc.get("water", []):
+		polygons.append(polygon)
+		if not WATER_KINDS.has(polygon.get("kind", "")):
+			problems.append("%s: water of kind %s" % [polygon["id"], polygon.get("kind")])
+	for polygon in doc.get("forest", []):
+		polygons.append(polygon)
+		if float(polygon.get("spacing", 0.0)) <= 0.0:
+			problems.append("%s: spacing %s" % [polygon["id"], polygon.get("spacing")])
+	for polygon in polygons:
+		var id: String = polygon.get("id", "")
+		if ids.has(id):
+			problems.append("id %s is used twice" % id)
+		ids[id] = polygon
+		var rings: Array = [polygon.get("outer", [])]
+		rings.append_array(polygon.get("holes", []))
+		for points in rings:
+			if (points as Array).size() < 3:
+				problems.append("%s has a ring of %d points" % [id, (points as Array).size()])
 	return problems

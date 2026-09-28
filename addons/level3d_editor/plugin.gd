@@ -9,9 +9,16 @@
 #   Entity   a click puts down an entity of the chosen type, on the chosen
 #            difficulties. A building finds the group its probe cell is in.
 #   Object   a click puts down a piece of scenery of the chosen asset.
+#   Shape    a click puts down a square of land, water or forest, 2 m a side,
+#            for the path tools to pull into shape.
+#
+# A shape's rings are Path3D, and editing their points is the editor's own
+# Path3D tool: select the ring (outer, hole_0, ...) under the shape. This bar
+# stays out of its way -- a ring is not handled here.
 #
 # Check runs Level3DIO.check over the level as it stands and lists what it
-# finds; Flow field rebuilds the level's own dirs-N.dat from the painted grid.
+# finds; Flow field rebuilds the level's own dirs-N.dat from the painted grid;
+# Ground switches what the ground is drawn from, the glb or the file.
 # Saving the scene writes the level file (Level3DEditRoot, pre-save).
 #
 # Clicks land on the ground plane, y = 0: the level's sand, which is where
@@ -19,8 +26,9 @@
 @tool
 extends EditorPlugin
 
-enum Mode { SELECT, NAV, ENTITY, OBJECT }
-const MODE_NAMES: Array[String] = ["Select", "Nav", "Entity", "Object"]
+enum Mode { SELECT, NAV, ENTITY, OBJECT, SHAPE }
+const MODE_NAMES: Array[String] = ["Select", "Nav", "Entity", "Object", "Shape"]
+const NEW_SHAPE := 2.0
 const DIALOG_LINES := 40
 
 var _root: Level3DEditRoot
@@ -32,6 +40,7 @@ var _entity_type: OptionButton
 var _normal: CheckBox
 var _hard: CheckBox
 var _asset: OptionButton
+var _shape_kind: OptionButton
 var _dialog: AcceptDialog
 var _painting := false
 var _stroke := {}           # Vector2i -> the type it had before the stroke
@@ -60,11 +69,14 @@ func _enter_tree() -> void:
 	_hard = _check("hard")
 	_asset = _options([])
 	_asset.tooltip_text = "The asset a click puts down"
-	for control in [_mode, _nav_type, _brush, _entity_type, _normal, _hard, _asset]:
+	_shape_kind = _options(Level3DEditShape.KINDS)
+	_shape_kind.tooltip_text = "What a click puts down a square of"
+	for control in [_mode, _nav_type, _brush, _entity_type, _normal, _hard, _asset, _shape_kind]:
 		_bar.add_child(control)
 	_bar.add_child(VSeparator.new())
 	_bar.add_child(_button("Check", "Level3DIO.check over the level as it stands", _on_check))
 	_bar.add_child(_button("Flow field", "Rebuild the level's dirs-N.dat from the grid", _on_flow_field))
+	_bar.add_child(_button("Ground", "Draw the ground from the glb or from the file", _on_ground))
 	_bar.hide()
 	add_control_to_container(CONTAINER_SPATIAL_EDITOR_MENU, _bar)
 	_dialog = AcceptDialog.new()
@@ -112,6 +124,7 @@ func _show_mode_options() -> void:
 	_normal.visible = mode == Mode.ENTITY
 	_hard.visible = mode == Mode.ENTITY
 	_asset.visible = mode == Mode.OBJECT
+	_shape_kind.visible = mode == Mode.SHAPE
 
 
 # --- What is being edited ---------------------------------------------------------
@@ -137,6 +150,8 @@ func _make_visible(visible: bool) -> void:
 
 
 static func _root_of(object: Object) -> Level3DEditRoot:
+	if object is Path3D:
+		return null  # the path tools' own
 	var node := object as Node
 	while node:
 		if node is Level3DEditRoot:
@@ -178,6 +193,8 @@ func _forward_3d_gui_input(camera: Camera3D, event: InputEvent) -> int:
 					_place_entity(hit)
 				Mode.OBJECT:
 					_place_object(hit)
+				Mode.SHAPE:
+					_place_shape(hit)
 			return AFTER_GUI_INPUT_STOP
 		if _painting:
 			_painting = false
@@ -265,14 +282,31 @@ func _place_object(hit: Vector3) -> void:
 	_add(node, _root.objects, "Add %s" % asset)
 
 
-# Adds a node under an Entities or Objects container as one undoable step and
-# selects it. Its id is settled when the level is saved.
+func _place_shape(hit: Vector3) -> void:
+	var kind := _shape_kind.get_item_text(_shape_kind.selected)
+	var h := NEW_SHAPE * 0.5
+	var corners: Array = []
+	for c in [Vector2(-h, -h), Vector2(h, -h), Vector2(h, h), Vector2(-h, h)]:
+		corners.append([hit.x + c.x, hit.z + c.y])
+	var polygon := {"id": "", "outer": corners, "holes": [], "kind": "sea", "level": -1.0,
+			"spacing": 0.55, "jitter": 0.22, "pines": 0.12, "seed": 1}
+	var node := Level3DEditShape.from_doc(polygon, kind, _root)
+	node.name = kind
+	_add(node, _root.ground, "Add %s" % kind)
+	_root.ground_changed()
+
+
+# Adds a node under an Entities, Objects or Ground container as one undoable
+# step and selects it. Its id is settled when the level is saved.
 func _add(node: Node3D, container: Node, action: String) -> void:
 	var scene_root := EditorInterface.get_edited_scene_root()
 	var undo := get_undo_redo()
 	undo.create_action(action)
 	undo.add_do_method(container, "add_child", node, true)
 	undo.add_do_method(node, "set_owner", scene_root)
+	for ring in node.get_children():
+		if ring is Path3D:
+			undo.add_do_method(ring, "set_owner", scene_root)
 	undo.add_do_reference(node)
 	undo.add_undo_method(container, "remove_child", node)
 	undo.commit_action()
@@ -304,6 +338,11 @@ func _on_flow_field() -> void:
 	_say("Wrote %s in %.1f s." % [Level3DIO.flow_field_path(_root.stage),
 			(Time.get_ticks_msec() - started) / 1000.0]
 			if error == OK else "Could not write the flow field (error %d)." % error)
+
+
+func _on_ground() -> void:
+	if _root:
+		_root.backdrop = "glb" if _root.backdrop == "file" else "file"
 
 
 func _say(text: String) -> void:

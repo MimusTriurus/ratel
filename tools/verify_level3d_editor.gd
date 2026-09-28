@@ -95,6 +95,35 @@ func _run() -> void:
 			absf(float(object["yaw"]) - 30.0) < 0.01 and absf(float(object["scale"]) - 1.2) < 0.001
 			and is_zero_approx(palm.rotation.x) and is_zero_approx(palm.rotation.z))
 
+	# One point of a shore moved: one line of the file.
+	var land := level.ground.get_node("land_0") as Level3DEditShape
+	var outer := land.get_node("outer") as Path3D
+	var before_text := Level3DIO.serialize(level.to_doc())
+	var point := outer.curve.get_point_position(100)
+	outer.curve.set_point_position(100, point + Vector3(0.25, 0.4, -0.1))
+	var after_text := Level3DIO.serialize(level.to_doc())
+	var a := before_text.split("\n")
+	var b := after_text.split("\n")
+	var lines := 0
+	for k in mini(a.size(), b.size()):
+		if a[k] != b[k]:
+			lines += 1
+	_expect("a shore point moved changes one line of the file (%d)" % lines,
+			a.size() == b.size() and lines == 1)
+	_expect("and stays flat on the ground",
+			is_equal_approx(outer.curve.get_point_position(100).y, Level3DEditShape.LIFT))
+
+	# The ground drawn from the file.
+	var started := Time.get_ticks_msec()
+	level.backdrop = "file"
+	var proxy := level.find_child("GroundProxy", true, false)
+	var trees := 0
+	if proxy:
+		for multi in proxy.find_children("*", "MultiMeshInstance3D", true, false):
+			trees += (multi as MultiMeshInstance3D).multimesh.instance_count
+	_expect("the file's ground builds, %d trees, in %d ms"
+			% [trees, Time.get_ticks_msec() - started], proxy != null and trees > 1000)
+
 	var problems := Level3DIO.check(with_copy, level.catalog)
 	_expect("Level3DIO.check finds nothing in the edited level (%d)" % problems.size(),
 			problems.is_empty())

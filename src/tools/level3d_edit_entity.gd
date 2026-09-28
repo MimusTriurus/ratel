@@ -145,9 +145,10 @@ func _rebuild() -> void:
 
 
 # What a duplicate (Ctrl+D) brought along of the original's drawing: the
-# box, the label or the model, which the copy draws for itself.
+# box, the label, the model or the lines, which the copy draws for itself.
+# Only drawing -- a shape's rings are Path3D and are the shape.
 static func clear_copies(node: Node) -> void:
 	for child in node.get_children(true):
-		if child.owner == null:
+		if child.owner == null and not child is Path3D:
 			node.remove_child(child)
 			child.queue_free()

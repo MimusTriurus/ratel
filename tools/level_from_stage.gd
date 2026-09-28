@@ -61,6 +61,12 @@ func _init() -> void:
 		"stage": STAGE, "grid": grid, "nav": source["types"], "groups": groups,
 		"entities": entities, "objects": objects,
 	}
+	# The ground is tools/level_terrain_from_glb.gd's, and kept as it is.
+	if FileAccess.file_exists(Level3DIO.path(STAGE)):
+		var old := Level3DIO.read(STAGE)
+		for key in ["terrain", "water", "forest"]:
+			if old.has(key):
+				doc[key] = old[key]
 	var error := Level3DIO.save(doc)
 	print("%s: %d rows, %d groups, %d entities, %d objects -- %s" % [
 		Level3DIO.path(STAGE), (doc["nav"] as Array).size(), groups.size(),
