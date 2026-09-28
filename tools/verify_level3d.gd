@@ -10,10 +10,10 @@
 #   entities, are its trigger list in order. A Stage filled from the level is
 #   the Stage MapIO fills.
 # - The grid block is Level3DMap's transform, which the preview converts by.
-# - The references hold: every entity type is a Triggers constant with a
-#   catalogue entry and a footprint, every object's asset is in the catalogue,
-#   every "entity" names an entity, ids are unique, and every group an entity
-#   names covers the cell the game would probe for it.
+# - Level3DIO.check finds nothing: the map editor's Check stage and the
+#   references -- ids unique, every type a trigger in the catalogue, every
+#   asset in the catalogue, every "entity" an entity, every group the one the
+#   game would probe for.
 #
 # Until the level editor writes these files the first two can only fail by a
 # bug in Level3DIO or tools/level_from_stage.gd. Once it does, the second
@@ -25,7 +25,9 @@ var failures := 0
 
 
 func _init() -> void:
-	var catalog := _read_catalog()
+	var catalog := Level3DIO.read_catalog()
+	for problem in Level3DIO.check_catalog(catalog):
+		_fail(problem)
 	var sizes := Level3DIO.footprints()
 	for index in 6:
 		if not FileAccess.file_exists(Level3DIO.path(index)):
@@ -39,7 +41,7 @@ func _init() -> void:
 		if index == Level3DMap.STAGE:
 			_check_preview_grid(doc)
 		_check_against_map(index, doc, sizes)
-		_check_references(doc, catalog, sizes)
+		_check_references(doc, catalog)
 	print("\n%s" % ("all checks passed" if failures == 0 else "%d FAILED" % failures))
 	quit(0 if failures == 0 else 1)
 
@@ -125,77 +127,9 @@ func _check_against_map(index: int, doc: Dictionary, sizes: Dictionary) -> void:
 		_fail("  Stage.groups differs")
 
 
-func _check_references(doc: Dictionary, catalog: Dictionary, sizes: Dictionary) -> void:
-	var consts := MapIO.trigger_constants()
-	var ids := {}
-	var stage := Stage.new()
-	Level3DIO.load_stage(doc, stage, MapIO.load_trigger_sizes())
-	for e in doc["entities"]:
-		var entity: Dictionary = e
-		var id: String = entity["id"]
-		if ids.has(id):
-			_fail("  id %s is used twice" % id)
-		ids[id] = entity
-		var type: String = entity["type"]
-		if not consts.has(type):
-			_fail("  %s: %s is not a trigger" % [id, type])
-			continue
-		if not catalog["entities"].has(type):
-			_fail("  %s: %s is not in the catalogue" % [id, type])
-		if not sizes.has(type):
-			_fail("  %s: %s has no footprint in trigger-sizes.json" % [id, type])
-			continue
-		for d in entity["difficulty"]:
-			if not Level3DIO.DIFFICULTIES.has(d):
-				_fail("  %s: unknown difficulty %s" % [id, d])
-		var probe: Variant = MapIO.GROUP_PROBES.get(consts[type])
-		if probe == null:
-			if entity.has("group"):
-				_fail("  %s: %s does not bind a group, but names one" % [id, type])
-			continue
-		var p: Array = entity["pos"]
-		var cell: Vector2i = Level3DIO.entity_tile(doc["grid"], sizes[type], Vector2(p[0], p[1])) + probe
-		var group := int(entity.get("group", -1))
-		if group < 0 or group >= stage.groups.size():
-			_fail("  %s: names group %d of %d" % [id, group, stage.groups.size()])
-		elif stage.groups_map[cell.y][cell.x] != group:
-			_fail("  %s: names group %d, but the game would probe %s and find group %d"
-					% [id, group, cell, stage.groups_map[cell.y][cell.x]])
-
-	for o in doc["objects"]:
-		var object: Dictionary = o
-		var id: String = object["id"]
-		if ids.has(id):
-			_fail("  id %s is used twice" % id)
-		ids[id] = object
-		if not catalog["assets"].has(object["asset"]):
-			_fail("  %s: asset %s is not in the catalogue" % [id, object["asset"]])
-		if object.has("entity"):
-			var owner: Variant = ids.get(object["entity"])
-			if owner == null or not (owner as Dictionary).has("type"):
-				_fail("  %s: belongs to %s, which is not an entity" % [id, object["entity"]])
-	print("  references: %d entities, %d objects checked"
-			% [(doc["entities"] as Array).size(), (doc["objects"] as Array).size()])
-
-
-func _read_catalog() -> Dictionary:
-	var parsed: Variant = JSON.parse_string(
-			FileAccess.get_file_as_string(Level3DIO.DIR + "catalog.json"))
-	if typeof(parsed) != TYPE_DICTIONARY:
-		_fail("catalog.json is not a JSON object")
-		return {"entities": {}, "assets": {}}
-	var catalog: Dictionary = parsed
-	var consts := MapIO.trigger_constants()
-	for type in catalog["entities"]:
-		if not consts.has(type):
-			_fail("catalog.json names %s, which is not a trigger" % type)
-		elif not (catalog["entity_kinds"] as Array).has(catalog["entities"][type]["kind"]):
-			_fail("catalog.json: %s has unknown kind %s" % [type, catalog["entities"][type]["kind"]])
-	for type in consts:
-		if not catalog["entities"].has(type):
-			_fail("catalog.json has no entry for trigger %s" % type)
-	for asset in catalog["assets"]:
-		var collision: String = catalog["assets"][asset]["collision"]
-		if not (catalog["collisions"] as Array).has(collision):
-			_fail("catalog.json: %s has unknown collision %s" % [asset, collision])
-	return catalog
+func _check_references(doc: Dictionary, catalog: Dictionary) -> void:
+	var problems := Level3DIO.check(doc, catalog)
+	for problem in problems:
+		_fail("  " + problem)
+	print("  Level3DIO.check: %d entities, %d objects, %d problems"
+			% [(doc["entities"] as Array).size(), (doc["objects"] as Array).size(), problems.size()])

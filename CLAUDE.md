@@ -394,6 +394,24 @@ godot --path . --headless --script tools/level_from_stage.gd
 godot --path . --headless --script tools/verify_level3d.gd
 ```
 
+The editor is `src/tools/level3d_editor.tscn` with the `addons/level3d_editor`
+plugin (enabled in `project.godot`): the scene is one `Level3DEditRoot` that
+builds entities and objects from the level file on open, and Ctrl+S writes
+them back to it — they are disowned for the save, so the `.tscn` stays one
+node. The plugin's bar in the viewport menu paints the nav grid, places
+entities and objects, runs `Level3DIO.check` and rebuilds the level's own
+`assets/level3d/dirs-N.dat`, which `Level3DMap` prefers to the game's. The
+check drives the nodes without the editor; a `--shot` frames the scene from
+above:
+
+```bash
+godot --path . --headless --script tools/verify_level3d_editor.gd
+```
+
+```bash
+godot --path . --windowed --resolution 1280x720 src/tools/level3d_editor.tscn -- --shot out.png 0,-14 34 gate_0
+```
+
 ### Audio and input
 
 `Song` chains intro → optional intro2 → looping track through

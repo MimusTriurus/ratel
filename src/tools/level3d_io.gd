@@ -24,6 +24,12 @@ static func path(stage_index: int) -> String:
 	return DIR + "stage-%d.json" % stage_index
 
 
+# dirs-N.dat for the level's own grid, written by the editor's Flow field
+# button. Absent until then, and Level3DMap falls back to the game's.
+static func flow_field_path(stage_index: int) -> String:
+	return DIR + "dirs-%d.dat" % stage_index
+
+
 static func read(stage_index: int) -> Dictionary:
 	var file_path := path(stage_index)
 	var f := FileAccess.open(file_path, FileAccess.READ)
@@ -273,3 +279,138 @@ static func _num(v: float) -> String:
 
 static func round_mm(v: float) -> float:
 	return float(_num(v))
+
+
+# --- Checking -----------------------------------------------------------------
+
+
+static func read_catalog() -> Dictionary:
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(DIR + "catalog.json"))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_error("%scatalog.json is not a JSON object" % DIR)
+		return {"entity_kinds": [], "entities": {}, "collisions": [], "assets": {}}
+	return parsed
+
+
+# What is wrong with the catalogue itself: a trigger it has no entry for, an
+# entry that is not a trigger, a kind or a collision it does not list.
+static func check_catalog(catalog: Dictionary) -> PackedStringArray:
+	var problems := PackedStringArray()
+	var consts := MapIO.trigger_constants()
+	for type in catalog["entities"]:
+		if not consts.has(type):
+			problems.append("catalog.json names %s, which is not a trigger" % type)
+		elif not (catalog["entity_kinds"] as Array).has(catalog["entities"][type]["kind"]):
+			problems.append("catalog.json: %s has unknown kind %s"
+					% [type, catalog["entities"][type]["kind"]])
+	for type in consts:
+		if not catalog["entities"].has(type):
+			problems.append("catalog.json has no entry for trigger %s" % type)
+	for asset in catalog["assets"]:
+		var collision: String = catalog["assets"][asset]["collision"]
+		if not (catalog["collisions"] as Array).has(collision):
+			problems.append("catalog.json: %s has unknown collision %s" % [asset, collision])
+	return problems
+
+
+# What is wrong with a level: the map editor's Check stage, in the terms of
+# a level file, and the references between the file and the catalogue. Empty
+# when there is nothing. The editor's Check button and tools/verify_level3d.gd
+# both run this.
+static func check(doc: Dictionary, catalog: Dictionary) -> PackedStringArray:
+	var problems := PackedStringArray()
+	var consts := MapIO.trigger_constants()
+	var sizes := footprints()
+	var trigger_sizes := MapIO.load_trigger_sizes()
+	var grid: Dictionary = doc["grid"]
+	var width := int(grid["width"])
+	var height := int(grid["height"])
+	var stage := Stage.new()
+	load_stage(doc, stage, trigger_sizes)
+
+	var ids := {}
+	var arrivals := {}
+	var rows := {}
+	for d in DIFFICULTIES:
+		arrivals[d] = 0
+		rows[d] = {}
+	for e in doc["entities"]:
+		var entity: Dictionary = e
+		var id: String = entity["id"]
+		if ids.has(id):
+			problems.append("id %s is used twice" % id)
+		ids[id] = entity
+		var type: String = entity["type"]
+		if not consts.has(type) or not sizes.has(type):
+			problems.append("%s: %s is not a trigger with a footprint" % [id, type])
+			continue
+		if not catalog["entities"].has(type):
+			problems.append("%s: %s is not in the catalogue" % [id, type])
+		var difficulties: Array = entity["difficulty"]
+		if difficulties.is_empty():
+			problems.append("%s is on neither difficulty" % id)
+		for d in difficulties:
+			if not DIFFICULTIES.has(d):
+				problems.append("%s: unknown difficulty %s" % [id, d])
+
+		var index: int = consts[type]
+		var p: Array = entity["pos"]
+		var size: Vector2i = sizes[type]
+		var tile := entity_tile(grid, size, Vector2(p[0], p[1]))
+		if tile.x < 0 or tile.x + size.x > width:
+			problems.append("%s at tile %s hangs off the side of the map" % [id, tile])
+		# A trigger fires when the top of the frame passes the bottom of its
+		# footprint (MapIO.build_trigger_map, GameMode._process_triggers).
+		var row: int = tile.y + trigger_sizes[index][1] - 1
+		if row < 0 or row >= height + 1:
+			problems.append("%s at tile %s fires on row %d, which is not on the map"
+					% [id, tile, row])
+		else:
+			for d in difficulties:
+				if rows.has(d):
+					rows[d][row] = rows[d].get(row, 0) + 1
+		if index == Triggers.PLAYER or index == Triggers.CHINOOK:
+			for d in difficulties:
+				if arrivals.has(d):
+					arrivals[d] += 1
+
+		var probe: Variant = MapIO.GROUP_PROBES.get(index)
+		if probe == null:
+			if entity.has("group"):
+				problems.append("%s: %s does not bind a group, but names one" % [id, type])
+			continue
+		var cell: Vector2i = tile + probe
+		var group := int(entity.get("group", -1))
+		if group < 0 or group >= stage.groups.size():
+			problems.append("%s names group %d, and there are %d" % [id, group, stage.groups.size()])
+		elif cell.x < 0 or cell.x >= width or cell.y < 0 or cell.y >= height:
+			problems.append("%s probes %s, which is off the map" % [id, cell])
+		elif stage.groups_map[cell.y][cell.x] != group:
+			problems.append("%s names group %d, but the game would probe %s and find group %d"
+					% [id, group, cell, stage.groups_map[cell.y][cell.x]])
+
+	# Every stage brings the player in exactly once, by parking the jeep
+	# (PLAYER) or flying it in (CHINOOK, which stage 1 uses). A row fires all
+	# at once, so a crowded one is a wall of enemies rather than a wave; the
+	# busiest row in the game as shipped holds eight.
+	for d in DIFFICULTIES:
+		if arrivals[d] != 1:
+			problems.append("%s has %d PLAYER/CHINOOK entities, it needs exactly one"
+					% [d, arrivals[d]])
+		for row in rows[d]:
+			if rows[d][row] > 12:
+				problems.append("%s row %d fires %d entities at once" % [d, row, rows[d][row]])
+
+	for o in doc["objects"]:
+		var object: Dictionary = o
+		var id: String = object["id"]
+		if ids.has(id):
+			problems.append("id %s is used twice" % id)
+		ids[id] = object
+		if not catalog["assets"].has(object["asset"]):
+			problems.append("%s: asset %s is not in the catalogue" % [id, object["asset"]])
+		if object.has("entity"):
+			var owner: Variant = ids.get(object["entity"])
+			if owner == null or not (owner as Dictionary).has("type"):
+				problems.append("%s belongs to %s, which is not an entity" % [id, object["entity"]])
+	return problems

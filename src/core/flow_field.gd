@@ -55,8 +55,11 @@ static func _s32(f: FileAccess) -> int:
 	return v - 4294967296 if v >= 2147483648 else v
 
 
-static func load_into(index: int, stage: Stage) -> void:
-	var f := _open(MAPS + "dirs-%d.dat" % index)
+# `dir` is where the file lives: the game's under MAPS, a 3D level's beside
+# its level file (Level3DIO.DIR), built from a grid that may have moved away
+# from the game's.
+static func load_into(index: int, stage: Stage, dir := MAPS) -> void:
+	var f := _open(dir + "dirs-%d.dat" % index)
 	if f == null:
 		return
 	var size := _s32(f)
@@ -70,8 +73,8 @@ static func load_into(index: int, stage: Stage) -> void:
 	f.close()
 
 
-static func save(index: int, stage: Stage) -> Error:
-	var path := MAPS + "dirs-%d.dat" % index
+static func save(index: int, stage: Stage, dir := MAPS) -> Error:
+	var path := dir + "dirs-%d.dat" % index
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		var error := FileAccess.get_open_error()

@@ -48,7 +48,10 @@ var _triggered := {}
 
 func _init() -> void:
 	Level3DIO.load_stage(Level3DIO.read(STAGE), stage, MapIO.load_trigger_sizes())
-	FlowField.load_into(STAGE, stage)
+	# The level's own flow field once the editor has built one from its grid,
+	# and the game's until then, which is the same grid.
+	FlowField.load_into(STAGE, stage,
+			Level3DIO.DIR if FileAccess.file_exists(Level3DIO.flow_field_path(STAGE)) else FlowField.MAPS)
 	for row in stage.types_map:
 		_pristine.append((row as PackedInt32Array).duplicate())
 	for row in stage.trigger_map[0]:

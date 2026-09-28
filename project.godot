@@ -30,6 +30,10 @@ window/stretch/mode="viewport"
 
 project/assembly_name="Jackal"
 
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/level3d_editor/plugin.cfg")
+
 [filesystem]
 
 import/blender/enabled=false
