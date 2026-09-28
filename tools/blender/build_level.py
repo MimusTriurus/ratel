@@ -927,6 +927,29 @@ def main():
         exec(bpy.data.texts["jackal_export_glb.py"].as_string(), namespace)
         namespace["export_stage"](path)
         say("exported %s, %.1f MB" % (path, os.path.getsize(path) / 1e6))
+        _import_uncompressed(path)
+
+
+def _import_uncompressed(path):
+    """Have Godot import the glb with its vertex positions uncompressed.
+    Compressed, a surface's positions are 16 bits across its own bounds, so a
+    vertex two surfaces share -- the light facet and the dark one, the slope
+    and the sand -- comes out a hair apart in each, and the water shows
+    through the crack as a line of bright pixels close up. The ground is one
+    mesh the length of the level, where a step is about the size of a pixel
+    at the preview's closest zoom. An existing .import keeps its uid and
+    only has the flag turned; a missing one is started with just the flag,
+    which Godot fills in with its defaults on import."""
+    imp = path + ".import"
+    key = "meshes/force_disable_compression="
+    if os.path.exists(imp):
+        text = open(imp, encoding="utf-8").read()
+        if key + "false" in text:
+            open(imp, "w", encoding="utf-8", newline="\n").write(text.replace(key + "false", key + "true"))
+    else:
+        open(imp, "w", encoding="utf-8", newline="\n").write(
+            '[remap]\n\nimporter="scene"\n\n[params]\n\n%strue\n' % key)
+    say("%s: vertex compression off" % imp)
 
 
 try:

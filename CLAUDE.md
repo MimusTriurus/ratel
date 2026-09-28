@@ -420,7 +420,12 @@ makes a wall along every shore off the profile's foot table and a flat river
 bed that sinks out of sight where it ends at no shore, and stops the build if
 a slope face reaches under the water, an open edge of ground lies in it, or
 the slope has more specks -- tiny facets turned from their neighbours, which
-the two-tone light makes dead pixels -- than the hand-built stage's 14:
+the two-tone light makes dead pixels -- than the hand-built stage's 14.
+It also turns off Godot's vertex compression in the glb's `.import`
+(`jackal_stage1.glb.import` has it off too): compressed, a vertex two
+surfaces share is rounded to each surface's own bounds, and the water
+shows through the hairline between a light facet and a dark one as a
+row of bright pixels at close zoom:
 
 ```bash
 blender-launcher -b resources/3d/jackal_stage1_lowpoly.blend --python tools/blender/build_level.py -- assets/level3d/stage-0.json --out build/level3d/jackal_stage1_gen.blend --glb build/level3d/jackal_stage1_gen.glb --report build/level3d/report.txt
