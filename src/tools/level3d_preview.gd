@@ -3,9 +3,10 @@
 #
 #     godot --path . src/tools/level3d_preview.tscn
 #
-# Nothing here is part of the game, which stays 2D. The level is modelled in
-# resources/3d/jackal_stage1_lowpoly.blend and comes in as jackal_stage1.glb,
-# exported from Blender (visible objects, modifiers applied, no animation; the
+# Nothing here is part of the game, which stays 2D. The level is built from
+# its level file, assets/level3d/stage-0.json, by tools/blender/build_level.py
+# on top of resources/3d/jackal_stage1_lowpoly.blend, and comes in as
+# jackal_stage1.glb, exported from Blender (visible objects, modifiers applied, no animation; the
 # buildings that can be destroyed come separately, see _add_destructibles). It
 # is a .glb rather than the .blend itself because project.godot keeps
 # import/blender/enabled off, and the glTF route does not need Blender on the
@@ -300,11 +301,15 @@ func _ready() -> void:
 	level_aabb = _mesh_aabb(level, ["Beyond", "Ocean"])
 	var corner := Vector3(SEA_WEST, level_aabb.position.y, maxf(level_aabb.position.z, Level3DMap.ORIGIN.y))
 	level_aabb = AABB(corner, level_aabb.end - corner)
-	if level_path != LEVEL_PATH:
-		var frame: Array = Level3DIO.read(Level3DMap.STAGE).get("terrain", {}).get("frame", [])
-		if frame.size() == 4:
-			level_aabb = AABB(Vector3(frame[0], level_aabb.position.y, frame[1]),
-					Vector3(float(frame[2]) - float(frame[0]), level_aabb.size.y, float(frame[3]) - float(frame[1])))
+	# That was the hand-built level. One built from the level file
+	# (tools/blender/build_level.py), which jackal_stage1.glb is now, has
+	# ground out to the file's bounds, so its meshes cannot say where the
+	# frame is: the file's frame, measured off the hand-built level as above,
+	# does. The meshes are the fallback for a file without one.
+	var frame: Array = Level3DIO.read(Level3DMap.STAGE).get("terrain", {}).get("frame", [])
+	if frame.size() == 4:
+		level_aabb = AABB(Vector3(frame[0], level_aabb.position.y, frame[1]),
+				Vector3(float(frame[2]) - float(frame[0]), level_aabb.size.y, float(frame[3]) - float(frame[1])))
 	_cast_both_sides_of_planes(level)
 	_flat_ground_casts_nothing(level)
 	_add_collision(level)

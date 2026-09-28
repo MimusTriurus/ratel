@@ -1,6 +1,8 @@
 # Writes assets/level3d/stage-0.json, stage 1's 3D level file, out of what
 # already exists: the game's map (assets/maps/stage-0.json) and the level
-# Blender built from screenshots (resources/3d/jackal_stage1.glb).
+# Blender built from screenshots (resources/3d/jackal_stage1.glb, which has
+# since been rebuilt from this file, and places its scenery where the file
+# says -- to within a millimetre, which the file rounds to).
 #
 #     godot --path . --headless --script tools/level_from_stage.gd
 #

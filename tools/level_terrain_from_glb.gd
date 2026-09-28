@@ -1,9 +1,16 @@
-# Writes stage 1's ground into its level file, assets/level3d/stage-0.json:
-# the land, the water, the shore's profile and the forest, traced off the level
-# Blender built (resources/3d/jackal_stage1.glb). docs/level-editor-plan.md,
+# Wrote stage 1's ground into its level file, assets/level3d/stage-0.json:
+# the land, the water, the shore's profile and the forest, traced off the
+# level as it was built by hand in Blender. docs/level-editor-plan.md,
 # stage 4; Level3DTerrain says what the blocks mean.
 #
-#     godot --path . --headless --script tools/level_terrain_from_glb.gd
+# jackal_stage1.glb is built from the file now, so tracing it would only
+# trace the file back into itself, and a run with no --glb compares instead
+# (see below). The hand-built glb is in git, the last one at 7d0abb6; to
+# trace it again, put it where Godot imports it and name it:
+#
+#     git show 7d0abb6:resources/3d/jackal_stage1.glb > build/level3d/jackal_stage1_hand.glb
+#     godot --path . --headless --import
+#     godot --path . --headless --script tools/level_terrain_from_glb.gd -- --glb res://build/level3d/jackal_stage1_hand.glb
 #
 # 1. The ground meshes are rasterized from above into heights every SAMPLE,
 #    the highest face winning; where there are none the ground is the bed.
@@ -21,9 +28,10 @@
 #
 # Only these blocks are rewritten; entities, objects and the grid are kept.
 #
-# -- --glb <res:// path> --compare traces nothing and writes nothing: it
-# rasterizes that glb and compares the level file with it. That is how a
-# level built from the file (tools/blender/build_level.py) is held to it.
+# --compare, or no --glb at all, traces nothing and writes nothing: it
+# rasterizes that glb (jackal_stage1.glb by default) and compares the level
+# file with it. That is how a level built from the file
+# (tools/blender/build_level.py) is held to it.
 extends SceneTree
 
 const STAGE := 0
@@ -89,7 +97,7 @@ func _init() -> void:
 			_rasterize(node, forest, true, FOREST_MATERIAL)
 	level.free()
 	print("  %s rasterized %d x %d at %.2f m (%.1f s)" % [glb, grid.w, grid.h, SAMPLE, _since(started)])
-	if args.has("--compare"):
+	if args.has("--compare") or not args.has("--glb"):
 		_compare(Level3DIO.read(STAGE), heights, forest)
 		quit()
 		return

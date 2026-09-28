@@ -397,10 +397,11 @@ godot --path . --headless --script tools/verify_level3d.gd
 The ground is in the file too: land polygons along the brow, water polygons
 along the waterline, a measured slope profile between them, and forest
 polygons with a scatter rule (`Level3DTerrain`, `src/tools/level3d_terrain.gd`,
-which also builds the editor's proxy of it). Stage 0's was traced off the glb,
-and the tool prints how close the file comes to it — rerun it after the glb's
-ground changes; it keeps everything else in the file, as
-`level_from_stage.gd` keeps the ground:
+which also builds the editor's proxy of it). Stage 0's was traced off the
+hand-built glb, by a tool that keeps everything else in the file, as
+`level_from_stage.gd` keeps the ground. The glb is built from the file now,
+so run bare the tool only compares the file with it; its header says how
+to trace the hand-built one, which is in git at `7d0abb6`, again:
 
 ```bash
 godot --path . --headless --script tools/level_terrain_from_glb.gd
@@ -414,6 +415,12 @@ run it through `%LOCALAPPDATA%\Microsoft\WindowsApps\blender-launcher.exe`,
 not `blender.exe` (permission denied), and read `--report`, because its
 console output is not seen. Then hold the result to the file, and to the
 hand-built level from above, and play it with the preview's `--level`.
+`resources/3d/jackal_stage1.glb` is such a build, copied over: it is what
+the preview and the editor load, so the file is the level's source and the
+base's own `export_all()` must not be run -- it would write the hand-built
+level back over it (`export_destructibles()` alone is safe). The preview
+takes its frame from the file's `terrain.frame`, since a built ground runs
+out to the file's bounds.
 Under the water nothing is triangulated -- the shallows show the ground, and
 whatever a triangulation fans out there shows as streaks -- so the builder
 makes a wall along every shore off the profile's foot table and a flat river
