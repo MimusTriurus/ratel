@@ -434,7 +434,11 @@ makes a wall along every shore off the profile's foot table and a flat river
 bed that sinks out of sight where it ends at no shore, and stops the build if
 a slope face reaches under the water, an open edge of ground lies in it, or
 the slope has more specks -- tiny facets turned from their neighbours, which
-the two-tone light makes dead pixels -- than the hand-built stage's 14.
+the two-tone light makes dead pixels -- than the hand-built stage's 14. The
+height raster lifts the land, the top of the slope, the brow's line, the
+forest and the objects (a hill's steep facets are rock, `Terrain_Hill`), and
+a level whose file is not stage 0 is built without stage 1's own pieces --
+its collections emptied, its ocean cut to the level's length.
 It also turns off Godot's vertex compression in the glb's `.import`
 (`jackal_stage1.glb.import` has it off too): compressed, a vertex two
 surfaces share is rounded to each surface's own bounds, and the water

@@ -35,6 +35,7 @@
 # Nothing is written over the base: the result is saved --out, and exported
 # --glb through the base's own jackal_export_glb.py.
 import bpy, bmesh, json, math, os, sys, time
+import numpy as np
 from mathutils import Vector, kdtree
 from mathutils.geometry import delaunay_2d_cdt
 
@@ -100,10 +101,25 @@ EDGE_SCALE = 0.75
 # "Beach" are ground, "Forest_Floor" the forest, "Palm" a trunk.
 SAND_OBJECT = "Terrain_Land"
 SLOPE_OBJECT = "Beach_Slope"
+HILL_OBJECT = "Terrain_Hill"
+# The rise of the ground (Level3DGround's height raster): RISE_STEP a grey
+# level. Where it is not nothing the land gets points of its own every
+# HILL_STEP, knocked about by up to HILL_JITTER of it, and a land facet
+# steeper than HILL_ROCK degrees is rock rather than sand.
+RISE_STEP = 0.05
+HILL_STEP = 0.45
+HILL_JITTER = 0.35
+HILL_ROCK = 35.0
 # What the file describes, taken out of the base before it is built again: the
 # base's collections of ground and vegetation whole, and any object whose name
 # is an id of the file's (the glb's names are Blender's with "." as "_").
 REPLACED_COLLECTIONS = ("J_Terrain", "J_Vegetation")
+# A level that is not stage 1 (its file's "stage" is not 0) has none of stage
+# 1's own pieces either: the fortress, the bunkers, the props, the gate and
+# the buildings that are blown up. Their collections are emptied rather than
+# removed -- the base's exporter looks the gate's up by name.
+STAGE_ONE_COLLECTIONS = ("J_Fortress", "J_Bunkers", "J_Props", "J_Gate")
+STAGE_ONE_PREFIX = "J_Dest_"
 KEPT_WATER = ("Ocean",)
 
 MASK = 0xFFFFFFFF
@@ -202,6 +218,84 @@ def inside_any(tests, v):
     return any(t(v) for t in tests)
 
 
+# --- The rise -----------------------------------------------------------------------
+
+
+class Rise:
+    """The level's rise raster, in metres, read off its PNG and sampled
+    bilinearly between cell centres. False when the level has none, or it is
+    nothing everywhere -- stage 1 -- and then every height is what it was
+    before the raster existed."""
+
+    def __init__(self, doc, level_dir):
+        self.data = None
+        raster = doc["terrain"].get("raster")
+        if not raster:
+            return
+        image = bpy.data.images.load(os.path.join(level_dir, raster["height"]), check_existing=False)
+        image.colorspace_settings.name = "Non-Color"
+        w, h = image.size
+        pixels = np.empty(w * h * 4, np.float32)
+        image.pixels.foreach_get(pixels)
+        bpy.data.images.remove(image)
+        # Blender's rows run up from the bottom; the PNG's, and the grid's, down
+        # from the north.
+        steps = np.rint(pixels.reshape(h, w, 4)[::-1, :, 0] * 255.0)
+        if steps.max() <= 0:
+            return
+        self.data = steps * RISE_STEP
+        b = doc["terrain"]["bounds"]
+        self.x0, self.z0, self.r = float(b[0]), float(b[1]), float(raster["cell"])
+        self.w, self.h = w, h
+
+    def __bool__(self):
+        return self.data is not None
+
+    def at(self, p):
+        """At a plan point (Blender's x, y)."""
+        if self.data is None or p is None:
+            return 0.0
+        fx = min(max((p.x - self.x0) / self.r - 0.5, 0.0), self.w - 1.001)
+        fz = min(max((-p.y - self.z0) / self.r - 0.5, 0.0), self.h - 1.001)
+        i, j = int(fx), int(fz)
+        u, v = fx - i, fz - j
+        d = self.data
+        a = d[j, i] + (d[j, i + 1] - d[j, i]) * u
+        b = d[j + 1, i] + (d[j + 1, i + 1] - d[j + 1, i]) * u
+        return float(a + (b - a) * v)
+
+    def points(self, inside, keep_off, gap):
+        """Plan points every HILL_STEP, jittered, wherever the rise is not
+        nothing within a step of them: the hills' own vertices. Only those
+        `inside` tests true for, and none nearer the lines of `keep_off` than
+        `gap`."""
+        if self.data is None:
+            return []
+        block = max(1, round(HILL_STEP / self.r))
+        rows, cols = -(-self.h // block), -(-self.w // block)
+        padded = np.zeros((rows * block, cols * block), np.float32)
+        padded[:self.h, :self.w] = self.data
+        raised = padded.reshape(rows, block, cols, block).max(axis=(1, 3)) > 0
+        grown = raised.copy()
+        grown[1:, :] |= raised[:-1, :]
+        grown[:-1, :] |= raised[1:, :]
+        grown[:, 1:] |= raised[:, :-1]
+        grown[:, :-1] |= raised[:, 1:]
+        step = block * self.r
+        out = []
+        for by, bx in zip(*np.nonzero(grown)):
+            x = self.x0 + (bx + 0.5 + (hash01(int(bx), int(by), 7, 20) * 2.0 - 1.0) * HILL_JITTER) * step
+            z = self.z0 + (by + 0.5 + (hash01(int(bx), int(by), 7, 21) * 2.0 - 1.0) * HILL_JITTER) * step
+            c = plan((x, z))
+            if not inside(c):
+                continue
+            d, _ = keep_off.nearest(c, gap)
+            if d < gap:
+                continue
+            out.append(c)
+        return out
+
+
 # --- The ground ---------------------------------------------------------------------
 
 
@@ -229,7 +323,7 @@ def real_edges(rings, bounds, inside):
     return out
 
 
-def build_ground(doc, materials):
+def build_ground(doc, materials, rise):
     terrain = doc["terrain"]
     profile = terrain["profiles"][terrain["profile"]]
     slope, foot = profile["slope"], profile["foot"]
@@ -247,7 +341,12 @@ def build_ground(doc, materials):
     for rings in water_by_body:
         water_rings.extend(rings)
     in_land = Inside(land_rings)
-    in_water = Inside(water_rings)
+    # Water is in any of its bodies, not even-odd over all their rings: a sea
+    # and a river painted into each other are traced one at a time and
+    # overlap along their join by a hair, which even-odd would call dry -- a
+    # sliver of slope with the bed's height at its corners, under the water.
+    bodies = [Inside(rings) for rings in water_by_body]
+    in_water = lambda v: inside_any(bodies, v)
 
     brows = Segments()
     brow_edges = real_edges(land_rings, bounds, in_land)
@@ -272,8 +371,10 @@ def build_ground(doc, materials):
     # A brow vertex the simplification left a hair over the waterline (the
     # spit's nose, where the slope is a few centimetres across) is at the
     # water's level, or every triangle from it out to the bed slopes up to it.
+    brow_ids = set()
     for ring in land_rings:
-        ids = [vertex(p, -1.0 if in_water(p) else 0.0) for p in ring]
+        ids = [vertex(p, -1.0 if in_water(p) else rise.at(p)) for p in ring]
+        brow_ids.update(ids)
         edges.extend((ids[k], ids[(k + 1) % len(ids)]) for k in range(len(ids)))
         land_faces.append(len(faces))
         faces.append(ids)
@@ -320,18 +421,24 @@ def build_ground(doc, materials):
                     c = at + (w - at) * share + tangent * (j[0] * JITTER[0]) + out * (j[1] * JITTER[1])
                     if in_land(c) or in_water(c) or crowded(c):
                         continue
-                    db, _ = brows.nearest(c, SEARCH)
+                    db, brow_at = brows.nearest(c, SEARCH)
                     dw, _ = shores.nearest(c, SEARCH)
                     if db < EDGE_GAP or dw < EDGE_GAP:
                         continue
                     t = db / max(db + dw, 1e-6)
-                    vertex(c, profile_at(slope, t) + j[2] * JITTER[2] * min(t, 1.0 - t) * 2.0)
+                    vertex(c, profile_at(slope, t) + j[2] * JITTER[2] * min(t, 1.0 - t) * 2.0
+                           + rise.at(brow_at) * (1.0 - t))
                     placed.setdefault((math.floor(c.x / MIN_GAP), math.floor(c.y / MIN_GAP)), []).append(c)
                     columns += 1
             step += 1
             s += COLUMN[0] + (COLUMN[1] - COLUMN[0]) * hash01(n, step, 0, 13)
     say("ground: %d brow and %d shore edges, %d column points"
         % (len(brow_edges), len(shore_edges), columns))
+    hills = rise.points(in_land, brows, EDGE_GAP * 2.0)
+    for c in hills:
+        vertex(c, rise.at(c))
+    if rise:
+        say("ground: %d points on the hills, the rise up to %.2f m" % (len(hills), float(rise.data.max())))
 
     out_coords, _, out_faces, orig_verts, _, orig_faces = delaunay_2d_cdt(
         coords, edges, faces, 0, 1e-5, True)
@@ -348,7 +455,9 @@ def build_ground(doc, materials):
     # Heights: an input vertex's own, and for one the triangulation made (where
     # constraints cross) the heights its faces imply.
     z = [None] * len(out_coords)
+    on_brow = [False] * len(out_coords)
     for k, origins in enumerate(orig_verts):
+        on_brow[k] = any(i in brow_ids for i in origins)
         for i in origins:
             if heights[i] is not None:
                 z[k] = heights[i]
@@ -361,15 +470,19 @@ def build_ground(doc, materials):
         if z[k] is not None:
             continue
         kinds = touching[k]
+        p = Vector(out_coords[k])
         if "land" in kinds:
-            z[k] = 0.0
+            z[k] = rise.at(p)
         elif "water" in kinds:
-            z[k] = bed  # a corner of the bounds, or a sliver along them
+            # A corner of the bounds, or a sliver along them; or, where it is
+            # slope's as well, where a sea's and a river's waterlines meet at
+            # the shore, which is at the water's level.
+            z[k] = -1.0 if "slope" in kinds else bed
         else:
-            p = Vector(out_coords[k])
-            db, _ = brows.nearest(p, SEARCH)
+            db, brow_at = brows.nearest(p, SEARCH)
             dw, _ = shores.nearest(p, SEARCH)
-            z[k] = profile_at(slope, db / max(db + dw, 1e-6)) if db < SEARCH or dw < SEARCH else 0.0
+            t = db / max(db + dw, 1e-6)
+            z[k] = profile_at(slope, t) + rise.at(brow_at) * (1.0 - t) if db < SEARCH or dw < SEARCH else 0.0
 
     # The triangulation is the ground above the water only: the sand one
     # object, flat, the slopes another. What it made inside the water goes.
@@ -379,15 +492,24 @@ def build_ground(doc, materials):
     # triangulation fanned out there, from a waterline vertex to the bed or
     # across a river's mouth to the cut, showed through as dark rays and pale
     # wedges.
-    parts = {"land": [], "rest": []}
+    parts = {"land": [], "rest": [], "hill": []}
     dropped = 0
     flat_sand = 0
+    steep = math.cos(math.radians(HILL_ROCK))
+
+    def land_z(v):
+        return rise.at(Vector(out_coords[v]))
+
+    def steep_face(face):
+        a, b, c = (Vector((out_coords[v][0], out_coords[v][1], land_z(v))) for v in face[:3])
+        n = (b - a).cross(c - a)
+        return n.length > 1e-12 and abs(n.normalized().z) < steep
     for k, face in enumerate(out_faces):
         if face_kind[k] == "water":
             dropped += 1
         elif face_kind[k] == "land":
-            parts["land"].append(k)
-        elif all(abs(z[v]) < 1e-6 for v in face):
+            parts["hill" if rise and steep_face(face) else "land"].append(k)
+        elif (all(on_brow[v] for v in face) if rise else all(abs(z[v]) < 1e-6 for v in face)):
             # A triangle of brow vertices only, filling a bend of the brow
             # outside the land: it is at the sand's height, and is sand. Painted
             # as rock it was a brown speck on the brow.
@@ -397,7 +519,10 @@ def build_ground(doc, materials):
             parts["rest"].append(k)
     say("ground: %d faces inside the water left out, %d flat at the brow made sand" % (dropped, flat_sand))
     objects = {}
-    for part, name in (("land", SAND_OBJECT), ("rest", SLOPE_OBJECT)):
+    say("ground: %d land faces steep enough to be rock" % len(parts["hill"]))
+    for part, name in (("land", SAND_OBJECT), ("rest", SLOPE_OBJECT), ("hill", HILL_OBJECT)):
+        if part == "hill" and not parts["hill"]:
+            continue
         bm = bmesh.new()
         index = {}
         for k in parts[part]:
@@ -405,7 +530,7 @@ def build_ground(doc, materials):
             for v in out_faces[k]:
                 if v not in index:
                     c = out_coords[v]
-                    index[v] = bm.verts.new((c[0], c[1], 0.0 if part == "land" else z[v]))
+                    index[v] = bm.verts.new((c[0], c[1], z[v] if part == "rest" else land_z(v)))
                 vs.append(index[v])
             try:
                 f = bm.faces.new(vs)
@@ -444,6 +569,11 @@ def build_ground(doc, materials):
         bm.free()
         objects[name] = mesh
     _paint_ground(objects[SAND_OBJECT], objects[SLOPE_OBJECT], bed, materials)
+    if HILL_OBJECT in objects:
+        hill = objects[HILL_OBJECT]
+        for name in ("J_BeachBrown", "J_RockDark"):
+            hill.materials.append(materials[name])
+        _dark_by_neighbours(list(hill.polygons))
     return objects, brow_edges, shore_edges
 
 
@@ -677,18 +807,52 @@ def _paint_ground(sand, rest, bed, materials):
     # it is turned further from the sun than DARK of the NEIGHBOURS nearest
     # it. A share over the whole level darkened every bank facing away from
     # the sun and none facing it.
-    if slope_faces:
-        tree = kdtree.KDTree(len(slope_faces))
-        for k, p in enumerate(slope_faces):
+    _dark_by_neighbours(slope_faces)
+
+
+def _dark_by_neighbours(faces):
+    if faces:
+        tree = kdtree.KDTree(len(faces))
+        for k, p in enumerate(faces):
             tree.insert(p.center, k)
         tree.balance()
-        lit = [p.normal.dot(-SUN) for p in slope_faces]
-        for k, p in enumerate(slope_faces):
+        lit = [p.normal.dot(-SUN) for p in faces]
+        for k, p in enumerate(faces):
             near = sorted(lit[i] for _, i, _ in tree.find_n(p.center, NEIGHBOURS))
             p.material_index = 1 if lit[k] < near[int(len(near) * DARK)] else 0
 
 
-def build_shore_lines(brow_edges, material):
+# The base's ocean is cut to stage 1's bounds by J_WaterUnify, whose Math
+# nodes hold them in Blender's axes: the object's place (x, y) to turn its
+# own coordinates into the level's, then the north edge, the south edge, the
+# east edge. A level of another length has its ocean moved south by what it
+# is longer, tiled that much further, and cut at its own south edge.
+OCEAN_NODES = {"place_y": "Math.001", "north": "Math.002", "south": "Math.003", "east": "Math.005"}
+
+
+def fit_ocean(doc):
+    ocean = bpy.data.objects.get("Ocean")
+    if ocean is None:
+        return
+    nodes = ocean.modifiers["WaterUnify"].node_group.nodes
+    value = lambda name: nodes[OCEAN_NODES[name]].inputs[1]
+    b = doc["terrain"]["bounds"]
+    south = -float(b[3])
+    was = value("south").default_value
+    longer = max(0.0, was - south)
+    if longer > 0.0:
+        tile = ocean.modifiers["Ocean"].spatial_size
+        tiles = math.ceil(longer / tile)
+        ocean.modifiers["Ocean"].repeat_y += tiles
+        ocean.location.y -= tiles * tile
+        value("place_y").default_value = ocean.location.y
+    value("south").default_value = south - 0.04
+    value("north").default_value = max(value("north").default_value, -float(b[1]))
+    value("east").default_value = max(value("east").default_value, float(b[2]))
+    say("ocean: cut at y %.2f (was %.2f), %d more tiles" % (south, was, math.ceil(longer / 20.0) if longer else 0))
+
+
+def build_shore_lines(brow_edges, material, rise):
     """jackal_cel.py's shore_lines: a black ribbon BROW wide, LIFT over the
     sand, along every brow edge, its ends run on half its width so the joins
     at the bends do not tear."""
@@ -700,7 +864,7 @@ def build_shore_lines(brow_edges, material):
         t = along.normalized()
         n = Vector((-t.y, t.x)) * (BROW * 0.5)
         a, b = p - t * (BROW * 0.5), q + t * (BROW * 0.5)
-        vs = [bm.verts.new((c.x, c.y, LIFT)) for c in (a - n, b - n, b + n, a + n)]
+        vs = [bm.verts.new((c.x, c.y, LIFT + rise.at(c))) for c in (a - n, b - n, b + n, a + n)]
         bm.faces.new(vs)
     mesh = bpy.data.meshes.new("Shore_Lines")
     bm.to_mesh(mesh)
@@ -737,7 +901,7 @@ def trace_shoreline(shore_edges):
 # --- The forest ---------------------------------------------------------------------
 
 
-def floor_mesh(polygon, material, name):
+def floor_mesh(polygon, material, name, rise):
     rings = rings_of(polygon)
     coords, edges, faces = [], [], []
     for ring in rings:
@@ -745,10 +909,16 @@ def floor_mesh(polygon, material, name):
         coords.extend(ring)
         edges.extend((base + k, base + (k + 1) % len(ring)) for k in range(len(ring)))
         faces.append(list(range(base, base + len(ring))))
-    out, _, out_faces, _, _, _ = delaunay_2d_cdt(coords, edges, faces, 0, 1e-5, True)
     inside = Inside(rings)
+    # On a hill the floor needs points of its own to lie on it.
+    ring_lines = Segments()
+    for ring in rings:
+        for k in range(len(ring)):
+            ring_lines.add(ring[k], ring[(k + 1) % len(ring)])
+    coords.extend(rise.points(inside, ring_lines, EDGE_GAP))
+    out, _, out_faces, _, _, _ = delaunay_2d_cdt(coords, edges, faces, 0, 1e-5, True)
     bm = bmesh.new()
-    verts = [bm.verts.new((c[0], c[1], FLOOR_LIFT)) for c in out]
+    verts = [bm.verts.new((c[0], c[1], FLOOR_LIFT + rise.at(Vector(c)))) for c in out]
     for k, face in enumerate(out_faces):
         middle = sum((Vector(out[v]) for v in face), Vector((0, 0))) / len(face)
         if inside(middle):
@@ -841,6 +1011,12 @@ def main():
     doomed = set()
     for name in REPLACED_COLLECTIONS:
         doomed.update(bpy.data.collections[name].all_objects)
+    stage_one = int(doc.get("stage", 0)) == 0
+    if not stage_one:
+        for c in bpy.data.collections:
+            if c.name in STAGE_ONE_COLLECTIONS or c.name.startswith(STAGE_ONE_PREFIX) \
+                    or any(c.name.startswith(n + "_") for n in STAGE_ONE_COLLECTIONS):
+                doomed.update(c.all_objects)
     doomed.update(o for o in bpy.data.objects if o.name.replace(".", "_") in ids)
     for o in doomed:
         bpy.data.objects.remove(o, do_unlink=True)
@@ -857,10 +1033,13 @@ def main():
     gen_vegetation = collection("Gen_Vegetation", top)
     gen_props = collection("Gen_Props", top)
 
-    meshes, brow_edges, shore_edges = build_ground(doc, materials)
+    rise = Rise(doc, os.path.dirname(os.path.join(ROOT, LEVEL)))
+    if not stage_one:
+        fit_ocean(doc)
+    meshes, brow_edges, shore_edges = build_ground(doc, materials, rise)
     for name, mesh in meshes.items():
         gen_terrain.objects.link(bpy.data.objects.new(name, mesh))
-    gen_terrain.objects.link(bpy.data.objects.new("Shore_Lines", build_shore_lines(brow_edges, materials["J_Black"])))
+    gen_terrain.objects.link(bpy.data.objects.new("Shore_Lines", build_shore_lines(brow_edges, materials["J_Black"], rise)))
     shoreline = bpy.data.objects.get("J_Shoreline")
     if shoreline:
         old = shoreline.data
@@ -872,14 +1051,14 @@ def main():
     for k, polygon in enumerate(doc.get("forest", [])):
         gen_vegetation.objects.link(bpy.data.objects.new(
             "Forest_Floor_%s" % polygon["id"],
-            floor_mesh(polygon, materials["J_ForestFloor"], "Forest_Floor_%s" % polygon["id"])))
+            floor_mesh(polygon, materials["J_ForestFloor"], "Forest_Floor_%s" % polygon["id"], rise)))
         for tree in tree_positions(polygon):
             names = PINES if tree["pine"] else BROAD
             mesh = bpy.data.meshes[names[min(int(tree["variant"] * len(names)), len(names) - 1)]]
             o = bpy.data.objects.new("ForestTree_%s_%d" % (polygon["id"], trees), mesh)
             size = TREE_SCALE[0] + (TREE_SCALE[1] - TREE_SCALE[0]) * tree["scale"]
             size *= EDGE_SCALE + (1.0 - EDGE_SCALE) * min(tree["edge"], 1.0)
-            o.location = (tree["at"].x, -tree["at"].y, FLOOR_LIFT)
+            o.location = (tree["at"].x, -tree["at"].y, FLOOR_LIFT + rise.at(Vector((tree["at"].x, -tree["at"].y))))
             o.rotation_euler = (tree["lean"][0] * TREE_LEAN, tree["lean"][1] * TREE_LEAN, tree["yaw"])
             o.scale = (size, size, size * (TREE_TALL[0] + (TREE_TALL[1] - TREE_TALL[0]) * tree["tall"]))
             gen_vegetation.objects.link(o)
@@ -896,7 +1075,8 @@ def main():
             o.instance_type = "COLLECTION"
             o.instance_collection = bpy.data.collections[asset["collection"]]
         x, y, zz = obj["pos"]
-        o.location = (x, -zz, y)
+        # The file's height is over the ground, which the rise lifts.
+        o.location = (x, -zz, y + rise.at(Vector((x, -zz))))
         o.rotation_euler = (0.0, 0.0, math.radians(obj["yaw"]))
         o.scale = (obj["scale"],) * 3
         (gen_vegetation if obj["asset"].startswith("Palm") else gen_props).objects.link(o)
