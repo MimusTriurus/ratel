@@ -61,6 +61,27 @@ const EARLY_BOSS_TRIGGERS: Array[int] = [
 	Triggers.BOSS_HELICOPTER, Triggers.BOSS_SHIP, Triggers.BOSS_STATUES,
 ]
 
+# Where each destructible object looks its group up. It is not a reference: the
+# element reads groups_map at one cell of its own footprint, so a group that does
+# not cover that exact cell binds the object to whatever is there instead --
+# usually group 0, because groups_map is a byte array and "no group" and "group
+# 0" are the same value. Offsets are in tiles from the trigger's own position,
+# which is where the object spawns. See House, Hut, Gate, Statue and Column.
+# The map editor checks stages against it and Level3DIO turns it into the
+# explicit group a 3D level's entity names.
+const GROUP_PROBES := {
+	Triggers.HOUSE_LEFT: Vector2i(0, 2),
+	Triggers.HOUSE_RIGHT: Vector2i(5, 2),
+	Triggers.HUT: Vector2i(1, 1),
+	Triggers.SHACK: Vector2i(2, 3),
+	Triggers.TANK_SHACK: Vector2i(2, 3),
+	Triggers.GATE: Vector2i(1, 0),
+	Triggers.STATUE_NONE: Vector2i(1, 1),
+	Triggers.STATUE_LEFT: Vector2i(1, 1),
+	Triggers.STATUE_RIGHT: Vector2i(1, 1),
+	Triggers.COLUMN: Vector2i(0, 0),
+}
+
 
 static func _read_json(path: String) -> Dictionary:
 	var f := FileAccess.open(path, FileAccess.READ)

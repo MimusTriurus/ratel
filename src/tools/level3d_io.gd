@@ -1,0 +1,275 @@
+# Reads and writes the 3D levels, assets/level3d/stage-N.json: what the 3D
+# preview plays and what Blender builds the level from. See
+# docs/level-editor-plan.md.
+#
+# A level file holds what is authored about a level, not its geometry: the
+# gameplay grid (nav, groups, entities) in metres on the game's own grid, and
+# the placed scenery. Nothing in the 2D game reads it; the stage maps under
+# assets/maps are its source for stage 0 (tools/level_from_stage.gd) and are
+# not written back.
+#
+# The layout is fixed, one entity or grid row to a line, so that saving a level
+# nobody edited leaves no diff and moving one bunker touches one line --
+# MapIO.serialize's rule, for the same reason.
+class_name Level3DIO
+extends RefCounted
+
+const DIR := "res://assets/level3d/"
+const FORMAT := "jackal-level3d"
+const VERSION := 1
+const DIFFICULTIES: Array[String] = ["normal", "hard"]
+
+
+static func path(stage_index: int) -> String:
+	return DIR + "stage-%d.json" % stage_index
+
+
+static func read(stage_index: int) -> Dictionary:
+	var file_path := path(stage_index)
+	var f := FileAccess.open(file_path, FileAccess.READ)
+	if f == null:
+		push_error("Cannot open %s (error %d)" % [file_path, FileAccess.get_open_error()])
+		return {}
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_error("%s is not a JSON object" % file_path)
+		return {}
+	var doc: Dictionary = parsed
+	if doc.get("format") != FORMAT or int(doc.get("version", 0)) != VERSION:
+		push_error("%s is not a %s file, version %d" % [file_path, FORMAT, VERSION])
+		return {}
+	return doc
+
+
+static func save(doc: Dictionary) -> Error:
+	var file_path := path(int(doc["stage"]))
+	var f := FileAccess.open(file_path, FileAccess.WRITE)
+	if f == null:
+		var error := FileAccess.get_open_error()
+		push_error("Cannot write %s (error %d)" % [file_path, error])
+		return error
+	f.store_string(serialize(doc))
+	f.close()
+	return OK
+
+
+# --- The grid ---------------------------------------------------------------
+#
+# Level metres from map pixels and back: Level3DMap.to_level, with the
+# transform read from the file rather than fixed, so that a level built for
+# another map can say where that map lies.
+#
+#     level x = m_per_px * map x + origin.x      level z = m_per_px * map y + origin.y
+
+
+static func to_level(grid: Dictionary, p: Vector2) -> Vector2:
+	return _origin(grid) + p * float(grid["m_per_px"])
+
+
+static func to_map(grid: Dictionary, v: Vector2) -> Vector2:
+	return (v - _origin(grid)) / float(grid["m_per_px"])
+
+
+static func _origin(grid: Dictionary) -> Vector2:
+	var o: Array = grid["origin"]
+	return Vector2(float(o[0]), float(o[1]))
+
+
+# Footprints in tiles by trigger name, as trigger-sizes.json authors them --
+# without the four rows MapIO.load_trigger_sizes takes off the boss triggers,
+# which move when a boss fires and not where it stands.
+static func footprints() -> Dictionary:
+	var f := FileAccess.open(MapIO.MAPS + "trigger-sizes.json", FileAccess.READ)
+	if f == null:
+		push_error("Cannot open trigger-sizes.json")
+		return {}
+	var doc: Dictionary = JSON.parse_string(f.get_as_text())
+	f.close()
+	var out := {}
+	for name in doc:
+		out[name] = Vector2i(int(doc[name]["width"]), int(doc[name]["height"]))
+	return out
+
+
+# An entity stands where the middle of its footprint is, in metres, to the
+# millimetre. The trigger's tile comes back by rounding, and a millimetre
+# against a 469 mm tile makes that exact.
+static func entity_pos(grid: Dictionary, size: Vector2i, tile: Vector2i) -> Vector2:
+	var tile_px := float(grid["tile_px"])
+	var centre := (Vector2(tile) + Vector2(size) * 0.5) * tile_px
+	return to_level(grid, centre)
+
+
+static func entity_tile(grid: Dictionary, size: Vector2i, pos: Vector2) -> Vector2i:
+	var tile_px := float(grid["tile_px"])
+	var corner := to_map(grid, pos) / tile_px - Vector2(size) * 0.5
+	return Vector2i(roundi(corner.x), roundi(corner.y))
+
+
+# --- Back to the game's terms -------------------------------------------------
+
+
+# The trigger list of one difficulty, in the layout of a stage file's
+# "triggers" block: the entities of that difficulty in the order the file lists
+# them, which is the order they were authored in.
+static func triggers_of(doc: Dictionary, difficulty: String, sizes: Dictionary) -> Array:
+	var out: Array = []
+	for e in doc["entities"]:
+		var entity: Dictionary = e
+		if not (entity["difficulty"] as Array).has(difficulty):
+			continue
+		var p: Array = entity["pos"]
+		var tile := entity_tile(doc["grid"], sizes[entity["type"]], Vector2(p[0], p[1]))
+		out.append({"type": entity["type"], "x": tile.x, "y": tile.y})
+	return out
+
+
+# Fills a Stage the way MapIO.load_stage does -- grid, the sentinel row of
+# water under it, groups, groups_map and both trigger maps -- from a level file.
+# The tile grid is left empty: nothing 3D draws it.
+static func load_stage(doc: Dictionary, stage: Stage, trigger_sizes: Array) -> void:
+	var grid: Dictionary = doc["grid"]
+	var width := int(grid["width"])
+	var height := int(grid["height"])
+	var rows: Array = doc["nav"]
+	if rows.size() != height:
+		push_error("level %d: nav is %d rows, not %d" % [doc["stage"], rows.size(), height])
+		return
+	stage.map_width = width
+	stage.tile_map = []
+	stage.types_map = []
+	stage.groups_map = []
+	for y in height + 1:
+		var types := PackedInt32Array()
+		types.resize(width)
+		var group_row := PackedByteArray()
+		group_row.resize(width)
+		if y < height:
+			var chars: String = rows[y]
+			if chars.length() != width:
+				push_error("level %d: nav row %d is not %d wide" % [doc["stage"], y, width])
+				return
+			for x in width:
+				types[x] = MapIO.TYPE_CHARS.get(chars[x], MapIO.TYPE_EMPTY)
+		else:
+			types.fill(MapIO.TYPE_WATER)
+		stage.types_map.append(types)
+		stage.groups_map.append(group_row)
+	stage.map_height = height + 1
+
+	# Tile 0 stands in for the tile a group would draw: Stage keeps the 2D
+	# layout, [x, y, tile, type], and nothing 3D reads the tile.
+	stage.groups = []
+	var group_docs: Array = doc["groups"]
+	for i in group_docs.size():
+		var group: Array = []
+		for cell in group_docs[i]["cells"]:
+			var gx := int(cell[0])
+			var gy := int(cell[1])
+			group.append([gx, gy, 0, MapIO.TYPE_CHARS.get(cell[2], MapIO.TYPE_EMPTY)])
+			stage.groups_map[gy][gx] = i
+		stage.groups.append(group)
+
+	var sizes := footprints()
+	stage.trigger_map = []
+	for d in DIFFICULTIES:
+		stage.trigger_map.append(MapIO.build_trigger_map(triggers_of(doc, d, sizes),
+				stage.map_height, trigger_sizes, int(doc["stage"])))
+
+
+# --- Writing ------------------------------------------------------------------
+
+
+static func serialize(doc: Dictionary) -> String:
+	var grid: Dictionary = doc["grid"]
+	var origin: Array = grid["origin"]
+	var out := PackedStringArray()
+	out.append("{")
+	out.append('  "format": "%s",' % FORMAT)
+	out.append('  "version": %d,' % VERSION)
+	out.append('  "stage": %d,' % int(doc["stage"]))
+	# Level3DMap.ORIGIN to its last authored place: it is a Vector2, single
+	# precision, and more places would only write its rounding down.
+	out.append('  "grid": {"width": %d, "height": %d, "tile_px": %d, "m_per_px": %s, "origin": [%s, %s]},'
+			% [int(grid["width"]), int(grid["height"]), int(grid["tile_px"]),
+				String.num(float(grid["m_per_px"]), 6),
+				String.num(float(origin[0]), 4), String.num(float(origin[1]), 4)])
+
+	var legend := PackedStringArray()
+	for t in MapIO.TYPE_NAME.size():
+		legend.append('"%s": "%s"' % [MapIO.TYPE_CHAR[t], MapIO.TYPE_NAME[t]])
+	out.append('  "type_legend": {%s},' % ", ".join(legend))
+
+	var rows := PackedStringArray()
+	for row in doc["nav"]:
+		rows.append('    "%s"' % row)
+	_block(out, "nav", rows)
+
+	rows = PackedStringArray()
+	for g in doc["groups"]:
+		var cells := PackedStringArray()
+		for cell in g["cells"]:
+			cells.append('[%d, %d, "%s"]' % [int(cell[0]), int(cell[1]), cell[2]])
+		rows.append('    {"index": %d, "cells": [%s]}' % [int(g["index"]), ", ".join(cells)])
+	_block(out, "groups", rows)
+
+	rows = PackedStringArray()
+	for e in doc["entities"]:
+		var entity: Dictionary = e
+		var difficulty := PackedStringArray()
+		for d in entity["difficulty"]:
+			difficulty.append('"%s"' % d)
+		var line := '    {"id": "%s", "type": "%s", "pos": %s, "difficulty": [%s]' \
+				% [entity["id"], entity["type"], _vec(entity["pos"]), ", ".join(difficulty)]
+		if entity.has("group"):
+			line += ', "group": %d' % int(entity["group"])
+		rows.append(line + "}")
+	_block(out, "entities", rows)
+
+	# Scenery turns about the vertical only and scales uniformly: everything
+	# stage 1 places does, and the forest, which tilts, is not placed one tree
+	# at a time. "entity" ties a piece to the entity it belongs to -- a bunker
+	# to its gun -- which the preview used to find by the nearest one.
+	rows = PackedStringArray()
+	for o in doc["objects"]:
+		var object: Dictionary = o
+		var line := '    {"id": "%s", "asset": "%s", "pos": %s, "yaw": %s, "scale": %s' \
+				% [object["id"], object["asset"], _vec(object["pos"]),
+					_num(float(object["yaw"])), _num(float(object["scale"]))]
+		if object.has("entity"):
+			line += ', "entity": "%s"' % object["entity"]
+		rows.append(line + "}")
+	_block(out, "objects", rows, true)
+
+	out.append("}")
+	return "\n".join(out) + "\n"
+
+
+static func _block(out: PackedStringArray, key: String, rows: PackedStringArray,
+		last := false) -> void:
+	if rows.is_empty():
+		out.append('  "%s": []%s' % [key, "" if last else ","])
+		return
+	out.append('  "%s": [' % key)
+	out.append(",\n".join(rows))
+	out.append("  ]" if last else "  ],")
+
+
+# Millimetres for lengths, thousandths of a degree for angles, thousandths for
+# scale: enough for anything placed by hand and short enough to read. Minus
+# zero is written as zero, or a value that rounds to it would diff by its sign.
+static func _vec(values: Array) -> String:
+	var parts := PackedStringArray()
+	for v in values:
+		parts.append(_num(float(v)))
+	return "[%s]" % ", ".join(parts)
+
+
+static func _num(v: float) -> String:
+	var text := "%.3f" % v
+	return "0.000" if text == "-0.000" else text
+
+
+static func round_mm(v: float) -> float:
+	return float(_num(v))

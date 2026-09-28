@@ -367,6 +367,33 @@ Nothing is evicted — a stage is 90 to 98 MB of texture, and dropping chunks
 behind the camera would reload during a boss pan, which can drive the camera back
 up a whole stage.
 
+### 3D level files
+
+`assets/level3d/stage-N.json` is what the 3D preview plays and what the
+Blender builder is to build from — the start of the level editor in
+`docs/level-editor-plan.md`, which has the format, the decisions and the
+stages. `Level3DIO` (`src/tools/level3d_io.gd`) reads and writes it with a
+fixed layout, as `MapIO` does. It holds the gameplay grid (`nav`, in the
+`types` legend), the destruction groups, the triggers of both difficulties
+as one ordered list of `entities` (metres, centre of the footprint, with the
+group named outright rather than probed), and the placed scenery as
+`objects`; `assets/level3d/catalog.json` says what every trigger type and
+asset is. `Level3DMap` reads the grid from it, not from the game's
+`stage-0.json`, and nothing in the 2D game reads it at all.
+
+`tools/level_from_stage.gd` wrote stage 0's out of `assets/maps/stage-0.json`
+and `jackal_stage1.glb`, and overwrites it when run again. The check holds it
+to the game's map — round trip, nav, groups, both trigger lists in order, the
+`Stage` it fills — and to the catalogue:
+
+```bash
+godot --path . --headless --script tools/level_from_stage.gd
+```
+
+```bash
+godot --path . --headless --script tools/verify_level3d.gd
+```
+
 ### Audio and input
 
 `Song` chains intro → optional intro2 → looping track through

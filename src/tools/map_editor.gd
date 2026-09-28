@@ -67,25 +67,6 @@ const TOOL_LAYERS := {
 	TOOL_GROUPS: "groups",
 }
 
-# Where each destructible object looks its group up. It is not a reference: the
-# element reads groups_map at one cell of its own footprint, so a group that does
-# not cover that exact cell binds the object to whatever is there instead --
-# usually group 0, because groups_map is a byte array and "no group" and "group
-# 0" are the same value. Offsets are in tiles from the trigger's own position,
-# which is where the object spawns. See House, Hut, Gate, Statue and Column.
-const GROUP_PROBES := {
-	Triggers.HOUSE_LEFT: Vector2i(0, 2),
-	Triggers.HOUSE_RIGHT: Vector2i(5, 2),
-	Triggers.HUT: Vector2i(1, 1),
-	Triggers.SHACK: Vector2i(2, 3),
-	Triggers.TANK_SHACK: Vector2i(2, 3),
-	Triggers.GATE: Vector2i(1, 0),
-	Triggers.STATUE_NONE: Vector2i(1, 1),
-	Triggers.STATUE_LEFT: Vector2i(1, 1),
-	Triggers.STATUE_RIGHT: Vector2i(1, 1),
-	Triggers.COLUMN: Vector2i(0, 0),
-}
-
 # Indexed by MapIO.TYPE_* .
 const TYPE_COLORS: Array[Color] = [
 	Color(0.90, 0.20, 0.20, 0.40),  # solid
@@ -996,9 +977,9 @@ func _check_stage() -> Array[String]:
 		for entry in document["triggers"][key]:
 			var trigger: Dictionary = entry
 			var index := _trigger_index(trigger)
-			if not GROUP_PROBES.has(index):
+			if not MapIO.GROUP_PROBES.has(index):
 				continue
-			var probe: Vector2i = GROUP_PROBES[index]
+			var probe: Vector2i = MapIO.GROUP_PROBES[index]
 			var cell := Vector2i(int(trigger["x"]) + probe.x,
 				int(trigger["y"]) + probe.y)
 			var group := _group_of(cell)
@@ -1275,9 +1256,9 @@ func _draw_groups() -> void:
 	for entry in rows:
 		var trigger: Dictionary = entry
 		var index := _trigger_index(trigger)
-		if not GROUP_PROBES.has(index):
+		if not MapIO.GROUP_PROBES.has(index):
 			continue
-		var probe: Vector2i = GROUP_PROBES[index]
+		var probe: Vector2i = MapIO.GROUP_PROBES[index]
 		var x := float(int(trigger["x"]) + probe.x) * TILE
 		var y := float(int(trigger["y"]) + probe.y) * TILE
 		var bound := _group_of(Vector2i(int(x / TILE), int(y / TILE))) >= 0

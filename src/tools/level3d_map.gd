@@ -1,6 +1,12 @@
-# The game's own map of stage 1 laid over the 3D preview: stage-0.json's
-# collision grid, dirs-0.dat's flow field and the triggers, in the game's
-# pixels, and the transform between those pixels and level metres.
+# The game's own map of stage 1 laid over the 3D preview: the collision grid,
+# dirs-0.dat's flow field and the triggers, in the game's pixels, and the
+# transform between those pixels and level metres.
+#
+# The grid, the groups and the triggers come from the level file,
+# assets/level3d/stage-0.json (Level3DIO), which tools/level_from_stage.gd
+# made out of the game's stage-0.json and tools/verify_level3d.gd holds to it:
+# the Stage filled from either is the same. The level editor will write that
+# file; the game's map stays as it is.
 #
 # Nothing here is part of the game. The level was modelled from screenshots,
 # not from the map, but it lines up with it: the fifteen bunkers and nine
@@ -41,7 +47,7 @@ var _triggered := {}
 
 
 func _init() -> void:
-	MapIO.load_stage(STAGE, stage, MapIO.load_trigger_sizes())
+	Level3DIO.load_stage(Level3DIO.read(STAGE), stage, MapIO.load_trigger_sizes())
 	FlowField.load_into(STAGE, stage)
 	for row in stage.types_map:
 		_pristine.append((row as PackedInt32Array).duplicate())
