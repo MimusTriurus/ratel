@@ -643,6 +643,10 @@ static func check(doc: Dictionary, catalog: Dictionary) -> PackedStringArray:
 			var owner: Variant = ids.get(object["entity"])
 			if owner == null or not (owner as Dictionary).has("type"):
 				problems.append("%s belongs to %s, which is not an entity" % [id, object["entity"]])
+		# A gate's frame alone is only a frame: no gate in the game, no group,
+		# nothing a wall goes through. Gates are put down as GATE entities.
+		elif object["asset"] == "Gate":
+			problems.append("%s is a Gate frame with no GATE entity: delete it and put the gate down again" % id)
 	for key in ["walls", "bridges"]:
 		for st in doc.get(key, []):
 			var id: String = st["id"]

@@ -156,6 +156,9 @@ var _drag_changed := false
 # a wall's or bridge's [from, to]).
 var _drag_start := Vector2.ZERO
 var _drag_orig := {}
+# What the drag moves: what is picked, a piece that belongs to an entity by
+# its entity -- a gate's frame, a gun's bunker go where their owner goes.
+var _drag_movers: Array = []
 # A box drawn over the screen to pick with, from where it was pressed.
 var _boxing := false
 var _box_from := Vector2.ZERO
@@ -554,7 +557,14 @@ func _begin_drag(p: Vector2, keys: Array) -> void:
 	_drag_changed = false
 	_drag_start = p
 	_drag_orig = {}
+	_drag_movers = []
 	for id in items.selection():
+		var piece := items.find_object(id)
+		if not piece.is_empty() and not items.find_entity(piece.get("entity", "")).is_empty():
+			id = piece["entity"]
+		if not _drag_movers.has(id):
+			_drag_movers.append(id)
+	for id in _drag_movers:
 		var e := items.find_entity(id)
 		if not e.is_empty():
 			_drag_orig[id] = e["pos"].duplicate()
@@ -622,6 +632,14 @@ func _press_entity(p: Vector2) -> void:
 		difficulty.append("normal")
 	if _new_hard.button_pressed:
 		difficulty.append("hard")
+	var e := _new_entity(type, p, difficulty)
+	_put_down(p, e["id"])
+
+
+# An entity of `type` at `p`, snapped to its tiles, with its group and the
+# object the catalogue gives it, and into a wall it is put down on if it is
+# a gate. Recorded already.
+func _new_entity(type: String, p: Vector2, difficulty: Array) -> Dictionary:
 	var at := items.snap_entity(type, p)
 	var e := {"id": _unique_id(type.to_lower()), "type": type, "pos": [at.x, at.y],
 			"difficulty": difficulty}
@@ -636,7 +654,22 @@ func _press_entity(p: Vector2) -> void:
 		(doc["objects"] as Array).append(o)
 		items.update_object(o)
 	_fit_gate(e)
-	_put_down(p, e["id"])
+	return e
+
+
+# The entity an asset is only ever a part of, or "": the Gate, whose frame is
+# nothing without the GATE that is blown and the group it opens -- a
+# destructible the catalogue gives to one entity alone. Put down from the
+# Objects page, it is put down as that entity; a bunker, which two guns
+# share, and scenery are put down as themselves.
+func _entity_for_asset(asset: String) -> String:
+	if not items.catalog["assets"].get(asset, {}).has("destructible"):
+		return ""
+	var types: Array = []
+	for type in items.catalog["entities"]:
+		if items.catalog["entities"][type].get("object", "") == asset:
+			types.append(type)
+	return types[0] if types.size() == 1 else ""
 
 
 func _press_object(p: Vector2) -> void:
@@ -655,8 +688,12 @@ func _press_object(p: Vector2) -> void:
 	if handle >= 0:
 		_begin_handle(p, handle)
 		return
+	# With an asset picked in the list a click on a wall or a bridge puts the
+	# asset down there -- a gate on a wall, a sandbag on a bridge -- and only
+	# an object under the pointer is picked instead; with none, walls and
+	# bridges are picked too.
 	var id := items.object_under(p)
-	if id == "":
+	if id == "" and _asset_list.get_selected_items().is_empty():
 		id = items.structure_under(p)
 	if _press_item(p, id, keys):
 		return
@@ -665,6 +702,12 @@ func _press_object(p: Vector2) -> void:
 		return
 	_record(keys)
 	var asset: String = _assets[_asset_list.get_selected_items()[0]]
+	var owner_type := _entity_for_asset(asset)
+	if owner_type != "":
+		var e := _new_entity(owner_type, p, ["normal", "hard"])
+		var piece: Array = _belonging_to(e["id"])
+		_put_down(p, piece[0]["id"] if not piece.is_empty() else e["id"])
+		return
 	var o := {"id": _unique_id(asset.to_lower()), "asset": asset,
 			"pos": _object_pos(p), "yaw": 0.0, "scale": 1.0}
 	(doc["objects"] as Array).append(o)
@@ -1035,12 +1078,18 @@ func _drag_to(p: Vector2) -> void:
 		return
 	var delta := p - _drag_start
 	var tiles := Vector2.ZERO
-	var lead := items.find_entity(_drag_id)
+	var lead_id := _drag_id
+	if items.find_entity(lead_id).is_empty():
+		for id in _drag_movers:
+			if not items.find_entity(id).is_empty():
+				lead_id = id
+				break
+	var lead := items.find_entity(lead_id)
 	if not lead.is_empty():
-		var from := _v2(_drag_orig[_drag_id])
+		var from := _v2(_drag_orig[lead_id])
 		tiles = items.snap_entity(lead["type"], from + delta) - from
 	var moved := false
-	for id in items.selection():
+	for id in _drag_movers:
 		if not _drag_orig.has(id):
 			continue
 		var e := items.find_entity(id)
@@ -1146,13 +1195,14 @@ func _release_drag() -> void:
 	if not _drag_changed:
 		_undo.pop_back()
 	# A gate let go of near a path it is not in goes into it.
-	if _drag_changed and mode == Mode.ENTITIES:
-		for id in items.selection():
+	if _drag_changed:
+		for id in _drag_movers:
 			var e := items.find_entity(id)
 			if not e.is_empty():
 				_fit_gate(e)
 	_drag_id = ""
 	_drag_orig = {}
+	_drag_movers = []
 	_handle_drag = -1
 
 

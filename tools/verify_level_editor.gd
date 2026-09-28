@@ -235,7 +235,7 @@ func _run() -> void:
 	_expect(editor.doc["objects"].size() == objects + 2, "and one undo brings them back")
 	editor.items.select_many(more)
 	editor._delete_selected()
-	editor._asset_list.select(editor._assets.find("Palm_1"))
+	editor._asset_list.deselect_all()
 
 	# Walls, a bridge, a gate.
 	var B = editor.Build
@@ -438,6 +438,32 @@ func _run() -> void:
 	_expect(_path_holding(editor, alone["id"]) == "" and editor.doc["paths"].size() == paths_before,
 			"nor does a wall drawn into a gate from the north")
 	editor.build = B.PLACE
+
+	# The Gate from the Objects list is a gate, not a frame alone: it comes
+	# with its GATE and goes into the wall it is put down on.
+	var entities_before: int = editor.doc["entities"].size()
+	editor._asset_list.select(editor._assets.find("Gate"))
+	var on_wall := Vector2(float(wall["points"][0][0]) + 4.0, float(wall["points"][0][1]))
+	editor._press(on_wall)
+	editor._release()
+	var from_list: Dictionary = editor.doc["entities"][-1]
+	_expect(editor.doc["entities"].size() == entities_before + 1 and from_list["type"] == "GATE"
+			and editor._belonging_to(from_list["id"]).size() == 1 and int(from_list.get("group", 0)) > 0
+			and Level3DStructures.gates_in(editor.items.find_structure(wall["id"])) == [from_list["id"]],
+			"a Gate from the Objects list is put down as a GATE, and goes into the wall")
+	var frame_piece: Dictionary = editor._belonging_to(from_list["id"])[0]
+	var gate_was := Vector2(from_list["pos"][0], from_list["pos"][1])
+	editor._asset_list.deselect_all()
+	editor._press(Vector2(float(frame_piece["pos"][0]), float(frame_piece["pos"][2])))
+	editor._move(Vector2(float(frame_piece["pos"][0]), float(frame_piece["pos"][2])) + Vector2(tile_m, 0.0))
+	editor._release()
+	_expect(absf(float(from_list["pos"][0]) - gate_was.x - tile_m) < 0.002
+			and absf(float(frame_piece["pos"][0]) - float(from_list["pos"][0])) < 0.002,
+			"its frame dragged on the Objects page takes the gate with it")
+	var lone: Dictionary = editor.doc.duplicate(true)
+	(lone["objects"] as Array).append({"id": "lone_gate", "asset": "Gate", "pos": [0.0, 0.0, 0.0], "yaw": 0.0, "scale": 1.0})
+	_expect(Array(Level3DIO.check(lone, Level3DIO.read_catalog())).any(func(p): return "lone_gate" in p),
+			"and the check finds a Gate frame with no GATE")
 	editor.build = B.PLACE
 	editor._set_mode(M.ENTITIES)
 	editor._entity_list.deselect_all()
@@ -489,7 +515,7 @@ func _run() -> void:
 			back.trace(traced)
 			_expect(Level3DIO.serialize(traced) == Level3DIO.serialize(doc), "traced again, the same file")
 		_expect(doc["nav"][land_tile.y][land_tile.x] == "%", "the saved grid has the tile painted over the ground's")
-		_expect(doc["entities"].size() == count + 5 and doc["objects"].size() == objects + 5, "the entities and objects saved, the gates too")
+		_expect(doc["entities"].size() == count + 6 and doc["objects"].size() == objects + 6, "the entities and objects saved, the gates too")
 		_expect(doc["paths"].size() == 6 and doc["bridges"].size() == 1, "the paths and the bridge saved")
 		var problems := Level3DIO.check(doc, Level3DIO.read_catalog())
 		_expect(problems.is_empty(), "Level3DIO.check finds nothing: %s" % [problems])
