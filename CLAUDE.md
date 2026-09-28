@@ -485,8 +485,13 @@ as it is; a level made here plays the grid its ground makes (land empty,
 forest solid, slope and water water) with what was painted over it,
 `nav_paint` in the file, `-` where the ground's stands. Level -> Build runs
 the Blender builder in the background into `build/level3d/<name>.glb` and
-imports that; Play opens the preview on it -- `-- --file <level> --level
-<glb>`, which moves the start and the Chinook's landing to the level's
+imports that; Play (F5) saves and builds first when the level is newer
+than its glb, then opens the preview on it in a process of its own --
+`-- --file <level> --level <glb> --editor`, the last making the Escape
+menu's exit "В редактор" -- and waits minimised for that process to end,
+however it ends, to come back. The preview is not run inside the editor's
+process because it keeps state in statics (`Level3DMap.file`, the audio
+buses, the tree's pause, the mouse mode). The preview moves the start and the Chinook's landing to the level's
 south end and leaves out stage 1's own buildings; Check is
 `Level3DIO.check`, and Rebuild flow field writes stage 1's own
 `assets/level3d/dirs-0.dat`, which `Level3DMap` prefers to the game's

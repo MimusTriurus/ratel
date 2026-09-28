@@ -1851,6 +1851,7 @@ func _make_menu() -> void:
 	_crt = _screen_pass(CRT_LAYER, 1)
 	_menu = Level3DMenu.new()
 	_menu.settings = settings
+	_menu.from_editor = OS.get_cmdline_user_args().has("--editor")
 	_menu.changed = _settings_changed
 	_menu.resumed = func(): _gun_locked = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	add_child(_menu)
@@ -2494,7 +2495,7 @@ func _screenshot_mode() -> void:
 	# Level3DSoldiers, Level3DBtr and Level3DAudio read these for themselves;
 	# they are not waypoints.
 	for own in ["--fade-corpses", "--btr", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
-			"--no-wind", "--wind-steps", "--spots", "--audio-debug"]:
+			"--no-wind", "--wind-steps", "--spots", "--audio-debug", "--editor"]:
 		var at := args.find(own)
 		if at >= 0:
 			args.remove_at(at)

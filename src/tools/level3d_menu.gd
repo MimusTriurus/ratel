@@ -51,6 +51,9 @@ const ACTION_NAMES := {
 var settings: Level3DSettings
 var changed: Callable        # after every change, with the menu still open
 var resumed: Callable        # once the menu has closed
+# Started by the level editor's Play (--editor): leaving is going back to it,
+# which is waiting for this process to end.
+var from_editor := false
 
 var _main_page: Control
 var _settings_page: Control
@@ -233,7 +236,7 @@ func _make_main_page() -> Control:
 	box.add_child(title)
 	_continue = _button(box, "Продолжить", close)
 	_button(box, "Настройки", _show_settings)
-	_button(box, "Выход", func(): get_tree().quit())
+	_button(box, "В редактор" if from_editor else "Выход", func(): get_tree().quit())
 	return panel
 
 

@@ -53,7 +53,9 @@
 # Level -> Build saves, then runs the Blender builder in the background on
 # the level file, into build/level3d/<name>.glb, and imports what it made;
 # Play opens the preview on the level and that glb (src/tools/level3d_preview
-# .tscn, --file and --level). Check lists what Level3DIO.check finds, and on
+# .tscn, --file and --level), building it first when the level is newer, and
+# the editor waits minimised until the game is left (--editor: its menu's
+# exit is "back to the editor"). Check lists what Level3DIO.check finds, and on
 # stage 1 Rebuild flow field writes its assets/level3d/dirs-0.dat from the
 # grid (another level's is built when the preview loads it). Blender is the
 # Store build's launcher unless user://level_editor.cfg says otherwise
@@ -198,6 +200,10 @@ var _after_confirm: Callable
 var _level_menu: PopupMenu
 # The build under way: {"pid", "step" ("blender" or "import"), "started"}.
 var _job := {}
+# Play: a build it is waiting for, and the game while it runs -- its pid and
+# the window mode the editor is given back in when it ends.
+var _play_after_build := false
+var _game := {}
 
 
 func _ready() -> void:
@@ -867,6 +873,7 @@ func _edit_object(field: String, value: float) -> void:
 
 func _process(delta: float) -> void:
 	_poll_job()
+	_poll_game()
 	_since_refresh += delta
 	if _pending.has_area() and _since_refresh >= REFRESH_EVERY:
 		_flush()
@@ -1312,6 +1319,7 @@ func _poll_job() -> void:
 		var text := FileAccess.get_file_as_string(_job["report"])
 		if text == "" or text.contains("Traceback") or not text.contains("exported"):
 			_job = {}
+			_play_after_build = false
 			var lines := text.strip_edges().split("\n")
 			_tell("The build failed. The end of %s:\n\n%s" % [(BUILD_DIR + _level_name() + "-report.txt"),
 					"\n".join(lines.slice(maxi(0, lines.size() - 14)))])
@@ -1323,15 +1331,71 @@ func _poll_job() -> void:
 		return
 	_job = {}
 	_footer.text = "Built %s in %d s: %s" % [_level_name(), seconds, _built_glb()]
+	if _play_after_build:
+		_play_after_build = false
+		_play()
 
 
+# Play: the preview on the level as it is now -- saved and built first when
+# the level is newer than its glb -- in a process of its own, with --editor,
+# which makes its menu's exit "back to the editor". The editor steps out of
+# the way while it runs and comes back when it ends, however it ends: the
+# menu, the window's close button, a crash. A process of its own rather than
+# the preview inside this one: the preview keeps state in statics
+# (Level3DMap.file, the audio buses, the tree's pause, the mouse mode) that
+# nothing would put back for the editor afterwards.
 func _play() -> void:
-	if not ResourceLoader.exists(_built_glb()):
-		_tell("%s has not been built yet: Level -> Build in Blender." % _level_name())
+	if not _game.is_empty():
 		return
-	OS.create_process(OS.get_executable_path(), PackedStringArray([
+	if not _job.is_empty():
+		_play_after_build = true
+		_footer.text = "Playing once the build is done ..."
+		return
+	if path == "" or dirty or _needs_build():
+		if path == "":
+			_tell("Save the level first: it is built from its file.")
+			return
+		_play_after_build = true
+		await _build()
+		if _job.is_empty():
+			_play_after_build = false
+		return
+	var pid := OS.create_process(OS.get_executable_path(), PackedStringArray([
 		"--path", ProjectSettings.globalize_path("res://"), PREVIEW, "--",
-		"--file", path, "--level", _built_glb()]))
+		"--file", path, "--level", _built_glb(), "--editor"]))
+	if pid <= 0:
+		_tell("Could not start the preview.")
+		return
+	_game = {"pid": pid, "mode": DisplayServer.window_get_mode()}
+	_footer.text = "Playing %s ..." % _level_name()
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MINIMIZED)
+
+
+# Whether the glb is missing or older than the level file or its rasters.
+func _needs_build() -> bool:
+	if not ResourceLoader.exists(_built_glb()):
+		return true
+	var built := FileAccess.get_modified_time(_built_glb())
+	var sources: Array = [path]
+	var raster: Dictionary = doc.get("terrain", {}).get("raster", {})
+	for key in ["ground", "height"]:
+		if raster.has(key):
+			sources.append(path.get_base_dir().path_join(raster[key]))
+	for source in sources:
+		if FileAccess.file_exists(source) and FileAccess.get_modified_time(source) > built:
+			return true
+	return false
+
+
+func _poll_game() -> void:
+	if _game.is_empty() or OS.is_process_running(int(_game["pid"])):
+		return
+	var was: DisplayServer.WindowMode = _game["mode"]
+	_game = {}
+	DisplayServer.window_set_mode(was if was != DisplayServer.WINDOW_MODE_MINIMIZED
+			else DisplayServer.WINDOW_MODE_WINDOWED)
+	DisplayServer.window_move_to_foreground()
+	_footer.text = "Back from %s." % _level_name()
 
 
 # --- The interface -------------------------------------------------------------
