@@ -340,6 +340,41 @@ func bits_at(at: Vector2) -> int:
 func fill(bits: int) -> void:
 	ground.fill(bits)
 
+# --- Passability -------------------------------------------------------------------
+
+
+# The nav grid the ground makes, a row of the type legend per map row: land
+# is empty, forest solid, and the water and the slope down to it water --
+# which is how stage 1's grid has it on 97% of its tiles, the rest being its
+# walls and buildings. A tile is what most of nine points across it are.
+# Stage 1 keeps the grid it was given; a level the editor made has this one.
+func derive_nav(doc: Dictionary) -> Array:
+	var grid_doc: Dictionary = doc["grid"]
+	var tile := float(grid_doc["tile_px"])
+	var out: Array = []
+	for row in int(grid_doc["height"]):
+		var line := ""
+		for col in int(grid_doc["width"]):
+			var votes := [0, 0, 0]  # empty, solid, water
+			for sy in [0.2, 0.5, 0.8]:
+				for sx in [0.2, 0.5, 0.8]:
+					var at := Level3DIO.to_level(grid_doc, Vector2((col + sx) * tile, (row + sy) * tile))
+					var bits := bits_at(at)
+					if bits & FOREST:
+						votes[1] += 1
+					elif bits & LAND:
+						votes[0] += 1
+					else:
+						votes[2] += 1
+			var best := 0
+			for k in 3:
+				if votes[k] > votes[best]:
+					best = k
+			line += [".", "#", "~"][best]
+		out.append(line)
+	return out
+
+
 # --- Polygons ---------------------------------------------------------------------
 
 

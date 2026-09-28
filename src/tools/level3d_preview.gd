@@ -131,6 +131,12 @@
 # get off by it and walk aboard while the BTR waits east of it
 # (level3d_rescue.gd).
 #
+# --file <res:// path> plays another level file than stage 1's, one the level
+# editor made (src/tools/level_editor.tscn), with --level its built glb: its
+# grid, its entities, its frame, and a start and a landing as far from its
+# south end as stage 1's are from its own. Stage 1's own buildings that are
+# blown up are not in it.
+#
 # The stage opens as the game's does: a Chinook flies the BTR in, backs it out
 # down its ramp and flies off; the BTR is the player's, at IntroPlayer's spot
 # rather than START, as soon as it is out, not once the Chinook has gone as in
@@ -203,6 +209,11 @@ const SEA_WEST := -27.0
 # first turn east ended on a trunk.
 const START := Vector3(-7.0, 0.0, 27.0)
 const START_HEADING := PI / 2.0
+
+
+# START on the level being played: as far from its south end as from stage 1's.
+static func start() -> Vector3:
+	return START + Vector3(0.0, 0.0, Level3DMap.extra_px() * Level3DMap.PX)
 # A ray from this high down to this low finds the top surface anywhere.
 const RAY_TOP := 30.0
 const RAY_BOTTOM := -5.0
@@ -286,6 +297,9 @@ func _ready() -> void:
 		get_tree().node_added.connect(_engine_contour)
 	if run_args.has("--level"):
 		level_path = run_args[run_args.find("--level") + 1]
+	if run_args.has("--file"):
+		Level3DMap.file = run_args[run_args.find("--file") + 1]
+		Level3DMap.rows = int(Level3DIO.read_path(Level3DMap.file)["grid"]["height"])
 	var scene: PackedScene = load(level_path)
 	if scene == null:
 		push_error("Cannot load %s -- open the project in the editor once so it is imported" % level_path)
@@ -306,7 +320,7 @@ func _ready() -> void:
 	# ground out to the file's bounds, so its meshes cannot say where the
 	# frame is: the file's frame, measured off the hand-built level as above,
 	# does. The meshes are the fallback for a file without one.
-	var frame: Array = Level3DIO.read(Level3DMap.STAGE).get("terrain", {}).get("frame", [])
+	var frame: Array = Level3DIO.read_path(Level3DMap.level_path()).get("terrain", {}).get("frame", [])
 	if frame.size() == 4:
 		level_aabb = AABB(Vector3(frame[0], level_aabb.position.y, frame[1]),
 				Vector3(float(frame[2]) - float(frame[0]), level_aabb.size.y, float(frame[3]) - float(frame[1])))
@@ -318,7 +332,8 @@ func _ready() -> void:
 	_add_targets(level, false)
 	# Last: it adds meshes of its own, which want no collision.
 	_holed_ground(level)
-	_add_destructibles()
+	if Level3DMap.is_stage_one():
+		_add_destructibles()
 	_add_marks(level)
 	# After the contour and the shadows, whose materials it replaces.
 	_add_wind(level)
@@ -365,7 +380,7 @@ func _ready() -> void:
 	# placed after it, or it would sit on nothing.
 	await get_tree().physics_frame
 	await get_tree().physics_frame
-	btr.place(START, START_HEADING)
+	btr.place(start(), START_HEADING)
 	focus = Vector2(btr.position.x, btr.position.z)
 	_update_camera()
 	_live = true
@@ -1379,7 +1394,8 @@ func _add_guns(level: Node) -> void:
 	rescue.player_position = guns.player_position
 	rescue.scored = guns.scored
 	add_child(rescue)
-	rescue.bind_lamps(level)
+	if Level3DMap.is_stage_one():
+		rescue.bind_lamps(level)  # the landing port's, which is stage 1's
 	soldiers.more_solids = friends.solid_boxes
 	var centres := {}
 	for building in destructibles:
@@ -1427,7 +1443,8 @@ func _add_guns(level: Node) -> void:
 	if scene == null or _blast_scene == null:
 		push_error("Cannot load the gun or the blast -- run export() in jackal_assets.blend and jackal_fx.blend")
 		return
-	for bunker_name in GUN_BUNKERS:
+	# Stage 1's bunkers, by name; another level's guns are its entities'.
+	for bunker_name in GUN_BUNKERS if Level3DMap.is_stage_one() else []:
 		var bunker := level.find_child(bunker_name, true, false) as Node3D
 		if bunker == null:
 			push_warning("No %s in %s; it gets no gun" % [bunker_name, level_path])
@@ -2308,7 +2325,7 @@ func _unhandled_input(event: InputEvent) -> void:
 # R, and the last life lost: the BTR flown in again, everything blown up
 # rebuilt and every enemy back, the score and the lives as they started.
 func _restart() -> void:
-	btr.place(START, START_HEADING)
+	btr.place(start(), START_HEADING)
 	following = true
 	for building in destructibles:
 		_set_destroyed(building, false)
@@ -2481,9 +2498,10 @@ func _screenshot_mode() -> void:
 			if _respawning == 0:
 				_explode_btr("--die"))
 		args = args.slice(0, die) + args.slice(die + 2)
-	var level := args.find("--level")
-	if level >= 0:
-		args = args.slice(0, level) + args.slice(level + 2)  # read in _ready
+	for flag in ["--level", "--file"]:
+		var at := args.find(flag)
+		if at >= 0:
+			args = args.slice(0, at) + args.slice(at + 2)  # read in _ready
 	var strip := args.find("--strip")
 	if strip >= 0:
 		var spec := args[strip + 1].split(",")

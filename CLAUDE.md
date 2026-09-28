@@ -461,8 +461,15 @@ The level editor proper is a program of its own, `src/tools/level_editor.tscn`
 (`level_editor.gd`, and `Level3DGroundView` for its picture of the ground):
 File -> New, Open, Save, and brushes for land, sea, river, forest and the
 rise of the ground, a stroke to an undo. It saves the level file, its two
-rasters and the polygons traced off them. Its check drives it without anyone
-at it -- with a window it also writes what it drew to `build/level_editor/`:
+rasters and the polygons traced off them, and a level that is not stage 0
+its nav grid off its ground (land empty, forest solid, slope and water
+water). Level -> Build runs the Blender builder on it in the background
+into `build/level3d/<name>.glb` and imports that; Play opens the preview on
+it -- `-- --file <level> --level <glb>`, which moves the start and the
+Chinook's landing to the level's south end and leaves out stage 1's own
+buildings. Its check drives it without anyone at it -- with a window it
+also writes what it drew to `build/level_editor/`, and `-- --build` builds
+through the menu too:
 
 ```bash
 godot --path . src/tools/level_editor.tscn

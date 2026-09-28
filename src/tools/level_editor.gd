@@ -20,6 +20,13 @@
 #   1-9               tools         T            top down / tilted
 #   F                 the whole level
 #   Ctrl+Z, Ctrl+Y    undo, redo    Ctrl+N/O/S   new, open, save
+#   Ctrl+B            build         F5           play
+#
+# Level -> Build saves, then runs the Blender builder in the background on
+# the level file, into build/level3d/<name>.glb, and imports what it made;
+# Play opens the preview on the level and that glb (src/tools/level3d_preview
+# .tscn, --file and --level). Blender is the Store build's launcher unless
+# user://level_editor.cfg says otherwise ([editor] blender="...").
 #
 # Everything else in the file -- nav, entities, objects, groups -- comes
 # through a save untouched; placing them is the next step of the plan.
@@ -52,6 +59,10 @@ const TOOL_TIPS := {
 # How far apart the dabs of a stroke are, in brush radii.
 const DAB_SPACING := 0.25
 const REFRESH_EVERY := 0.06
+const BASE_BLEND := "res://resources/3d/jackal_stage1_lowpoly.blend"
+const BUILDER := "res://tools/blender/build_level.py"
+const BUILD_DIR := "res://build/level3d/"
+const PREVIEW := "res://src/tools/level3d_preview.tscn"
 
 var doc := {}
 var path := ""
@@ -95,6 +106,9 @@ var _new_start: OptionButton
 var _confirm: ConfirmationDialog
 var _message: AcceptDialog
 var _after_confirm: Callable
+var _level_menu: PopupMenu
+# The build under way: {"pid", "step" ("blender" or "import"), "started"}.
+var _job := {}
 
 
 func _ready() -> void:
@@ -240,6 +254,7 @@ func _undo_step(from: Array, to: Array) -> void:
 
 
 func _process(delta: float) -> void:
+	_poll_job()
 	_since_refresh += delta
 	if _pending.has_area() and _since_refresh >= REFRESH_EVERY:
 		_flush()
@@ -374,6 +389,10 @@ func _key(key: InputEventKey) -> void:
 			_place_camera()
 		KEY_F:
 			_frame_level()
+		KEY_B when ctrl:
+			_build()
+		KEY_F5:
+			_play()
 		_:
 			var n := key.keycode - KEY_1
 			if n >= 0 and n < TOOL_ORDER.size() and not ctrl:
@@ -424,6 +443,10 @@ func _save_to(file_path: String) -> void:
 	var error := ground.save_rasters(doc, file_path.get_base_dir(), file_path.get_file().get_basename())
 	if error == OK:
 		ground.trace(doc)
+		# Stage 1's grid is the game's, and stays; a level made here takes its
+		# grid from its ground until the grid can be painted.
+		if int(doc["stage"]) != Level3DMap.STAGE:
+			doc["nav"] = ground.derive_nav(doc)
 		error = Level3DIO.save_path(doc, file_path)
 	if error != OK:
 		_tell("Saving %s failed (error %d)." % [file_path, error])
@@ -497,6 +520,93 @@ func _notification(what: int) -> void:
 		_guard(func(): get_tree().quit())
 
 
+# --- Building and playing ------------------------------------------------------
+
+
+func _level_name() -> String:
+	return path.get_file().get_basename()
+
+
+func _built_glb() -> String:
+	return BUILD_DIR + _level_name() + ".glb"
+
+
+func _build() -> void:
+	if not _job.is_empty():
+		return
+	if dirty or path == "" or not FileAccess.file_exists(path):
+		if path == "":
+			_tell("Save the level first: it is built from its file.")
+			return
+		await _save_to(path)
+		if dirty:
+			return
+	var blender := _blender()
+	if blender == "":
+		_tell("Blender was not found. Set [editor] blender=\"<path to blender.exe>\" in %s."
+				% ProjectSettings.globalize_path(SETTINGS))
+		return
+	DirAccess.make_dir_recursive_absolute(BUILD_DIR)
+	var report := BUILD_DIR + _level_name() + "-report.txt"
+	if FileAccess.file_exists(report):
+		DirAccess.remove_absolute(report)
+	var args := PackedStringArray(["-b", ProjectSettings.globalize_path(BASE_BLEND),
+		"--python", ProjectSettings.globalize_path(BUILDER), "--",
+		path.trim_prefix("res://"),
+		"--out", (BUILD_DIR + _level_name() + ".blend").trim_prefix("res://"),
+		"--glb", _built_glb().trim_prefix("res://"),
+		"--report", report.trim_prefix("res://")])
+	var pid := OS.create_process(blender, args)
+	if pid <= 0:
+		_tell("Could not start Blender (%s)." % blender)
+		return
+	_job = {"pid": pid, "step": "blender", "started": Time.get_ticks_msec(), "report": report}
+
+
+func _blender() -> String:
+	var config := ConfigFile.new()
+	config.load(SETTINGS)
+	var configured: String = config.get_value("editor", "blender", "")
+	if configured != "":
+		return configured
+	var store := OS.get_environment("LOCALAPPDATA").path_join("Microsoft/WindowsApps/blender-launcher.exe")
+	return store if FileAccess.file_exists(store) else ""
+
+
+func _poll_job() -> void:
+	if _job.is_empty():
+		return
+	var seconds := (Time.get_ticks_msec() - int(_job["started"])) / 1000.0
+	if OS.is_process_running(int(_job["pid"])):
+		_footer.text = "%s %s ... %d s" % ["Building in Blender" if _job["step"] == "blender" else "Importing",
+				_level_name(), seconds]
+		return
+	if _job["step"] == "blender":
+		var text := FileAccess.get_file_as_string(_job["report"])
+		if text == "" or text.contains("Traceback") or not text.contains("exported"):
+			_job = {}
+			var lines := text.strip_edges().split("\n")
+			_tell("The build failed. The end of %s:\n\n%s" % [(BUILD_DIR + _level_name() + "-report.txt"),
+					"\n".join(lines.slice(maxi(0, lines.size() - 14)))])
+			return
+		# The preview loads the glb as an imported scene.
+		var pid := OS.create_process(OS.get_executable_path(), PackedStringArray([
+			"--path", ProjectSettings.globalize_path("res://"), "--headless", "--import"]))
+		_job = {"pid": pid, "step": "import", "started": _job["started"]}
+		return
+	_job = {}
+	_footer.text = "Built %s in %d s: %s" % [_level_name(), seconds, _built_glb()]
+
+
+func _play() -> void:
+	if not ResourceLoader.exists(_built_glb()):
+		_tell("%s has not been built yet: Level -> Build in Blender." % _level_name())
+		return
+	OS.create_process(OS.get_executable_path(), PackedStringArray([
+		"--path", ProjectSettings.globalize_path("res://"), PREVIEW, "--",
+		"--file", path, "--level", _built_glb()]))
+
+
 # --- The interface -------------------------------------------------------------
 
 
@@ -551,12 +661,18 @@ func _build_header() -> void:
 
 	var level := PopupMenu.new()
 	level.name = "Level"
-	level.add_item("Build in Blender", 0)
-	level.add_item("Play", 1)
-	level.set_item_disabled(0, true)
-	level.set_item_disabled(1, true)
-	level.set_item_tooltip(0, "Next step of the plan")
+	level.add_item("Build in Blender  Ctrl+B", 0)
+	level.add_item("Play              F5", 1)
+	level.set_item_tooltip(0, "Saves, then builds the level in Blender into build/level3d/, "
+			+ "and imports it -- half a minute or so")
+	level.set_item_tooltip(1, "Opens the preview on the level as it was last built")
+	level.id_pressed.connect(func(id: int) -> void:
+		if id == 0:
+			_build()
+		else:
+			_play())
 	bar.add_child(level)
+	_level_menu = level
 
 	var view_menu := PopupMenu.new()
 	view_menu.name = "View"

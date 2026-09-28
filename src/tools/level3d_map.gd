@@ -34,6 +34,29 @@ extends RefCounted
 const STAGE := 0
 const PX := 0.014651
 const ORIGIN := Vector2(-15.0121, -135.0312)
+# Stage 1's length, which the preview's fixed positions -- the start, the
+# Chinook's landing -- were measured on.
+const STAGE_ROWS := 359
+
+# The level file the preview plays: stage 1's unless --file names another,
+# one the level editor made. Its grid is where stage 1's is, 64 tiles across,
+# and any length.
+static var file := ""
+static var rows := STAGE_ROWS
+
+
+static func level_path() -> String:
+	return file if file != "" else Level3DIO.path(STAGE)
+
+
+static func is_stage_one() -> bool:
+	return file == "" or file == Level3DIO.path(STAGE)
+
+
+# How much further south the level's south end is than stage 1's, in map px:
+# what the start and the landing move by.
+static func extra_px() -> float:
+	return (rows - STAGE_ROWS) * 32.0
 
 var stage := Stage.new()
 # The POW buildings of the stage, as Hut and House find them: {"type" (the
@@ -47,11 +70,19 @@ var _triggered := {}
 
 
 func _init() -> void:
-	Level3DIO.load_stage(Level3DIO.read(STAGE), stage, MapIO.load_trigger_sizes())
-	# The level's own flow field once the editor has built one from its grid,
-	# and the game's until then, which is the same grid.
-	FlowField.load_into(STAGE, stage,
-			Level3DIO.DIR if FileAccess.file_exists(Level3DIO.flow_field_path(STAGE)) else FlowField.MAPS)
+	var doc := Level3DIO.read_path(level_path())
+	rows = int(doc["grid"]["height"])
+	Level3DIO.load_stage(doc, stage, MapIO.load_trigger_sizes())
+	if is_stage_one():
+		# The level's own flow field once the editor has built one from its
+		# grid, and the game's until then, which is the same grid.
+		FlowField.load_into(STAGE, stage,
+				Level3DIO.DIR if FileAccess.file_exists(Level3DIO.flow_field_path(STAGE)) else FlowField.MAPS)
+	elif not (doc["entities"] as Array).is_empty():
+		# Another level's is built as it is loaded; one nobody is on needs none.
+		var started := Time.get_ticks_msec()
+		FlowField.build(stage)
+		print("Level3DMap: flow field of %s built in %d ms" % [level_path(), Time.get_ticks_msec() - started])
 	for row in stage.types_map:
 		_pristine.append((row as PackedInt32Array).duplicate())
 	for row in stage.trigger_map[0]:

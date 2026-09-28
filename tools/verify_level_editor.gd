@@ -6,6 +6,8 @@
 #
 # With a window instead of --headless it also writes what it drew, top down
 # and tilted, to build/level_editor/ (-- --shots <dir> to put them elsewhere).
+# -- --build also builds the level through the menu's Build, Blender and the
+# import, into build/level3d/_verify_build.glb.
 #
 # - Undo puts back exactly what a stroke painted over, and redo exactly what
 #   it painted.
@@ -113,6 +115,19 @@ func _run() -> void:
 		var problems := Array(Level3DIO.check(doc, Level3DIO.read_catalog())).filter(
 				func(p): return not p.contains("PLAYER/CHINOOK"))
 		_expect(problems.is_empty(), "Level3DIO.check finds nothing but the missing player: %s" % [problems])
+
+	# -- --build: Level -> Build, Blender and the import, as the menu runs them.
+	if args.has("--build"):
+		editor.path = "res://assets/level3d/_verify_build.json"
+		await editor._save_to(editor.path)
+		var started := Time.get_ticks_msec()
+		editor._build()
+		while not editor._job.is_empty() and Time.get_ticks_msec() - started < 300000:
+			await process_frame
+		print("  built in %.1f s: %s" % [(Time.get_ticks_msec() - started) / 1000.0, editor._footer.text])
+		_expect(ResourceLoader.exists(editor._built_glb()), "the build made %s, imported" % editor._built_glb())
+		for f in ["_verify_build.json", "rasters/_verify_build-ground.png", "rasters/_verify_build-height.png"]:
+			DirAccess.remove_absolute("res://assets/level3d/" + f)
 
 	if shots:
 		DirAccess.make_dir_recursive_absolute(shot_dir)

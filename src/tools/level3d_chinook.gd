@@ -166,7 +166,8 @@ func _ready() -> void:
 		push_error("Cannot load %s -- run export() in jackal_chinook_lowpoly.blend" % MODEL_PATH)
 		state = DONE
 		return
-	_shift = landing_shift()
+	# And as far again as the level is longer than stage 1.
+	_shift = landing_shift() + Level3DMap.extra_px()
 	_model = _instance(scene, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 	_shadow = _instance(scene, GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY)
 	var landing := Level3DMap.to_level(ARC_LANDING + Vector2(0.0, _shift))
@@ -344,7 +345,7 @@ func tick() -> void:
 				unit_angle = -90
 			delay -= 1
 			if delay == 0:
-				unit = Vector2(IntroPlayer.FINAL_X, IntroPlayer.FINAL_Y)
+				unit = Vector2(IntroPlayer.FINAL_X, IntroPlayer.FINAL_Y + Level3DMap.extra_px())
 				_unload_completed()
 				_hand_over()
 			_play_sound(SOUND_VOLUME)
@@ -423,9 +424,10 @@ func _in_frame() -> bool:
 	return false
 
 
-# Where the BTR is the player's, level x, z: IntroPlayer's FINAL_X, FINAL_Y.
+# Where the BTR is the player's, level x, z: IntroPlayer's FINAL_X, FINAL_Y,
+# as far from the level's south end as from stage 1's.
 static func hand_over_at() -> Vector2:
-	return Level3DMap.to_level(Vector2(IntroPlayer.FINAL_X, IntroPlayer.FINAL_Y))
+	return Level3DMap.to_level(Vector2(IntroPlayer.FINAL_X, IntroPlayer.FINAL_Y + Level3DMap.extra_px()))
 
 
 # Where the preview's frame stands for the whole run, `half_height` metres
