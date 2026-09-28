@@ -391,7 +391,7 @@ def build_structures(doc, catalog, templates, rise, collection):
             o.rotation_euler = (0.0, 0.0, angle)
             o.scale = (1.0, across, 1.0)
             collection.objects.link(o)
-        built += 4 + len(b["piers"]) + int(plates["count"])
+        built += 3 + len(b["piers"]) + int(plates["count"])  # the deck, two curbs
     for g in doc["objects"]:
         asset = catalog["assets"].get(g["asset"], {})
         if "base" not in asset:
@@ -1284,9 +1284,12 @@ def main():
 
     errors = []
     built = build_structures(doc, catalog, templates, rise, gen_structures)
-    matched, worst, where = compare_structures(gen_structures, structures_before)
-    say("structures: %d walls, %d bridges, %d pieces built; against the base's %d of them, %.4f m at worst (%s)"
-        % (len(doc.get("walls", [])), len(doc.get("bridges", [])), built, matched, worst, where or "-"))
+    say("structures: %d walls, %d bridges, %d pieces built"
+        % (len(doc.get("walls", [])), len(doc.get("bridges", [])), built))
+    if stage_one:
+        # Stage 1's were read off the base, and should be where the base's were.
+        matched, worst, where = compare_structures(gen_structures, structures_before)
+        say("structures: against the base's %d of them, %.4f m at worst (%s)" % (matched, worst, where or "-"))
     for t in list(templates.values()):
         for o in (t if isinstance(t, list) else [t]):
             o = o[1] if isinstance(o, tuple) else o

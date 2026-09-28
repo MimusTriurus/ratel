@@ -585,6 +585,16 @@ static func check(doc: Dictionary, catalog: Dictionary) -> PackedStringArray:
 			var owner: Variant = ids.get(object["entity"])
 			if owner == null or not (owner as Dictionary).has("type"):
 				problems.append("%s belongs to %s, which is not an entity" % [id, object["entity"]])
+	for key in ["walls", "bridges"]:
+		for st in doc.get(key, []):
+			var id: String = st["id"]
+			if ids.has(id):
+				problems.append("id %s is used twice" % id)
+			ids[id] = st
+			if Level3DStructures.length_of(st) < 0.1 or float(st["width"]) <= 0.0:
+				problems.append("%s: %s has no length or no width" % [key, id])
+			if key == "walls" and not Level3DStructures.STYLES.has(st["style"]):
+				problems.append("%s: wall style %s is not one of %s" % [id, st["style"], Level3DStructures.STYLES.keys()])
 	# An entity the catalogue gives an object -- a gun its bunker, the landing
 	# port its pad -- has one of that asset belonging to it: the preview sets
 	# the gun on the bunker it finds that way, and without one there is none.

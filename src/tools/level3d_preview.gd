@@ -332,8 +332,7 @@ func _ready() -> void:
 	_add_targets(level, false)
 	# Last: it adds meshes of its own, which want no collision.
 	_holed_ground(level)
-	if Level3DMap.is_stage_one():
-		_add_destructibles()
+	_add_destructibles()
 	_add_marks(level)
 	# After the contour and the shadows, whose materials it replaces.
 	_add_wind(level)
@@ -1055,8 +1054,31 @@ const DESTRUCTION_SETTLE := 3.0
 var destructibles := {}
 
 
+# The buildings that are blown up, each [its name, where it is moved from
+# where stage 1 has it]. Stage 1 has all of DESTRUCTIBLE_NAMES where they
+# are; another level has its gate, if it has one: the destructible part of
+# the Gate object, turned and moved from the catalogue's pivot to the
+# object's place, as the builder moves the gate's frame. One gate a level:
+# Level3DMap keeps one gate group.
+static func _destructibles_here() -> Array:
+	if Level3DMap.is_stage_one():
+		return DESTRUCTIBLE_NAMES.map(func(n): return [n, Transform3D.IDENTITY])
+	var catalog := Level3DIO.read_catalog()
+	for o in Level3DIO.read_path(Level3DMap.level_path())["objects"]:
+		var asset: Dictionary = catalog["assets"].get(o["asset"], {})
+		if not asset.has("destructible"):
+			continue
+		var pivot := Vector3(float(asset["pivot"][0]), 0.0, float(asset["pivot"][1]))
+		var at := Vector3(float(o["pos"][0]), float(o["pos"][1]), float(o["pos"][2]))
+		var move := Transform3D(Basis(Vector3.UP, deg_to_rad(float(o["yaw"]))), at) \
+				* Transform3D(Basis.IDENTITY, -pivot)
+		return [[asset["destructible"], move]]
+	return []
+
+
 func _add_destructibles() -> void:
-	for building in DESTRUCTIBLE_NAMES:
+	for pair in _destructibles_here():
+		var building: String = pair[0]
 		var path := DESTRUCTIBLE_PATH % building
 		var scene: PackedScene = load(path)
 		if scene == null:
@@ -1064,6 +1086,7 @@ func _add_destructibles() -> void:
 			continue
 		var root := scene.instantiate()
 		root.name = "Dest_" + building
+		(root as Node3D).transform = pair[1]
 		add_child(root)
 		var player := root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 		_sharpen_visibility(player.get_animation(DESTRUCTION_ANIMATION))

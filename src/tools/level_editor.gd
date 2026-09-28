@@ -30,7 +30,13 @@
 #             port its pad -- comes with it, and goes where it goes. The
 #             line across the map is the row the picked one fires on.
 #   Objects   scenery from the catalogue, the same way; R and Shift+R turn
-#             the picked one, [ and ] scale it.
+#             the picked one, [ and ] scale it. Wall, Side wall and Bridge
+#             are drawn instead, a drag from one end to the other -- held to
+#             a multiple of 45 degrees unless Shift is down -- and laid out
+#             as stage 1's are (Level3DStructures); a picked one is dragged
+#             whole, and its width, height and merlons are on the panel. A
+#             GATE entity comes with its gate and the destruction group
+#             that opens it, both moved with it.
 #
 # Delete removes what is picked, Esc lets go of it. Every stroke, placing,
 # move and removal is one undo. LevelEditorItems draws what is over the
@@ -90,6 +96,10 @@ const NAV_AUTO := -1
 const DAB_SPACING := 0.25
 const REFRESH_EVERY := 0.06
 const TURN := 15.0
+# The Objects page's tools: put a piece down, or draw a wall or a bridge.
+enum Build { PLACE, WALL, SIDE, BRIDGE }
+const BUILD_NAMES := ["Place", "Wall", "Side wall", "Bridge"]
+const SNAP := 0.05
 const BASE_BLEND := "res://resources/3d/jackal_stage1_lowpoly.blend"
 const BUILDER := "res://tools/blender/build_level.py"
 const BUILD_DIR := "res://build/level3d/"
@@ -129,6 +139,10 @@ var _drag_id := ""
 var _drag_offset := Vector2.ZERO
 var _drag_changed := false
 var _nav_painting := false
+var build: Build = Build.PLACE
+# The wall or bridge being drawn, and where its drag began.
+var _drawing := ""
+var _draw_from := Vector2.ZERO
 
 var _camera: Camera3D
 var _focus := Vector2.ZERO
@@ -165,6 +179,12 @@ var _object_info: Label
 var _object_yaw: SpinBox
 var _object_scale: SpinBox
 var _object_box: Control
+var _build_buttons := {}
+var _structure_box: Control
+var _structure_info: Label
+var _structure_width: SpinBox
+var _structure_height: SpinBox
+var _structure_merlons: CheckBox
 var _syncing := false
 var _open_dialog: FileDialog
 var _save_dialog: FileDialog
@@ -282,7 +302,7 @@ func _record(keys: Variant) -> void:
 
 
 func _undo_step(from: Array, to: Array) -> void:
-	if from.is_empty() or _painting or _drag_id != "" or _nav_painting:
+	if from.is_empty() or _painting or _drag_id != "" or _nav_painting or _drawing != "":
 		return
 	var entry: Dictionary = from.pop_back()
 	if entry.has("ground"):
@@ -313,6 +333,15 @@ func _refresh_doc(key: String) -> void:
 			_sync_selection()
 		"nav", "nav_paint":
 			_show_nav()
+		"walls", "bridges":
+			var picked := items.selected()
+			items.setup(doc, view.height_at, ground.rise_at)
+			if not items.find_structure(picked).is_empty():
+				items.select(picked)
+			_derived = []
+			_sync_selection()
+		"groups":
+			_derived = []
 
 
 func _redo_step() -> void:
@@ -375,6 +404,8 @@ func _lift_items() -> void:
 		items.update_entity(e)
 	for o in doc["objects"]:
 		items.update_object(o)
+	for w in doc.get("walls", []):
+		items.update_wall(w)
 
 
 # --- The nav grid ----------------------------------------------------------------
@@ -442,6 +473,9 @@ func _unique_id(stem: String) -> String:
 		taken[e["id"]] = true
 	for o in doc["objects"]:
 		taken[o["id"]] = true
+	for key in ["walls", "bridges"]:
+		for st in doc.get(key, []):
+			taken[st["id"]] = true
 	var n := 0
 	while taken.has("%s_%d" % [stem, n]):
 		n += 1
@@ -450,7 +484,7 @@ func _unique_id(stem: String) -> String:
 
 func _press_entity(p: Vector2) -> void:
 	var id := items.entity_under(p)
-	_record(["entities", "objects"])
+	_record(["entities", "objects", "groups"])
 	if id == "":
 		if _entity_list.get_selected_items().is_empty():
 			_undo.pop_back()
@@ -465,6 +499,7 @@ func _press_entity(p: Vector2) -> void:
 		var e := {"id": _unique_id(type.to_lower()), "type": type, "pos": [at.x, at.y],
 				"difficulty": difficulty}
 		(doc["entities"] as Array).append(e)
+		_gate_group(e)
 		_reprobe(e)
 		items.update_entity(e)
 		id = e["id"]
@@ -485,6 +520,10 @@ func _press_entity(p: Vector2) -> void:
 
 
 func _press_object(p: Vector2) -> void:
+	var picked := items.structure_under(p) if build == Build.PLACE else ""
+	if build != Build.PLACE or picked != "":
+		_press_structure(p, picked)
+		return
 	var id := items.object_under(p)
 	_record("objects")
 	if id == "":
@@ -514,14 +553,86 @@ func _object_pos(p: Vector2) -> Array:
 			Level3DIO.round_mm(p.y)]
 
 
+# Draws a new wall or bridge from `p`, or picks `picked` to drag it whole.
+func _press_structure(p: Vector2, picked: String) -> void:
+	for key in ["walls", "bridges"]:
+		if not doc.has(key):
+			doc[key] = []
+	_record(["walls", "bridges"])
+	if picked != "":
+		var st := items.find_structure(picked)
+		_drag_id = picked
+		_drag_offset = Vector2(float(st["from"][0]), float(st["from"][1])) - p
+		_drag_changed = false
+		items.select(picked)
+		_sync_selection()
+		return
+	var at := p.snapped(Vector2(SNAP, SNAP))
+	var st: Dictionary
+	if build == Build.BRIDGE:
+		st = Level3DStructures.new_bridge(_unique_id("bridge"), at, at)
+		(doc["bridges"] as Array).append(st)
+	else:
+		st = Level3DStructures.new_wall(_unique_id("wall"), "wall" if build == Build.WALL else "side", at, at)
+		(doc["walls"] as Array).append(st)
+	_drawing = st["id"]
+	_draw_from = at
+	items.select(_drawing)
+
+
+func _draw_to(p: Vector2) -> void:
+	var st := items.find_structure(_drawing)
+	var to := p.snapped(Vector2(SNAP, SNAP))
+	if not Input.is_key_pressed(KEY_SHIFT):
+		# Held to a multiple of 45 degrees.
+		var d := to - _draw_from
+		var angle := snappedf(d.angle(), PI / 4.0)
+		to = (_draw_from + Vector2.from_angle(angle) * d.length()).snapped(Vector2(SNAP, SNAP))
+	st["to"] = [Level3DIO.round_mm(to.x), Level3DIO.round_mm(to.y)]
+	if items.is_wall(st):
+		Level3DStructures.lay_merlons(st)
+		items.update_wall(st)
+	else:
+		Level3DStructures.lay_bridge(st)
+		items.update_bridge(st)
+
+
+func _end_draw() -> void:
+	var st := items.find_structure(_drawing)
+	_drawing = ""
+	if Level3DStructures.length_of(st) < 0.3:
+		# A click, not a drag: nothing drawn.
+		(doc["walls" if items.is_wall(st) else "bridges"] as Array).erase(st)
+		items.remove_structure(st["id"])
+		_undo.pop_back()
+		return
+	_derived = []
+	_sync_selection()
+
+
 func _drag_to(p: Vector2) -> void:
 	var target := p + _drag_offset
+	var st := items.find_structure(_drag_id)
+	if not st.is_empty():
+		var a := target.snapped(Vector2(SNAP, SNAP))
+		var by := a - Vector2(float(st["from"][0]), float(st["from"][1]))
+		if by != Vector2.ZERO:
+			for end in ["from", "to"]:
+				st[end] = [Level3DIO.round_mm(float(st[end][0]) + by.x), Level3DIO.round_mm(float(st[end][1]) + by.y)]
+			if items.is_wall(st):
+				items.update_wall(st)
+			else:
+				items.update_bridge(st)
+			_drag_changed = true
+			_derived = []
+		return
 	if mode == Mode.ENTITIES:
 		var e := items.find_entity(_drag_id)
 		var at := items.snap_entity(e["type"], target)
 		if at.x != float(e["pos"][0]) or at.y != float(e["pos"][1]):
 			var by := at - Vector2(float(e["pos"][0]), float(e["pos"][1]))
 			e["pos"] = [at.x, at.y]
+			_gate_group(e)
 			_reprobe(e)
 			items.update_entity(e)
 			for o in _belonging_to(e["id"]):
@@ -549,6 +660,28 @@ func _release_drag() -> void:
 	_drag_id = ""
 
 
+# A gate opens the middle of its footprint when it is blown: a destruction
+# group of those cells, made for it the first time and moved with it. Stage
+# 1's is group 6, which this rewrites to the same cells.
+func _gate_group(e: Dictionary) -> void:
+	if e["type"] != "GATE":
+		return
+	var cells := Level3DStructures.gate_cells(items.entity_tile(e))
+	var groups: Array = doc["groups"]
+	var index := int(e.get("group", -1))
+	for g in groups:
+		if int(g["index"]) == index:
+			g["cells"] = cells
+			_derived = []
+			return
+	index = 0
+	for g in groups:
+		index = maxi(index, int(g["index"]) + 1)
+	groups.append({"index": index, "cells": cells})
+	e["group"] = index
+	_derived = []
+
+
 # A building's group is the one its probe cell is in, wherever it goes.
 func _reprobe(e: Dictionary) -> void:
 	var group := items.probed_group(e["type"], items.entity_tile(e))
@@ -564,7 +697,14 @@ func _delete_selected() -> void:
 	var id := items.selected()
 	if id == "":
 		return
-	_record(["entities", "objects"])
+	_record(["entities", "objects", "walls", "bridges"] if doc.has("walls") else ["entities", "objects"])
+	var st := items.find_structure(id)
+	if not st.is_empty():
+		(doc["walls" if items.is_wall(st) else "bridges"] as Array).erase(st)
+		items.remove_structure(id)
+		_derived = []
+		_sync_selection()
+		return
 	var e := items.find_entity(id)
 	if not e.is_empty():
 		# And what belongs to it.
@@ -616,6 +756,19 @@ func _sync_selection() -> void:
 		_entity_hard.button_pressed = (e["difficulty"] as Array).has("hard")
 		_entity_group.value = int(e.get("group", -1))
 		_entity_group.editable = MapIO.GROUP_PROBES.has(MapIO.trigger_constants().get(e["type"], -1))
+	var st := items.find_structure(items.selected())
+	_structure_box.visible = not st.is_empty()
+	if not st.is_empty():
+		var wall := items.is_wall(st)
+		_structure_info.text = "%s\n%s, %.2f m long%s" % [st["id"], ("wall, " + st["style"]) if wall else "bridge",
+				Level3DStructures.length_of(st),
+				("\n%d merlons" % int(st["merlons"]["count"])) if wall and st.has("merlons") else
+				("\n%d piers, %d plates" % [st["piers"].size(), int(st["plates"]["count"])]) if not wall else ""]
+		_structure_width.value = float(st["width"])
+		_structure_height.value = float(st["height"]) if wall else 0.0
+		_structure_height.editable = wall
+		_structure_merlons.button_pressed = st.has("merlons")
+		_structure_merlons.disabled = not wall
 	var o := items.find_object(items.selected())
 	_object_box.visible = not o.is_empty()
 	if not o.is_empty():
@@ -645,6 +798,33 @@ func _edit_entity(field: String, value: Variant) -> void:
 			else:
 				e["group"] = int(value)
 	items.update_entity(e)
+
+
+func _edit_structure(field: String, value: Variant) -> void:
+	var st := items.find_structure(items.selected())
+	if _syncing or st.is_empty():
+		return
+	_record(["walls", "bridges"])
+	match field:
+		"width", "height":
+			st[field] = snappedf(float(value), 0.01)
+		"merlons":
+			if value:
+				st["merlons"] = {"side": "left", "first": Level3DStructures.MERLON_FIRST,
+						"step": Level3DStructures.MERLON_STEP, "count": 0}
+				Level3DStructures.lay_merlons(st)
+			else:
+				st.erase("merlons")
+		"flip":
+			if st.has("merlons"):
+				st["merlons"]["side"] = "right" if st["merlons"]["side"] == "left" else "left"
+	if items.is_wall(st):
+		items.update_wall(st)
+	else:
+		Level3DStructures.lay_bridge(st)
+		items.update_bridge(st)
+	_derived = []
+	_sync_selection()
 
 
 func _edit_object(field: String, value: float) -> void:
@@ -775,7 +955,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_yaw -= motion.relative.x * 0.3
 			_pitch = clampf(_pitch + motion.relative.y * 0.3, 25.0, 90.0)
 			_place_camera()
-		elif _painting or _drag_id != "" or _nav_painting:
+		elif _painting or _drag_id != "" or _nav_painting or _drawing != "":
 			var hit: Variant = _hit(motion.position)
 			if hit != null:
 				_move(hit)
@@ -800,7 +980,9 @@ func _press(p: Vector2) -> void:
 
 
 func _move(p: Vector2) -> void:
-	if _painting:
+	if _drawing != "":
+		_draw_to(p)
+	elif _painting:
 		_stroke_to(p)
 	elif _nav_painting:
 		_paint_nav(p)
@@ -809,7 +991,9 @@ func _move(p: Vector2) -> void:
 
 
 func _release() -> void:
-	if _painting:
+	if _drawing != "":
+		_end_draw()
+	elif _painting:
 		_end_stroke()
 	elif _nav_painting:
 		_nav_painting = false
@@ -1390,6 +1574,19 @@ func _build_entity_page(box: VBoxContainer) -> void:
 
 
 func _build_object_page(box: VBoxContainer) -> void:
+	var tools := GridContainer.new()
+	tools.columns = 2
+	var group := ButtonGroup.new()
+	for b in BUILD_NAMES.size():
+		var button := _toggle(BUILD_NAMES[b], group)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.pressed.connect(func() -> void:
+			build = b as Build
+			_asset_list.visible = build == Build.PLACE)
+		tools.add_child(button)
+		_build_buttons[b] = button
+	(_build_buttons[Build.PLACE] as Button).button_pressed = true
+	box.add_child(tools)
 	box.add_child(_heading("Put down"))
 	_asset_list = ItemList.new()
 	_asset_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1432,6 +1629,45 @@ func _build_object_page(box: VBoxContainer) -> void:
 	remove.pressed.connect(_delete_selected)
 	_object_box.add_child(remove)
 	box.add_child(_object_box)
+
+	_structure_box = VBoxContainer.new()
+	_structure_box.add_child(_heading("Picked"))
+	_structure_info = _label("")
+	_structure_box.add_child(_structure_info)
+	var width_row := HBoxContainer.new()
+	width_row.add_child(_label("Width"))
+	_structure_width = SpinBox.new()
+	_structure_width.min_value = 0.1
+	_structure_width.max_value = 8.0
+	_structure_width.step = 0.01
+	_structure_width.value_changed.connect(func(v: float) -> void: _edit_structure("width", v))
+	width_row.add_child(_structure_width)
+	_structure_box.add_child(width_row)
+	var height_row := HBoxContainer.new()
+	height_row.add_child(_label("Height"))
+	_structure_height = SpinBox.new()
+	_structure_height.min_value = 0.0
+	_structure_height.max_value = 6.0
+	_structure_height.step = 0.01
+	_structure_height.value_changed.connect(func(v: float) -> void: _edit_structure("height", v))
+	height_row.add_child(_structure_height)
+	_structure_box.add_child(height_row)
+	var merlon_row := HBoxContainer.new()
+	_structure_merlons = _checkbox("merlons", true)
+	_structure_merlons.toggled.connect(func(v: bool) -> void: _edit_structure("merlons", v))
+	merlon_row.add_child(_structure_merlons)
+	var flip := Button.new()
+	flip.text = "Other side"
+	flip.focus_mode = Control.FOCUS_NONE
+	flip.pressed.connect(func() -> void: _edit_structure("flip", true))
+	merlon_row.add_child(flip)
+	_structure_box.add_child(merlon_row)
+	var remove_structure := Button.new()
+	remove_structure.text = "Delete  (Del)"
+	remove_structure.focus_mode = Control.FOCUS_NONE
+	remove_structure.pressed.connect(_delete_selected)
+	_structure_box.add_child(remove_structure)
+	box.add_child(_structure_box)
 
 
 func _toggle(text: String, group: ButtonGroup) -> Button:
@@ -1565,7 +1801,7 @@ func _label(text: String) -> Label:
 
 
 func _set_mode(m: int) -> void:
-	if _painting or _drag_id != "" or _nav_painting:
+	if _painting or _drag_id != "" or _nav_painting or _drawing != "":
 		return
 	mode = m as Mode
 	for k in _pages:

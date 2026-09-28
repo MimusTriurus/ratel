@@ -18,6 +18,11 @@
 #   picked, a drag moves it, undo takes it away and redo brings it back; a
 #   gun comes with its bunker, which moves and goes with it; an object turns,
 #   scales and is deleted, and undo puts it back.
+# - Walls and bridges: a drag draws one, laid out as stage 1's are, and
+#   dragging it moves it whole; delete and undo; a wall makes its tiles solid
+#   and a bridge its deck empty in a grid from the ground. A gate comes with
+#   its Gate and a destruction group of the middle of its footprint, which
+#   moves with it.
 # - The nav grid: on a new level painting keeps a tile over the ground's and
 #   Auto gives it back; on stage 1 it paints the grid itself, and undo puts
 #   the row back.
@@ -176,6 +181,70 @@ func _run() -> void:
 	_expect(editor.doc["objects"].size() == objects and not editor.items.find_object(palm["id"]).is_empty(),
 			"undo brings a deleted object back")
 
+	# Walls, a bridge, a gate.
+	var B = editor.Build
+	editor.build = B.WALL
+	var w0 := Vector2(origin.x + 2.0, origin.y + 8.0)
+	editor._press(w0)
+	editor._move(w0 + Vector2(8.0, 0.3))
+	editor._release()
+	var wall: Dictionary = editor.doc["walls"][-1]
+	_expect(wall["style"] == "wall" and is_equal_approx(Level3DStructures.length_of(wall), 8.0)
+			and float(wall["from"][1]) == float(wall["to"][1]), "a drag draws a wall, held to the level")
+	_expect(int(wall["merlons"]["count"]) == 8, "with 8 merlons on 8 m, as stage 1 lays them (%d)" % int(wall["merlons"]["count"]))
+	editor.build = B.SIDE
+	editor._press(w0)
+	editor._move(w0 + Vector2(0.0, 6.0))
+	editor._release()
+	_expect(editor.doc["walls"][-1]["style"] == "side" and not editor.doc["walls"][-1].has("merlons"), "a side wall, no merlons")
+	editor.build = B.PLACE
+	var middle := w0 + Vector2(4.0, 0.0)
+	var from_x := float(wall["from"][0])
+	editor._press(middle)
+	editor._move(middle + Vector2(1.0, 0.0))
+	editor._release()
+	wall = editor.items.find_structure(wall["id"])
+	_expect(absf(float(wall["from"][0]) - from_x - 1.0) < 0.001 and is_equal_approx(Level3DStructures.length_of(wall), 8.0),
+			"a picked wall is dragged whole")
+	editor.build = B.BRIDGE
+	var b0 := Vector2(origin.x + 14.5, origin.y + 11.0)
+	editor._press(b0)
+	editor._move(b0 + Vector2(5.0, 1.0))
+	editor._release()
+	var bridge: Dictionary = editor.doc["bridges"][-1]
+	_expect(bridge["piers"].size() >= 1 and int(bridge["plates"]["count"]) == 5, "a bridge, its piers and plates laid (%s, %d)"
+			% [bridge["piers"], int(bridge["plates"]["count"])])
+	editor.build = B.PLACE
+	var nav: Array = editor._nav_rows()
+	var wall_tile: Vector2i = editor.items.tile_at(middle + Vector2(1.0, 0.0))
+	var river_tile: Vector2i = editor.items.tile_at(Vector2(origin.x + 17.6, origin.y + 11.0))
+	_expect(nav[wall_tile.y][wall_tile.x] == "#", "the wall's tiles are solid")
+	_expect(nav[river_tile.y][river_tile.x] == ".", "the bridge's deck is empty over the river")
+	editor.items.select(bridge["id"])
+	editor._delete_selected()
+	_expect(editor.doc["bridges"].is_empty(), "Delete removes the bridge")
+	editor._undo_step(editor._undo, editor._redo)
+	_expect(editor.doc["bridges"].size() == 1, "and undo brings it back")
+	editor._set_mode(M.ENTITIES)
+	editor._entity_list.select(editor._entity_types.find("GATE"))
+	var gate_at := Vector2(origin.x + 6.0, origin.y + 16.0)
+	editor._press(gate_at)
+	editor._release()
+	var gate: Dictionary = editor.doc["entities"][-1]
+	var gate_objects: Array = editor._belonging_to(gate["id"])
+	var group: Array = editor.doc["groups"].filter(func(g): return int(g["index"]) == int(gate.get("group", -1)))
+	_expect(gate_objects.size() == 1 and gate_objects[0]["asset"] == "Gate", "a gate comes with its Gate")
+	_expect(group.size() == 1 and group[0]["cells"].size() == 16, "and a group of the 16 cells it opens")
+	var first_cell: Array = group[0]["cells"][0]
+	editor._press(Vector2(gate["pos"][0], gate["pos"][1]))
+	editor._move(Vector2(gate["pos"][0], gate["pos"][1]) + Vector2(tile_m * 3.0, 0.0))
+	editor._release()
+	group = editor.doc["groups"].filter(func(g): return int(g["index"]) == int(gate["group"]))
+	_expect(int(group[0]["cells"][0][0]) == int(first_cell[0]) + 3, "which moves with it")
+	var gate_tile: Vector2i = editor.items.entity_tile(editor.items.find_entity(gate["id"]))
+	_expect(editor._nav_rows()[gate_tile.y + 1][gate_tile.x + 2] == "#", "the gate is solid until it is blown")
+	editor._set_mode(M.OBJECTS)
+
 	# The nav grid, over the ground.
 	editor._set_mode(M.NAV)
 	var land_tile: Vector2i = editor.items.tile_at(palm_at + Vector2(2.0, 3.0))
@@ -222,7 +291,8 @@ func _run() -> void:
 			back.trace(traced)
 			_expect(Level3DIO.serialize(traced) == Level3DIO.serialize(doc), "traced again, the same file")
 		_expect(doc["nav"][land_tile.y][land_tile.x] == "%", "the saved grid has the tile painted over the ground's")
-		_expect(doc["entities"].size() == count and doc["objects"].size() == objects, "the entities and objects saved")
+		_expect(doc["entities"].size() == count + 1 and doc["objects"].size() == objects + 1, "the entities and objects saved")
+		_expect(doc["walls"].size() == 2 and doc["bridges"].size() == 1, "the walls and the bridge saved")
 		var problems := Level3DIO.check(doc, Level3DIO.read_catalog())
 		_expect(problems.is_empty(), "Level3DIO.check finds nothing: %s" % [problems])
 
@@ -252,8 +322,9 @@ func _run() -> void:
 			"on stage 1 the brush paints the grid itself")
 	editor._undo_step(editor._undo, editor._redo)
 	_expect(editor.doc["nav"][stage_tile.y] == row_before, "and undo puts the row back")
-	_expect(editor.doc["entities"].size() == 120 and editor.doc["objects"].size() == 726,
-			"stage 1 opens with its 120 entities and 726 objects")
+	_expect(editor.doc["entities"].size() == 120 and editor.doc["objects"].size() == 727
+			and editor.doc["walls"].size() == 10 and editor.doc["bridges"].size() == 1,
+			"stage 1 opens with its 120 entities, 727 objects, 10 walls and its bridge")
 	editor.dirty = false
 
 	if shots:

@@ -351,7 +351,8 @@ func fill(bits: int) -> void:
 # The nav grid the ground makes, a row of the type legend per map row: land
 # is empty, forest solid, and the water and the slope down to it water --
 # which is how stage 1's grid has it on 97% of its tiles, the rest being its
-# walls and buildings. A tile is what most of nine points across it are.
+# walls and buildings -- which Level3DStructures.apply_nav then lays over it.
+# A tile is what most of nine points across it are.
 # Stage 1 keeps the grid it was given; a level the editor made has this one.
 func derive_nav(doc: Dictionary) -> Array:
 	var grid_doc: Dictionary = doc["grid"]
@@ -377,6 +378,8 @@ func derive_nav(doc: Dictionary) -> Array:
 					best = k
 			line += [".", "#", "~"][best]
 		out.append(line)
+	# And what stands on it: walls and gates solid, a bridge's deck empty.
+	Level3DStructures.apply_nav(doc, out)
 	return out
 
 

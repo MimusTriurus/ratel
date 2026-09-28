@@ -471,7 +471,11 @@ catalogue, entities snapped to the tiles their footprint covers and a
 building given the group its probe cell is in; one the catalogue gives an
 object (a gun its Bunker, the landing port its Helipad) comes with it, tied
 by the object's `"entity"`, which is how the preview finds another level's
-guns -- stage 1's it finds by its bunkers' names. Everything is one undo a
+guns -- stage 1's it finds by its bunkers' names. Objects also draws walls
+and bridges, a drag from end to end, laid out as stage 1's are
+(`Level3DStructures`, `src/tools/level3d_structures.gd`); a GATE entity
+brings its Gate and the destruction group of its passage, and the preview
+moves `jackal_dest_Gate.glb` to it on a level that is not stage 1. Everything is one undo a
 stroke or a move. A save writes the level file, its two rasters and the
 polygons traced off them. Stage 1's nav grid is the game's and is painted
 as it is; a level made here plays the grid its ground makes (land empty,
