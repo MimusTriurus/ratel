@@ -36,7 +36,7 @@
 # --glb through the base's own jackal_export_glb.py.
 import bpy, bmesh, json, math, os, sys, time
 import numpy as np
-from mathutils import Vector, kdtree
+from mathutils import Matrix, Vector, kdtree
 from mathutils.geometry import delaunay_2d_cdt
 
 T0 = time.time()
@@ -216,6 +216,221 @@ class Inside:
 
 def inside_any(tests, v):
     return any(t(v) for t in tests)
+
+
+# --- What is built: walls, bridges, the gate's frame --------------------------------
+#
+# The file's "walls" and "bridges", and the frame of each Gate object, built
+# out of the base's own pieces: every one is a box, and each is made a copy
+# of the base's piece of its kind -- its bevel, its contour (the solidify),
+# its materials -- with a box of its own. So a wall the file describes is
+# drawn as stage 1's walls are, wherever and however long it is.
+#
+#   wall    a box from `from` to `to`, `width` across, `height` up from the
+#           ground at its middle; "wall" is Wall_W's concrete, "side" the
+#           light concrete of the sides and posts. Its merlons, Merlon's
+#           mesh, run along one long edge, MERLON_INSET in from it, `first`
+#           from the start and `step` apart.
+#   bridge  a deck DECK[1] thick from `from` to `to`, `width` across, with a
+#           curb CURB wide along each side, a pier PIER long at each of
+#           `piers` (metres from the start), and the plates, Bridge_Plate's
+#           mesh stretched across, `first` from the start and `step` apart.
+#   gate    J_Gate_Frame, turned and moved from the catalogue's pivot to the
+#           Gate object's place. The gate itself -- its leaves and how they
+#           are blown -- is jackal_dest_Gate.glb, which the preview moves the
+#           same way.
+#
+# A stage-1 piece keeps its name, so its glb is as it was; others are named
+# by their id with the prefix the preview tells collision by (Wall, Merlon,
+# Bridge, GatePost, Gate_).
+
+STRUCTURE_TEMPLATES = {"wall": "Wall_W", "side": "Wall_SideW", "merlon": "Merlon",
+                       "deck": "Bridge_Deck", "curb": "Bridge_Curb_N", "pier": "Bridge_Pier_0",
+                       "plate": "Bridge_Plate"}
+GATE_FRAME = "J_Gate_Frame"
+MERLON_INSET = 0.24                 # from the edge to a merlon's middle
+DECK = (0.0, 0.2)                   # the deck's bottom and top
+CURB = (0.3, 0.12)                  # wide, high over the deck
+PIER = (0.56, -1.24)                # long along the bridge, down to
+PLATE_ACROSS = 0.92                 # the plates are the deck's width less this
+PLATE_HEIGHT = 0.21
+PLATE_MESH_ACROSS = 1.78            # Bridge_Plate's own
+
+
+def capture_structures(doc):
+    """Copies of the base's pieces to build from, made before the base's own
+    are taken out, and the base's own that the file replaces."""
+    templates = {}
+    for kind, name in STRUCTURE_TEMPLATES.items():
+        o = bpy.data.objects.get(name)
+        if o is not None:
+            t = o.copy()
+            t.name = "_Template_" + kind
+            templates[kind] = t
+    frame = [o for o in bpy.data.collections[GATE_FRAME].objects] if GATE_FRAME in bpy.data.collections else []
+    templates["frame"] = [(o.name, o.copy(), o.matrix_world.copy()) for o in frame]
+    replaced = set()
+    before = {}
+    if "walls" in doc:
+        for o in bpy.data.collections["J_Fortress"].objects:
+            if o.name.startswith(("Wall", "Merlon")):
+                replaced.add(o)
+    if "bridges" in doc:
+        replaced.update(o for o in bpy.data.objects if o.name.startswith("Bridge_"))
+    if any(o["asset"] == "Gate" for o in doc["objects"]):
+        replaced.update(frame)
+    for o in replaced:
+        if o.type == "MESH":
+            before[o.name] = _world_box(o)
+            if o.name.startswith(("Merlon", "Bridge_Plate")):
+                before.setdefault("_placed", []).append(o.matrix_world.to_translation())
+    return templates, replaced, before
+
+
+def _world_box(o):
+    ws = [o.matrix_world @ v.co for v in o.data.vertices]
+    return (min(v.x for v in ws), max(v.x for v in ws), min(v.y for v in ws), max(v.y for v in ws),
+            min(v.z for v in ws), max(v.z for v in ws))
+
+
+def _box_mesh(name, corners, bottom, top, materials):
+    """A box over four plan corners (Blender's axes, counter-clockwise)."""
+    bm = bmesh.new()
+    low = [bm.verts.new((c.x, c.y, bottom)) for c in corners]
+    high = [bm.verts.new((c.x, c.y, top)) for c in corners]
+    bm.faces.new(list(reversed(low)))
+    bm.faces.new(high)
+    for k in range(4):
+        bm.faces.new([low[k], low[(k + 1) % 4], high[(k + 1) % 4], high[k]])
+    bm.normal_update()
+    for f in bm.faces:
+        f.smooth = False
+        f.material_index = 0
+    mesh = bpy.data.meshes.new(name)
+    bm.to_mesh(mesh)
+    bm.free()
+    for m in materials:
+        mesh.materials.append(m)
+    return mesh
+
+
+def _frame_of(a, b):
+    """A segment's start, unit direction and left normal, in Blender's plan."""
+    p, q = plan(a), plan(b)
+    d = (q - p)
+    length = d.length
+    d = d / max(length, 1e-9)
+    # Left of from -> to in the file's axes (x east, z south) is north for a
+    # segment running east: (dz, -dx) there, which in Blender's plan, y = -z,
+    # is (-d.y, d.x).
+    left = Vector((-d.y, d.x))
+    return p, d, left, length
+
+
+def _piece(kind, templates, name, mesh, collection):
+    t = templates[kind]
+    o = t.copy()
+    o.name = name
+    o.data = mesh
+    o.matrix_world = Matrix.Identity(4)
+    collection.objects.link(o)
+    return o
+
+
+def build_structures(doc, catalog, templates, rise, collection):
+    built = 0
+    for w in doc.get("walls", []):
+        p, d, left, length = _frame_of(w["from"], w["to"])
+        half = float(w["width"]) * 0.5
+        corners = [p - left * half, p + d * length - left * half, p + d * length + left * half, p + left * half]
+        base = rise.at(p + d * length * 0.5)
+        kind = "wall" if w["style"] == "wall" else "side"
+        mesh = _box_mesh(w["id"], corners, base, base + float(w["height"]), templates[kind].data.materials)
+        _piece(kind, templates, w["id"], mesh, collection)
+        built += 1
+        m = w.get("merlons")
+        if m:
+            side = left if m["side"] == "left" else -left
+            angle = math.atan2(d.y, d.x)
+            for k in range(int(m["count"])):
+                c = p + d * (float(m["first"]) + k * float(m["step"])) + side * (half - MERLON_INSET)
+                o = templates["merlon"].copy()
+                o.name = "Merlon_%s_%d" % (w["id"], k)
+                o.location = (c.x, c.y, base + float(w["height"]))
+                o.rotation_euler = (0.0, 0.0, angle)
+                collection.objects.link(o)
+                built += 1
+    for b in doc.get("bridges", []):
+        p, d, left, length = _frame_of(b["from"], b["to"])
+        half = float(b["width"]) * 0.5
+        stem = "Bridge" if b["id"] == "Bridge" else "Bridge_" + b["id"]
+
+        def box(along0, along1, across0, across1):
+            return [p + d * along0 + left * across0, p + d * along1 + left * across0,
+                    p + d * along1 + left * across1, p + d * along0 + left * across1]
+        mats = lambda kind: templates[kind].data.materials
+        _piece("deck", templates, stem + "_Deck",
+               _box_mesh(stem + "_Deck", box(0.0, length, -half, half), DECK[0], DECK[1], mats("deck")), collection)
+        for side, (a0, a1) in (("N", (half - CURB[0], half)), ("S", (-half, -half + CURB[0]))):
+            _piece("curb", templates, "%s_Curb_%s" % (stem, side),
+                   _box_mesh("%s_Curb_%s" % (stem, side), box(0.0, length, a0, a1), DECK[1], DECK[1] + CURB[1],
+                             mats("curb")), collection)
+        for k, at in enumerate(b["piers"]):
+            at = float(at)
+            _piece("pier", templates, "%s_Pier_%d" % (stem, k),
+                   _box_mesh("%s_Pier_%d" % (stem, k), box(at - PIER[0] * 0.5, at + PIER[0] * 0.5,
+                             -half + CURB[0], half - CURB[0]), PIER[1], DECK[0], mats("pier")), collection)
+        plates = b["plates"]
+        angle = math.atan2(d.y, d.x)
+        across = (float(b["width"]) - PLATE_ACROSS) / PLATE_MESH_ACROSS
+        for k in range(int(plates["count"])):
+            c = p + d * (float(plates["first"]) + k * float(plates["step"]))
+            o = templates["plate"].copy()
+            o.name = "%s_Plate_%d" % (stem, k)
+            o.location = (c.x, c.y, PLATE_HEIGHT)
+            o.rotation_euler = (0.0, 0.0, angle)
+            o.scale = (1.0, across, 1.0)
+            collection.objects.link(o)
+        built += 4 + len(b["piers"]) + int(plates["count"])
+    for g in doc["objects"]:
+        asset = catalog["assets"].get(g["asset"], {})
+        if "base" not in asset:
+            continue
+        pivot = plan(asset["pivot"])
+        x, _, z = g["pos"]
+        to = plan((x, z))
+        move = (Matrix.Translation((to.x, to.y, rise.at(to))) @ Matrix.Rotation(math.radians(g["yaw"]), 4, "Z")
+                @ Matrix.Translation((-pivot.x, -pivot.y, 0.0)))
+        for name, t, world in templates["frame"]:
+            o = t.copy()
+            o.name = name if g["id"] == "Gate" else "%s_%s" % (name, g["id"])
+            o.matrix_world = move @ world
+            collection.objects.link(o)
+            built += 1
+    return built
+
+
+def compare_structures(collection, before):
+    """How far each piece the file built is from the base's of the same name:
+    the corners of its own mesh, before bevel and contour."""
+    worst, name_worst, matched = 0.0, "", 0
+    placed = before.get("_placed", [])
+    for o in collection.objects:
+        if o.name.startswith(("Merlon_", "Bridge_Plate_")) and placed:
+            err = min((o.location - q).length for q in placed)
+            matched += 1
+            if err > worst:
+                worst, name_worst = err, o.name
+            continue
+        if o.type != "MESH" or o.name not in before:
+            continue
+        o.matrix_world = o.matrix_basis  # a new object's world waits for a depsgraph update
+        now = _world_box(o)
+        err = max(abs(a - b) for a, b in zip(now, before[o.name]))
+        matched += 1
+        if err > worst:
+            worst, name_worst = err, o.name
+    return matched, worst, name_worst
 
 
 # --- The rise -----------------------------------------------------------------------
@@ -1008,7 +1223,8 @@ def main():
                            (o.instance_collection.name if o.instance_collection else None))
     old_trees = sum(1 for o in bpy.data.objects if o.name.startswith(("ForestTree", "Beyond_Tree")))
 
-    doomed = set()
+    templates, replaced, structures_before = capture_structures(doc)
+    doomed = set(replaced)
     for name in REPLACED_COLLECTIONS:
         doomed.update(bpy.data.collections[name].all_objects)
     stage_one = int(doc.get("stage", 0)) == 0
@@ -1032,6 +1248,7 @@ def main():
     gen_terrain = collection("Gen_Terrain", top)
     gen_vegetation = collection("Gen_Vegetation", top)
     gen_props = collection("Gen_Props", top)
+    gen_structures = collection("Gen_Structures", top)
 
     rise = Rise(doc, os.path.dirname(os.path.join(ROOT, LEVEL)))
     if not stage_one:
@@ -1066,8 +1283,20 @@ def main():
     say("forest: %d floors, %d trees (the base had %d)" % (len(doc.get("forest", [])), trees, old_trees))
 
     errors = []
+    built = build_structures(doc, catalog, templates, rise, gen_structures)
+    matched, worst, where = compare_structures(gen_structures, structures_before)
+    say("structures: %d walls, %d bridges, %d pieces built; against the base's %d of them, %.4f m at worst (%s)"
+        % (len(doc.get("walls", [])), len(doc.get("bridges", [])), built, matched, worst, where or "-"))
+    for t in list(templates.values()):
+        for o in (t if isinstance(t, list) else [t]):
+            o = o[1] if isinstance(o, tuple) else o
+            if o.users == 0:
+                bpy.data.objects.remove(o)
+
     for obj in doc["objects"]:
         asset = catalog["assets"][obj["asset"]]
+        if "base" in asset:
+            continue  # built, not placed: build_structures
         if "mesh" in asset:
             o = bpy.data.objects.new(obj["id"], bpy.data.meshes[asset["mesh"]])
         else:

@@ -415,7 +415,13 @@ godot --path . --headless --script tools/level_terrain_from_glb.gd
 
 `tools/blender/build_level.py` builds the level in Blender from the file,
 on top of `jackal_stage1_lowpoly.blend` for what the file does not describe
-yet (walls, bridge, gate, destructibles, palette, sun, cameras), into
+(the buildings that are blown up, the palette, the sun, the cameras) and for
+the pieces it builds the file's walls, bridges and gate frames out of --
+each a copy of the base's piece of its kind, with its bevel, contour and
+materials, and a box of its own (`walls` and `bridges` in the file; the gate
+an object tied to the GATE entity; stage 1's were read off the base by
+`tools/blender/extract_structures.py` and `tools/level_structures_from_base.gd`)
+-- into
 `build/level3d/` — never over the base. Blender here is the Store build:
 run it through `%LOCALAPPDATA%\Microsoft\WindowsApps\blender-launcher.exe`,
 not `blender.exe` (permission denied), and read `--report`, because its

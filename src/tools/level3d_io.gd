@@ -309,7 +309,32 @@ static func serialize(doc: Dictionary) -> String:
 			line += ', "entity": "%s"' % object["entity"]
 		rows.append(line + "}")
 	var ground := ["terrain", "water", "forest"].filter(func(key): return doc.has(key))
-	_block(out, "objects", rows, ground.is_empty())
+	var built := ["walls", "bridges"].filter(func(key): return doc.has(key))
+	_block(out, "objects", rows, ground.is_empty() and built.is_empty())
+
+	# What is built rather than placed (Level3DStructures): a wall a segment
+	# of a style, width and height, with its merlons' row; a bridge a segment
+	# and a width, with its piers and plates.
+	if doc.has("walls"):
+		rows = PackedStringArray()
+		for w in doc["walls"]:
+			var line := '    {"id": "%s", "style": "%s", "from": %s, "to": %s, "width": %s, "height": %s' \
+					% [w["id"], w["style"], _vec(w["from"]), _vec(w["to"]), _num(float(w["width"])),
+						_num(float(w["height"]))]
+			if w.has("merlons"):
+				var m: Dictionary = w["merlons"]
+				line += ', "merlons": {"side": "%s", "first": %s, "step": %s, "count": %d}' \
+						% [m["side"], _num(float(m["first"])), _num(float(m["step"])), int(m["count"])]
+			rows.append(line + "}")
+		_block(out, "walls", rows, ground.is_empty() and not doc.has("bridges"))
+	if doc.has("bridges"):
+		rows = PackedStringArray()
+		for b in doc["bridges"]:
+			var plates: Dictionary = b["plates"]
+			rows.append('    {"id": "%s", "from": %s, "to": %s, "width": %s, "piers": %s, "plates": {"first": %s, "step": %s, "count": %d}}'
+					% [b["id"], _vec(b["from"]), _vec(b["to"]), _num(float(b["width"])), _vec(b["piers"]),
+						_num(float(plates["first"])), _num(float(plates["step"])), int(plates["count"])])
+		_block(out, "bridges", rows, ground.is_empty())
 
 	# The ground (Level3DTerrain), when the level has one: a polygon's header on
 	# its first line and then one point to a line, so that moving a point of a

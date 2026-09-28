@@ -40,7 +40,7 @@
     "TANK_SHACK": {"kind": "building"},
     "HOUSE_LEFT": {"kind": "building"},
     "HOUSE_RIGHT": {"kind": "building"},
-    "GATE": {"kind": "building"},
+    "GATE": {"kind": "building", "object": "Gate"},
     "STATUE_NONE": {"kind": "building"},
     "STATUE_LEFT": {"kind": "building"},
     "STATUE_RIGHT": {"kind": "building"},
@@ -81,6 +81,7 @@
     "Rock_D": {"blend": "jackal_assets.blend", "mesh": "Rock_D", "collision": "none"},
     "Rock_E": {"blend": "jackal_assets.blend", "mesh": "Rock_E", "collision": "none"},
     "Rock_F": {"blend": "jackal_assets.blend", "mesh": "Rock_F", "collision": "none"},
-    "Rock_G": {"blend": "jackal_assets.blend", "mesh": "Rock_G", "collision": "none"}
+    "Rock_G": {"blend": "jackal_assets.blend", "mesh": "Rock_G", "collision": "none"},
+    "Gate": {"base": "J_Gate_Frame", "pivot": [5.6, -10.36], "destructible": "Gate", "collision": "wall"}
   }
 }
