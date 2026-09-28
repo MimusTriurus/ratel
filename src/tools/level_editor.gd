@@ -22,15 +22,20 @@
 #             over it -- "nav_paint" in the file, "-" where the ground says --
 #             so that painting the ground later still moves it. Auto takes a
 #             tile back to the ground's.
-#   Entities  the game's triggers, from the list: a click puts one down, on
-#             the difficulties ticked, snapped to the tiles its footprint
-#             covers; a click on one picks it, and dragging moves it. A
+#   Entities  the game's triggers, from the list: with a type picked in it
+#             a click puts one down, on the difficulties ticked, snapped to
+#             the tiles its footprint covers. A click on one picks it
+#             whatever the list says, Shift+click adds it or lets go of it,
+#             and with nothing in the list a drag over nothing draws a box
+#             that picks what it covers (Esc or Select empties the list,
+#             Ctrl+A picks all); a drag on a picked one moves them all. A
 #             building finds the destruction group its probe cell is in. One
 #             the catalogue gives an object -- a gun its bunker, the landing
 #             port its pad -- comes with it, and goes where it goes. The
 #             line across the map is the row the picked one fires on.
-#   Objects   scenery from the catalogue, the same way; R and Shift+R turn
-#             the picked one, [ and ] scale it. Wall, Side wall and Bridge
+#   Objects   scenery from the catalogue, the same way, and walls and
+#             bridges are picked with it; R and Shift+R turn the picked
+#             objects, [ and ] scale them. Wall, Side wall and Bridge
 #             are drawn instead, a drag from one end to the other -- held to
 #             a multiple of 45 degrees unless Shift is down -- and laid out
 #             as stage 1's are (Level3DStructures); a picked one is dragged
@@ -38,7 +43,7 @@
 #             GATE entity comes with its gate and the destruction group
 #             that opens it, both moved with it.
 #
-# Delete removes what is picked, Esc lets go of it. Every stroke, placing,
+# Delete removes what is picked; Esc first leaves putting down, then lets go. Every stroke, placing,
 # move and removal is one undo. LevelEditorItems draws what is over the
 # ground.
 #
@@ -100,7 +105,8 @@ const REFRESH_EVERY := 0.06
 const TURN := 15.0
 # The Objects page's tools: put a piece down, or draw a wall or a bridge.
 enum Build { PLACE, WALL, SIDE, BRIDGE }
-const BUILD_NAMES := ["Place", "Wall", "Side wall", "Bridge"]
+# PLACE is the pointer: it picks, and puts down what the list has picked.
+const BUILD_NAMES := ["Select", "Wall", "Side wall", "Bridge"]
 const SNAP := 0.05
 const BASE_BLEND := "res://resources/3d/jackal_stage1_lowpoly.blend"
 const BUILDER := "res://tools/blender/build_level.py"
@@ -138,8 +144,16 @@ var _derived: Array = []
 # whether the drag has changed anything yet (a click that only picks is no
 # undo).
 var _drag_id := ""
-var _drag_offset := Vector2.ZERO
 var _drag_changed := false
+# A drag moves everything picked by where the pointer has gone since it was
+# pressed: the point pressed, and each item's place then (id -> its "pos", or
+# a wall's or bridge's [from, to]).
+var _drag_start := Vector2.ZERO
+var _drag_orig := {}
+# A box drawn over the screen to pick with, from where it was pressed.
+var _boxing := false
+var _box_from := Vector2.ZERO
+var _box_rect: ColorRect
 var _nav_painting := false
 var build: Build = Build.PLACE
 # The wall or bridge being drawn, and where its drag began.
@@ -175,6 +189,8 @@ var _entity_normal: CheckBox
 var _entity_hard: CheckBox
 var _entity_group: SpinBox
 var _entity_box: Control
+var _entity_multi: Label
+var _object_multi: Label
 var _asset_list: ItemList
 var _assets: Array = []
 var _object_info: Label
@@ -308,7 +324,7 @@ func _record(keys: Variant) -> void:
 
 
 func _undo_step(from: Array, to: Array) -> void:
-	if from.is_empty() or _painting or _drag_id != "" or _nav_painting or _drawing != "":
+	if from.is_empty() or _painting or _drag_id != "" or _nav_painting or _drawing != "" or _boxing:
 		return
 	var entry: Dictionary = from.pop_back()
 	if entry.has("ground"):
@@ -488,68 +504,147 @@ func _unique_id(stem: String) -> String:
 	return "%s_%d" % [stem, n]
 
 
-func _press_entity(p: Vector2) -> void:
-	var id := items.entity_under(p)
-	_record(["entities", "objects", "groups"])
+# Entities and Objects pick the same way. A click on an item picks it --
+# Shift adds it to what is picked or lets go of it -- and a drag from one
+# moves everything picked. A press on nothing puts down what the list has
+# picked, or, with nothing picked in the list, draws a box to pick with. So
+# the list is what puts things down, and Esc or Select lets go of it.
+func _press_item(p: Vector2, id: String, keys: Array) -> bool:
 	if id == "":
-		if _entity_list.get_selected_items().is_empty():
-			_undo.pop_back()
-			return
-		var type: String = _entity_types[_entity_list.get_selected_items()[0]]
-		var difficulty: Array = []
-		if _new_normal.button_pressed:
-			difficulty.append("normal")
-		if _new_hard.button_pressed:
-			difficulty.append("hard")
-		var at := items.snap_entity(type, p)
-		var e := {"id": _unique_id(type.to_lower()), "type": type, "pos": [at.x, at.y],
-				"difficulty": difficulty}
-		(doc["entities"] as Array).append(e)
-		_gate_group(e)
-		_reprobe(e)
-		items.update_entity(e)
-		id = e["id"]
-		var asset: String = items.catalog["entities"].get(type, {}).get("object", "")
-		if asset != "":
-			var o := {"id": _unique_id(asset.to_lower()), "asset": asset,
-					"pos": _object_pos(at), "yaw": 0.0, "scale": 1.0, "entity": id}
-			(doc["objects"] as Array).append(o)
-			items.update_object(o)
-		_drag_changed = true
+		return false
+	if Input.is_key_pressed(KEY_SHIFT):
+		items.toggle(id)
+		_sync_selection()
+		return true
+	if not items.is_selected(id):
+		items.select(id)
 	else:
-		_drag_changed = false
-	var e := items.find_entity(id)
-	_drag_id = id
-	_drag_offset = Vector2(float(e["pos"][0]), float(e["pos"][1])) - p
-	items.select(id)
+		# Picked already: it becomes the one the panel shows.
+		var ids := items.selection()
+		ids.erase(id)
+		ids.append(id)
+		items.select_many(ids)
 	_sync_selection()
+	_begin_drag(p, keys)
+	return true
+
+
+func _begin_drag(p: Vector2, keys: Array) -> void:
+	_record(keys)
+	_drag_id = items.selected()
+	_drag_changed = false
+	_drag_start = p
+	_drag_orig = {}
+	for id in items.selection():
+		var e := items.find_entity(id)
+		if not e.is_empty():
+			_drag_orig[id] = e["pos"].duplicate()
+			for o in _belonging_to(id):
+				_drag_orig[o["id"]] = o["pos"].duplicate()
+		var o := items.find_object(id)
+		if not o.is_empty():
+			_drag_orig[id] = o["pos"].duplicate()
+		var st := items.find_structure(id)
+		if not st.is_empty():
+			_drag_orig[id] = [st["from"].duplicate(), st["to"].duplicate()]
+
+
+func _begin_box() -> void:
+	_boxing = true
+	_box_from = _mouse
+	_box_rect.position = _mouse
+	_box_rect.size = Vector2.ZERO
+	_box_rect.visible = true
+
+
+# What the box has been drawn over: the items of the page whose anchors
+# (LevelEditorItems.anchors) are inside it, added to what is picked with
+# Shift. A box too small to be one is a click on nothing, which lets go.
+func _end_box() -> void:
+	_boxing = false
+	_box_rect.visible = false
+	var rect := Rect2(_box_from, _mouse - _box_from).abs()
+	var ids: Array = items.selection() if Input.is_key_pressed(KEY_SHIFT) else []
+	if rect.size.x >= 4.0 or rect.size.y >= 4.0:
+		var kinds := ["entities"] if mode == Mode.ENTITIES else ["objects", "structures"]
+		var anchors := items.anchors(kinds)
+		for id in anchors:
+			var at: Vector3 = anchors[id]
+			if not _camera.is_position_behind(at) and rect.has_point(_camera.unproject_position(at)) \
+					and not ids.has(id):
+				ids.append(id)
+	items.select_many(ids)
+	_sync_selection()
+
+
+func _page_items() -> Array:
+	var kinds := ["entities"] if mode == Mode.ENTITIES else ["objects", "structures"]
+	return items.anchors(kinds).keys()
+
+
+func _press_entity(p: Vector2) -> void:
+	var keys := ["entities", "objects", "groups"]
+	if _press_item(p, items.entity_under(p), keys):
+		return
+	if _entity_list.get_selected_items().is_empty():
+		_begin_box()
+		return
+	_record(keys)
+	var type: String = _entity_types[_entity_list.get_selected_items()[0]]
+	var difficulty: Array = []
+	if _new_normal.button_pressed:
+		difficulty.append("normal")
+	if _new_hard.button_pressed:
+		difficulty.append("hard")
+	var at := items.snap_entity(type, p)
+	var e := {"id": _unique_id(type.to_lower()), "type": type, "pos": [at.x, at.y],
+			"difficulty": difficulty}
+	(doc["entities"] as Array).append(e)
+	_gate_group(e)
+	_reprobe(e)
+	items.update_entity(e)
+	var asset: String = items.catalog["entities"].get(type, {}).get("object", "")
+	if asset != "":
+		var o := {"id": _unique_id(asset.to_lower()), "asset": asset,
+				"pos": _object_pos(at), "yaw": 0.0, "scale": 1.0, "entity": e["id"]}
+		(doc["objects"] as Array).append(o)
+		items.update_object(o)
+	_put_down(p, e["id"])
 
 
 func _press_object(p: Vector2) -> void:
-	var picked := items.structure_under(p) if build == Build.PLACE else ""
-	if build != Build.PLACE or picked != "":
-		_press_structure(p, picked)
+	if build != Build.PLACE:
+		_press_structure(p)
 		return
+	for key in ["walls", "bridges"]:
+		if not doc.has(key):
+			doc[key] = []
+	var keys := ["objects", "walls", "bridges"]
 	var id := items.object_under(p)
-	_record("objects")
 	if id == "":
-		if _asset_list.get_selected_items().is_empty():
-			_undo.pop_back()
-			return
-		var asset: String = _assets[_asset_list.get_selected_items()[0]]
-		var o := {"id": _unique_id(asset.to_lower()), "asset": asset,
-				"pos": _object_pos(p), "yaw": 0.0, "scale": 1.0}
-		(doc["objects"] as Array).append(o)
-		items.update_object(o)
-		id = o["id"]
-		_drag_changed = true
-	else:
-		_drag_changed = false
-	var o := items.find_object(id)
-	_drag_id = id
-	_drag_offset = Vector2(float(o["pos"][0]), float(o["pos"][2])) - p
+		id = items.structure_under(p)
+	if _press_item(p, id, keys):
+		return
+	if _asset_list.get_selected_items().is_empty():
+		_begin_box()
+		return
+	_record(keys)
+	var asset: String = _assets[_asset_list.get_selected_items()[0]]
+	var o := {"id": _unique_id(asset.to_lower()), "asset": asset,
+			"pos": _object_pos(p), "yaw": 0.0, "scale": 1.0}
+	(doc["objects"] as Array).append(o)
+	items.update_object(o)
+	_put_down(p, o["id"])
+
+
+# What was just put down is picked, alone, and follows the pointer until it
+# is let go: one undo with its putting down, which is recorded already.
+func _put_down(p: Vector2, id: String) -> void:
 	items.select(id)
 	_sync_selection()
+	_begin_drag(p, [])
+	_undo.pop_back()
+	_drag_changed = true
 
 
 # An object's place in the file: its height over the ground, which on the
@@ -559,20 +654,13 @@ func _object_pos(p: Vector2) -> Array:
 			Level3DIO.round_mm(p.y)]
 
 
-# Draws a new wall or bridge from `p`, or picks `picked` to drag it whole.
-func _press_structure(p: Vector2, picked: String) -> void:
+# Draws a new wall or bridge from `p`. Picking one to drag it whole is
+# Select's (_press_object).
+func _press_structure(p: Vector2) -> void:
 	for key in ["walls", "bridges"]:
 		if not doc.has(key):
 			doc[key] = []
 	_record(["walls", "bridges"])
-	if picked != "":
-		var st := items.find_structure(picked)
-		_drag_id = picked
-		_drag_offset = Vector2(float(st["from"][0]), float(st["from"][1])) - p
-		_drag_changed = false
-		items.select(picked)
-		_sync_selection()
-		return
 	var at := p.snapped(Vector2(SNAP, SNAP))
 	var st: Dictionary
 	if build == Build.BRIDGE:
@@ -616,43 +704,68 @@ func _end_draw() -> void:
 	_sync_selection()
 
 
+# Everything picked, moved by as much as the pointer has since the press:
+# entities by whole tiles -- the ones the one pressed on snaps to, so that
+# they keep their places on the grid to one another -- with what belongs to
+# them; walls and bridges to SNAP; objects as the pointer goes.
 func _drag_to(p: Vector2) -> void:
-	var target := p + _drag_offset
-	var st := items.find_structure(_drag_id)
-	if not st.is_empty():
-		var a := target.snapped(Vector2(SNAP, SNAP))
-		var by := a - Vector2(float(st["from"][0]), float(st["from"][1]))
-		if by != Vector2.ZERO:
-			for end in ["from", "to"]:
-				st[end] = [Level3DIO.round_mm(float(st[end][0]) + by.x), Level3DIO.round_mm(float(st[end][1]) + by.y)]
-			if items.is_wall(st):
-				items.update_wall(st)
-			else:
-				items.update_bridge(st)
-			_drag_changed = true
-			_derived = []
-		return
-	if mode == Mode.ENTITIES:
-		var e := items.find_entity(_drag_id)
-		var at := items.snap_entity(e["type"], target)
-		if at.x != float(e["pos"][0]) or at.y != float(e["pos"][1]):
-			var by := at - Vector2(float(e["pos"][0]), float(e["pos"][1]))
+	var delta := p - _drag_start
+	var tiles := Vector2.ZERO
+	var lead := items.find_entity(_drag_id)
+	if not lead.is_empty():
+		var from := _v2(_drag_orig[_drag_id])
+		tiles = items.snap_entity(lead["type"], from + delta) - from
+	var moved := false
+	for id in items.selection():
+		if not _drag_orig.has(id):
+			continue
+		var e := items.find_entity(id)
+		if not e.is_empty():
+			var from := _v2(_drag_orig[id])
+			var at := items.snap_entity(e["type"], from + tiles)
+			if at == _v2(e["pos"]):
+				continue
 			e["pos"] = [at.x, at.y]
 			_gate_group(e)
 			_reprobe(e)
 			items.update_entity(e)
-			for o in _belonging_to(e["id"]):
-				o["pos"] = _object_pos(Vector2(float(o["pos"][0]), float(o["pos"][2])) + by)
+			for o in _belonging_to(id):
+				var was: Array = _drag_orig.get(o["id"], o["pos"])
+				o["pos"] = _object_pos(Vector2(float(was[0]), float(was[2])) + at - from)
 				items.update_object(o)
-			_drag_changed = true
-			_sync_selection()
-	else:
-		var o := items.find_object(_drag_id)
-		var pos := _object_pos(target)
-		if pos != o["pos"]:
-			o["pos"] = pos
-			items.update_object(o)
-			_drag_changed = true
+			moved = true
+			continue
+		var st := items.find_structure(id)
+		if not st.is_empty():
+			var ends: Array = _drag_orig[id]
+			var by := (_v2(ends[0]) + delta).snapped(Vector2(SNAP, SNAP)) - _v2(ends[0])
+			if _v2(ends[0]) + by == _v2(st["from"]):
+				continue
+			for k in 2:
+				var end := _v2(ends[k]) + by
+				st[["from", "to"][k]] = [Level3DIO.round_mm(end.x), Level3DIO.round_mm(end.y)]
+			if items.is_wall(st):
+				items.update_wall(st)
+			else:
+				items.update_bridge(st)
+			_derived = []
+			moved = true
+			continue
+		var o := items.find_object(id)
+		if not o.is_empty():
+			var was: Array = _drag_orig[id]
+			var pos := _object_pos(Vector2(float(was[0]), float(was[2])) + delta)
+			if pos != o["pos"]:
+				o["pos"] = pos
+				items.update_object(o)
+				moved = true
+	if moved:
+		_drag_changed = true
+		_sync_selection()
+
+
+static func _v2(a: Array) -> Vector2:
+	return Vector2(float(a[0]), float(a[1]))
 
 
 # The objects that belong to an entity: a gun's bunker, the landing port's pad.
@@ -664,6 +777,7 @@ func _release_drag() -> void:
 	if not _drag_changed:
 		_undo.pop_back()
 	_drag_id = ""
+	_drag_orig = {}
 
 
 # A gate opens the middle of its footprint when it is blown: a destruction
@@ -723,18 +837,27 @@ func _reprobe(e: Dictionary) -> void:
 			e.erase("group")
 
 
+# Removes everything picked, in one undo.
 func _delete_selected() -> void:
-	var id := items.selected()
-	if id == "":
+	var ids := items.selection()
+	if ids.is_empty():
 		return
 	_record(["entities", "objects", "groups", "walls", "bridges"] if doc.has("walls") else ["entities", "objects", "groups"])
+	var any := false
+	for id in ids:
+		any = _delete_one(id) or any
+	if not any:
+		_undo.pop_back()
+	_sync_selection()
+
+
+func _delete_one(id: String) -> bool:
 	var st := items.find_structure(id)
 	if not st.is_empty():
 		(doc["walls" if items.is_wall(st) else "bridges"] as Array).erase(st)
 		items.remove_structure(id)
 		_derived = []
-		_sync_selection()
-		return
+		return true
 	var e := items.find_entity(id)
 	if not e.is_empty():
 		# And what belongs to it.
@@ -745,40 +868,58 @@ func _delete_selected() -> void:
 		items.remove_entity(id)
 		if e["type"] == "GATE":
 			_drop_group(int(e.get("group", -1)))
-	else:
-		var o := items.find_object(id)
-		if o.is_empty():
-			_undo.pop_back()
-			return
-		(doc["objects"] as Array).erase(o)
-		items.remove_object(id)
-	_sync_selection()
+		return true
+	var o := items.find_object(id)
+	if o.is_empty():
+		return false
+	(doc["objects"] as Array).erase(o)
+	items.remove_object(id)
+	return true
+
+
+# The picked objects, each round its own foot; walls, bridges and entities
+# do not turn or scale.
+func _picked_objects() -> Array:
+	return items.selection().map(func(id): return items.find_object(id)).filter(func(o): return not o.is_empty())
 
 
 func _turn_selected(degrees: float) -> void:
-	var o := items.find_object(items.selected())
-	if o.is_empty():
+	var picked := _picked_objects()
+	if picked.is_empty():
 		return
 	_record("objects")
-	o["yaw"] = snappedf(wrapf(float(o["yaw"]) + degrees, -180.0, 180.0), 0.001)
-	items.update_object(o)
+	for o in picked:
+		o["yaw"] = snappedf(wrapf(float(o["yaw"]) + degrees, -180.0, 180.0), 0.001)
+		items.update_object(o)
 	_sync_selection()
 
 
 func _scale_selected(factor: float) -> void:
-	var o := items.find_object(items.selected())
-	if o.is_empty():
+	var picked := _picked_objects()
+	if picked.is_empty():
 		return
 	_record("objects")
-	o["scale"] = snappedf(clampf(float(o["scale"]) * factor, 0.1, 10.0), 0.001)
-	items.update_object(o)
+	for o in picked:
+		o["scale"] = snappedf(clampf(float(o["scale"]) * factor, 0.1, 10.0), 0.001)
+		items.update_object(o)
 	_sync_selection()
 
 
 # The picked item's page of the sidebar, to what it is now.
 func _sync_selection() -> void:
 	_syncing = true
-	var e := items.find_entity(items.selected())
+	var count := items.selection().size()
+	for label in [_entity_multi, _object_multi]:
+		label.visible = count > 1
+		label.text = "%d picked\nDrag one to move them all; Del deletes\nthem, R and [ ] turn and scale objects.\nShift+click adds or lets go of one." % count
+	# One picked is shown on the panel; several are not.
+	var one := items.selected() if count == 1 else ""
+	_sync_one(one)
+	_syncing = false
+
+
+func _sync_one(id: String) -> void:
+	var e := items.find_entity(id)
 	_entity_box.visible = not e.is_empty()
 	if not e.is_empty():
 		var tile := items.entity_tile(e)
@@ -788,7 +929,7 @@ func _sync_selection() -> void:
 		_entity_hard.button_pressed = (e["difficulty"] as Array).has("hard")
 		_entity_group.value = int(e.get("group", -1))
 		_entity_group.editable = MapIO.GROUP_PROBES.has(MapIO.trigger_constants().get(e["type"], -1))
-	var st := items.find_structure(items.selected())
+	var st := items.find_structure(id)
 	_structure_box.visible = not st.is_empty()
 	if not st.is_empty():
 		var wall := items.is_wall(st)
@@ -801,14 +942,13 @@ func _sync_selection() -> void:
 		_structure_height.editable = wall
 		_structure_merlons.button_pressed = st.has("merlons")
 		_structure_merlons.disabled = not wall
-	var o := items.find_object(items.selected())
+	var o := items.find_object(id)
 	_object_box.visible = not o.is_empty()
 	if not o.is_empty():
 		_object_info.text = "%s\n%s%s" % [o["id"], o["asset"],
 				("\nbelongs to " + o["entity"]) if o.has("entity") else ""]
 		_object_yaw.value = float(o["yaw"])
 		_object_scale.value = float(o["scale"])
-	_syncing = false
 
 
 func _edit_entity(field: String, value: Variant) -> void:
@@ -988,6 +1128,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			_yaw -= motion.relative.x * 0.3
 			_pitch = clampf(_pitch + motion.relative.y * 0.3, 25.0, 90.0)
 			_place_camera()
+		elif _boxing:
+			_box_rect.position = Vector2(minf(_box_from.x, _mouse.x), minf(_box_from.y, _mouse.y))
+			_box_rect.size = (_mouse - _box_from).abs()
 		elif _painting or _drag_id != "" or _nav_painting or _drawing != "":
 			var hit: Variant = _hit(motion.position)
 			if hit != null:
@@ -1024,7 +1167,9 @@ func _move(p: Vector2) -> void:
 
 
 func _release() -> void:
-	if _drawing != "":
+	if _boxing:
+		_end_box()
+	elif _drawing != "":
 		_end_draw()
 	elif _painting:
 		_end_stroke()
@@ -1075,9 +1220,14 @@ func _key(key: InputEventKey) -> void:
 			_turn_selected(-TURN if key.shift_pressed else TURN)
 		KEY_DELETE, KEY_BACKSPACE:
 			_delete_selected()
-		KEY_ESCAPE:
-			items.select("")
+		KEY_A when ctrl and mode in [Mode.ENTITIES, Mode.OBJECTS]:
+			items.select_many(_page_items())
 			_sync_selection()
+		KEY_ESCAPE:
+			# First out of putting down, then out of what is picked.
+			if not _disarm():
+				items.select("")
+				_sync_selection()
 		KEY_T:
 			_pitch = 55.0 if _pitch > 80.0 else 90.0
 			_place_camera()
@@ -1409,6 +1559,17 @@ func _build_ui() -> void:
 	_ui.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_ui)
+	_box_rect = ColorRect.new()
+	_box_rect.color = Color(0.55, 0.8, 1.0, 0.18)
+	_box_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_box_rect.visible = false
+	var edge := ReferenceRect.new()
+	edge.border_color = Color(0.55, 0.8, 1.0, 0.9)
+	edge.editor_only = false
+	edge.set_anchors_preset(Control.PRESET_FULL_RECT)
+	edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_box_rect.add_child(edge)
+	_ui.add_child(_box_rect)
 	_build_header()
 	_build_sidebar()
 	_build_footer()
@@ -1607,7 +1768,14 @@ func _build_nav_page(box: VBoxContainer) -> void:
 
 
 func _build_entity_page(box: VBoxContainer) -> void:
+	var select := Button.new()
+	select.text = "Select  (Esc)"
+	select.focus_mode = Control.FOCUS_NONE
+	select.tooltip_text = "Stop putting down: a click picks, a drag on nothing draws a box to pick with"
+	select.pressed.connect(func() -> void: _entity_list.deselect_all())
+	box.add_child(select)
 	box.add_child(_heading("Put down"))
+	box.add_child(_hint("Pick a type, then click the map. With none\npicked a click picks, a drag draws a box."))
 	_entity_list = ItemList.new()
 	_entity_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_entity_list.custom_minimum_size.y = 180
@@ -1625,7 +1793,6 @@ func _build_entity_page(box: VBoxContainer) -> void:
 		_entity_list.set_item_custom_fg_color(index, LevelEditorItems.KIND_COLORS.get(kind, Color.WHITE).lightened(0.3))
 		_entity_list.set_item_tooltip(index, kind)
 		_entity_types.append(name)
-	_entity_list.select(maxi(_entity_types.find("SOLDIER_WALKER"), 0))
 	box.add_child(_entity_list)
 	var on := HBoxContainer.new()
 	_new_normal = _checkbox("normal", true)
@@ -1634,6 +1801,9 @@ func _build_entity_page(box: VBoxContainer) -> void:
 	on.add_child(_new_hard)
 	box.add_child(on)
 
+	_entity_multi = _label("")
+	_entity_multi.visible = false
+	box.add_child(_entity_multi)
 	_entity_box = VBoxContainer.new()
 	_entity_box.add_child(_heading("Picked"))
 	_entity_info = _label("")
@@ -1672,12 +1842,15 @@ func _build_object_page(box: VBoxContainer) -> void:
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.pressed.connect(func() -> void:
 			build = b as Build
+			# Select lets go of the list; drawing does not use it.
+			_asset_list.deselect_all()
 			_asset_list.visible = build == Build.PLACE)
 		tools.add_child(button)
 		_build_buttons[b] = button
 	(_build_buttons[Build.PLACE] as Button).button_pressed = true
 	box.add_child(tools)
 	box.add_child(_heading("Put down"))
+	box.add_child(_hint("Pick an asset, then click the map. With\nnone picked a click picks, a drag draws a box."))
 	_asset_list = ItemList.new()
 	_asset_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_asset_list.custom_minimum_size.y = 180
@@ -1688,9 +1861,11 @@ func _build_object_page(box: VBoxContainer) -> void:
 	for name in _assets:
 		var index := _asset_list.add_item(name)
 		_asset_list.set_item_tooltip(index, "collision: %s" % catalog["assets"][name].get("collision", "none"))
-	_asset_list.select(maxi(_assets.find("Palm_0"), 0))
 	box.add_child(_asset_list)
 
+	_object_multi = _label("")
+	_object_multi.visible = false
+	box.add_child(_object_multi)
 	_object_box = VBoxContainer.new()
 	_object_box.add_child(_heading("Picked"))
 	_object_info = _label("")
@@ -1884,6 +2059,34 @@ func _build_dialogs() -> void:
 	_ui.add_child(_message)
 
 
+func _hint(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	label.add_theme_font_size_override("font_size", 12)
+	return label
+
+
+# Out of putting down, back to the pointer with nothing in the list, and
+# whether there was anything to come out of.
+func _disarm() -> bool:
+	match mode:
+		Mode.ENTITIES:
+			if not _entity_list.get_selected_items().is_empty():
+				_entity_list.deselect_all()
+				return true
+		Mode.OBJECTS:
+			if build != Build.PLACE:
+				build = Build.PLACE
+				(_build_buttons[Build.PLACE] as Button).button_pressed = true
+				_asset_list.visible = true
+				return true
+			if not _asset_list.get_selected_items().is_empty():
+				_asset_list.deselect_all()
+				return true
+	return false
+
+
 func _label(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
@@ -1891,8 +2094,9 @@ func _label(text: String) -> Label:
 
 
 func _set_mode(m: int) -> void:
-	if _painting or _drag_id != "" or _nav_painting or _drawing != "":
+	if _painting or _drag_id != "" or _nav_painting or _drawing != "" or _boxing:
 		return
+	var was := mode
 	mode = m as Mode
 	for k in _pages:
 		(_pages[k] as Control).visible = k == mode
@@ -1900,7 +2104,9 @@ func _set_mode(m: int) -> void:
 		(_mode_buttons[mode] as Button).button_pressed = true
 	if doc.is_empty():
 		return
-	if mode in [Mode.GROUND, Mode.NAV]:
+	# Each page picks its own: an entity picked on the Objects page would be
+	# deleted by a Del that nothing on the page shows.
+	if mode != was or mode in [Mode.GROUND, Mode.NAV]:
 		items.select("")
 		_sync_selection()
 	_show_nav()

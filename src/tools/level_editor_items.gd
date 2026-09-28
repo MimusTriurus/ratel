@@ -64,7 +64,9 @@ var _nav_mesh: MeshInstance3D
 var _nav_image: Image
 var _nav_texture: ImageTexture
 var _row_mesh: MeshInstance3D
-var _selected := ""
+# The picked items' ids, the last the one the panel shows and whose row is
+# drawn.
+var _selected: Array = []
 
 
 func setup(level: Dictionary, ground_height: Callable, ground_rise: Callable) -> void:
@@ -96,7 +98,7 @@ func setup(level: Dictionary, ground_height: Callable, ground_rise: Callable) ->
 		update_wall(w)
 	for b in doc.get("bridges", []):
 		update_bridge(b)
-	_selected = ""
+	_selected = []
 
 
 # --- The grid ------------------------------------------------------------------
@@ -208,7 +210,7 @@ func update_entity(e: Dictionary) -> void:
 		add_child(node)
 		_entities[id] = node
 	var colour: Color = KIND_COLORS.get(kind_of(e["type"]), Color.WHITE)
-	var bright := id == _selected
+	var bright := is_selected(id)
 	var size := Vector2(footprint(e["type"])) * tile_m()
 	var mesh := BoxMesh.new()
 	mesh.size = Vector3(size.x, 0.35, size.y)
@@ -223,7 +225,7 @@ func update_entity(e: Dictionary) -> void:
 	label.position = Vector3(0, 0.6, 0)
 	var p := Vector2(float(e["pos"][0]), float(e["pos"][1]))
 	node.position = Vector3(p.x, height_at.call(p), p.y)
-	if bright:
+	if id == selected():
 		_draw_row(e)
 
 
@@ -232,8 +234,7 @@ func remove_entity(id: String) -> void:
 	if node:
 		node.queue_free()
 		_entities.erase(id)
-	if id == _selected:
-		select("")
+	_unselect(id)
 
 
 # The entity whose footprint is under `p`, the smallest of them if several.
@@ -270,10 +271,10 @@ func update_object(o: Dictionary) -> void:
 	node.position = Vector3(at.x, float(p[1]) + rise_at.call(at), at.y)
 	node.basis = Basis(Vector3.UP, deg_to_rad(float(o["yaw"]))).scaled(Vector3.ONE * float(o["scale"]))
 	var ring: Node3D = node.get_node_or_null("Picked")
-	if id == _selected and ring == null:
+	if is_selected(id) and ring == null:
 		node.add_child(_picked_ring())
-	elif id != _selected and ring:
-		ring.queue_free()
+	elif not is_selected(id) and ring:
+		ring.free()
 
 
 func remove_object(id: String) -> void:
@@ -281,8 +282,7 @@ func remove_object(id: String) -> void:
 	if node:
 		node.queue_free()
 		_objects.erase(id)
-	if id == _selected:
-		select("")
+	_unselect(id)
 
 
 func object_under(p: Vector2) -> String:
@@ -383,7 +383,7 @@ func is_wall(s: Dictionary) -> bool:
 
 func update_wall(w: Dictionary) -> void:
 	var node := _structure_node(w["id"])
-	var bright: bool = w["id"] == _selected
+	var bright := is_selected(w["id"])
 	var colour: Color = SELECTED.lerp(CONCRETE[w["style"]], 0.35) if bright else CONCRETE[w["style"]]
 	var a := Vector2(float(w["from"][0]), float(w["from"][1]))
 	var b := Vector2(float(w["to"][0]), float(w["to"][1]))
@@ -397,7 +397,7 @@ func update_wall(w: Dictionary) -> void:
 
 func update_bridge(br: Dictionary) -> void:
 	var node := _structure_node(br["id"])
-	var bright: bool = br["id"] == _selected
+	var bright := is_selected(br["id"])
 	var colour := SELECTED.lerp(DECK, 0.35) if bright else DECK
 	var a := Vector2(float(br["from"][0]), float(br["from"][1]))
 	var b := Vector2(float(br["to"][0]), float(br["to"][1]))
@@ -419,8 +419,7 @@ func remove_structure(id: String) -> void:
 	if node:
 		node.queue_free()
 		_structures.erase(id)
-	if id == _selected:
-		select("")
+	_unselect(id)
 
 
 # The wall or bridge whose box is under `p`, or "".
@@ -468,29 +467,91 @@ func _box(parent: Node3D, centre: Vector2, along: Vector2, size: Vector3, bottom
 # --- Selection -----------------------------------------------------------------
 
 
+# The picked item the panel shows -- the last one picked -- or "".
 func selected() -> String:
-	return _selected
+	return _selected[-1] if not _selected.is_empty() else ""
+
+
+# All the picked items' ids.
+func selection() -> Array:
+	return _selected.duplicate()
+
+
+func is_selected(id: String) -> bool:
+	return _selected.has(id)
 
 
 func select(id: String) -> void:
+	select_many([] if id == "" else [id])
+
+
+# Picks exactly `ids`, the last of them the one the panel shows.
+func select_many(ids: Array) -> void:
 	var was := _selected
-	_selected = id
+	_selected = []
+	for id in ids:
+		if not _selected.has(id):
+			_selected.append(id)
 	(_row_mesh.mesh as ImmediateMesh).clear_surfaces()
-	for which in [was, id]:
-		if which == "":
-			continue
-		var e := find_entity(which)
-		if not e.is_empty():
-			update_entity(e)
-		var o := find_object(which)
-		if not o.is_empty():
-			update_object(o)
-		var st := find_structure(which)
-		if not st.is_empty():
-			if is_wall(st):
-				update_wall(st)
-			else:
-				update_bridge(st)
+	var redraw := {}
+	for which in was + _selected:
+		redraw[which] = true
+	for which in redraw:
+		_redraw(which)
+
+
+# Picks `id` as well as what is picked, or lets go of it if it is.
+func toggle(id: String) -> void:
+	var ids := selection()
+	if ids.has(id):
+		ids.erase(id)
+	else:
+		ids.append(id)
+	select_many(ids)
+
+
+func _unselect(id: String) -> void:
+	if _selected.has(id):
+		var ids := selection()
+		ids.erase(id)
+		select_many(ids)
+
+
+func _redraw(id: String) -> void:
+	var e := find_entity(id)
+	if not e.is_empty():
+		update_entity(e)
+	var o := find_object(id)
+	if not o.is_empty():
+		update_object(o)
+	var st := find_structure(id)
+	if not st.is_empty():
+		if is_wall(st):
+			update_wall(st)
+		else:
+			update_bridge(st)
+
+
+# Where each item of the kinds asked for stands, for picking them by a box
+# drawn on the screen: an entity's footprint's middle, an object's foot, a
+# wall's or a bridge's middle -- on the ground as the picture has it.
+func anchors(kinds: Array) -> Dictionary:
+	var out := {}
+	var on_ground := func(p: Vector2) -> Vector3: return Vector3(p.x, height_at.call(p), p.y)
+	if kinds.has("entities"):
+		for e in doc["entities"]:
+			out[e["id"]] = on_ground.call(Vector2(float(e["pos"][0]), float(e["pos"][1])))
+	if kinds.has("objects"):
+		for o in doc["objects"]:
+			var p := Vector2(float(o["pos"][0]), float(o["pos"][2]))
+			out[o["id"]] = Vector3(p.x, float(o["pos"][1]) + rise_at.call(p), p.y)
+	if kinds.has("structures"):
+		for key in ["walls", "bridges"]:
+			for s in doc.get(key, []):
+				var a := Vector2(float(s["from"][0]), float(s["from"][1]))
+				var b := Vector2(float(s["to"][0]), float(s["to"][1]))
+				out[s["id"]] = on_ground.call((a + b) * 0.5)
+	return out
 
 
 # The line across the map where the top of the frame is when `e` fires.

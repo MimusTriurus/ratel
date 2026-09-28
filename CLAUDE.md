@@ -467,7 +467,11 @@ The level editor is a program of its own, `src/tools/level_editor.tscn`
 what stands on it): File -> New, Open, Save, and four modes. Ground paints
 land, sea, river, forest and the rise of the ground; Nav paints the grid;
 Entities and Objects put down, pick, drag, turn and delete from the
-catalogue, entities snapped to the tiles their footprint covers and a
+catalogue -- a type picked in the list puts one down, and with none picked
+a click picks, Shift+click adds, a drag over nothing draws a box, and a
+drag on a picked one moves everything picked (`LevelEditorItems` keeps a
+list, the last the one the panel shows); Esc empties the list first --
+entities snapped to the tiles their footprint covers and a
 building given the group its probe cell is in; one the catalogue gives an
 object (a gun its Bunker, the landing port its Helipad) comes with it, tied
 by the object's `"entity"`, which is how the preview finds another level's

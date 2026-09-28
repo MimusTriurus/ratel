@@ -17,7 +17,9 @@
 # - Entities and objects: one put down lands where it is snapped to and is
 #   picked, a drag moves it, undo takes it away and redo brings it back; a
 #   gun comes with its bunker, which moves and goes with it; an object turns,
-#   scales and is deleted, and undo puts it back.
+#   scales and is deleted, and undo puts it back. With nothing in the list
+#   a box picks several, a drag on one moves them all, R turns them all and
+#   Del deletes them, each one undo.
 # - Walls and bridges: a drag draws one, laid out as stage 1's are, and
 #   dragging it moves it whole; delete and undo; a wall makes its tiles solid
 #   and a bridge its deck empty in a grid from the ground. A gate comes with
@@ -181,6 +183,59 @@ func _run() -> void:
 	editor._undo_step(editor._undo, editor._redo)
 	_expect(editor.doc["objects"].size() == objects and not editor.items.find_object(palm["id"]).is_empty(),
 			"undo brings a deleted object back")
+
+	# Picking several: a box, a drag of them all, delete and undo.
+	var more: Array = []
+	for k in 2:
+		editor._press(palm_at + Vector2(1.5 * (k + 1), 0.0))
+		editor._release()
+		more.append(editor.doc["objects"][-1]["id"])
+	_expect(editor._disarm() and editor._asset_list.get_selected_items().is_empty(), "Esc lets go of the list")
+	editor._press(palm_at + Vector2(0.0, 6.0))
+	editor._release()
+	_expect(editor.doc["objects"].size() == objects + 2 and editor.items.selection().is_empty(),
+			"with nothing in the list a click on nothing puts nothing down and lets go")
+	var three: Array = [palm["id"]] + more
+	var corners := three.map(func(id):
+		var o: Dictionary = editor.items.find_object(id)
+		return editor._camera.unproject_position(Vector3(float(o["pos"][0]), float(o["pos"][1]), float(o["pos"][2]))))
+	var box := Rect2(corners[0], Vector2.ZERO)
+	for c in corners:
+		box = box.expand(c)
+	box = box.grow(12.0)
+	editor._mouse = box.position
+	editor._begin_box()
+	editor._mouse = box.end
+	editor._end_box()
+	var boxed: Array = editor.items.selection()
+	_expect(boxed.size() == 3 and three.all(func(id): return boxed.has(id)), "a box picks the three palms: %s" % [boxed])
+	_expect(editor._object_multi.visible and not editor._object_box.visible, "the panel says how many, not one's fields")
+	var before_drag := three.map(func(id): return editor.items.find_object(id)["pos"].duplicate())
+	var grab := Vector2(float(before_drag[1][0]), float(before_drag[1][2]))
+	editor._press(grab)
+	editor._move(grab + Vector2(1.0, 0.5))
+	editor._release()
+	var moved_all := true
+	for k in 3:
+		var now: Dictionary = editor.items.find_object(three[k])
+		moved_all = moved_all and absf(float(now["pos"][0]) - float(before_drag[k][0]) - 1.0) < 0.002 \
+				and absf(float(now["pos"][2]) - float(before_drag[k][2]) - 0.5) < 0.002
+	_expect(moved_all and editor.items.selection().size() == 3, "a drag on one moves them all")
+	editor._undo_step(editor._undo, editor._redo)
+	_expect(editor.items.find_object(three[0])["pos"] == before_drag[0], "in one undo")
+	editor.items.select_many(three)
+	editor._turn_selected(15.0)
+	_expect(three.all(func(id): return is_equal_approx(float(editor.items.find_object(id)["yaw"]), 30.0 if id == palm["id"] else 15.0)),
+			"R turns them all")
+	editor.items.toggle(more[0])
+	_expect(editor.items.selection().size() == 2 and not editor.items.is_selected(more[0]), "Shift+click lets go of one")
+	editor._delete_selected()
+	_expect(editor.doc["objects"].size() == objects, "Del deletes the ones picked")
+	editor._undo_step(editor._undo, editor._redo)
+	_expect(editor.doc["objects"].size() == objects + 2, "and one undo brings them back")
+	editor.items.select_many(more)
+	editor._delete_selected()
+	editor._asset_list.select(editor._assets.find("Palm_1"))
 
 	# Walls, a bridge, a gate.
 	var B = editor.Build
