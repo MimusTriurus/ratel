@@ -104,7 +104,10 @@ func _ready() -> void:
 	if doc.is_empty():
 		reload()
 	if not Engine.is_editor_hint():
-		_shot.call_deferred()
+		if OS.get_cmdline_user_args().has("--shot"):
+			_shot.call_deferred()
+		else:
+			_view.call_deferred()
 
 
 func _notification(what: int) -> void:
@@ -141,11 +144,84 @@ func _shot() -> void:
 		if node:
 			picked.append(node)
 	select(picked)
+	_top_camera(Vector2(centre[0], centre[1]), float(args[at + 3]))
+	for i in 4:
+		await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	var error := get_viewport().get_texture().get_image().save_png(args[at + 1])
+	print("Level3DEditRoot: shot %s -- %s" % [args[at + 1], "written" if error == OK else "FAILED"])
+	get_tree().quit()
+
+
+# Run as a scene without --shot (F6, or the command line without -e), there
+# is nothing to edit -- that is the editor's -- and a scene with no camera
+# and no light is a grey window. So it shows the level from above instead,
+# from the south end, where the stage starts: W A S D or the arrows scroll,
+# the wheel or + and - zoom. To edit, open the scene in the editor:
+#
+#     godot --path . -e src/tools/level3d_editor.tscn
+const VIEW_WIDTHS := Vector2(4.0, 60.0)
+const VIEW_SCROLL := 1.2    # frame widths a second
+var _view_camera: Camera3D
+
+
+func _view() -> void:
+	var frame: Array = doc.get("terrain", {}).get("frame", [])
+	var centre := Vector2(0.0, 0.0)
+	var width := 34.0
+	if frame.size() == 4:
+		width = float(frame[2]) - float(frame[0])
+		centre = Vector2((float(frame[0]) + float(frame[2])) * 0.5, float(frame[3]) - width * 9.0 / 32.0)
+	_view_camera = _top_camera(centre, width)
+	var layer := CanvasLayer.new()
+	var label := Label.new()
+	label.text = ("Level %d from above -- WASD / arrows scroll, wheel or +/- zoom.
+"
+			+ "To edit it, open the scene in the editor: godot --path . -e src/tools/level3d_editor.tscn") % stage
+	label.position = Vector2(12, 8)
+	label.add_theme_color_override("font_outline_color", Color.BLACK)
+	label.add_theme_constant_override("outline_size", 6)
+	layer.add_child(label)
+	add_child(layer)
+
+
+func _process(delta: float) -> void:
+	if _view_camera == null:
+		return
+	var step := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
+	for key in [[KEY_A, Vector2.LEFT], [KEY_D, Vector2.RIGHT], [KEY_W, Vector2.UP], [KEY_S, Vector2.DOWN]]:
+		if Input.is_physical_key_pressed(key[0]):
+			step += key[1]
+	step = step.limit_length(1.0) * _view_camera.size * VIEW_SCROLL * delta
+	_view_camera.position += Vector3(step.x, 0.0, step.y)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if _view_camera == null:
+		return
+	var zoom := 1.0
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			zoom = 1.0 / 1.2
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			zoom = 1.2
+	elif event is InputEventKey and event.pressed:
+		if event.keycode in [KEY_PLUS, KEY_EQUAL, KEY_KP_ADD]:
+			zoom = 1.0 / 1.2
+		elif event.keycode in [KEY_MINUS, KEY_KP_SUBTRACT]:
+			zoom = 1.2
+	if zoom != 1.0:
+		_view_camera.size = clampf(_view_camera.size * zoom, VIEW_WIDTHS.x, VIEW_WIDTHS.y)
+
+
+# An orthographic camera straight down on (x, z), width metres across, with
+# a sun and a flat ambient light: the scene has neither of its own.
+func _top_camera(centre: Vector2, width: float) -> Camera3D:
 	var camera := Camera3D.new()
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	camera.size = float(args[at + 3])
+	camera.size = width
 	camera.keep_aspect = Camera3D.KEEP_WIDTH
-	camera.position = Vector3(centre[0], 60.0, centre[1])
+	camera.position = Vector3(centre.x, 60.0, centre.y)
 	camera.rotation_degrees = Vector3(-90, 0, 0)
 	camera.far = 200.0
 	add_child(camera)
@@ -155,15 +231,13 @@ func _shot() -> void:
 	add_child(sun)
 	var environment := WorldEnvironment.new()
 	environment.environment = Environment.new()
+	# Past the sea's mesh: the sea's colour, not the default white.
+	environment.environment.background_mode = Environment.BG_COLOR
+	environment.environment.background_color = Color8(175, 200, 250)
 	environment.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	environment.environment.ambient_light_color = Color(0.6, 0.6, 0.6)
 	add_child(environment)
-	for i in 4:
-		await get_tree().process_frame
-	await RenderingServer.frame_post_draw
-	var error := get_viewport().get_texture().get_image().save_png(args[at + 1])
-	print("Level3DEditRoot: shot %s -- %s" % [args[at + 1], "written" if error == OK else "FAILED"])
-	get_tree().quit()
+	return camera
 
 
 # --- Loading ------------------------------------------------------------------

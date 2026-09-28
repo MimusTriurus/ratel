@@ -83,11 +83,15 @@ func _enter_tree() -> void:
 	_dialog.title = "Level3D"
 	EditorInterface.get_base_control().add_child(_dialog)
 	EditorInterface.get_selection().selection_changed.connect(_on_selection_changed)
+	scene_changed.connect(_on_scene_changed)
+	main_screen_changed.connect(_on_main_screen_changed)
 	_show_mode_options()
 
 
 func _exit_tree() -> void:
 	EditorInterface.get_selection().selection_changed.disconnect(_on_selection_changed)
+	scene_changed.disconnect(_on_scene_changed)
+	main_screen_changed.disconnect(_on_main_screen_changed)
 	remove_control_from_container(CONTAINER_SPATIAL_EDITOR_MENU, _bar)
 	_bar.queue_free()
 	_dialog.queue_free()
@@ -114,6 +118,33 @@ static func _button(text: String, tip: String, pressed: Callable) -> Button:
 	button.flat = true
 	button.pressed.connect(pressed)
 	return button
+
+
+# The editor opens on whichever main screen it was left on, and switches
+# to 3D for a 3D scene only from 2D; left on the script editor or the asset
+# library, it shows a grey panel or a shop, and nothing of the level.
+# Opening or switching to the level's scene goes to 3D. On start-up the
+# editor restores its saved screen about half a second after the scene is
+# open, so for TO_3D_FOR after the first scene a switch away is put back,
+# once; later, a click on another screen is the user's.
+const TO_3D_FOR := 2000     # ms
+var _to_3d_until := 0
+var _first_scene := true
+
+
+func _on_scene_changed(scene_root: Node) -> void:
+	if scene_root is Level3DEditRoot:
+		EditorInterface.set_main_screen_editor("3D")
+		if _first_scene:
+			_to_3d_until = Time.get_ticks_msec() + TO_3D_FOR
+	if scene_root:
+		_first_scene = false
+
+
+func _on_main_screen_changed(screen_name: String) -> void:
+	if screen_name != "3D" and Time.get_ticks_msec() < _to_3d_until:
+		_to_3d_until = 0
+		EditorInterface.set_main_screen_editor.call_deferred("3D")
 
 
 func _show_mode_options() -> void:

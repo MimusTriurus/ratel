@@ -447,7 +447,10 @@ blender-launcher -b build/level3d/jackal_stage1_gen.blend --python tools/blender
 ```
 
 The editor is `src/tools/level3d_editor.tscn` with the `addons/level3d_editor`
-plugin (enabled in `project.godot`): the scene is one `Level3DEditRoot` that
+plugin (enabled in `project.godot`), opened in the editor (`-e`; the plugin
+goes to the 3D screen for it, and its bar shows once a node of the level is
+selected -- run as a scene instead, it only shows the level from above to
+scroll about): the scene is one `Level3DEditRoot` that
 builds entities and objects from the level file on open, and Ctrl+S writes
 them back to it — they are disowned for the save, so the `.tscn` stays one
 node. The plugin's bar in the viewport menu paints the nav grid, places
@@ -455,6 +458,10 @@ entities and objects, runs `Level3DIO.check` and rebuilds the level's own
 `assets/level3d/dirs-N.dat`, which `Level3DMap` prefers to the game's. The
 check drives the nodes without the editor; a `--shot` frames the scene from
 above:
+
+```bash
+godot --path . -e src/tools/level3d_editor.tscn
+```
 
 ```bash
 godot --path . --headless --script tools/verify_level3d_editor.gd
