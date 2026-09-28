@@ -35,13 +35,15 @@
 #             line across the map is the row the picked one fires on.
 #   Objects   scenery from the catalogue, the same way, and walls and
 #             bridges are picked with it; R and Shift+R turn the picked
-#             objects, [ and ] scale them. Wall, Side wall and Bridge
-#             are drawn instead, a drag from one end to the other -- held to
-#             a multiple of 45 degrees unless Shift is down -- and laid out
-#             as stage 1's are (Level3DStructures); a picked one is dragged
-#             whole, and its width, height and merlons are on the panel. A
-#             GATE entity comes with its gate and the destruction group
-#             that opens it, both moved with it.
+#             objects, [ and ] scale them. Bridge is drawn instead, a drag
+#             from one end to the other, and Wall and Side wall a path, a
+#             click to a point (see Paths below) -- held to a multiple of 45
+#             degrees unless Shift is down -- laid out as stage 1's are
+#             (Level3DStructures); a picked one is dragged whole or by the
+#             handles on its points, and its width, height, merlons and,
+#             a path, smooth and closed are on the panel. A GATE entity
+#             comes with its gate and the destruction group that opens it,
+#             both moved with it, and goes into a path it is put down by.
 #
 # Delete removes what is picked; Esc first leaves putting down, then lets go. Every stroke, placing,
 # move and removal is one undo. LevelEditorItems draws what is over the
@@ -105,6 +107,10 @@ const REFRESH_EVERY := 0.06
 const TURN := 15.0
 # The Objects page's tools: put a piece down, or draw a wall or a bridge.
 enum Build { PLACE, WALL, SIDE, BRIDGE }
+# What a press on the Objects page may change: a path moved takes the gates
+# it goes through with it, and they their groups.
+const OBJECT_KEYS := ["objects", "walls", "bridges", "paths", "entities", "groups"]
+const ENTITY_KEYS := ["entities", "objects", "groups", "paths"]
 # PLACE is the pointer: it picks, and puts down what the list has picked.
 const BUILD_NAMES := ["Select", "Wall", "Side wall", "Bridge"]
 const SNAP := 0.05
@@ -159,6 +165,11 @@ var build: Build = Build.PLACE
 # The wall or bridge being drawn, and where its drag began.
 var _drawing := ""
 var _draw_from := Vector2.ZERO
+# The path being drawn, a point to a click: its last point follows the
+# pointer until the next click puts it down.
+var _path_drawing := ""
+# The picked structure's point being dragged by its handle, or -1.
+var _handle_drag := -1
 
 var _camera: Camera3D
 var _focus := Vector2.ZERO
@@ -203,6 +214,8 @@ var _structure_info: Label
 var _structure_width: SpinBox
 var _structure_height: SpinBox
 var _structure_merlons: CheckBox
+var _structure_smooth: CheckBox
+var _structure_closed: CheckBox
 var _syncing := false
 var _open_dialog: FileDialog
 var _save_dialog: FileDialog
@@ -316,15 +329,18 @@ func _hit(at: Vector2) -> Variant:
 # done to them: one key, or several changed together.
 func _record(keys: Variant) -> void:
 	var was := {}
+	# A list the level does not have yet comes back as not there: undoing the
+	# first path takes "paths" away again, and stage 1's file never has one.
 	for key in ([keys] if keys is String else keys):
-		was[key] = (doc[key] as Array).duplicate(true)
+		was[key] = (doc[key] as Array).duplicate(true) if doc.has(key) else null
 	_undo.append({"doc": was})
 	_redo.clear()
 	_set_dirty(true)
 
 
 func _undo_step(from: Array, to: Array) -> void:
-	if from.is_empty() or _painting or _drag_id != "" or _nav_painting or _drawing != "" or _boxing:
+	if from.is_empty() or _painting or _drag_id != "" or _nav_painting or _drawing != "" or _boxing \
+			or _path_drawing != "":
 		return
 	var entry: Dictionary = from.pop_back()
 	if entry.has("ground"):
@@ -336,8 +352,11 @@ func _undo_step(from: Array, to: Array) -> void:
 	else:
 		var now := {}
 		for key in entry["doc"]:
-			now[key] = (doc[key] as Array).duplicate(true)
-			doc[key] = entry["doc"][key]
+			now[key] = (doc[key] as Array).duplicate(true) if doc.has(key) else null
+			if entry["doc"][key] == null:
+				doc.erase(key)
+			else:
+				doc[key] = entry["doc"][key]
 		to.append({"doc": now})
 		for key in entry["doc"]:
 			_refresh_doc(key)
@@ -355,7 +374,7 @@ func _refresh_doc(key: String) -> void:
 			_sync_selection()
 		"nav", "nav_paint":
 			_show_nav()
-		"walls", "bridges":
+		"walls", "bridges", "paths":
 			var picked := items.selected()
 			items.setup(doc, view.height_at, ground.rise_at)
 			if not items.find_structure(picked).is_empty():
@@ -495,7 +514,7 @@ func _unique_id(stem: String) -> String:
 		taken[e["id"]] = true
 	for o in doc["objects"]:
 		taken[o["id"]] = true
-	for key in ["walls", "bridges"]:
+	for key in LevelEditorItems.STRUCTURE_KEYS:
 		for st in doc.get(key, []):
 			taken[st["id"]] = true
 	var n := 0
@@ -546,7 +565,14 @@ func _begin_drag(p: Vector2, keys: Array) -> void:
 			_drag_orig[id] = o["pos"].duplicate()
 		var st := items.find_structure(id)
 		if not st.is_empty():
-			_drag_orig[id] = [st["from"].duplicate(), st["to"].duplicate()]
+			if Level3DStructures.is_path(st):
+				_drag_orig[id] = (st["points"] as Array).duplicate(true)
+				for gate in Level3DStructures.gates_in(st):
+					_drag_orig[gate] = items.find_entity(gate)["pos"].duplicate()
+					for piece in _belonging_to(gate):
+						_drag_orig[piece["id"]] = piece["pos"].duplicate()
+			else:
+				_drag_orig[id] = [st["from"].duplicate(), st["to"].duplicate()]
 
 
 func _begin_box() -> void:
@@ -583,7 +609,7 @@ func _page_items() -> Array:
 
 
 func _press_entity(p: Vector2) -> void:
-	var keys := ["entities", "objects", "groups"]
+	var keys := ENTITY_KEYS
 	if _press_item(p, items.entity_under(p), keys):
 		return
 	if _entity_list.get_selected_items().is_empty():
@@ -609,6 +635,7 @@ func _press_entity(p: Vector2) -> void:
 				"pos": _object_pos(at), "yaw": 0.0, "scale": 1.0, "entity": e["id"]}
 		(doc["objects"] as Array).append(o)
 		items.update_object(o)
+	_fit_gate(e)
 	_put_down(p, e["id"])
 
 
@@ -619,7 +646,15 @@ func _press_object(p: Vector2) -> void:
 	for key in ["walls", "bridges"]:
 		if not doc.has(key):
 			doc[key] = []
-	var keys := ["objects", "walls", "bridges"]
+	var keys := OBJECT_KEYS
+	# A picked wall's, path's or bridge's point, by its handle; Ctrl+click on
+	# a picked path puts a new one in where it is clicked.
+	var handle := items.handle_under(p)
+	if handle < 0 and Input.is_key_pressed(KEY_CTRL):
+		handle = _insert_point(p)
+	if handle >= 0:
+		_begin_handle(p, handle)
+		return
 	var id := items.object_under(p)
 	if id == "":
 		id = items.structure_under(p)
@@ -660,18 +695,304 @@ func _press_structure(p: Vector2) -> void:
 	for key in ["walls", "bridges"]:
 		if not doc.has(key):
 			doc[key] = []
+	if build != Build.BRIDGE:
+		_path_click(p)
+		return
 	_record(["walls", "bridges"])
 	var at := p.snapped(Vector2(SNAP, SNAP))
-	var st: Dictionary
-	if build == Build.BRIDGE:
-		st = Level3DStructures.new_bridge(_unique_id("bridge"), at, at)
-		(doc["bridges"] as Array).append(st)
-	else:
-		st = Level3DStructures.new_wall(_unique_id("wall"), "wall" if build == Build.WALL else "side", at, at)
-		(doc["walls"] as Array).append(st)
+	var st := Level3DStructures.new_bridge(_unique_id("bridge"), at, at)
+	(doc["bridges"] as Array).append(st)
 	_drawing = st["id"]
 	_draw_from = at
 	items.select(_drawing)
+
+
+# --- Paths ------------------------------------------------------------------------
+#
+# Wall and Side wall draw a path (Level3DStructures): a click puts a point
+# down, and the next follows the pointer -- held to a multiple of 45 degrees
+# from the last unless Shift is down -- until the next click; a click on a
+# gate takes the wall through it; a click on the first point closes it;
+# Enter, a double click or Esc ends it, Backspace takes the last point back.
+# The whole drawing is one undo.
+
+func _path_click(p: Vector2) -> void:
+	if _path_drawing == "":
+		if not doc.has("paths"):
+			_record(["paths"])
+			doc["paths"] = []
+		else:
+			_record(["paths"])
+		var at := _path_point(p, null)
+		var path := Level3DStructures.new_path(_unique_id("wall" if build == Build.WALL else "side"),
+				"wall" if build == Build.WALL else "side", [at, at.duplicate()])
+		(doc["paths"] as Array).append(path)
+		_path_drawing = path["id"]
+		_gate_into_drawing(p, true)
+		_relay(path)
+		items.select(_path_drawing)
+		_sync_selection()
+		return
+	var path := items.find_structure(_path_drawing)
+	var elements: Array = path["points"]
+	var first: Variant = elements[0]
+	if elements.size() >= 3 and not Level3DStructures.is_gate_point(first) \
+			and p.distance_to(Vector2(float(first[0]), float(first[1]))) < LevelEditorItems.HANDLE_PICK:
+		# The point following the pointer is the first one again.
+		elements.pop_back()
+		path["closed"] = true
+		_end_path()
+		return
+	match _gate_into_drawing(p, false):
+		1:
+			_relay(path)
+			return
+		-1:
+			_footer.text = "A wall goes through a gate east to west only: its passage runs north to south, as the game scrolls."
+			return
+	elements.append((elements[-1] as Array).duplicate())
+	_relay(path)
+
+
+# A click on a gate while drawing: the gate takes the place of the point
+# that follows the pointer, and a new one follows on from it -- 1 -- unless
+# the wall comes to it from too far off its axis, north to south, which the
+# gate refuses -- -1. 0 is no gate there.
+func _gate_into_drawing(p: Vector2, first: bool) -> int:
+	var gate := items.entity_under(p)
+	if gate == "" or items.find_entity(gate)["type"] != "GATE" or _path_through(gate) != "":
+		return 0
+	var frame := Level3DStructures.gate_frame(doc, gate)
+	if frame.is_empty():
+		return 0
+	var path := items.find_structure(_path_drawing)
+	var elements: Array = path["points"]
+	if not first and elements.size() >= 2:
+		var from := _element_xz(path, elements.size() - 2, true)
+		if not Level3DStructures.runs_across(from, frame["at"], frame["axis"]):
+			return -1
+	var live: Array = elements.pop_back()
+	if first:
+		# The path starts at the gate.
+		elements.clear()
+	elements.append({"gate": gate})
+	elements.append(live)
+	return 1
+
+
+# The point a click at `p` puts down: to SNAP, and to a multiple of 45
+# degrees from `from` unless Shift is down.
+func _path_point(p: Vector2, from: Variant) -> Array:
+	var to := p.snapped(Vector2(SNAP, SNAP))
+	if from != null and not Input.is_key_pressed(KEY_SHIFT):
+		var d := to - (from as Vector2)
+		var angle := snappedf(d.angle(), PI / 4.0)
+		to = ((from as Vector2) + Vector2.from_angle(angle) * d.length()).snapped(Vector2(SNAP, SNAP))
+	return _v2a(to)
+
+
+func _path_hover(p: Vector2) -> void:
+	var path := items.find_structure(_path_drawing)
+	var elements: Array = path["points"]
+	var before: Variant = elements[-2] if elements.size() >= 2 else null
+	var from: Variant = null
+	if before != null:
+		from = Level3DStructures.gate_posts(path, doc, elements.size() - 2)[-1] \
+				if Level3DStructures.is_gate_point(before) else _v2(before)
+	var at := _path_point(p, from)
+	if at != elements[-1]:
+		elements[-1] = at
+		_relay(path)
+
+
+func _end_path() -> void:
+	var path := items.find_structure(_path_drawing)
+	_path_drawing = ""
+	if path.is_empty():
+		return
+	var elements: Array = path["points"]
+	if not path["closed"]:
+		elements.pop_back()
+	if elements.size() < 2:
+		# Nothing drawn: the drawing's undo goes, and a "paths" it made.
+		(doc["paths"] as Array).erase(path)
+		items.remove_structure(path["id"])
+		var entry: Dictionary = _undo.pop_back()
+		if entry["doc"].get("paths", []) == null:
+			doc.erase("paths")
+		_sync_selection()
+		return
+	_relay(path)
+	items.select(path["id"])
+	_sync_selection()
+
+
+# Backspace while drawing: the last point put down goes, and with the first
+# the whole path.
+func _path_back() -> void:
+	var path := items.find_structure(_path_drawing)
+	var elements: Array = path["points"]
+	if elements.size() <= 2:
+		# Back past the first point: nothing is drawn.
+		elements.resize(1)
+		_end_path()
+		return
+	elements.remove_at(elements.size() - 2)
+	_relay(path)
+
+
+# A path laid out again and drawn: after a point, a setting or one of its
+# gates moved. The nav grid a level derives has to be made again.
+func _relay(path: Dictionary) -> void:
+	Level3DStructures.lay_path(path, doc)
+	items.update_path(path)
+	_derived = []
+
+
+func _path_through(gate: String) -> String:
+	for path in doc.get("paths", []):
+		if Level3DStructures.gates_in(path).has(gate):
+			return path["id"]
+	return ""
+
+
+# A gate put down or let go of: if a path goes through it, the path follows;
+# if none does and one passes near enough, the gate goes into it, the points
+# within its frame giving way to it.
+func _fit_gate(e: Dictionary) -> void:
+	if e["type"] != "GATE":
+		return
+	var through := _path_through(e["id"])
+	if through != "":
+		_relay(items.find_structure(through))
+		return
+	var frame := Level3DStructures.gate_frame(doc, e["id"])
+	if frame.is_empty():
+		return
+	for path in doc.get("paths", []):
+		var place := Level3DStructures.gate_insertion(path, doc, frame["at"], frame["axis"])
+		if place.is_empty():
+			continue
+		var elements: Array = path["points"]
+		var at: int = int(place["after"]) + 1
+		var inside: Array = place["inside"]
+		inside.sort()
+		for k in range(inside.size() - 1, -1, -1):
+			if elements.size() <= 2:
+				break
+			elements.remove_at(inside[k])
+			if inside[k] < at:
+				at -= 1
+		elements.insert(clampi(at, 0, elements.size()), {"gate": e["id"]})
+		_relay(path)
+		return
+
+
+# A gate deleted: the paths through it close across where it stood.
+func _unfit_gate(gate: String) -> void:
+	for path in doc.get("paths", []):
+		var elements: Array = path["points"]
+		for k in range(elements.size() - 1, -1, -1):
+			if Level3DStructures.is_gate_point(elements[k]) and elements[k]["gate"] == gate:
+				var posts := Level3DStructures.gate_posts(path, doc, k)
+				elements.remove_at(k)
+				for q in range(posts.size() - 1, -1, -1):
+					elements.insert(k, _v2a(posts[q]))
+				_relay(path)
+
+
+# A picked structure's point, dragged by its handle: a path's to SNAP, a
+# wall's or bridge's end with its merlons or its piers laid out again.
+func _begin_handle(p: Vector2, handle: int) -> void:
+	_record(OBJECT_KEYS)
+	_handle_drag = handle
+	_drag_id = items.selected()
+	_drag_changed = false
+	_drag_start = p
+	items.active_point = handle
+	items.update_structure(items.find_structure(_drag_id))
+	_sync_selection()
+
+
+func _drag_handle(p: Vector2) -> void:
+	var st := items.find_structure(_drag_id)
+	var at := _v2a(p.snapped(Vector2(SNAP, SNAP)))
+	if Level3DStructures.is_path(st):
+		if st["points"][_handle_drag] == at:
+			return
+		st["points"][_handle_drag] = at
+		_relay(st)
+	else:
+		var end := "from" if _handle_drag == 0 else "to"
+		if st[end] == at:
+			return
+		st[end] = at
+		if items.is_wall(st):
+			Level3DStructures.lay_merlons(st)
+		else:
+			Level3DStructures.lay_bridge(st)
+		items.update_structure(st)
+		_derived = []
+	_drag_changed = true
+	_sync_selection()
+
+
+# Ctrl+click on the picked path: a point put in on the way between the two
+# it is nearest the line between, and its index, or -1.
+func _insert_point(p: Vector2) -> int:
+	var path := items.find_structure(items.selected())
+	if path.is_empty() or not Level3DStructures.is_path(path) or items.selection().size() != 1:
+		return -1
+	var elements: Array = path["points"]
+	var n := elements.size()
+	var best := -1
+	var best_d := INF
+	for k in (n if path["closed"] else n - 1):
+		var a := _element_xz(path, k, true)
+		var b := _element_xz(path, (k + 1) % n, false)
+		var d := p.distance_to(Geometry2D.get_closest_point_to_segment(p, a, b))
+		if d < best_d:
+			best_d = d
+			best = k
+	if best < 0 or best_d > float(path["width"]) + 1.0:
+		return -1
+	elements.insert(best + 1, _v2a(p.snapped(Vector2(SNAP, SNAP))))
+	_relay(path)
+	return best + 1
+
+
+# Where element k of a path is, a gate by the post the path leaves it by
+# (`leaving`) or comes into it by.
+func _element_xz(path: Dictionary, k: int, leaving: bool) -> Vector2:
+	var e: Variant = path["points"][k]
+	if Level3DStructures.is_gate_point(e):
+		var posts := Level3DStructures.gate_posts(path, doc, k)
+		if not posts.is_empty():
+			return posts[-1] if leaving else posts[0]
+	return _v2(e) if not Level3DStructures.is_gate_point(e) else Vector2.ZERO
+
+
+# Del on a picked path's point whose handle was taken last.
+func _delete_point() -> bool:
+	var path := items.find_structure(items.selected())
+	var k := items.active_point
+	if k < 0 or path.is_empty() or not Level3DStructures.is_path(path):
+		return false
+	var elements: Array = path["points"]
+	if elements.size() <= 2 or k >= elements.size():
+		return false
+	_record(["paths"])
+	elements.remove_at(k)
+	if elements.size() < 3:
+		path["closed"] = false
+	items.active_point = -1
+	_relay(path)
+	_sync_selection()
+	return true
+
+
+static func _v2a(v: Vector2) -> Array:
+	return [Level3DIO.round_mm(v.x), Level3DIO.round_mm(v.y)]
 
 
 func _draw_to(p: Vector2) -> void:
@@ -709,6 +1030,9 @@ func _end_draw() -> void:
 # they keep their places on the grid to one another -- with what belongs to
 # them; walls and bridges to SNAP; objects as the pointer goes.
 func _drag_to(p: Vector2) -> void:
+	if _handle_drag >= 0:
+		_drag_handle(p)
+		return
 	var delta := p - _drag_start
 	var tiles := Vector2.ZERO
 	var lead := items.find_entity(_drag_id)
@@ -733,9 +1057,17 @@ func _drag_to(p: Vector2) -> void:
 				var was: Array = _drag_orig.get(o["id"], o["pos"])
 				o["pos"] = _object_pos(Vector2(float(was[0]), float(was[2])) + at - from)
 				items.update_object(o)
+			# A path through a gate goes where the gate goes.
+			var through := _path_through(id)
+			if through != "":
+				_relay(items.find_structure(through))
 			moved = true
 			continue
 		var st := items.find_structure(id)
+		if not st.is_empty() and Level3DStructures.is_path(st):
+			if _drag_path(st, delta):
+				moved = true
+			continue
 		if not st.is_empty():
 			var ends: Array = _drag_orig[id]
 			var by := (_v2(ends[0]) + delta).snapped(Vector2(SNAP, SNAP)) - _v2(ends[0])
@@ -764,6 +1096,43 @@ func _drag_to(p: Vector2) -> void:
 		_sync_selection()
 
 
+# A path moved whole, by `delta` to SNAP -- or, through gates, by whole tiles,
+# the gates going with it on the grid.
+func _drag_path(path: Dictionary, delta: Vector2) -> bool:
+	var was: Array = _drag_orig[path["id"]]
+	var gates := Level3DStructures.gates_in(path)
+	var by := delta.snapped(Vector2(SNAP, SNAP))
+	if not gates.is_empty():
+		var tile := items.tile_m()
+		by = Vector2(roundf(delta.x / tile), roundf(delta.y / tile)) * tile
+	var elements: Array = path["points"]
+	var changed := false
+	for k in elements.size():
+		if Level3DStructures.is_gate_point(was[k]):
+			continue
+		var at := _v2a(_v2(was[k]) + by)
+		if elements[k] != at:
+			elements[k] = at
+			changed = true
+	for gate in gates:
+		var e := items.find_entity(gate)
+		var from := _v2(_drag_orig[gate])
+		var at := items.snap_entity(e["type"], from + by)
+		if at == _v2(e["pos"]):
+			continue
+		e["pos"] = [at.x, at.y]
+		_gate_group(e)
+		items.update_entity(e)
+		for o in _belonging_to(gate):
+			var orig: Array = _drag_orig.get(o["id"], o["pos"])
+			o["pos"] = _object_pos(Vector2(float(orig[0]), float(orig[2])) + at - from)
+			items.update_object(o)
+		changed = true
+	if changed:
+		_relay(path)
+	return changed
+
+
 static func _v2(a: Array) -> Vector2:
 	return Vector2(float(a[0]), float(a[1]))
 
@@ -776,8 +1145,15 @@ func _belonging_to(id: String) -> Array:
 func _release_drag() -> void:
 	if not _drag_changed:
 		_undo.pop_back()
+	# A gate let go of near a path it is not in goes into it.
+	if _drag_changed and mode == Mode.ENTITIES:
+		for id in items.selection():
+			var e := items.find_entity(id)
+			if not e.is_empty():
+				_fit_gate(e)
 	_drag_id = ""
 	_drag_orig = {}
+	_handle_drag = -1
 
 
 # A gate opens the middle of its footprint when it is blown: a destruction
@@ -839,10 +1215,12 @@ func _reprobe(e: Dictionary) -> void:
 
 # Removes everything picked, in one undo.
 func _delete_selected() -> void:
+	if _delete_point():
+		return
 	var ids := items.selection()
 	if ids.is_empty():
 		return
-	_record(["entities", "objects", "groups", "walls", "bridges"] if doc.has("walls") else ["entities", "objects", "groups"])
+	_record(OBJECT_KEYS)
 	var any := false
 	for id in ids:
 		any = _delete_one(id) or any
@@ -854,12 +1232,14 @@ func _delete_selected() -> void:
 func _delete_one(id: String) -> bool:
 	var st := items.find_structure(id)
 	if not st.is_empty():
-		(doc["walls" if items.is_wall(st) else "bridges"] as Array).erase(st)
+		(doc[items.structure_key(st)] as Array).erase(st)
 		items.remove_structure(id)
 		_derived = []
 		return true
 	var e := items.find_entity(id)
 	if not e.is_empty():
+		if e["type"] == "GATE":
+			_unfit_gate(id)
 		# And what belongs to it.
 		for o in _belonging_to(id):
 			(doc["objects"] as Array).erase(o)
@@ -931,7 +1311,23 @@ func _sync_one(id: String) -> void:
 		_entity_group.editable = MapIO.GROUP_PROBES.has(MapIO.trigger_constants().get(e["type"], -1))
 	var st := items.find_structure(id)
 	_structure_box.visible = not st.is_empty()
-	if not st.is_empty():
+	var path := not st.is_empty() and Level3DStructures.is_path(st)
+	_structure_smooth.get_parent().visible = path
+	if path:
+		var gates := Level3DStructures.gates_in(st)
+		_structure_info.text = "%s\n%s path, %.2f m, %d points%s%s" % [st["id"], st["kind"],
+				Level3DStructures.path_length(st), (st["points"] as Array).size() - gates.size(),
+				("\nthrough " + ", ".join(gates)) if not gates.is_empty() else "",
+				("\n%d merlons" % (st["merlon_at"] as Array).size()) if st.has("merlons") else ""]
+		_structure_width.value = float(st["width"])
+		_structure_height.value = float(st["height"])
+		_structure_height.editable = true
+		_structure_merlons.button_pressed = st.has("merlons")
+		_structure_merlons.disabled = false
+		_structure_smooth.button_pressed = st["smooth"]
+		_structure_closed.button_pressed = st["closed"]
+		_structure_closed.disabled = (st["points"] as Array).size() < 3
+	elif not st.is_empty():
 		var wall := items.is_wall(st)
 		_structure_info.text = "%s\n%s, %.2f m long%s" % [st["id"], ("wall, " + st["style"]) if wall else "bridge",
 				Level3DStructures.length_of(st),
@@ -976,6 +1372,9 @@ func _edit_structure(field: String, value: Variant) -> void:
 	var st := items.find_structure(items.selected())
 	if _syncing or st.is_empty():
 		return
+	if Level3DStructures.is_path(st):
+		_edit_path(st, field, value)
+		return
 	_record(["walls", "bridges"])
 	match field:
 		"width", "height":
@@ -996,6 +1395,27 @@ func _edit_structure(field: String, value: Variant) -> void:
 		Level3DStructures.lay_bridge(st)
 		items.update_bridge(st)
 	_derived = []
+	_sync_selection()
+
+
+func _edit_path(path: Dictionary, field: String, value: Variant) -> void:
+	_record(["paths"])
+	match field:
+		"width", "height":
+			path[field] = snappedf(float(value), 0.01)
+		"merlons":
+			if value:
+				path["merlons"] = {"side": "left", "step": Level3DStructures.MERLON_STEP}
+			else:
+				path.erase("merlons")
+		"flip":
+			if path.has("merlons"):
+				path["merlons"]["side"] = "right" if path["merlons"]["side"] == "left" else "left"
+		"smooth":
+			path["smooth"] = bool(value)
+		"closed":
+			path["closed"] = bool(value) and (path["points"] as Array).size() >= 3
+	_relay(path)
 	_sync_selection()
 
 
@@ -1099,7 +1519,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		_mouse = button.position
 		match button.button_index:
 			MOUSE_BUTTON_LEFT:
-				if button.pressed:
+				if button.pressed and button.double_click and _path_drawing != "":
+					_end_path()
+				elif button.pressed:
 					var hit: Variant = _hit(button.position)
 					if hit != null:
 						_press(hit)
@@ -1128,6 +1550,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_yaw -= motion.relative.x * 0.3
 			_pitch = clampf(_pitch + motion.relative.y * 0.3, 25.0, 90.0)
 			_place_camera()
+		elif _path_drawing != "" and _drag_id == "":
+			var hit: Variant = _hit(motion.position)
+			if hit != null:
+				_path_hover(hit)
 		elif _boxing:
 			_box_rect.position = Vector2(minf(_box_from.x, _mouse.x), minf(_box_from.y, _mouse.y))
 			_box_rect.size = (_mouse - _box_from).abs()
@@ -1181,6 +1607,14 @@ func _release() -> void:
 
 func _key(key: InputEventKey) -> void:
 	var ctrl := key.ctrl_pressed or key.meta_pressed
+	if _path_drawing != "":
+		match key.keycode:
+			KEY_ENTER, KEY_KP_ENTER, KEY_ESCAPE:
+				_end_path()
+				return
+			KEY_BACKSPACE:
+				_path_back()
+				return
 	match key.keycode:
 		KEY_Z when ctrl and key.shift_pressed:
 			_redo_step()
@@ -1224,8 +1658,14 @@ func _key(key: InputEventKey) -> void:
 			items.select_many(_page_items())
 			_sync_selection()
 		KEY_ESCAPE:
-			# First out of putting down, then out of what is picked.
-			if not _disarm():
+			# First off a point, then out of putting down, then out of what is
+			# picked.
+			if items.active_point >= 0:
+				items.active_point = -1
+				var st := items.find_structure(items.selected())
+				if not st.is_empty():
+					items.update_structure(st)
+			elif not _disarm():
 				items.select("")
 				_sync_selection()
 		KEY_T:
@@ -1287,6 +1727,12 @@ func _save_to(file_path: String) -> void:
 	var error := ground.save_rasters(doc, file_path.get_base_dir(), file_path.get_file().get_basename())
 	if error == OK:
 		ground.trace(doc)
+		# What the paths make, laid out again from their points and gates as
+		# they are now; a level with none keeps no "paths".
+		if doc.has("paths") and (doc["paths"] as Array).is_empty():
+			doc.erase("paths")
+		for path_ in doc.get("paths", []):
+			Level3DStructures.lay_path(path_, doc)
 		# Stage 1's grid is the game's, and stays; a level made here plays the
 		# ground's, with what was painted over it.
 		if _derives_nav():
@@ -1841,6 +2287,8 @@ func _build_object_page(box: VBoxContainer) -> void:
 		var button := _toggle(BUILD_NAMES[b], group)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.pressed.connect(func() -> void:
+			if _path_drawing != "":
+				_end_path()
 			build = b as Build
 			# Select lets go of the list; drawing does not use it.
 			_asset_list.deselect_all()
@@ -1927,6 +2375,17 @@ func _build_object_page(box: VBoxContainer) -> void:
 	flip.pressed.connect(func() -> void: _edit_structure("flip", true))
 	merlon_row.add_child(flip)
 	_structure_box.add_child(merlon_row)
+	var shape_row := HBoxContainer.new()
+	_structure_smooth = _checkbox("smooth", false)
+	_structure_smooth.tooltip_text = "A curve through the points rather than straight from one to the next"
+	_structure_smooth.toggled.connect(func(v: bool) -> void: _edit_structure("smooth", v))
+	shape_row.add_child(_structure_smooth)
+	_structure_closed = _checkbox("closed", false)
+	_structure_closed.tooltip_text = "Round from the last point to the first again"
+	_structure_closed.toggled.connect(func(v: bool) -> void: _edit_structure("closed", v))
+	shape_row.add_child(_structure_closed)
+	_structure_box.add_child(shape_row)
+	_structure_box.add_child(_hint("Drag a point's handle; Ctrl+click on the\nwall puts one in, Del takes the last one\ntaken out. Drawing: Enter ends, a click on\nthe first point closes, on a gate goes\nthrough it, Backspace takes one back."))
 	var remove_structure := Button.new()
 	remove_structure.text = "Delete  (Del)"
 	remove_structure.focus_mode = Control.FOCUS_NONE
@@ -2094,6 +2553,8 @@ func _label(text: String) -> Label:
 
 
 func _set_mode(m: int) -> void:
+	if _path_drawing != "":
+		_end_path()
 	if _painting or _drag_id != "" or _nav_painting or _drawing != "" or _boxing:
 		return
 	var was := mode

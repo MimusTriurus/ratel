@@ -241,26 +241,22 @@ func _run() -> void:
 	var B = editor.Build
 	editor.build = B.WALL
 	var w0 := Vector2(origin.x + 2.0, origin.y + 8.0)
-	editor._press(w0)
-	editor._move(w0 + Vector2(8.0, 0.3))
-	editor._release()
-	var wall: Dictionary = editor.doc["walls"][-1]
-	_expect(wall["style"] == "wall" and is_equal_approx(Level3DStructures.length_of(wall), 8.0)
-			and float(wall["from"][1]) == float(wall["to"][1]), "a drag draws a wall, held to the level")
-	_expect(int(wall["merlons"]["count"]) == 8, "with 8 merlons on 8 m, as stage 1 lays them (%d)" % int(wall["merlons"]["count"]))
+	_draw_path(editor, [w0, w0 + Vector2(8.0, 0.3)])
+	var wall: Dictionary = editor.doc["paths"][-1]
+	_expect(wall["kind"] == "wall" and wall["runs"].size() == 1 and is_equal_approx(Level3DStructures.path_length(wall), 8.0)
+			and float(wall["points"][0][1]) == float(wall["points"][1][1]), "clicks draw a wall, held to the level")
+	_expect(wall["merlon_at"].size() == 8, "with 8 merlons on 8 m, as stage 1 lays them (%d)" % wall["merlon_at"].size())
 	editor.build = B.SIDE
-	editor._press(w0)
-	editor._move(w0 + Vector2(0.0, 6.0))
-	editor._release()
-	_expect(editor.doc["walls"][-1]["style"] == "side" and not editor.doc["walls"][-1].has("merlons"), "a side wall, no merlons")
+	_draw_path(editor, [w0, w0 + Vector2(0.0, 6.0)])
+	_expect(editor.doc["paths"][-1]["kind"] == "side" and not editor.doc["paths"][-1].has("merlons"), "a side wall, no merlons")
 	editor.build = B.PLACE
 	var middle := w0 + Vector2(4.0, 0.0)
-	var from_x := float(wall["from"][0])
+	var from_x := float(wall["points"][0][0])
 	editor._press(middle)
 	editor._move(middle + Vector2(1.0, 0.0))
 	editor._release()
 	wall = editor.items.find_structure(wall["id"])
-	_expect(absf(float(wall["from"][0]) - from_x - 1.0) < 0.001 and is_equal_approx(Level3DStructures.length_of(wall), 8.0),
+	_expect(absf(float(wall["points"][0][0]) - from_x - 1.0) < 0.001 and is_equal_approx(Level3DStructures.path_length(wall), 8.0),
 			"a picked wall is dragged whole")
 	editor.build = B.BRIDGE
 	var b0 := Vector2(origin.x + 14.5, origin.y + 11.0)
@@ -271,6 +267,18 @@ func _run() -> void:
 	_expect(bridge["piers"].size() >= 1 and int(bridge["plates"]["count"]) == 5, "a bridge, its piers and plates laid (%s, %d)"
 			% [bridge["piers"], int(bridge["plates"]["count"])])
 	editor.build = B.PLACE
+	# Longer by its end's handle, and with more piers for it.
+	var piers: int = bridge["piers"].size()
+	var end := Vector2(float(bridge["to"][0]), float(bridge["to"][1]))
+	editor._press(end)
+	editor._move(end + Vector2(4.0, 0.0))
+	editor._release()
+	_expect(editor.items.handle_under(end + Vector2(4.0, 0.0)) == 1 and bridge["piers"].size() > piers
+			and Level3DStructures.length_of(bridge) > 8.0,
+			"a bridge's end dragged by its handle, and its piers laid again (%d -> %d)" % [piers, bridge["piers"].size()])
+	editor._undo_step(editor._undo, editor._redo)
+	bridge = editor.doc["bridges"][-1]
+	_expect(bridge["piers"].size() == piers, "and undo takes it back")
 	var nav: Array = editor._nav_rows()
 	var wall_tile: Vector2i = editor.items.tile_at(middle + Vector2(1.0, 0.0))
 	var river_tile: Vector2i = editor.items.tile_at(Vector2(origin.x + 17.6, origin.y + 11.0))
@@ -321,6 +329,118 @@ func _run() -> void:
 	editor._undo_step(editor._undo, editor._redo)
 	_expect(editor.doc["groups"].size() == groups_before and not editor.items.find_entity(gate["id"]).is_empty(),
 			"and undo brings the gate and its group back")
+
+	# Paths: a ring, smooth; a gate put into a wall, and a wall drawn through a gate.
+	editor._set_mode(M.OBJECTS)
+	editor.build = B.WALL
+	var c := Vector2(origin.x + 25.5, origin.y + 26.0)
+	_draw_path(editor, [c + Vector2(4, 0), c + Vector2(0, 4), c + Vector2(-4, 0), c + Vector2(0, -4), c + Vector2(4, 0)])
+	var ring: Dictionary = editor.doc["paths"][-1]
+	_expect(ring["closed"] and ring["points"].size() == 4 and ring["runs"].size() == 1 and ring["runs"][0]["closed"],
+			"a click on the first point closes the path")
+	var corners_length := Level3DStructures.path_length(ring)
+	editor._edit_structure("smooth", true)
+	var round_length := Level3DStructures.path_length(ring)
+	print("  ring: %.2f m with corners, %.2f m smooth, %d merlons" % [corners_length, round_length, ring["merlon_at"].size()])
+	_expect(ring["runs"][0]["points"].size() > 20 and round_length > corners_length and round_length < TAU * 4.0 + 0.5,
+			"smooth, it goes round through its points")
+	_expect(ring["merlon_at"].size() == floori(round_length / Level3DStructures.MERLON_STEP), "merlons evenly all the way round")
+	var ring_nav: Array = editor._nav_rows()
+	var on_ring: Vector2i = editor.items.tile_at(c + Vector2(4, 0))
+	var in_ring: Vector2i = editor.items.tile_at(c)
+	_expect(ring_nav[on_ring.y][on_ring.x] == "#" and ring_nav[in_ring.y][in_ring.x] == ".", "the ring is solid, what it rings is not")
+	var points_before: int = ring["points"].size()
+	_expect(editor._insert_point(c + Vector2(2.9, 2.9)) == 1 and ring["points"].size() == points_before + 1,
+			"Ctrl+click on the picked path puts a point in between the two it is nearest")
+	editor.items.active_point = 1
+	editor._delete_selected()
+	_expect(ring["points"].size() == points_before and editor.doc["paths"].has(ring), "Del on a point takes the point, not the path")
+	editor.build = B.PLACE
+	var handle_at := Vector2(float(ring["points"][0][0]), float(ring["points"][0][1]))
+	editor._press(handle_at)
+	editor._move(handle_at + Vector2(1.0, 0.0))
+	editor._release()
+	_expect(is_equal_approx(float(ring["points"][0][0]), handle_at.x + 1.0), "a point dragged by its handle")
+
+	# A gate put down on a straight wall goes into it.
+	var g_at := Vector2(origin.x + 22.0, origin.y + 34.0)
+	editor.build = B.WALL
+	_draw_path(editor, [g_at - Vector2(6, 0), g_at + Vector2(6, 0)])
+	var gated: Dictionary = editor.doc["paths"][-1]
+	editor._set_mode(M.ENTITIES)
+	editor._entity_list.select(editor._entity_types.find("GATE"))
+	editor._press(g_at)
+	editor._release()
+	var in_wall: Dictionary = editor.doc["entities"][-1]
+	_expect(Level3DStructures.gates_in(gated) == [in_wall["id"]] and gated["runs"].size() == 2,
+			"a gate put down on a wall goes into it, and the wall is open through it")
+	var frame: Dictionary = Level3DStructures.gate_frame(editor.doc, in_wall["id"])
+	var gap := Level3DStructures.distance_to_path(gated, frame["at"])
+	var post := Level3DStructures.distance_to_path(gated, frame["at"] + frame["axis"] * (Level3DStructures.GATE_HALF_GAP + 0.3))
+	_expect(gap > 1.0 and post == 0.0, "the wall stops at the gate's posts (%.2f m clear in the middle)" % gap)
+	var gate_nav: Array = editor._nav_rows()
+	var beside: Vector2i = editor.items.tile_at(frame["at"] + frame["axis"] * (Level3DStructures.GATE_HALF_GAP - 0.2))
+	_expect(gate_nav[beside.y][beside.x] == "#", "the frame beside the gate is solid: nothing slips past it")
+	var run_end: Array = gated["runs"][0]["points"][-1]
+	editor._press(Vector2(in_wall["pos"][0], in_wall["pos"][1]))
+	editor._move(Vector2(in_wall["pos"][0], in_wall["pos"][1]) + Vector2(tile_m * 2.0, 0.0))
+	editor._release()
+	var moved_end: Array = gated["runs"][0]["points"][-1]
+	_expect(absf(float(moved_end[0]) - float(run_end[0]) - tile_m * 2.0) < 0.01, "a gate moved takes the wall's opening with it")
+	var path_problems := Array(Level3DIO.check(editor.doc, Level3DIO.read_catalog())).filter(
+			func(p): return "path" in p or "goes through" in p or "runs" in p)
+	_expect(path_problems.is_empty(), "the gated wall passes the check: %s" % [path_problems])
+	editor.items.select(in_wall["id"])
+	editor._delete_selected()
+	_expect(Level3DStructures.gates_in(gated).is_empty() and gated["runs"].size() == 1
+			and Level3DStructures.distance_to_path(gated, frame["at"] + Vector2(tile_m * 2.0, 0.0)) == 0.0,
+			"deleting the gate closes the wall across where it stood")
+	editor._undo_step(editor._undo, editor._redo)
+	gated = editor.items.find_structure(gated["id"])
+	_expect(Level3DStructures.gates_in(gated).size() == 1, "and undo puts the gate back in it")
+
+	# A wall drawn through a gate that is there already.
+	var g2_at := Vector2(origin.x + 6.0, origin.y + 38.0)
+	editor._press(g2_at)
+	editor._release()
+	var standing: Dictionary = editor.doc["entities"][-1]
+	editor._set_mode(M.OBJECTS)
+	editor.build = B.WALL
+	var standing_at := Vector2(standing["pos"][0], standing["pos"][1])
+	_draw_path(editor, [standing_at - Vector2(5, 0), standing_at, standing_at + Vector2(5, 0)])
+	var around: Dictionary = editor.doc["paths"][-1]
+	_expect(around["points"].size() == 3 and Level3DStructures.gates_in(around) == [standing["id"]] and around["runs"].size() == 2,
+			"a click on a gate while drawing takes the wall through it")
+
+	# A wall running north to south has no gate: its passage would run along it.
+	var ns_at := Vector2(origin.x + 27.0, origin.y + 49.0)
+	_draw_path(editor, [ns_at - Vector2(0, 5), ns_at + Vector2(0, 5)])
+	var ns: Dictionary = editor.doc["paths"][-1]
+	editor._set_mode(M.ENTITIES)
+	editor._entity_list.select(editor._entity_types.find("GATE"))
+	editor._press(ns_at)
+	editor._release()
+	var refused: Dictionary = editor.doc["entities"][-1]
+	_expect(refused["type"] == "GATE" and Level3DStructures.gates_in(ns).is_empty() and ns["runs"].size() == 1,
+			"a gate put down on a north-south wall does not go into it")
+	editor.items.select(refused["id"])
+	editor._delete_selected()
+	var alone_at := Vector2(origin.x + 14.0, origin.y + 54.0)
+	editor._press(alone_at)
+	editor._release()
+	var alone: Dictionary = editor.doc["entities"][-1]
+	editor._entity_list.deselect_all()
+	editor._set_mode(M.OBJECTS)
+	editor.build = B.WALL
+	var paths_before: int = editor.doc["paths"].size()
+	var at_alone := Vector2(alone["pos"][0], alone["pos"][1])
+	_draw_path(editor, [at_alone - Vector2(0, 5), at_alone])
+	_expect(_path_holding(editor, alone["id"]) == "" and editor.doc["paths"].size() == paths_before,
+			"nor does a wall drawn into a gate from the north")
+	editor.build = B.PLACE
+	editor.build = B.PLACE
+	editor._set_mode(M.ENTITIES)
+	editor._entity_list.deselect_all()
 	editor._set_mode(M.OBJECTS)
 
 	# The nav grid, over the ground.
@@ -369,8 +489,8 @@ func _run() -> void:
 			back.trace(traced)
 			_expect(Level3DIO.serialize(traced) == Level3DIO.serialize(doc), "traced again, the same file")
 		_expect(doc["nav"][land_tile.y][land_tile.x] == "%", "the saved grid has the tile painted over the ground's")
-		_expect(doc["entities"].size() == count + 2 and doc["objects"].size() == objects + 2, "the entities and objects saved, both gates too")
-		_expect(doc["walls"].size() == 2 and doc["bridges"].size() == 1, "the walls and the bridge saved")
+		_expect(doc["entities"].size() == count + 5 and doc["objects"].size() == objects + 5, "the entities and objects saved, the gates too")
+		_expect(doc["paths"].size() == 6 and doc["bridges"].size() == 1, "the paths and the bridge saved")
 		var problems := Level3DIO.check(doc, Level3DIO.read_catalog())
 		_expect(problems.is_empty(), "Level3DIO.check finds nothing: %s" % [problems])
 
@@ -446,6 +566,25 @@ func _shot(file: String) -> void:
 	await RenderingServer.frame_post_draw
 	var error := root.get_texture().get_image().save_png(file)
 	print("  %s %s" % [file, "written" if error == OK else "FAILED"])
+
+
+# Draws a path with the tool the editor has, a click to a point -- the last
+# on the first point closes it -- and Enter to end it when it is not closed.
+func _draw_path(editor: Node3D, points: Array) -> void:
+	for k in points.size():
+		if editor._path_drawing != "":
+			editor._path_hover(points[k])
+		editor._press(points[k])
+		editor._release()
+	if editor._path_drawing != "":
+		var enter := InputEventKey.new()
+		enter.keycode = KEY_ENTER
+		enter.pressed = true
+		editor._key(enter)
+
+
+func _path_holding(editor: Node3D, gate: String) -> String:
+	return editor._path_through(gate)
 
 
 # What Level3DIO.check finds about groups, the rest of a level half made

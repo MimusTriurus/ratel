@@ -99,6 +99,9 @@ func setup(level: Dictionary, ground_height: Callable, ground_rise: Callable) ->
 	for b in doc.get("bridges", []):
 		update_bridge(b)
 	_selected = []
+	active_point = -1
+	for path in doc.get("paths", []):
+		update_path(path)
 
 
 # --- The grid ------------------------------------------------------------------
@@ -369,16 +372,143 @@ func _picked_ring() -> Node3D:
 # --- Walls and bridges -------------------------------------------------------------
 
 
+const STRUCTURE_KEYS: Array[String] = ["walls", "bridges", "paths"]
+# A point's handle on a picked wall, path or bridge: how near a click has to
+# be to take it, and how big it is drawn.
+const HANDLE_PICK := 0.4
+const HANDLE_SIZE := 0.32
+const HANDLE := Color(1.0, 0.85, 0.2)
+const HANDLE_ACTIVE := Color(1.0, 0.35, 0.2)
+
+# The picked path's point whose handle was taken last, or -1: what Del
+# deletes before the path itself.
+var active_point := -1
+
+
 func find_structure(id: String) -> Dictionary:
-	for key in ["walls", "bridges"]:
+	for key in STRUCTURE_KEYS:
 		for s in doc.get(key, []):
 			if s["id"] == id:
 				return s
 	return {}
 
 
+# Which list of the file a wall, bridge or path is in.
+func structure_key(s: Dictionary) -> String:
+	return "paths" if Level3DStructures.is_path(s) else "walls" if s.has("style") else "bridges"
+
+
 func is_wall(s: Dictionary) -> bool:
 	return s.has("style")
+
+
+func update_structure(s: Dictionary) -> void:
+	match structure_key(s):
+		"paths":
+			update_path(s)
+		"walls":
+			update_wall(s)
+		_:
+			update_bridge(s)
+
+
+# A path's wall as the builder builds it: each run a band `width` across and
+# `height` up from the rise under each of its points, with its merlons; and,
+# picked, a handle on each of its points.
+func update_path(path: Dictionary) -> void:
+	var node := _structure_node(path["id"])
+	var bright := is_selected(path["id"])
+	var colour: Color = SELECTED.lerp(CONCRETE[path["kind"]], 0.35) if bright else CONCRETE[path["kind"]]
+	var height := float(path["height"])
+	var material := StandardMaterial3D.new()
+	material.albedo_color = colour
+	material.roughness = 1.0
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	for run in path.get("runs", []):
+		var points := Level3DStructures.points_of(run["points"])
+		var closed: bool = run["closed"]
+		var edges := Level3DStructures.ribbon(points, closed, float(path["width"]))
+		var mesh := MeshInstance3D.new()
+		mesh.mesh = _band(edges[0], edges[1], points, closed, height)
+		mesh.material_override = material
+		node.add_child(mesh)
+	for m in path.get("merlon_at", []):
+		var at := Vector2(float(m[0]), float(m[1]))
+		var yaw := deg_to_rad(float(m[2]))
+		_box(node, at, Vector2(cos(yaw), -sin(yaw)), Level3DStructures.MERLON_SIZE,
+				rise_at.call(at) + height, colour.darkened(0.15))
+	if bright and path["id"] == selected():
+		_draw_handles(node, path)
+
+
+# A band's mesh: its top, its two sides and, open, its two ends.
+func _band(left: PackedVector2Array, right: PackedVector2Array, middle: PackedVector2Array,
+		closed: bool, height: float) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var n := middle.size()
+	var up := func(p: Vector2, lift: float) -> Vector3: return Vector3(p.x, float(rise_at.call(p)) + lift, p.y)
+	var quad := func(a: Vector3, b: Vector3, c: Vector3, d: Vector3) -> void:
+		for v in [a, b, c, a, c, d]:
+			st.add_vertex(v)
+	for k in (n if closed else n - 1):
+		var m := (k + 1) % n
+		quad.call(up.call(left[k], height), up.call(left[m], height), up.call(right[m], height), up.call(right[k], height))
+		quad.call(up.call(left[k], 0.0), up.call(left[m], 0.0), up.call(left[m], height), up.call(left[k], height))
+		quad.call(up.call(right[m], 0.0), up.call(right[k], 0.0), up.call(right[k], height), up.call(right[m], height))
+	if not closed:
+		for pair in [[0, true], [n - 1, false]]:
+			var k: int = pair[0]
+			var a: Vector3 = up.call(right[k] if pair[1] else left[k], 0.0)
+			var b: Vector3 = up.call(left[k] if pair[1] else right[k], 0.0)
+			quad.call(a, b, b + Vector3(0, height, 0), a + Vector3(0, height, 0))
+	st.generate_normals()
+	return st.commit()
+
+
+# The handles of a wall's, path's or bridge's points, where they are drawn:
+# [the index of the point in its list -- "points", or 0 and 1 for "from" and
+# "to" -- and where it stands]. A gate in a path has none: the gate is moved.
+func handles_of(s: Dictionary) -> Array:
+	var out: Array = []
+	if Level3DStructures.is_path(s):
+		var elements: Array = s["points"]
+		for k in elements.size():
+			if not Level3DStructures.is_gate_point(elements[k]):
+				out.append([k, Vector2(float(elements[k][0]), float(elements[k][1]))])
+	else:
+		out.append([0, Vector2(float(s["from"][0]), float(s["from"][1]))])
+		out.append([1, Vector2(float(s["to"][0]), float(s["to"][1]))])
+	return out
+
+
+# The picked structure's handle under `p`, or -1.
+func handle_under(p: Vector2) -> int:
+	var s := find_structure(selected())
+	if s.is_empty() or _selected.size() != 1:
+		return -1
+	var best := -1
+	var best_d := HANDLE_PICK
+	for h in handles_of(s):
+		var d := p.distance_to(h[1])
+		if d < best_d:
+			best_d = d
+			best = h[0]
+	return best
+
+
+func _draw_handles(node: Node3D, s: Dictionary) -> void:
+	var lift := float(s.get("height", Level3DStructures.DECK_TOP)) + 0.15
+	for h in handles_of(s):
+		var at: Vector2 = h[1]
+		var ball := MeshInstance3D.new()
+		var sphere := SphereMesh.new()
+		sphere.radius = HANDLE_SIZE * 0.5
+		sphere.height = HANDLE_SIZE
+		ball.mesh = sphere
+		ball.material_override = _overlay(HANDLE_ACTIVE if h[0] == active_point else HANDLE, false)
+		ball.position = Vector3(at.x, float(rise_at.call(at)) + lift, at.y)
+		node.add_child(ball)
 
 
 func update_wall(w: Dictionary) -> void:
@@ -393,6 +523,8 @@ func update_wall(w: Dictionary) -> void:
 			base, colour)
 	for m in Level3DStructures.merlons_of(w):
 		_box(node, m, b - a, Level3DStructures.MERLON_SIZE, base + height, colour.darkened(0.15))
+	if bright and w["id"] == selected():
+		_draw_handles(node, w)
 
 
 func update_bridge(br: Dictionary) -> void:
@@ -412,6 +544,8 @@ func update_bridge(br: Dictionary) -> void:
 	for at in br["piers"]:
 		_box(node, a + d * float(at), b - a, Vector3(0.56, -Level3DStructures.PIER_DEPTH, width - 0.6),
 				Level3DStructures.PIER_DEPTH, colour.lightened(0.2))
+	if bright and br["id"] == selected():
+		_draw_handles(node, br)
 
 
 func remove_structure(id: String) -> void:
@@ -422,13 +556,13 @@ func remove_structure(id: String) -> void:
 	_unselect(id)
 
 
-# The wall or bridge whose box is under `p`, or "".
+# The wall, bridge or path whose box is under `p`, or "".
 func structure_under(p: Vector2) -> String:
 	var best := ""
 	var best_d := 0.15
-	for key in ["walls", "bridges"]:
+	for key in STRUCTURE_KEYS:
 		for s in doc.get(key, []):
-			var d := Level3DStructures.distance_to(s, p)
+			var d := Level3DStructures.distance_to_path(s, p) if key == "paths" else Level3DStructures.distance_to(s, p)
 			if d < best_d:
 				best_d = d
 				best = s["id"]
@@ -492,6 +626,8 @@ func select_many(ids: Array) -> void:
 	for id in ids:
 		if not _selected.has(id):
 			_selected.append(id)
+	if _selected != was:
+		active_point = -1
 	(_row_mesh.mesh as ImmediateMesh).clear_surfaces()
 	var redraw := {}
 	for which in was + _selected:
@@ -526,10 +662,7 @@ func _redraw(id: String) -> void:
 		update_object(o)
 	var st := find_structure(id)
 	if not st.is_empty():
-		if is_wall(st):
-			update_wall(st)
-		else:
-			update_bridge(st)
+		update_structure(st)
 
 
 # Where each item of the kinds asked for stands, for picking them by a box
@@ -551,6 +684,18 @@ func anchors(kinds: Array) -> Dictionary:
 				var a := Vector2(float(s["from"][0]), float(s["from"][1]))
 				var b := Vector2(float(s["to"][0]), float(s["to"][1]))
 				out[s["id"]] = on_ground.call((a + b) * 0.5)
+		# A path by the middle of its points' bounds: a ring's middle is
+		# inside the ring, where the box has to reach.
+		for path in doc.get("paths", []):
+			var box := Rect2()
+			var first := true
+			for run in path.get("runs", []):
+				for q in run["points"]:
+					var v := Vector2(float(q[0]), float(q[1]))
+					box = Rect2(v, Vector2.ZERO) if first else box.expand(v)
+					first = false
+			if not first:
+				out[path["id"]] = on_ground.call(box.get_center())
 	return out
 
 

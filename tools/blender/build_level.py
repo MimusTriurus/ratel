@@ -392,6 +392,8 @@ def build_structures(doc, catalog, templates, rise, collection):
             o.scale = (1.0, across, 1.0)
             collection.objects.link(o)
         built += 3 + len(b["piers"]) + int(plates["count"])  # the deck, two curbs
+    for path in doc.get("paths", []):
+        built += build_path(path, templates, rise, collection)
     for g in doc["objects"]:
         asset = catalog["assets"].get(g["asset"], {})
         if "base" not in asset:
@@ -407,6 +409,102 @@ def build_structures(doc, catalog, templates, rise, collection):
             o.matrix_world = move @ world
             collection.objects.link(o)
             built += 1
+    return built
+
+
+# A path (Level3DStructures, "paths" in the file): a wall through points,
+# straight or smooth, open or round, cut where it goes through a gate. The
+# file keeps what it makes -- the runs of its centre line and where its
+# merlons stand -- so that a curve is built as the editor drew it; what is
+# made here is only each run's band, the width across with its corners
+# mitred as Level3DStructures.ribbon mitres them, and `height` up from the
+# rise under each point, one mesh a run: a copy of the base's wall of its
+# kind, so it takes that wall's bevel -- which the base's 30 degree limit
+# keeps off a curve's joints and on a corner -- its contour and materials.
+
+MITER_LIMIT = 2.0
+
+
+def _unit(x, z):
+    length = math.hypot(x, z)
+    return (x / length, z / length) if length > 0.0 else (0.0, 0.0)
+
+
+def ribbon(points, closed, width):
+    """Level3DStructures.ribbon: the left and right edges, in the file's axes."""
+    n, half = len(points), width * 0.5
+    left, right = [], []
+    for k in range(n):
+        into = onward = (0.0, 0.0)
+        if k > 0 or closed:
+            p, q = points[(k - 1) % n], points[k]
+            into = _unit(q[0] - p[0], q[1] - p[1])
+        if k < n - 1 or closed:
+            p, q = points[k], points[(k + 1) % n]
+            onward = _unit(q[0] - p[0], q[1] - p[1])
+        if into == (0.0, 0.0):
+            into = onward
+        if onward == (0.0, 0.0):
+            onward = into
+        n0, n1 = (into[1], -into[0]), (onward[1], -onward[0])
+        s = (n0[0] + n1[0], n0[1] + n1[1])
+        normal = _unit(*s) if math.hypot(*s) > 1e-6 else n0
+        reach = half / max(normal[0] * n0[0] + normal[1] * n0[1], 1.0 / MITER_LIMIT)
+        x, z = points[k]
+        left.append((x + normal[0] * reach, z + normal[1] * reach))
+        right.append((x - normal[0] * reach, z - normal[1] * reach))
+    return left, right
+
+
+def _band_mesh(name, left, right, closed, height, rise, materials):
+    bm = bmesh.new()
+    rows = []
+    for l, r in zip(left, right):
+        pl, pr = plan(l), plan(r)
+        bl, br = rise.at(pl), rise.at(pr)
+        rows.append((bm.verts.new((pl.x, pl.y, bl)), bm.verts.new((pl.x, pl.y, bl + height)),
+                     bm.verts.new((pr.x, pr.y, br)), bm.verts.new((pr.x, pr.y, br + height))))
+    n = len(rows)
+    for k in range(n if closed else n - 1):
+        (lb, lt, rb, rt), (lb2, lt2, rb2, rt2) = rows[k], rows[(k + 1) % n]
+        bm.faces.new((lt, lt2, rt2, rt))
+        bm.faces.new((lb, rb, rb2, lb2))
+        bm.faces.new((lb, lb2, lt2, lt))
+        bm.faces.new((rb, rt, rt2, rb2))
+    if not closed:
+        for lb, lt, rb, rt in (rows[0], rows[-1]):
+            bm.faces.new((lb, lt, rt, rb))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    for f in bm.faces:
+        f.smooth = False
+        f.material_index = 0
+    mesh = bpy.data.meshes.new(name)
+    bm.to_mesh(mesh)
+    bm.free()
+    for m in materials:
+        mesh.materials.append(m)
+    return mesh
+
+
+def build_path(path, templates, rise, collection):
+    kind = "wall" if path["kind"] == "wall" else "side"
+    height = float(path["height"])
+    built = 0
+    for k, run in enumerate(path["runs"]):
+        points = [(float(p[0]), float(p[1])) for p in run["points"]]
+        left, right = ribbon(points, run["closed"], float(path["width"]))
+        name = "Wall_%s_%d" % (path["id"], k)
+        _piece(kind, templates, name, _band_mesh(name, left, right, run["closed"], height, rise,
+                                                  templates[kind].data.materials), collection)
+        built += 1
+    for k, m in enumerate(path.get("merlon_at", [])):
+        at = plan((float(m[0]), float(m[1])))
+        o = templates["merlon"].copy()
+        o.name = "Merlon_%s_%d" % (path["id"], k)
+        o.location = (at.x, at.y, rise.at(at) + height)
+        o.rotation_euler = (0.0, 0.0, math.radians(float(m[2])))
+        collection.objects.link(o)
+        built += 1
     return built
 
 

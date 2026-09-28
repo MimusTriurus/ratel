@@ -309,7 +309,7 @@ static func serialize(doc: Dictionary) -> String:
 			line += ', "entity": "%s"' % object["entity"]
 		rows.append(line + "}")
 	var ground := ["terrain", "water", "forest"].filter(func(key): return doc.has(key))
-	var built := ["walls", "bridges"].filter(func(key): return doc.has(key))
+	var built := ["walls", "bridges", "paths"].filter(func(key): return doc.has(key))
 	_block(out, "objects", rows, ground.is_empty() and built.is_empty())
 
 	# What is built rather than placed (Level3DStructures): a wall a segment
@@ -326,7 +326,7 @@ static func serialize(doc: Dictionary) -> String:
 				line += ', "merlons": {"side": "%s", "first": %s, "step": %s, "count": %d}' \
 						% [m["side"], _num(float(m["first"])), _num(float(m["step"])), int(m["count"])]
 			rows.append(line + "}")
-		_block(out, "walls", rows, ground.is_empty() and not doc.has("bridges"))
+		_block(out, "walls", rows, ground.is_empty() and not doc.has("bridges") and not doc.has("paths"))
 	if doc.has("bridges"):
 		rows = PackedStringArray()
 		for b in doc["bridges"]:
@@ -334,7 +334,15 @@ static func serialize(doc: Dictionary) -> String:
 			rows.append('    {"id": "%s", "from": %s, "to": %s, "width": %s, "piers": %s, "plates": {"first": %s, "step": %s, "count": %d}}'
 					% [b["id"], _vec(b["from"]), _vec(b["to"]), _num(float(b["width"])), _vec(b["piers"]),
 						_num(float(plates["first"])), _num(float(plates["step"])), int(plates["count"])])
-		_block(out, "bridges", rows, ground.is_empty())
+		_block(out, "bridges", rows, ground.is_empty() and not doc.has("paths"))
+	# A wall through points (Level3DStructures, paths): its header, its points
+	# a line each -- [x, z], or a gate it goes through -- and then what it
+	# makes, the runs of its centre line and its merlons, a point to a line.
+	if doc.has("paths"):
+		rows = PackedStringArray()
+		for path in doc["paths"]:
+			rows.append(_path(path))
+		_block(out, "paths", rows, ground.is_empty())
 
 	# The ground (Level3DTerrain), when the level has one: a polygon's header on
 	# its first line and then one point to a line, so that moving a point of a
@@ -407,6 +415,41 @@ static func _polygon(polygon: Dictionary, header: String, indent: String) -> Str
 			rings.append("%s    [\n%s\n%s    ]" % [indent, _points(hole, indent + "      "), indent])
 		lines.append(",\n".join(rings))
 		lines.append("%s  ]}" % indent)
+	return "\n".join(lines)
+
+
+static func _path(path: Dictionary) -> String:
+	var header := '"id": "%s", "kind": "%s", "width": %s, "height": %s, "smooth": %s, "closed": %s' \
+			% [path["id"], path["kind"], _num(float(path["width"])), _num(float(path["height"])),
+				"true" if path["smooth"] else "false", "true" if path["closed"] else "false"]
+	if path.has("merlons"):
+		header += ', "merlons": {"side": "%s", "step": %s}' % [path["merlons"]["side"], _num(float(path["merlons"]["step"]))]
+	var lines := PackedStringArray()
+	lines.append('    {%s, "points": [' % header)
+	var elements := PackedStringArray()
+	for e in path["points"]:
+		elements.append('      {"gate": "%s"}' % e["gate"] if e is Dictionary else "      " + _vec(e))
+	lines.append(",\n".join(elements))
+	var runs: Array = path.get("runs", [])
+	if runs.is_empty():
+		lines.append('    ], "runs": [], "merlon_at": [')
+	else:
+		lines.append('    ], "runs": [')
+		var parts := PackedStringArray()
+		for run in runs:
+			parts.append('      {"closed": %s, "points": [\n%s\n      ]}'
+					% ["true" if run["closed"] else "false", _points(run["points"], "        ")])
+		lines.append(",\n".join(parts))
+		lines.append('    ], "merlon_at": [')
+	var merlons: Array = path.get("merlon_at", [])
+	if merlons.is_empty():
+		lines[-1] = lines[-1].trim_suffix("[") + "[]}"
+	else:
+		var parts := PackedStringArray()
+		for m in merlons:
+			parts.append("      " + _vec(m))
+		lines.append(",\n".join(parts))
+		lines.append("    ]}")
 	return "\n".join(lines)
 
 
@@ -610,6 +653,34 @@ static func check(doc: Dictionary, catalog: Dictionary) -> PackedStringArray:
 				problems.append("%s: %s has no length or no width" % [key, id])
 			if key == "walls" and not Level3DStructures.STYLES.has(st["style"]):
 				problems.append("%s: wall style %s is not one of %s" % [id, st["style"], Level3DStructures.STYLES.keys()])
+	# A path: a kind, two points or more, gates that are gates with a Gate and
+	# no gate in two places, and what it makes -- its runs and merlons -- as
+	# Level3DStructures.lay_path makes them now, which is what the builder
+	# builds.
+	var gated := {}
+	for path in doc.get("paths", []):
+		var id: String = path["id"]
+		if ids.has(id):
+			problems.append("id %s is used twice" % id)
+		ids[id] = path
+		if not Level3DStructures.STYLES.has(path["kind"]):
+			problems.append("%s: path kind %s is not one of %s" % [id, path["kind"], Level3DStructures.STYLES.keys()])
+			continue
+		if (path["points"] as Array).size() < 2 or float(path["width"]) <= 0.0:
+			problems.append("%s: a path wants two points or more and a width" % id)
+		for gate in Level3DStructures.gates_in(path):
+			var owner: Variant = ids.get(gate)
+			if owner == null or owner.get("type", "") != "GATE":
+				problems.append("%s goes through %s, which is not a GATE" % [id, gate])
+			elif Level3DStructures.gate_frame(doc, gate).is_empty():
+				problems.append("%s goes through %s, which has no Gate" % [id, gate])
+			elif gated.has(gate):
+				problems.append("%s and %s both go through %s" % [gated[gate], id, gate])
+			gated[gate] = id
+		var laid: Dictionary = path.duplicate(true)
+		Level3DStructures.lay_path(laid, doc)
+		if _path(laid) != _path(path):
+			problems.append("%s: its runs and merlons are not what its points make now -- saved by something else than the editor?" % id)
 	# An entity the catalogue gives an object -- a gun its bunker, the landing
 	# port its pad -- has one of that asset belonging to it: the preview sets
 	# the gun on the bunker it finds that way, and without one there is none.

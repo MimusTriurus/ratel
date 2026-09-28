@@ -475,9 +475,15 @@ entities snapped to the tiles their footprint covers and a
 building given the group its probe cell is in; one the catalogue gives an
 object (a gun its Bunker, the landing port its Helipad) comes with it, tied
 by the object's `"entity"`, which is how the preview finds another level's
-guns -- stage 1's it finds by its bunkers' names. Objects also draws walls
-and bridges, a drag from end to end, laid out as stage 1's are
-(`Level3DStructures`, `src/tools/level3d_structures.gd`); a GATE entity
+guns -- stage 1's it finds by its bunkers' names. Objects also draws bridges,
+a drag from end to end, and walls as paths, a click to a point -- straight
+or smooth, open or closed, through gates (`"paths"` in the file, with what
+they make, their runs and merlons, kept beside them as the ground's
+polygons are, so that the builder builds the curve the editor drew) -- laid
+out as stage 1's are (`Level3DStructures`, `src/tools/level3d_structures.gd`);
+a picked one has handles on its points, and a bridge's end by its handle
+lays its piers out again; a gate put down by a path goes into it, a path
+through a gate follows it, and a gate deleted closes the wall; a GATE entity
 brings its Gate and the destruction group of its passage, as many gates as
 wanted, each with a group of its own and never group 0 (the headquarters
 blows `groups[0]` by number, so a level's first gate starts an empty one),
