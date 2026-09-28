@@ -413,7 +413,12 @@ yet (walls, bridge, gate, destructibles, palette, sun, cameras), into
 run it through `%LOCALAPPDATA%\Microsoft\WindowsApps\blender-launcher.exe`,
 not `blender.exe` (permission denied), and read `--report`, because its
 console output is not seen. Then hold the result to the file, and to the
-hand-built level from above, and play it with the preview's `--level`:
+hand-built level from above, and play it with the preview's `--level`.
+Under the water nothing is triangulated -- the shallows show the ground, and
+whatever a triangulation fans out there shows as streaks -- so the builder
+makes a wall along every shore off the profile's foot table and a flat river
+bed that sinks out of sight where it ends at no shore, and stops the build if
+a slope face reaches under the water or an open edge of ground lies in it:
 
 ```bash
 blender-launcher -b resources/3d/jackal_stage1_lowpoly.blend --python tools/blender/build_level.py -- assets/level3d/stage-0.json --out build/level3d/jackal_stage1_gen.blend --glb build/level3d/jackal_stage1_gen.glb --report build/level3d/report.txt

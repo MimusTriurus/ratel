@@ -68,10 +68,12 @@ REPORT_PATH = os.path.join(ROOT, arg("--report", "build/level3d/report.txt"))
 COLUMN = (0.24, 0.48)
 DOWN = (0.22, 0.48, 0.74)
 JITTER = (0.12, 0.07, 0.08)         # along, out, down; metres
-FOOT_STEP = 0.3
-BED_STEP = 1.5
 DARK = 0.4                          # the share of slope facets turned furthest from the sun
 NEIGHBOURS = 24                     # ... among the facets nearest each
+BED_STEP = 0.75                     # the river bed's points
+BED_FADE = 3.0                      # over which it falls away from an edge that is no shore
+BED_DEEP = -2.4                     # to where the water shows nothing (Land_Base_North's depth)
+UNSEEN = -2.0                       # below this the water shows no edge of the ground
 SUN = Vector((0.4265, -0.5212, -0.7392))
 SEARCH = 3.0                        # Level3DTerrain.SEARCH
 BUCKET = 1.0
@@ -250,7 +252,6 @@ def build_ground(doc, materials):
     shore_edges = real_edges(water_rings, bounds, in_water)
     for p, q in shore_edges:
         shores.add(p, q)
-    shore_points = {(round(p.x, 3), round(p.y, 3)) for e in shore_edges for p in e}
 
     coords, heights, edges, faces = [], [], [], []
 
@@ -272,9 +273,10 @@ def build_ground(doc, materials):
         land_faces.append(len(faces))
         faces.append(ids)
     for ring in water_rings:
-        # A waterline vertex is at the water's level on a shore, and on the bed
-        # where the ring only runs along the bounds or the cut between bodies.
-        ids = [vertex(p, -1.0 if (round(p.x, 3), round(p.y, 3)) in shore_points else bed) for p in ring]
+        # Every waterline vertex is at the water's level: only the slope, above
+        # the water, is kept of the triangulation, and where a ring runs along
+        # the bounds or the cut between bodies it touches nothing else.
+        ids = [vertex(p, -1.0) for p in ring]
         edges.extend((ids[k], ids[(k + 1) % len(ids)]) for k in range(len(ids)))
         water_faces.append(len(faces))
         faces.append(ids)
@@ -306,45 +308,8 @@ def build_ground(doc, materials):
                     columns += 1
             step += 1
             s += COLUMN[0] + (COLUMN[1] - COLUMN[0]) * hash01(n, step, 0, 13)
-    # The foot: under the water, the bed where the foot's table reaches it --
-    # a line of points, joined into a chain of constraints along each run of
-    # shore, so that the drop from the waterline to the bed is one narrow wall
-    # as the old cliff was. Loose, the triangulation fanned out from each
-    # waterline vertex to the bed, long thin facets each lit its own way,
-    # which the clear water near the shore shows as dark rays.
-    feet = 0
-    last = None
-    for p, q in shore_edges:
-        along = q - p
-        length = along.length
-        if length < 1e-6:
-            continue
-        normal = Vector((-along.y, along.x)) / length
-        if not in_water((p + q) * 0.5 + normal * 0.02):
-            normal = -normal
-        s = FOOT_STEP * 0.5
-        while s < length:
-            c = p + along * (s / length) + normal * foot_reach
-            if in_water(c) and not in_land(c):
-                k = vertex(c, bed)
-                if last is not None and (coords[last] - c).length < FOOT_STEP * 2.5:
-                    edges.append((last, k))
-                last = k
-                feet += 1
-            else:
-                last = None
-            s += FOOT_STEP
-    # The bed: a point every BED_STEP of open water, so that no triangle runs
-    # from a shore far out over it.
-    beds = 0
-    for gy in range(math.ceil(y0 / BED_STEP), math.floor(y1 / BED_STEP) + 1):
-        for gx in range(math.ceil(x0 / BED_STEP), math.floor(x1 / BED_STEP) + 1):
-            c = Vector((gx * BED_STEP, gy * BED_STEP))
-            if in_water(c) and not in_land(c) and shores.nearest(c, BED_STEP * 0.5)[0] >= BED_STEP * 0.5:
-                vertex(c, bed)
-                beds += 1
-    say("ground: %d brow and %d shore edges, %d column points, %d foot points, %d bed points"
-        % (len(brow_edges), len(shore_edges), columns, feet, beds))
+    say("ground: %d brow and %d shore edges, %d column points"
+        % (len(brow_edges), len(shore_edges), columns))
 
     out_coords, _, out_faces, orig_verts, _, orig_faces = delaunay_2d_cdt(
         coords, edges, faces, 0, 1e-5, True)
@@ -384,26 +349,22 @@ def build_ground(doc, materials):
             dw, _ = shores.nearest(p, SEARCH)
             z[k] = profile_at(slope, db / max(db + dw, 1e-6)) if db < SEARCH or dw < SEARCH else 0.0
 
-    # The sand one object, flat; the slopes and the bed another. The sea has
-    # no bed, as it had none on the hand-built stage: the water's shader shows
-    # the ground through the shallows (level3d_ocean.gdshader, clarity), and a
-    # bed 30 cm under the whole sea came through as blotches. The river keeps
-    # its bed, which it always had.
-    sea = Inside([r for polygon in doc.get("water", []) if polygon.get("kind") == "sea"
-                  for r in rings_of(polygon)])
+    # The triangulation is the ground above the water only: the sand one
+    # object, flat, the slopes another. What it made inside the water goes.
+    # Under the water nothing is triangulated -- the wall and the bed are built
+    # (_underwater) -- because the water's shader shows the ground through the
+    # shallows (level3d_ocean.gdshader, clarity), and whatever the
+    # triangulation fanned out there, from a waterline vertex to the bed or
+    # across a river's mouth to the cut, showed through as dark rays and pale
+    # wedges.
     parts = {"land": [], "rest": []}
     dropped = 0
     for k, face in enumerate(out_faces):
-        if face_kind[k] == "land":
-            parts["land"].append(k)
-            continue
-        if face_kind[k] == "water" and all(z[v] <= bed + 1e-4 for v in face):
-            middle = sum((Vector(out_coords[v]) for v in face), Vector((0, 0))) / len(face)
-            if sea(middle):
-                dropped += 1
-                continue
-        parts["rest"].append(k)
-    say("ground: %d faces of sea bed left out" % dropped)
+        if face_kind[k] == "water":
+            dropped += 1
+        else:
+            parts["land" if face_kind[k] == "land" else "rest"].append(k)
+    say("ground: %d faces inside the water left out" % dropped)
     objects = {}
     for part, name in (("land", SAND_OBJECT), ("rest", SLOPE_OBJECT)):
         bm = bmesh.new()
@@ -425,12 +386,193 @@ def build_ground(doc, materials):
         for f in bm.faces:
             if f.normal.z < 0:
                 f.normal_flip()
+        if part == "rest":
+            low = sum(1 for f in bm.faces if min(v.co.z for v in f.verts) < -1.0 - 1e-4)
+            say("ground: %d faces of the slope reach under the water (want 0)" % low)
+            if low:
+                # Under the water is the wall's and the bed's only; a slope face
+                # there is the kind of thing the water shows as a streak.
+                raise RuntimeError("%d slope faces under the water" % low)
+            walls, beds = _underwater(bm, doc, water_rings, bounds, in_water, foot, bed)
+            say("ground: under the water, %d faces of wall and %d of river bed" % (walls, beds))
+            bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-4)
+            _check_underwater_edges(bm, shores, foot_reach)
         mesh = bpy.data.meshes.new(name)
         bm.to_mesh(mesh)
         bm.free()
         objects[name] = mesh
     _paint_ground(objects[SAND_OBJECT], objects[SLOPE_OBJECT], bed, materials)
     return objects, brow_edges, shore_edges
+
+
+def _check_underwater_edges(bm, shores, foot_reach):
+    """The second thing the water must not show: an open edge of the ground
+    under it. The shallows show the ground down to about the bed, so an edge
+    there is a line in the water -- unless it is the wall's own foot, along the
+    shore where the old cliff's foot was. Anything else means a hole or an
+    edge where there should be neither, and the build stops."""
+    bad = []
+    for e in bm.edges:
+        if not e.is_boundary:
+            continue
+        a, b = e.verts[0].co, e.verts[1].co
+        if max(a.z, b.z) >= -1.0 - 1e-3 or min(a.z, b.z) <= UNSEEN:
+            continue
+        middle = Vector(((a.x + b.x) * 0.5, (a.y + b.y) * 0.5))
+        d, _ = shores.nearest(middle, foot_reach * 3.0)
+        if d >= foot_reach * 3.0:
+            bad.append(middle)
+    say("ground: %d open edges under the water away from a shore (want 0)" % len(bad))
+    if bad:
+        for m in bad[:10]:
+            say("  at (%.2f, %.2f)" % (m.x, -m.y))
+        raise RuntimeError("%d open edges under the water" % len(bad))
+
+
+def shore_chains(rings, bounds, inside):
+    """The runs of consecutive shore edges round each ring (real_edges' rule),
+    each a list of points and whether it closes on itself."""
+    x0, y0, x1, y1 = bounds
+    chains = []
+    for ring in rings:
+        n = len(ring)
+        real = []
+        for k in range(n):
+            p, q = ring[k], ring[(k + 1) % n]
+            along = q - p
+            if along.length < 1e-9:
+                real.append(False)
+                continue
+            normal = Vector((-along.y, along.x)).normalized() * 0.05
+            middle = (p + q) * 0.5
+            a, b = middle + normal, middle - normal
+            real.append(all(x0 <= c.x <= x1 and y0 <= c.y <= y1 for c in (a, b))
+                        and inside(a) != inside(b))
+        if all(real):
+            chains.append((list(ring), True))
+            continue
+        if not any(real):
+            continue
+        start = next(k for k in range(n) if real[k] and not real[k - 1])
+        run = None
+        for m in range(n):
+            k = (start + m) % n
+            if real[k]:
+                if run is None:
+                    run = [ring[k]]
+                run.append(ring[(k + 1) % n])
+            elif run is not None:
+                chains.append((run, False))
+                run = None
+        if run is not None:
+            chains.append((run, False))
+    return chains
+
+
+def _underwater(bm, doc, water_rings, bounds, in_water, foot, bed):
+    """What lies under the water, built rather than triangulated: along every
+    run of shore a wall, a row of vertices for each row of the profile's foot
+    table, out from the waterline into the water, down to the bed; and under
+    the river its bed, flat. The sea has no bed, as it had none on the
+    hand-built stage. The wall's top row is the waterline's own vertices,
+    which the slope ends on, and is welded to it."""
+    walls = 0
+    for points, closed in shore_chains(water_rings, bounds, in_water):
+        n = len(points)
+        m = n if closed else n - 1
+        normals = []
+        for k in range(m):
+            p, q = points[k], points[(k + 1) % n]
+            along = (q - p).normalized()
+            normal = Vector((-along.y, along.x))
+            if not in_water((p + q) * 0.5 + normal * 0.02):
+                normal = -normal
+            normals.append(normal)
+        rows = []
+        for d, h in foot:
+            row = []
+            for k in range(n):
+                if closed:
+                    around = [normals[(k - 1) % m], normals[k % m]]
+                else:
+                    around = [normals[i] for i in (k - 1, k) if 0 <= i < m]
+                direction = sum(around, Vector((0, 0)))
+                direction = direction.normalized() if direction.length > 1e-9 else around[0]
+                # Mitred, so the wall keeps its reach round a bend; held where
+                # the bend is sharp.
+                reach = d / max(min(direction.dot(a) for a in around), 0.35)
+                c = points[k] + direction * reach
+                row.append(bm.verts.new((c.x, c.y, h)))
+            rows.append(row)
+        for r in range(len(rows) - 1):
+            for k in range(m):
+                quad = (rows[r][k], rows[r][(k + 1) % n], rows[r + 1][(k + 1) % n], rows[r + 1][k])
+                try:
+                    f = bm.faces.new(quad)
+                    f.smooth = False
+                    walls += 1
+                except ValueError:
+                    pass
+    # The river's bed ends at a shore only. Where its polygon ends otherwise
+    # -- the cut to the sea at its mouth, the level's bounds -- the bed goes
+    # down over BED_FADE to BED_DEEP, where the water shows nothing, rather
+    # than stopping in a straight edge the shallows would show: the sea beside
+    # it has no bed at all. A point every BED_STEP inside keeps the fall
+    # smooth and its triangles small.
+    beds = 0
+    for polygon in doc.get("water", []):
+        if polygon.get("kind") != "river":
+            continue
+        rings = rings_of(polygon)
+        inside = Inside(rings)
+        shore = {(round(p.x, 4), round(p.y, 4), round(q.x, 4), round(q.y, 4))
+                 for p, q in real_edges(rings, bounds, in_water)}
+        open_edges = Segments()
+        for ring in rings:
+            for k in range(len(ring)):
+                p, q = ring[k], ring[(k + 1) % len(ring)]
+                if (round(p.x, 4), round(p.y, 4), round(q.x, 4), round(q.y, 4)) not in shore:
+                    open_edges.add(p, q)
+        coords, edges, faces = [], [], []
+        for ring in rings:
+            base = len(coords)
+            coords.extend(ring)
+            edges.extend((base + k, base + (k + 1) % len(ring)) for k in range(len(ring)))
+            faces.append(list(range(base, base + len(ring))))
+        lo = Vector((min(c.x for c in coords), min(c.y for c in coords)))
+        hi = Vector((max(c.x for c in coords), max(c.y for c in coords)))
+        edge_index = Segments()
+        for ring in rings:
+            for k in range(len(ring)):
+                edge_index.add(ring[k], ring[(k + 1) % len(ring)])
+        for gy in range(math.ceil(lo.y / BED_STEP), math.floor(hi.y / BED_STEP) + 1):
+            for gx in range(math.ceil(lo.x / BED_STEP), math.floor(hi.x / BED_STEP) + 1):
+                c = Vector((gx * BED_STEP, gy * BED_STEP))
+                if inside(c) and edge_index.nearest(c, BED_STEP * 0.3)[0] >= BED_STEP * 0.3:
+                    coords.append(c)
+        out, _, out_faces, _, _, _ = delaunay_2d_cdt(coords, edges, faces, 0, 1e-5, True)
+
+        def depth(c):
+            d, _ = open_edges.nearest(Vector(c), BED_FADE)
+            t = 1.0 - min(d / BED_FADE, 1.0)
+            return bed + (BED_DEEP - bed) * t * t * (3.0 - 2.0 * t)
+
+        verts = [bm.verts.new((c[0], c[1], depth(c))) for c in out]
+        for face in out_faces:
+            middle = sum((Vector(out[v]) for v in face), Vector((0, 0))) / len(face)
+            if inside(middle):
+                try:
+                    f = bm.faces.new([verts[v] for v in face])
+                    f.smooth = False
+                    beds += 1
+                except ValueError:
+                    pass
+        bmesh.ops.delete(bm, geom=[v for v in verts if not v.link_faces], context="VERTS")
+    bm.normal_update()
+    for f in bm.faces:
+        if f.normal.z < 0:
+            f.normal_flip()
+    return walls, beds
 
 
 def _paint_ground(sand, rest, bed, materials):
@@ -444,7 +586,7 @@ def _paint_ground(sand, rest, bed, materials):
     slope_faces = []
     for p in rest.polygons:
         highest = max(rest.vertices[v].co.z for v in p.vertices)
-        if highest <= bed + 1e-4:
+        if highest <= bed + 1e-4:  # the river's bed, and where it falls away
             p.material_index = 2
         else:
             slope_faces.append(p)
