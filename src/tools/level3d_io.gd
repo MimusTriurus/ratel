@@ -269,6 +269,8 @@ static func serialize(doc: Dictionary) -> String:
 		var terrain: Dictionary = doc["terrain"]
 		out.append('  "terrain": {')
 		out.append('    "bounds": %s,' % _vec(terrain["bounds"]))
+		if terrain.has("frame"):
+			out.append('    "frame": %s,' % _vec(terrain["frame"]))
 		out.append('    "profile": "%s",' % terrain["profile"])
 		out.append('    "profiles": {')
 		var profiles := PackedStringArray()

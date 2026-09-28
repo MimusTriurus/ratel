@@ -406,6 +406,27 @@ ground changes; it keeps everything else in the file, as
 godot --path . --headless --script tools/level_terrain_from_glb.gd
 ```
 
+`tools/blender/build_level.py` builds the level in Blender from the file,
+on top of `jackal_stage1_lowpoly.blend` for what the file does not describe
+yet (walls, bridge, gate, destructibles, palette, sun, cameras), into
+`build/level3d/` — never over the base. Blender here is the Store build:
+run it through `%LOCALAPPDATA%\Microsoft\WindowsApps\blender-launcher.exe`,
+not `blender.exe` (permission denied), and read `--report`, because its
+console output is not seen. Then hold the result to the file, and to the
+hand-built level from above, and play it with the preview's `--level`:
+
+```bash
+blender-launcher -b resources/3d/jackal_stage1_lowpoly.blend --python tools/blender/build_level.py -- assets/level3d/stage-0.json --out build/level3d/jackal_stage1_gen.blend --glb build/level3d/jackal_stage1_gen.glb --report build/level3d/report.txt
+```
+
+```bash
+godot --path . --headless --script tools/level_terrain_from_glb.gd -- --glb res://build/level3d/jackal_stage1_gen.glb --compare
+```
+
+```bash
+blender-launcher -b build/level3d/jackal_stage1_gen.blend --python tools/blender/render_top.py -- --render build/level3d/top_gen.png 50
+```
+
 The editor is `src/tools/level3d_editor.tscn` with the `addons/level3d_editor`
 plugin (enabled in `project.godot`): the scene is one `Level3DEditRoot` that
 builds entities and objects from the level file on open, and Ctrl+S writes

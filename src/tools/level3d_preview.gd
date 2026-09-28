@@ -142,11 +142,17 @@
 # no aerials.
 #
 # The soldiers are the model sheet's trooper (level3d_soldiers.gd, MODEL).
+# --level <res:// path> plays another glb of the stage in place of
+# LEVEL_PATH: one built from the level file by tools/blender/build_level.py.
+# Its ground runs to the level's bounds, so the camera's frame is then the
+# file's terrain.frame rather than measured off the meshes.
+#
 # The dead lie where they fell; --fade-corpses
 # sinks them away as the game fades them (level3d_soldiers.gd, fade_corpses).
 extends Node3D
 
 const LEVEL_PATH := "res://resources/3d/jackal_stage1.glb"
+var level_path := LEVEL_PATH
 const OCEAN_SHADER := preload("res://src/tools/level3d_ocean.gdshader")
 const Btr := preload("res://src/tools/level3d_btr.gd")
 const SCREEN_SHADER := preload("res://src/tools/level3d_screen.gdshader")
@@ -277,9 +283,11 @@ func _ready() -> void:
 	Level3DFx.real_shadows = not OS.get_cmdline_user_args().has("--spots")
 	if not OS.get_cmdline_user_args().has("--baked-contour"):
 		get_tree().node_added.connect(_engine_contour)
-	var scene: PackedScene = load(LEVEL_PATH)
+	if run_args.has("--level"):
+		level_path = run_args[run_args.find("--level") + 1]
+	var scene: PackedScene = load(level_path)
 	if scene == null:
-		push_error("Cannot load %s -- open the project in the editor once so it is imported" % LEVEL_PATH)
+		push_error("Cannot load %s -- open the project in the editor once so it is imported" % level_path)
 		return
 	var level := scene.instantiate()
 	add_child(level)
@@ -292,6 +300,11 @@ func _ready() -> void:
 	level_aabb = _mesh_aabb(level, ["Beyond", "Ocean"])
 	var corner := Vector3(SEA_WEST, level_aabb.position.y, maxf(level_aabb.position.z, Level3DMap.ORIGIN.y))
 	level_aabb = AABB(corner, level_aabb.end - corner)
+	if level_path != LEVEL_PATH:
+		var frame: Array = Level3DIO.read(Level3DMap.STAGE).get("terrain", {}).get("frame", [])
+		if frame.size() == 4:
+			level_aabb = AABB(Vector3(frame[0], level_aabb.position.y, frame[1]),
+					Vector3(float(frame[2]) - float(frame[0]), level_aabb.size.y, float(frame[3]) - float(frame[1])))
 	_cast_both_sides_of_planes(level)
 	_flat_ground_casts_nothing(level)
 	_add_collision(level)
@@ -441,7 +454,7 @@ func _add_lights() -> void:
 func _replace_ocean(level: Node) -> void:
 	var ocean := level.find_child("Ocean", true, false) as MeshInstance3D
 	if ocean == null:
-		push_warning("No Ocean node in %s" % LEVEL_PATH)
+		push_warning("No Ocean node in %s" % level_path)
 		return
 	var water := ShaderMaterial.new()
 	water.shader = OCEAN_SHADER
@@ -1412,7 +1425,7 @@ func _add_guns(level: Node) -> void:
 	for bunker_name in GUN_BUNKERS:
 		var bunker := level.find_child(bunker_name, true, false) as Node3D
 		if bunker == null:
-			push_warning("No %s in %s; it gets no gun" % [bunker_name, LEVEL_PATH])
+			push_warning("No %s in %s; it gets no gun" % [bunker_name, level_path])
 			continue
 		var root := scene.instantiate() as Node3D
 		root.name = "Gun_" + bunker_name
@@ -2463,6 +2476,9 @@ func _screenshot_mode() -> void:
 			if _respawning == 0:
 				_explode_btr("--die"))
 		args = args.slice(0, die) + args.slice(die + 2)
+	var level := args.find("--level")
+	if level >= 0:
+		args = args.slice(0, level) + args.slice(level + 2)  # read in _ready
 	var strip := args.find("--strip")
 	if strip >= 0:
 		var spec := args[strip + 1].split(",")

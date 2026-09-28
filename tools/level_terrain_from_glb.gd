@@ -20,6 +20,10 @@
 #    file describes the level.
 #
 # Only these blocks are rewritten; entities, objects and the grid are kept.
+#
+# -- --glb <res:// path> --compare traces nothing and writes nothing: it
+# rasterizes that glb and compares the level file with it. That is how a
+# level built from the file (tools/blender/build_level.py) is held to it.
 extends SceneTree
 
 const STAGE := 0
@@ -29,7 +33,7 @@ const LEVEL_GLB := "res://resources/3d/jackal_stage1.glb"
 # the plates buried under it all, the skirts (vertical), or Shore_Lines. The
 # forest floor is ground as well: north of the map, Forest_Floor_N5 is all
 # the ground there is.
-const GROUND: Array[String] = ["Sand", "Beach_Green", "Cliff", "Terrain_", "Beyond_East_Flat",
+const GROUND: Array[String] = ["Sand", "Beach_", "Cliff", "Terrain_", "Beyond_East_Flat",
 		"Beyond_East_River", "Forest_Floor"]
 const FOREST: Array[String] = ["Forest_Floor"]
 # And past the east edge the forest floor is a material of Beyond_East_Flat
@@ -38,6 +42,11 @@ const FOREST_MATERIAL := "J_ForestFloor"
 # The level as far as it is built: the sea to x = -27 (SEA_WEST in the
 # preview), the land to the east edge of Beyond_East and to NORTH.
 const BOUNDS := Rect2(-27.0, -142.0, 46.2, 175.6)
+# What the preview's camera may show: the frame it measured off this glb
+# (Level3DPreview, level_aabb: every mesh but Beyond* and Ocean, the sea's
+# old edge west and the map's end north). A level built from the file has
+# ground to its bounds, so the frame cannot be measured off that one.
+const FRAME := [-27.0, -135.0312, 16.917, 33.654]
 const SAMPLE := 0.05
 const CHECK := 0.1
 const BED := -1.3
@@ -59,7 +68,9 @@ var grid: Level3DTerrain.Grid
 func _init() -> void:
 	var started := Time.get_ticks_msec()
 	grid = Level3DTerrain.Grid.new(BOUNDS, SAMPLE)
-	var level: Node3D = (load(LEVEL_GLB) as PackedScene).instantiate()
+	var args := OS.get_cmdline_user_args()
+	var glb := args[args.find("--glb") + 1] if args.has("--glb") else LEVEL_GLB
+	var level: Node3D = (load(glb) as PackedScene).instantiate()
 	var heights := PackedFloat32Array()
 	heights.resize(grid.w * grid.h)
 	heights.fill(BED)
@@ -77,7 +88,11 @@ func _init() -> void:
 		elif GROUND.any(func(p): return name.begins_with(p)):
 			_rasterize(node, forest, true, FOREST_MATERIAL)
 	level.free()
-	print("  rasterized %d x %d at %.2f m (%.1f s)" % [grid.w, grid.h, SAMPLE, _since(started)])
+	print("  %s rasterized %d x %d at %.2f m (%.1f s)" % [glb, grid.w, grid.h, SAMPLE, _since(started)])
+	if args.has("--compare"):
+		_compare(Level3DIO.read(STAGE), heights, forest)
+		quit()
+		return
 
 	var n := grid.w * grid.h
 	var land_field := PackedFloat32Array()
@@ -122,6 +137,7 @@ func _init() -> void:
 
 	var terrain := {
 		"bounds": [BOUNDS.position.x, BOUNDS.position.y, BOUNDS.end.x, BOUNDS.end.y],
+		"frame": FRAME,
 		"profile": "shore",
 		"profiles": {"shore": {"slope": [[0.0, 0.0], [1.0, WATER_LEVEL]],
 				"foot": [[0.0, WATER_LEVEL], [FOOT_REACH, BED]]}},
@@ -254,10 +270,25 @@ static func _from_north(ring: PackedVector2Array) -> PackedVector2Array:
 	return out
 
 
+# Rounded to the millimetre, and put on the bounds where a ring runs along
+# them: marching squares closes a ring between the last cell's centre and
+# the border outside it, a centimetre or two short of the edge, and the sliver
+# left between the ring and the bounds is ground no polygon claims.
 static func _points(ring: PackedVector2Array) -> Array:
 	var out: Array = []
+	var snap := SAMPLE
 	for p in ring:
-		out.append([Level3DIO.round_mm(p.x), Level3DIO.round_mm(p.y)])
+		var x := p.x
+		var z := p.y
+		if absf(x - BOUNDS.position.x) < snap:
+			x = BOUNDS.position.x
+		elif absf(x - BOUNDS.end.x) < snap:
+			x = BOUNDS.end.x
+		if absf(z - BOUNDS.position.y) < snap:
+			z = BOUNDS.position.y
+		elif absf(z - BOUNDS.end.y) < snap:
+			z = BOUNDS.end.y
+		out.append([Level3DIO.round_mm(x), Level3DIO.round_mm(z)])
 	return out
 
 
