@@ -70,6 +70,11 @@ DOWN = (0.22, 0.48, 0.74)
 JITTER = (0.12, 0.07, 0.08)         # along, out, down; metres
 DARK = 0.4                          # the share of slope facets turned furthest from the sun
 NEIGHBOURS = 24                     # ... among the facets nearest each
+MIN_GAP = 0.10                      # between the slope's column points
+EDGE_GAP = 0.05                     # from a column point to the brow or the waterline
+SPECK_AREA = 0.002                  # a facet this small (m2) ...
+SPECK_TURN = 40.0                   # ... turned this far from its neighbours is a speck
+SPECKS_ALLOWED = 14                 # as many as the hand-built stage's slopes have
 BED_STEP = 0.75                     # the river bed's points
 BED_FADE = 3.0                      # over which it falls away from an edge that is no shore
 BED_DEEP = -2.4                     # to where the water shows nothing (Land_Base_North's depth)
@@ -281,8 +286,22 @@ def build_ground(doc, materials):
         water_faces.append(len(faces))
         faces.append(ids)
 
-    # The face: a column of points down it every COLUMN along each brow.
+    # The face: a column of points down it every COLUMN along each brow. No
+    # two of them nearer than MIN_GAP, and none nearer the brow or the
+    # waterline than EDGE_GAP: two points a few centimetres apart at heights
+    # the jitter set apart make a facet standing on its edge, a speck of the
+    # wrong tone in the rock (_specks).
     columns = 0
+    placed = {}
+
+    def crowded(c):
+        cx, cy = math.floor(c.x / MIN_GAP), math.floor(c.y / MIN_GAP)
+        for y in range(cy - 1, cy + 2):
+            for x in range(cx - 1, cx + 2):
+                for other in placed.get((x, y), ()):
+                    if (other - c).length < MIN_GAP:
+                        return True
+        return False
     for n, (p, q) in enumerate(brow_edges):
         along = q - p
         length = along.length
@@ -299,12 +318,15 @@ def build_ground(doc, materials):
                 for k, share in enumerate(DOWN):
                     j = [hash01(n, step, k, salt) * 2.0 - 1.0 for salt in (10, 11, 12)]
                     c = at + (w - at) * share + tangent * (j[0] * JITTER[0]) + out * (j[1] * JITTER[1])
-                    if in_land(c) or in_water(c):
+                    if in_land(c) or in_water(c) or crowded(c):
                         continue
                     db, _ = brows.nearest(c, SEARCH)
                     dw, _ = shores.nearest(c, SEARCH)
+                    if db < EDGE_GAP or dw < EDGE_GAP:
+                        continue
                     t = db / max(db + dw, 1e-6)
                     vertex(c, profile_at(slope, t) + j[2] * JITTER[2] * min(t, 1.0 - t) * 2.0)
+                    placed.setdefault((math.floor(c.x / MIN_GAP), math.floor(c.y / MIN_GAP)), []).append(c)
                     columns += 1
             step += 1
             s += COLUMN[0] + (COLUMN[1] - COLUMN[0]) * hash01(n, step, 0, 13)
@@ -359,12 +381,21 @@ def build_ground(doc, materials):
     # wedges.
     parts = {"land": [], "rest": []}
     dropped = 0
+    flat_sand = 0
     for k, face in enumerate(out_faces):
         if face_kind[k] == "water":
             dropped += 1
+        elif face_kind[k] == "land":
+            parts["land"].append(k)
+        elif all(abs(z[v]) < 1e-6 for v in face):
+            # A triangle of brow vertices only, filling a bend of the brow
+            # outside the land: it is at the sand's height, and is sand. Painted
+            # as rock it was a brown speck on the brow.
+            parts["land"].append(k)
+            flat_sand += 1
         else:
-            parts["land" if face_kind[k] == "land" else "rest"].append(k)
-    say("ground: %d faces inside the water left out" % dropped)
+            parts["rest"].append(k)
+    say("ground: %d faces inside the water left out, %d flat at the brow made sand" % (dropped, flat_sand))
     objects = {}
     for part, name in (("land", SAND_OBJECT), ("rest", SLOPE_OBJECT)):
         bm = bmesh.new()
@@ -387,6 +418,17 @@ def build_ground(doc, materials):
             if f.normal.z < 0:
                 f.normal_flip()
         if part == "rest":
+            bm.normal_update()
+            before = len(_specks(bm))
+            after = _relax_specks(bm)
+            say("ground: %d specks on the slope, %d after relaxing them (the hand-built "
+                "stage has %d; want no more)" % (before, after, SPECKS_ALLOWED))
+            for f in _specks(bm)[:10]:
+                c = f.calc_center_median()
+                say("  speck at (%.2f, %.2f), corners at %s, %.1f cm2"
+                    % (c.x, -c.y, sorted(round(v.co.z, 2) for v in f.verts), f.calc_area() * 1e4))
+            if after > SPECKS_ALLOWED:
+                raise RuntimeError("%d specks on the slope" % after)
             low = sum(1 for f in bm.faces if min(v.co.z for v in f.verts) < -1.0 - 1e-4)
             say("ground: %d faces of the slope reach under the water (want 0)" % low)
             if low:
@@ -403,6 +445,47 @@ def build_ground(doc, materials):
         objects[name] = mesh
     _paint_ground(objects[SAND_OBJECT], objects[SLOPE_OBJECT], bed, materials)
     return objects, brow_edges, shore_edges
+
+
+def _specks(bm):
+    """Facets of the slope small enough to be a pixel or two from above and
+    turned more than SPECK_TURN from the facets round them: what reads as a
+    dead pixel in the rock."""
+    out = []
+    limit = math.cos(math.radians(SPECK_TURN))
+    for f in bm.faces:
+        if f.calc_area() >= SPECK_AREA:
+            continue
+        heights = [v.co.z for v in f.verts]
+        if max(heights) - min(heights) < 0.01:
+            continue  # flat: a bend of the waterline filled at the water's level
+        around = Vector((0, 0, 0))
+        for e in f.edges:
+            for g in e.link_faces:
+                if g is not f:
+                    around += g.normal * g.calc_area()
+        if around.length > 1e-12 and f.normal.dot(around.normalized()) < limit:
+            out.append(f)
+    return out
+
+
+def _relax_specks(bm, passes=3):
+    """Each speck's free corners -- the column points; the brow at 0 and the
+    waterline at -1 stay where they are -- brought to the mean height of the
+    vertices round them, until no speck is left or the passes are spent.
+    Returns how many are left."""
+    for _ in range(passes):
+        specks = _specks(bm)
+        if not specks:
+            return 0
+        for f in specks:
+            for v in f.verts:
+                if abs(v.co.z) < 1e-6 or abs(v.co.z + 1.0) < 1e-6:
+                    continue
+                near = [e.other_vert(v).co.z for e in v.link_edges]
+                v.co.z = sum(near) / len(near)
+        bm.normal_update()
+    return len(_specks(bm))
 
 
 def _check_underwater_edges(bm, shores, foot_reach):
