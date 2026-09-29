@@ -284,6 +284,46 @@ static func stream(name: String) -> AudioStream:
 	return resolve(name).stream
 
 
+# For those same players, which are flat, so that nothing fades them with
+# distance: 1 while `at` (level x, z) is in `frame` (level x, z, as the
+# preview's _view_frame), down to 0 at EDGE_FADE metres outside it. A
+# helicopter coming in grows out of nothing, one going out dies away, rather
+# than starting and stopping at full. Always 1 in CLASSIC, whose helicopters
+# are the original's: at full from the first tick.
+const EDGE_FADE := 10.0
+
+static func edge_fade(at: Vector2, frame: Rect2) -> float:
+	if mode == Mode.CLASSIC:
+		return 1.0
+	var outside := Vector2(maxf(maxf(frame.position.x - at.x, at.x - frame.end.x), 0.0),
+			maxf(maxf(frame.position.y - at.y, at.y - frame.end.y), 0.0)).length()
+	return clampf(1.0 - outside / EDGE_FADE, 0.0, 1.0)
+
+
+# The last of such a player, when what it is on goes: its gain taken to 0
+# over FADE_OUT seconds, then stopped, then `done`. A loop would otherwise be
+# cut off wherever it was, however loud. In CLASSIC stopped at once, as the
+# original's are, and `done` at once. The tween is the player's, so freeing
+# the player cancels it; kill it to keep the player (a reset).
+const FADE_OUT := 1.0
+
+static func fade_out(player: AudioStreamPlayer, done: Callable = Callable()) -> Tween:
+	if player == null or not player.playing or mode == Mode.CLASSIC:
+		if player != null:
+			player.stop()
+		if done.is_valid():
+			done.call()
+		return null
+	var from := player.volume_db
+	var tween := player.create_tween()
+	tween.tween_method(func(g: float): player.volume_db = from + linear_to_db(maxf(g, 0.0001)),
+			1.0, 0.0, FADE_OUT)
+	tween.tween_callback(player.stop)
+	if done.is_valid():
+		tween.tween_callback(done)
+	return tween
+
+
 # The gain the stream wants, dB, to add to the caller's own: its "db", and
 # the menu's gain for it over that.
 static func volume_db(name: String) -> float:

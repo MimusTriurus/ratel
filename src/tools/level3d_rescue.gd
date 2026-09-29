@@ -73,6 +73,11 @@ const ALTITUDE := 3.0
 const ROTOR_DEGREES_PER_CLIP_SPEED := 12.0
 const SLOW_ROTOR := 15.0
 const FAST_ROTOR := 30.0
+# The rotor's sound at SLOW_ROTOR, idling on the pad, against FAST_ROTOR's:
+# its gain and its pitch, the two going from one to the other with the
+# rotor's speed as it revs up and down. The modern sound's alone.
+const IDLE_GAIN := 0.5
+const IDLE_PITCH := 0.8
 # FriendlyHelicopter.update's STATE_ACCELERATING goes this far, px, before it
 # turns; coming in it slows over the same.
 const BRAKE_DISTANCE := FriendlyHelicopter.ACCELERATION * \
@@ -128,6 +133,7 @@ var _model: Node3D
 var _shadow: Node3D
 var _players: Array[AnimationPlayer] = []
 var _sound: AudioStreamPlayer
+var _fading: Tween   # the rotor dying away once it has flown off (fade_out)
 
 # The port's lamps: the level's two materials, one for every red lamp and one
 # for every blue, and LandingPort's two indices into ALPHAS.
@@ -227,6 +233,9 @@ func reset() -> void:
 	walking_soldiers = 0
 	_trigger_y = map.stage.map_height
 	if _sound != null:
+		if _fading != null:
+			_fading.kill()
+			_fading = null
 		_sound.stop()
 	visible = false
 
@@ -248,8 +257,15 @@ func tick() -> void:
 	if state == NONE or state == GONE:
 		return
 	rotor_speed = clampf(rotor_speed, SLOW_ROTOR, FAST_ROTOR)
-	if state >= ACCELERATING or state <= BRAKING:
+	# FriendlyHelicopter.update's: heard from STATE_ACCELERATING, and here
+	# coming in, which the original's never was; on the pad it is silent. The
+	# modern rotor is heard on the pad as well, idling, since it turns there.
+	if Level3DAudio.mode == Level3DAudio.Mode.MODERN or state >= ACCELERATING or state <= BRAKING:
 		_play_sound()
+	elif _sound.stream != Level3DAudio.stream(SOUND):
+		# Switched to classic on the pad: the modern loop would play on.
+		_sound.stop()
+		_sound.stream = null
 	var player := Level3DMap.to_map(player_position.call())
 	match state:
 		INCOMING:
@@ -314,7 +330,7 @@ func tick() -> void:
 				if verbose:
 					print("rescue helicopter gone, %d rescued" % rescued)
 				_enter(GONE)
-				_sound.stop()
+				_fading = Level3DAudio.fade_out(_sound)
 				visible = false
 				return
 	_pose()
@@ -440,8 +456,16 @@ func _play_sound() -> void:
 	if _sound.stream != wanted:
 		_sound.stop()
 		_sound.stream = wanted
-		_sound.volume_db = Level3DAudio.volume_db(SOUND)
 		_sound.bus = Level3DAudio.bus(SOUND)
+	# Every tick, for the fade at the frame's edge, and since a looped modern
+	# rotor never runs out to be started again with a new volume.
+	var gain := Level3DAudio.edge_fade(Level3DMap.to_level(Vector2(x, y)), frame.call())
+	_sound.pitch_scale = 1.0
+	if Level3DAudio.mode == Level3DAudio.Mode.MODERN:
+		var spin := inverse_lerp(SLOW_ROTOR, FAST_ROTOR, rotor_speed)
+		gain *= lerpf(IDLE_GAIN, 1.0, spin)
+		_sound.pitch_scale = lerpf(IDLE_PITCH, 1.0, spin)
+	_sound.volume_db = Level3DAudio.volume_db(SOUND) + linear_to_db(maxf(gain, 0.0001))
 	if wanted != null and not _sound.playing:
 		_sound.play()
 

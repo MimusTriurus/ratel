@@ -103,6 +103,11 @@ var dust: Callable
 # Chinook has gone and freed itself, which is later.
 var finished: Callable
 var left: Callable
+# The frame, level x, z (Level3DPreview's _view_frame): the rotor fades in and
+# out at its edge (Level3DAudio.edge_fade).
+var frame: Callable
+# The preview's sun, for where the shadow falls (_in_frame).
+var sun: DirectionalLight3D
 var handed_over := false
 # The top view: the model drawn at the original's scale for its height.
 var enlarge := true
@@ -366,11 +371,17 @@ func tick() -> void:
 				z = minf(z + vt * Chinook.IPI2, 1.0)
 			# The original is gone at AWAY_ANGLE, still in the frame, and so was
 			# this one, in either view; it flies on until it is out of it rather
-			# than vanishing in the middle of it.
-			if angle < AWAY_ANGLE and (not _in_frame() or x < -RADIUS):
+			# than vanishing in the middle of it. LEAVE_X only in case it never
+			# is: a frame's width off the map's west edge its shadow was still
+			# on the sea at the left of the tilted view.
+			if angle < AWAY_ANGLE and (not _in_frame() or x < LEAVE_X):
 				_leave()
 				return
-			_play_sound(SOUND_VOLUME + (angle + 90.0) / 76.0)
+			# Chinook.update's fade, which is gone by AWAY_ANGLE, still in the
+			# frame: the original's, in classic. The modern one flies on heard
+			# and dies away at the edge of the frame, as it came in.
+			_play_sound(SOUND_VOLUME + (angle + 90.0) / 76.0 if Level3DAudio.mode == Level3DAudio.Mode.CLASSIC
+					else SOUND_VOLUME)
 	_pose()
 	if state != FORWARDS and not handed_over:
 		_pose_unit()
@@ -399,29 +410,51 @@ func _hand_over() -> void:
 	finished.call()
 
 
+# Freed once the rotor has died away (Level3DAudio.fade_out): out of the
+# frame already, and hidden till then, with nothing ticking it.
 func _leave() -> void:
 	state = DONE
-	if _sound != null:
-		_sound.stop()
-	queue_free()
+	visible = false
+	Level3DAudio.fade_out(_sound, queue_free)
 	if left.is_valid():
 		left.call()
 
 
 # Whether any of the Chinook, a box LEAVE_BOX metres round the middle of its
-# height, is in the camera's frame.
+# height, is in the camera's frame -- or its shadow, a box as wide and as tall
+# as the model cast down the sun onto the ground: up at the top of its climb the shadow falls well off
+# to one side of it, and was left behind in the frame, gone from one frame to
+# the next, when the Chinook went only by itself.
 const LEAVE_BOX := 4.0
+const LEAVE_X := -4.0 * RADIUS
 
 func _in_frame() -> bool:
 	var camera := get_viewport().get_camera_3d()
 	if camera == null or _model == null:
 		return false
 	var middle := _model.global_position + Vector3.UP * MODEL_HEIGHT * _model.scale.y * 0.5
+	var down := -sun.global_basis.z if sun != null else Vector3.DOWN
 	for i in 8:
-		var corner := middle + Vector3(1 if i & 1 else -1, 1 if i & 2 else -1, 1 if i & 4 else -1) * LEAVE_BOX
-		if camera.is_position_in_frustum(corner):
+		var side := Vector3(1 if i & 1 else -1, 1 if i & 2 else -1, 1 if i & 4 else -1)
+		if camera.is_position_in_frustum(middle + side * LEAVE_BOX):
+			return true
+		# The shadow's box is as tall as the shadow copy, which is not
+		# enlarged: the whole of LEAVE_BOX cast down the sun is a shadow
+		# several metres longer than the one there is.
+		var corner := _shadow.global_position + Vector3(side.x * LEAVE_BOX,
+				(MODEL_HEIGHT * MODEL_SCALE if side.y > 0 else 0.0), side.z * LEAVE_BOX)
+		if down.y < -0.01 and camera.is_position_in_frustum(_cast(corner, down)):
 			return true
 	return false
+
+
+# Where `p` falls on the ground down the sun's `down`: onto the height under
+# where it would fall at the landing's height, which is near enough to the
+# ground there, the shadow being a box's anyway.
+func _cast(p: Vector3, down: Vector3) -> Vector3:
+	var at := p + down * ((p.y - _landed_height) / -down.y)
+	var height: float = ground.call(at.x, at.z).height
+	return p + down * ((p.y - height) / -down.y)
 
 
 # Where the BTR is the player's, level x, z: IntroPlayer's FINAL_X, FINAL_Y,
@@ -504,6 +537,8 @@ func _play_sound(volume: float) -> void:
 		_sound.stop()
 		_sound.stream = wanted
 		_sound.bus = Level3DAudio.bus(SOUND)
+	if frame.is_valid():
+		volume *= Level3DAudio.edge_fade(Level3DMap.to_level(Vector2(x, y)), frame.call())
 	_sound.volume_db = Level3DAudio.volume_db(SOUND) + linear_to_db(clampf(volume, 0.0001, 1.0))
 	if wanted != null and not _sound.playing:
 		_sound.play()

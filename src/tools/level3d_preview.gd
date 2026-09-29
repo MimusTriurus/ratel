@@ -400,6 +400,8 @@ func _start_intro() -> void:
 	chinook = Level3DChinook.new()
 	helicopter = chinook
 	chinook.left = func(): helicopter = null
+	chinook.frame = _view_frame
+	chinook.sun = sun
 	chinook.ground = _ground_at
 	chinook.btr = btr
 	chinook.dust = func(at: Vector3, across: Vector3, out: Vector3, size: float, count: int):
