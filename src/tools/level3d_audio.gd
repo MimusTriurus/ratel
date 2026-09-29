@@ -131,11 +131,13 @@ const SOUNDS := {
 	# Anything destroyed: play_hit_explode_sound, enemy_hit under explode.
 	"blast": {"bus": &"Explosions", "db": -3.7, "pitch": 0.06, "voices": 4,
 			"original": "explode.ogg", "with": "enemy_hit", "modern": {"db": -8.7}},
-	"enemy_hit": {"bus": &"Explosions", "db": -4.4, "voices": 4, "original": "enemy_hit.ogg"},
-	"building": {"bus": &"Explosions", "pitch": 0.05, "voices": 2, "original": "hut.ogg"},
+	"enemy_hit": {"bus": &"Explosions", "db": -4.4, "voices": 4, "original": "enemy_hit.ogg",
+			"modern": {"db": -12.8}},
+	"building": {"bus": &"Explosions", "pitch": 0.05, "voices": 2, "original": "hut.ogg",
+			"modern": {"db": -3.2}},
 	# A boss tank's first round of damage, which the preview shows as a breach.
 	"breach": {"bus": &"Explosions", "pitch": 0.05, "voices": 2,
-			"original": "bullet_hit.ogg", "always": true},
+			"original": "bullet_hit.ogg", "always": true, "modern": {"db": -12.5}},
 	"player_explodes": {"bus": &"Explosions", "original": "player_explodes.ogg", "flat": true},
 	"soldier_death": {"bus": &"Explosions", "pitch": 0.1, "voices": 3, "gap": 0.125,
 			"original": "soldier_killed.ogg"},
