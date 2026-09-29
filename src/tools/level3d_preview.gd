@@ -135,7 +135,7 @@
 # editor made (src/tools/level_editor.tscn), with --level its built glb: its
 # grid, its entities, its frame, and a start and a landing as far from its
 # south end as stage 1's are from its own. Stage 1's own buildings that are
-# blown up are not in it.
+# blown up are not in it; its Gate, Barracks* and Hangar objects are.
 #
 # The stage opens as the game's does: a Chinook flies the BTR in, backs it out
 # down its ramp and flies off; the BTR is the player's, at IntroPlayer's spot
@@ -1057,10 +1057,12 @@ var destructibles := {}
 # The buildings that are blown up, each {"name" (what destructibles and
 # --destroy call it), "kind" (its jackal_dest_<kind>.glb), "move" (from where
 # stage 1 has it), "group" (the destruction group a gate opens, or -1)}.
-# Stage 1 has all of DESTRUCTIBLE_NAMES where they are; another level has a
-# gate for every Gate object: the destructible part of it, turned and moved
-# from the catalogue's pivot to the object's place, as the builder moves the
-# gate's frame, and named by the object's id. Every gate opens the group of
+# Stage 1 has all of DESTRUCTIBLE_NAMES where they are; another level has one
+# for every object whose asset the catalogue calls destructible -- a gate for
+# every Gate object (the destructible part of it: the builder builds its
+# frame), a barracks or a hangar for every Barracks* or Hangar one -- turned
+# and moved from the catalogue's pivot, where stage 1 has it, to the object's
+# place, and named by the object's id. Every gate opens the group of
 # the GATE entity its object belongs to, which is the group Gate would probe
 # for (Level3DIO.check holds the two together), stage 1's gate_0 group 6.
 static func _destructibles_here() -> Array:
@@ -1459,9 +1461,11 @@ func _add_guns(level: Node) -> void:
 		rescue.bind_lamps(level)  # the landing port's, which is stage 1's
 	soldiers.more_solids = friends.solid_boxes
 	var centres := {}
+	var kinds := {}
 	for building in destructibles:
 		centres[building] = destructibles[building].footprint.get_center()
-	friends.bind(centres)
+		kinds[building] = destructibles[building].kind
+	friends.bind(centres, kinds)
 	# A round stops at the first enemy on its way, gun, soldier, boat or tank;
 	# a missile kills the soldiers it passes and stops at a gun, a boat or a
 	# tank.

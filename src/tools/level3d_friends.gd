@@ -77,10 +77,12 @@ const SHEETS := [
 	[Color8(188, 190, 0), Color8(108, 7, 0)],
 ]
 
-# The level's buildings the stage's POW buildings are: which destructible is
-# which trigger is found by where they stand.
-const HUT_NAMES: Array[String] = ["Barracks", "BarracksN", "BarracksN2", "BarracksN3"]
-const HOUSE_NAMES: Array[String] = ["Hangar_E", "Hangar_N", "Hangar_W"]
+# The level's buildings the stage's POW buildings are, by the kind of
+# destructible each is (its jackal_dest_<kind>.glb) -- stage 1's by their own
+# names, another level's by the catalogue's Barracks and Hangar objects: which
+# one is which trigger is found by where they stand.
+const HUT_KINDS: Array[String] = ["Barracks", "BarracksN", "BarracksN2", "BarracksN3"]
+const HOUSE_KINDS: Array[String] = ["Hangar_E", "Hangar_N", "Hangar_W"]
 
 var map: Level3DMap
 var guns: Level3DGuns
@@ -162,11 +164,12 @@ func _ready() -> void:
 
 
 # Each of the level's barracks and hangars to the nearest HUT or HOUSE of the
-# map. `centres` is name -> level x, z of the building's footprint.
-func bind(centres: Dictionary) -> void:
+# map. `centres` is name -> level x, z of the building's footprint, `kinds`
+# name -> the kind of destructible it is.
+func bind(centres: Dictionary, kinds: Dictionary) -> void:
 	for name in centres:
-		var hut := HUT_NAMES.has(name)
-		if not hut and not HOUSE_NAMES.has(name):
+		var hut := HUT_KINDS.has(kinds[name])
+		if not hut and not HOUSE_KINDS.has(kinds[name]):
 			continue
 		var at := Level3DMap.to_map(centres[name])
 		var best = null

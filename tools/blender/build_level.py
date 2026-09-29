@@ -1398,6 +1398,8 @@ def main():
         asset = catalog["assets"][obj["asset"]]
         if "base" in asset:
             continue  # built, not placed: build_structures
+        if "destructible" in asset:
+            continue  # the preview's own jackal_dest_<kind>.glb, not the level's
         if "mesh" in asset:
             o = bpy.data.objects.new(obj["id"], bpy.data.meshes[asset["mesh"]])
         else:

@@ -21,6 +21,8 @@ extends Node3D
 
 const LIBRARY := "res://resources/3d/jackal_stage1.glb"
 const MESH_PREFIX := "jackal_stage1_"
+# Level3DPreview.DESTRUCTIBLE_PATH: a building that is blown up.
+const DESTRUCTIBLE_PATH := "res://resources/3d/jackal_dest_%s.glb"
 
 # map_editor.gd's TYPE_COLORS, indexed by MapIO.TYPE_*, a little stronger:
 # over a 3D level they sit on colour, not on the flat tiles.
@@ -327,6 +329,21 @@ func _template(asset: String) -> Node3D:
 				frame.add_child(piece)
 		_templates[asset] = frame
 		return frame
+	if asset_entry.has("destructible"):
+		# A building the preview blows up, which no level's glb has: its
+		# jackal_dest_<kind>.glb, as it stands at rest -- the intact building,
+		# the blast and the ruins shrunk to nothing -- round the pivot.
+		var scene: PackedScene = load(DESTRUCTIBLE_PATH % asset_entry["destructible"])
+		var building := Node3D.new()
+		if scene:
+			var pivot := Vector2(float(asset_entry["pivot"][0]), float(asset_entry["pivot"][1]))
+			var root := scene.instantiate() as Node3D
+			for player in root.find_children("*", "AnimationPlayer", true, false):
+				player.free()
+			root.position = -Vector3(pivot.x, 0.0, pivot.y)
+			building.add_child(root)
+		_templates[asset] = building
+		return building
 	for child in _library.get_children():
 		var node := child as Node3D
 		if node is MeshInstance3D:
