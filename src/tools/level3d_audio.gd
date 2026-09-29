@@ -80,10 +80,14 @@ const MAX_DISTANCE := 60.0
 const PANNING := 0.6
 
 const SOUNDS := {
-	# The player's weapons.
+	# The player's weapons. The modern gun's gain brings its loudest 50 ms
+	# (RMS) down to machine_gun's; the grenade launcher's only half as far,
+	# since throw is 10 dB under the gun, and at its level the new one was
+	# lost under it.
 	"gun": {"bus": &"Weapons", "pitch": 0.05, "voices": 6, "gap": 0.03,
-			"original": "machine_gun.ogg", "always": true, "flat": true},
-	"grenade_launch": {"bus": &"Weapons", "pitch": 0.05, "original": "throw.ogg", "flat": true},
+			"original": "machine_gun.ogg", "always": true, "flat": true, "modern": {"db": -7.6}},
+	"grenade_launch": {"bus": &"Weapons", "pitch": 0.05, "original": "throw.ogg", "flat": true,
+			"modern": {"db": -12.0}},
 	"rocket_launch": {"bus": &"Weapons", "pitch": 0.05, "original": "missile.ogg", "flat": true},
 	# Where rounds land, the player's and the enemies'. The original had none.
 	"hit_ground": {"bus": &"Weapons", "pitch": 0.1, "voices": 4, "gap": 0.04},
@@ -121,9 +125,12 @@ const SOUNDS := {
 	"btr_drive": {"bus": &"Engines", "loop": true},
 	"tank_engine": {"bus": &"Engines", "loop": true},
 	"boat_engine": {"bus": &"Engines", "loop": true},
-	# The helicopters: helicopter_sound and helicopter_sound2.
-	"chinook": {"bus": &"Engines", "loop": true, "original": "helicopter.ogg", "flat": true},
-	"rescue_rotor": {"bus": &"Engines", "loop": true, "original": "helicopter2.ogg", "flat": true},
+	# The helicopters: helicopter_sound and helicopter_sound2. The modern
+	# files' gains bring their loudest 50 ms (RMS) down to the originals'.
+	"chinook": {"bus": &"Engines", "loop": true, "original": "helicopter.ogg", "flat": true,
+			"modern": {"db": -9.1}},
+	"rescue_rotor": {"bus": &"Engines", "loop": true, "original": "helicopter2.ogg", "flat": true,
+			"modern": {"db": -3.4}},
 	# Prisoners, the HUD and the menu.
 	"pickup": {"bus": &"Interface", "original": "pickup.ogg", "flat": true},
 	"rescue_pickup": {"bus": &"Interface", "original": "helicopter_pickup.ogg", "flat": true},
