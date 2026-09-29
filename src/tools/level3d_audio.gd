@@ -46,6 +46,8 @@
 #     gap        seconds: a second play inside it is dropped (CLASSIC takes
 #                the longer of it and Main's 125 ms)
 #     flat       not positional: the HUD's and the player's own
+#     mixed      a loop whose volume its owner sets (the BTR's engine), which
+#                the frame's gain is left to (_process)
 #     classic, modern
 #                any of the above for that mode alone, over the rest: say,
 #                "modern": {"db": -9.0, "with": ""} for a new blast
@@ -70,14 +72,17 @@ const BUSES := {&"Weapons": &"Sfx", &"EnemyFire": &"Weapons", &"Explosions": &"S
 		&"Engines": &"Sfx", &"Ambient": &"Sfx", &"Interface": &"Sfx"}
 const ENEMY_FIRE_BUS := &"EnemyFire"
 
-# The frame is 30 m across at zoom 1 (the level's 2048 px at Level3DMap.PX),
-# so everything on it is within about 17 m of its centre. The listener hangs
-# over that centre (listen); a sound is at full gain inside UNIT_SIZE of it and
-# gone at MAX_DISTANCE, a frame and a half away.
+# The frame is 30 m across at zoom 1 (the level's 2048 px at Level3DMap.PX).
+# The listener hangs LISTENER_HEIGHT over its centre (listen), which is what
+# the panning is taken from. The loudness is not the distance's: Godot's own
+# falloff, inverse to the distance from the listener, had a blast at the
+# frame's edge 8 dB under one in the middle, and its low-pass took the top
+# off it as well, so that anything near the edge sounded muffled. Instead a
+# sound is at its full gain anywhere in the frame and dies away over
+# OFFSCREEN_FADE metres outside it (frame_gain), and nothing is filtered.
 const LISTENER_HEIGHT := 8.0
-const UNIT_SIZE := 10.0
-const MAX_DISTANCE := 60.0
 const PANNING := 0.6
+const OFFSCREEN_FADE := 15.0
 
 const SOUNDS := {
 	# The player's weapons. The modern gun's gain brings its loudest 50 ms
@@ -135,8 +140,8 @@ const SOUNDS := {
 	"soldier_death": {"bus": &"Explosions", "pitch": 0.1, "voices": 3, "gap": 0.125,
 			"original": "soldier_killed.ogg"},
 	# Engines. The original's jeep and tanks had none.
-	"btr_idle": {"bus": &"Engines", "loop": true},
-	"btr_drive": {"bus": &"Engines", "loop": true},
+	"btr_idle": {"bus": &"Engines", "loop": true, "mixed": true},
+	"btr_drive": {"bus": &"Engines", "loop": true, "mixed": true},
 	"tank_engine": {"bus": &"Engines", "loop": true},
 	"boat_engine": {"bus": &"Engines", "loop": true},
 	# The helicopters: helicopter_sound and helicopter_sound2. The modern
@@ -178,6 +183,8 @@ static var _current: Level3DAudio
 # with its SOUNDS entry, the mode's own over the rest.
 static var _resolved := {}
 
+# The frame, level x, z (listen); empty until the preview has said.
+static var _frame := Rect2()
 var _listener: AudioListener3D
 var _music: AudioStreamPlayer
 var _song: Array = []       # the parts still to come, file names
@@ -216,7 +223,8 @@ func _ready() -> void:
 	add_child(_music)
 	_start_ambience()
 	_debug = OS.get_cmdline_user_args().has("--audio-debug")
-	set_process(_debug)
+	# Always: the loops' gains follow the frame (_process).
+	set_process(true)
 	if _debug:
 		var found := 0
 		for name in SOUNDS:
@@ -237,6 +245,18 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
+	# The loops on the units, which move in and out of the frame, take its
+	# gain every frame; not the ones their owner mixes, nor one dying away.
+	for loop in _loops:
+		var parent = loop[0].get_ref()
+		if parent == null or not is_instance_valid(parent):
+			continue
+		var player := loop_on(parent, loop[1])
+		if player == null or player.has_meta("fading") or resolve(loop[1]).spec.get("mixed", false):
+			continue
+		player.volume_db = volume_db(loop[1]) + _gain_db(frame_gain(player.global_position))
+	if not _debug:
+		return
 	_debug_left -= delta
 	if _debug_left > 0.0:
 		return
@@ -292,10 +312,31 @@ static func loop_on(parent: Node, name: String) -> AudioStreamPlayer3D:
 	return parent.get_node_or_null("Sound_" + name) as AudioStreamPlayer3D if parent != null else null
 
 
-# Where the frame is: the listener hangs over it, looking up the stage.
-static func listen(at: Vector3) -> void:
+# Where the frame is: the listener hangs over `at`, its centre, looking up
+# the stage, and `frame` (level x, z, the preview's _view_frame) is what
+# frame_gain measures from.
+static func listen(at: Vector3, frame := Rect2()) -> void:
+	_frame = frame
 	if _current != null and _current._listener != null:
 		_current._listener.global_position = at + Vector3.UP * LISTENER_HEIGHT
+
+
+# A positional sound's gain for where it is: 1 in the frame, down to 0 at
+# OFFSCREEN_FADE metres outside it; 1 before there is a frame.
+static func frame_gain(at: Vector3) -> float:
+	if not _frame.has_area():
+		return 1.0
+	return _outside_gain(Vector2(at.x, at.z), _frame, OFFSCREEN_FADE)
+
+
+static func _outside_gain(at: Vector2, frame: Rect2, fade: float) -> float:
+	var outside := Vector2(maxf(maxf(frame.position.x - at.x, at.x - frame.end.x), 0.0),
+			maxf(maxf(frame.position.y - at.y, at.y - frame.end.y), 0.0)).length()
+	return clampf(1.0 - outside / fade, 0.0, 1.0)
+
+
+static func _gain_db(g: float) -> float:
+	return linear_to_db(g) if g > 0.0 else SILENT_DB
 
 
 # For a player a module keeps itself -- the helicopters', which set their own
@@ -316,9 +357,7 @@ const EDGE_FADE := 10.0
 static func edge_fade(at: Vector2, frame: Rect2) -> float:
 	if mode == Mode.CLASSIC:
 		return 1.0
-	var outside := Vector2(maxf(maxf(frame.position.x - at.x, at.x - frame.end.x), 0.0),
-			maxf(maxf(frame.position.y - at.y, at.y - frame.end.y), 0.0)).length()
-	return clampf(1.0 - outside / EDGE_FADE, 0.0, 1.0)
+	return _outside_gain(at, frame, EDGE_FADE)
 
 
 # The last of a player, flat or positional, when what it is on goes: its gain
@@ -335,6 +374,8 @@ static func fade_out(player: Node, done: Callable = Callable(), seconds := FADE_
 		if done.is_valid():
 			done.call()
 		return null
+	# Left alone by _process from now on.
+	player.set_meta("fading", true)
 	var from: float = player.volume_db
 	var tween := player.create_tween()
 	tween.tween_method(func(g: float): player.volume_db = from + linear_to_db(maxf(g, 0.0001)),
@@ -497,13 +538,16 @@ func _play(name: String, at: Variant) -> void:
 	if gap > 0.0 and _last.has(name) and now - int(_last[name]) < int(gap * 1000.0):
 		return
 	var flat: bool = typeof(at) != TYPE_VECTOR3 or spec.get("flat", false) or mode == Mode.CLASSIC
+	var where := 1.0 if flat else frame_gain(at)
+	if where <= 0.0:
+		return
 	var player = _voice(name, flat)
 	if player == null:
 		return
 	_last[name] = now
 	if not flat:
 		(player as AudioStreamPlayer3D).global_position = at
-	player.volume_db = volume_db(name)
+	player.volume_db = volume_db(name) + _gain_db(where)
 	player.play()
 	if spec.get("with", "") != "":
 		_play(spec.with, at)
@@ -558,6 +602,8 @@ func _attach(name: String, parent: Node3D) -> AudioStreamPlayer3D:
 	player.name = "Sound_" + name
 	_setup_3d(player, name, entry)
 	parent.add_child(player)
+	if not entry.spec.get("mixed", false):
+		player.volume_db += _gain_db(frame_gain(player.global_position))
 	player.play()
 	return player
 
@@ -566,9 +612,10 @@ func _setup_3d(player: AudioStreamPlayer3D, name: String, entry: Dictionary) -> 
 	player.stream = entry.stream
 	player.volume_db = volume_db(name)
 	player.bus = bus(name)
-	player.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
-	player.unit_size = UNIT_SIZE
-	player.max_distance = MAX_DISTANCE
+	# Panned from where it is, but as loud anywhere in the frame (frame_gain)
+	# and not filtered: see OFFSCREEN_FADE.
+	player.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED
+	player.attenuation_filter_db = 0.0
 	player.panning_strength = PANNING
 
 

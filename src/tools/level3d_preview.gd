@@ -2281,7 +2281,7 @@ func _process(delta: float) -> void:
 		btr.blink(_blink % 4 < 2)
 	_shake_left = maxf(_shake_left - delta, 0.0)
 	_update_camera()
-	Level3DAudio.listen(Vector3(focus.x, 0.0, focus.y))
+	Level3DAudio.listen(Vector3(focus.x, 0.0, focus.y), _view_frame())
 	_update_engine_sound(delta)
 	_update_music()
 	_update_pad_arrow()
