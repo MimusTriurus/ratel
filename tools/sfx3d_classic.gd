@@ -22,16 +22,24 @@ func _initialize() -> void:
 	for dir in [classic, modern]:
 		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
 	# Encoded once and copied: each encoding has a stream serial of its own,
-	# and the verify script holds every silence to be the same file.
-	var silence_path := OS.get_temp_dir().path_join("sfx3d_silence.ogg")
-	var output := []
-	if OS.execute("sox", ["-n", "-r", "44100", "-c", "1", "-C", "0", silence_path,
-			"trim", "0", SILENCE_SECONDS], output, true) != 0:
-		printerr("sox failed: %s" % "".join(output))
-		quit(1)
-		return
-	var silence := FileAccess.get_file_as_bytes(silence_path)
-	DirAccess.remove_absolute(silence_path)
+	# and the verify script holds every silence to be the same file. The one
+	# classic already has is kept, so that a run for a new sound changes no
+	# other file.
+	var silence := PackedByteArray()
+	for name in Level3DAudio.SOUNDS:
+		if not Level3DAudio.SOUNDS[name].has("original") and FileAccess.file_exists(classic + "%s_0.ogg" % name):
+			silence = FileAccess.get_file_as_bytes(classic + "%s_0.ogg" % name)
+			break
+	if silence.is_empty():
+		var silence_path := OS.get_temp_dir().path_join("sfx3d_silence.ogg")
+		var output := []
+		if OS.execute("sox", ["-n", "-r", "44100", "-c", "1", "-C", "0", silence_path,
+				"trim", "0", SILENCE_SECONDS], output, true) != 0:
+			printerr("sox failed: %s" % "".join(output))
+			quit(1)
+			return
+		silence = FileAccess.get_file_as_bytes(silence_path)
+		DirAccess.remove_absolute(silence_path)
 	var failures := 0
 	var silent := 0
 	var filled := 0

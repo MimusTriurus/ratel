@@ -28,7 +28,7 @@ const ICON_OVERSAMPLE := 2
 # it is only the original's layer under explode, which the modern mode's
 # "blast" replaces. tools/verify_level3d_audio.gd checks that nothing else is.
 const SOUND_GROUPS := [
-	["Оружие BTR", [["gun", "Пулемёт"], ["grenade_launch", "Пуск гранаты"], ["rocket_launch", "Пуск ракеты"]]],
+	["Оружие BTR", [["gun", "Пулемёт"], ["grenade_launch", "Пуск гранаты"], ["rocket_launch", "Пуск ракеты"], ["rocket_flight", "Полёт ракеты"]]],
 	["Попадания", [["hit_ground", "По земле"], ["hit_water", "По воде"], ["hit_hard", "По бетону и стенам"],
 			["hit_armor", "По броне"]]],
 	["Выстрелы врагов", [["enemy_mg", "Пулемёты солдат"], ["enemy_cannon", "Пушки: бункеры, танки, лодки"]]],

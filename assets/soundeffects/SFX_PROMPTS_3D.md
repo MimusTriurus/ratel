@@ -1,6 +1,6 @@
 # Звуки 3D-превью: описания для генерации
 
-Все 31 звук из таблицы `SOUNDS` в `src/tools/level3d_audio.gd`. Здесь они
+Все 32 звука из таблицы `SOUNDS` в `src/tools/level3d_audio.gd`. Здесь они
 разбиты на те же группы, что и ползунки на вкладке «Звук» меню Escape
 (`Level3DMenu.SOUND_GROUPS`). Эффекты 2D-игры описаны в
 [SFX_PROMPTS.md](SFX_PROMPTS.md), и **общий стиль у обоих файлов один**: ставьте
@@ -50,10 +50,22 @@
 > whoosh moving away, no explosion, 0.6 seconds.
 
 ### `rocket_launch` — пуск ракеты *(flat, =2D `missile`)*
-Ракета игрока после апгрейда. ~0.5 с.
+Ракета игрока после апгрейда: только старт, полёт — это `rocket_flight`. В
+современном режиме доигрывает, пока ракета летит, и гаснет за 60 мс, если
+она взорвалась раньше, поэтому основное в первые 0.3 с. ~0.5–1 с.
 
 > Rocket fired from a vehicle launcher, sharp ignition pop and a bright hissing
 > rocket whoosh moving away, punchy, 0.5 seconds.
+
+### `rocket_flight` — полёт ракеты *(loop)*
+Двигатель летящей ракеты, висит на ней от пуска до взрыва и летит с ней по
+панораме. Тон движок поднимает со скоростью (0.85 → 1.2), поэтому в файле
+ровный звук без нарастания и без удаления. Ракета летит 0.3–1 с. Ровная
+бесшовная петля ~1 с.
+
+> Steady rocket motor burn in flight, continuous roaring hiss of a small
+> solid-fuel rocket, constant level and pitch, no ignition, no fade, seamless
+> loop, 1 second.
 
 ---
 

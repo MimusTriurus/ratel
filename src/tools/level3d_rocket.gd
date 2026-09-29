@@ -466,7 +466,13 @@ func _launch() -> void:
 	# raised for the lob, rolled with the hull, point off to the side -- the
 	# round went off wherever the ground had rocked the jeep. How steeply it
 	# rises is the rails' elevation on the hull, for the same reason.
-	Level3DAudio.play("rocket_launch" if has_missiles else "grenade_launch", start)
+	# A rocket's launch runs on into its flight, and is taken back when it
+	# goes off first (_explode); classic's is the original's, played out.
+	var launch_sound: AudioStreamPlayer = null
+	if has_missiles and Level3DAudio.mode == Level3DAudio.Mode.MODERN:
+		launch_sound = Level3DAudio.hold("rocket_launch")
+	else:
+		Level3DAudio.play("rocket_launch" if has_missiles else "grenade_launch", start)
 	var bearing := btr.heading + yaw
 	var flat := Vector3(cos(bearing), 0.0, -sin(bearing))
 	var hull_up := (_base.get_parent() as Node3D).global_basis.y.normalized()
@@ -544,7 +550,7 @@ func _launch() -> void:
 			"power": missile_power if has_missiles else 0, "missile": has_missiles,
 			"from": start, "to": target, "run": run, "gone": 0.0,
 			"hump": maxf(run * rise - (target.y - start.y), 0.0),
-			"heading": heading, "basis": frame.basis}
+			"heading": heading, "basis": frame.basis, "launch_sound": launch_sound}
 	for copy in copies.values():
 		(copy as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON \
 				if Level3DFx.real_shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -555,6 +561,9 @@ func _launch() -> void:
 		_back_blast(frame * (_centre + _axis * _tail), -heading, BACK_BLAST[weapon_level()])
 	_launch_light(start)
 	_place_on_arc(entry, 0.0)
+	if not _lob:
+		Level3DAudio.attach_loop(FLIGHT_SOUND, rocket)
+		_pitch_flight(entry)
 	_rockets.append(entry)
 	btr.recoil(launch, KICK)
 
@@ -584,6 +593,7 @@ func _fly(rocket: Dictionary, delta: float) -> void:
 			return
 		var flame: MeshInstance3D = rocket.flame
 		_stretch_flame(flame, rocket.axis, _rng.randf_range(0.16, 0.3))
+		_pitch_flight(rocket)
 		rocket.smoke += delta
 		while rocket.smoke >= SMOKE_EVERY:
 			rocket.smoke -= SMOKE_EVERY
@@ -813,12 +823,41 @@ func _trail(at: Vector3) -> void:
 	tween.chain().tween_callback(puff.queue_free)
 
 
+# The motor's pitch with its speed, from FLIGHT_PITCH's first at the launch
+# to its second at TOP_SPEED: the rocket is heard speeding up. Classic
+# firing flies at one speed, and is heard at the middle of it.
+const FLIGHT_SOUND := "rocket_flight"
+const FLIGHT_PITCH := Vector2(0.85, 1.2)
+
+func _pitch_flight(rocket: Dictionary) -> void:
+	var flight := Level3DAudio.loop_on(rocket.node, FLIGHT_SOUND)
+	if flight == null:
+		return
+	var fast := 0.5 if rocket.classic else inverse_lerp(LAUNCH_SPEED, TOP_SPEED, rocket.speed)
+	flight.pitch_scale = lerpf(FLIGHT_PITCH.x, FLIGHT_PITCH.y, clampf(fast, 0.0, 1.0))
+
+
 # ----------------------------------------------------------------------------
 # The explosion
 
+# How fast the motor and the launch die away when the rocket goes off: under
+# its blast, quick enough that nothing of it is heard after.
+const BLAST_CUT := 0.06
+
 func _explode(rocket: Dictionary, at: Vector3, normal: Vector3) -> void:
 	_rockets.erase(rocket)
-	(rocket.node as Node3D).queue_free()
+	# The motor and what is left of the launch die away under the blast
+	# rather than stop dead: the rocket is hidden, and freed when they have.
+	var node: Node3D = rocket.node
+	var launch_sound = rocket.launch_sound
+	if is_instance_valid(launch_sound):
+		Level3DAudio.fade_out(launch_sound, Callable(), BLAST_CUT)
+	var flight := Level3DAudio.loop_on(node, FLIGHT_SOUND)
+	if flight != null:
+		node.visible = false
+		Level3DAudio.fade_out(flight, node.queue_free, BLAST_CUT)
+	else:
+		node.queue_free()
 	(rocket.blob as Node3D).queue_free()
 	if rocket.classic and not loaded and rate == 1.0:
 		_reload_left = rocket.rearm

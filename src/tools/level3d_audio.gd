@@ -88,7 +88,15 @@ const SOUNDS := {
 			"original": "machine_gun.ogg", "always": true, "flat": true, "modern": {"db": -7.6}},
 	"grenade_launch": {"bus": &"Weapons", "pitch": 0.05, "original": "throw.ogg", "flat": true,
 			"modern": {"db": -12.0}},
-	"rocket_launch": {"bus": &"Weapons", "pitch": 0.05, "original": "missile.ogg", "flat": true},
+	# The modern launch and flight were one recording, cut in two; both come
+	# down by as much as brings the launch to missile's loudness, which keeps
+	# the flight where the recording had it, 17 dB under.
+	"rocket_launch": {"bus": &"Weapons", "pitch": 0.05, "original": "missile.ogg", "flat": true,
+			"modern": {"db": -8.0}},
+	# The rocket's motor, on the rocket from its launch to its blast
+	# (Level3DRocket), pitched up as it speeds up. The original's missile
+	# was one sound at the launch, which rocket_launch is.
+	"rocket_flight": {"bus": &"Weapons", "loop": true, "modern": {"db": -8.0}},
 	# Where rounds land, the player's and the enemies'. The original had none.
 	"hit_ground": {"bus": &"Weapons", "pitch": 0.1, "voices": 4, "gap": 0.04},
 	"hit_water": {"bus": &"Weapons", "pitch": 0.1, "voices": 4, "gap": 0.04},
@@ -307,24 +315,24 @@ static func edge_fade(at: Vector2, frame: Rect2) -> float:
 	return clampf(1.0 - outside / EDGE_FADE, 0.0, 1.0)
 
 
-# The last of such a player, when what it is on goes: its gain taken to 0
-# over FADE_OUT seconds, then stopped, then `done`. A loop would otherwise be
-# cut off wherever it was, however loud. In CLASSIC stopped at once, as the
+# The last of a player, flat or positional, when what it is on goes: its gain
+# taken to 0 over `seconds`, then stopped, then `done`. A loop would otherwise
+# be cut off wherever it was, however loud. In CLASSIC stopped at once, as the
 # original's are, and `done` at once. The tween is the player's, so freeing
 # the player cancels it; kill it to keep the player (a reset).
 const FADE_OUT := 1.0
 
-static func fade_out(player: AudioStreamPlayer, done: Callable = Callable()) -> Tween:
+static func fade_out(player: Node, done: Callable = Callable(), seconds := FADE_OUT) -> Tween:
 	if player == null or not player.playing or mode == Mode.CLASSIC:
 		if player != null:
 			player.stop()
 		if done.is_valid():
 			done.call()
 		return null
-	var from := player.volume_db
+	var from: float = player.volume_db
 	var tween := player.create_tween()
 	tween.tween_method(func(g: float): player.volume_db = from + linear_to_db(maxf(g, 0.0001)),
-			1.0, 0.0, FADE_OUT)
+			1.0, 0.0, seconds)
 	tween.tween_callback(player.stop)
 	if done.is_valid():
 		tween.tween_callback(done)
@@ -383,6 +391,28 @@ static func _volume(bus_name: StringName, level: float) -> void:
 		return
 	AudioServer.set_bus_mute(index, level <= 0.0)
 	AudioServer.set_bus_volume_db(index, linear_to_db(maxf(level, 0.0001)))
+
+
+# A flat one-shot of `name` that the caller can take back (fade_out): a
+# player of its own, freed when it has played out, so is_instance_valid it
+# first. Not throttled, not pooled, not "with" anything; for a sound that has
+# to stop when something else happens -- the rocket's launch, which runs on
+# into its flight, when the rocket goes off first. Null when there is nothing
+# to play.
+static func hold(name: String) -> AudioStreamPlayer:
+	if _current == null:
+		return null
+	var entry := resolve(name)
+	if entry.stream == null or gain(name) <= 0.0:
+		return null
+	var player := AudioStreamPlayer.new()
+	player.stream = entry.stream
+	player.volume_db = volume_db(name)
+	player.bus = bus(name)
+	_current.add_child(player)
+	player.finished.connect(player.queue_free)
+	player.play()
+	return player
 
 
 # One of MUSIC's songs, from its start; "" stops the music.
