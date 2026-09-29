@@ -108,7 +108,7 @@ const SOUNDS := {
 	"hit_hard": {"bus": &"Weapons", "pitch": 0.1, "voices": 4, "gap": 0.04},
 	# Enemy.bullet_attack's bullet_hit_sound: armour that took the round.
 	"hit_armor": {"bus": &"Weapons", "pitch": 0.08, "voices": 4, "gap": 0.04,
-			"original": "bullet_hit.ogg", "always": true},
+			"original": "bullet_hit.ogg", "always": true, "modern": {"db": -12.5}},
 	# The enemies' guns, which the original fired in silence: a machine gun
 	# for the soldiers, a cannon for the bunkers, tanks and boats, on
 	# EnemyFire, to sit well under the BTR's gun.
