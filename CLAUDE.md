@@ -549,27 +549,31 @@ one table, `SOUNDS`, of every effect it plays, with its bus (sub-buses of
 `Sfx`; the enemies' guns on `EnemyFire` under `Weapons`), gain, variants and
 whether it is positional; engines and rotors are loops on the unit, heard
 through a listener over the frame's centre. The Escape menu's Sound tab picks
-classic -- the original's effects, flat, at the game's gains, throttled as
-`Main.play_sound` throttles them, and nothing the original had no sound for --
-or modern, and sets the master, music, effects and enemy-fire volumes, the
-last with a switch of its own since the original's enemies fired in silence;
-under them, a 0–200 % slider for each of the modern mode's sounds
+classic or modern, and sets the master, music, effects and enemy-fire volumes,
+the last with a switch of its own since the original's enemies fired in
+silence; under them, a 0–200 % slider for each of the modern mode's sounds
 (`Level3DMenu.SOUND_GROUPS`, which must list every sound in `SOUNDS` but the
 classic-only `enemy_hit` -- the verify script checks).
 The music is the original's in both, chained as `Song` chains it: `intro_song`
 at the start, `stage_song0` after a restart, `boss_song` from the boss's
-trigger, stopped when it is beaten or the last life goes. The placeholders'
-`db` were set from their measured loudness (the loudest 50 ms, RMS) to a level
-per kind, so a file swapped in wants measuring again
-(`tools/measure_loudness.gd -- <paths>`). The files
-are **temporary placeholders** from War Thunder's FMOD project for modders,
-which is licensed for War Thunder mods only, so they must never reach git or a
-build: `tools/wt_placeholders.py <that checkout>` copies them into
-`assets/sfx_wt/`, which is in `.gitignore`, in the export preset's
-`exclude_filter` and has a `.gdignore`, and they are read off the disk rather
-than imported. Without them each sound falls back to the original's effect, or
-to silence where the original had none, and nothing else changes. The script
-holds the name → file list, and is what is committed. Check both ways:
+trigger, stopped when it is beaten or the last life goes.
+
+Each mode is a folder holding the same set of files under the same names,
+`<name>_0.ogg` and optionally `_1`, `_2`... as variants picked at random:
+`assets/sfx3d/classic/` and `assets/sfx3d/modern/`, both imported, committed
+and shipped. Classic is the base and does not change: every file is a copy of
+the sound's `"original"` in `assets/soundeffects/`, or one shared half second
+of silence where the original had no sound (engines, the enemies' guns, rounds
+landing, the ambience), played flat, unpitched, unlooped and throttled as
+`Main.play_sound` plays it. `tools/sfx3d_classic.gd` wrote it (SoX encodes the
+silence) and filled in modern as a copy; run again, it rewrites classic and
+only adds to modern what is missing, never over a file already there. Modern
+is positional, pitched and looped where `SOUNDS` says, and a new sound goes in
+by replacing its file there. `SOUNDS`' `"classic"` / `"modern"` sub-dicts hold
+what differs for one mode -- a replaced file wants its own `db`, from its
+measured loudness against the classic one (`tools/measure_loudness.gd --
+<paths>`), and a new blast that already has the hit in it `"with": ""`. The
+2D game reads `assets/soundeffects/` and nothing here. Check both folders:
 
 ```bash
 godot --path . --headless --script tools/verify_level3d_audio.gd

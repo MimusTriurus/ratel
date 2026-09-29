@@ -1,16 +1,16 @@
 # Checks the 3D preview's sound (src/tools/level3d_audio.gd) in both of its
-# modes, with the War Thunder placeholders in assets/sfx_wt/ or without them.
-# Every sound in Level3DAudio.SOUNDS is resolved, played positional and flat,
-# and, if it loops, hung on a node and taken off again; the table says what
-# each one got -- wt, the original's effect, or silent. Then the mode is
-# switched with a loop hung, and every song of MUSIC is started.
+# modes. Each mode's folder, assets/sfx3d/classic/ and modern/, must hold
+# <name>_0.ogg for every sound in Level3DAudio.SOUNDS and nothing that is not
+# one; classic's must be what tools/sfx3d_classic.gd made, the sound's
+# "original" byte for byte or the silence, and _0 alone. Every sound is then
+# resolved, played positional and flat, and, if it loops, hung on a node and
+# taken off again; the table says what each one got -- the original's, the
+# silence, or new (a modern file that is no longer classic's). Then the mode
+# is switched with a loop hung, and every song of MUSIC is started.
 #
 #     godot --path . --headless --script tools/verify_level3d_audio.gd
 #
-# In the classic mode, and in the modern one without the placeholders, every
-# sound with a "fallback" must come out as the original's and the rest silent,
-# which is the preview on a fresh clone; with them, a loop must loop. Exits 1
-# on anything else.
+# Exits 1 on anything wrong.
 extends SceneTree
 
 
@@ -22,8 +22,8 @@ func _initialize() -> void:
 	for mode in [Level3DAudio.Mode.MODERN, Level3DAudio.Mode.CLASSIC]:
 		Level3DAudio.set_mode(mode)
 		failures += await _check_mode()
-	# A loop on a unit through a change of mode: taken off in CLASSIC (the
-	# engines have no original), put back in MODERN if there is one to play.
+	# A loop on a unit through a change of mode: put back on it in the new
+	# mode, if the new mode has something to play.
 	var unit := Node3D.new()
 	root.add_child(unit)
 	Level3DAudio.attach_loop("tank_engine", unit)
@@ -80,14 +80,47 @@ func _initialize() -> void:
 
 func _check_mode() -> int:
 	var classic := Level3DAudio.mode == Level3DAudio.Mode.CLASSIC
-	var have_wt := DirAccess.dir_exists_absolute(Level3DAudio.DIR) and not classic
-	print("--- %s" % ("classic" if classic else "modern"))
-	var counts := {"wt": 0, "original": 0, "silent": 0}
+	var dir: String = Level3DAudio.DIRS[Level3DAudio.mode]
+	var classic_dir: String = Level3DAudio.DIRS[Level3DAudio.Mode.CLASSIC]
+	print("--- %s, %s" % ["classic" if classic else "modern", dir])
+	var counts := {"original": 0, "silence": 0, "new": 0, "missing": 0}
 	var failures := 0
+	for file in DirAccess.get_files_at(dir):
+		if file.get_extension() != "ogg":
+			continue
+		var base := file.get_basename()
+		var name := base.left(base.rfind("_"))
+		if not Level3DAudio.SOUNDS.has(name) or not base.substr(base.rfind("_") + 1).is_valid_int():
+			failures += _fail("%s%s is no sound's" % [dir, file])
+		elif classic and not base.ends_with("_0"):
+			failures += _fail("%s%s: classic has one of each" % [dir, file])
+	# The silence: every classic file of a sound without an original is one
+	# and the same file.
+	var silence := PackedByteArray()
 	for name in Level3DAudio.SOUNDS:
-		var spec: Dictionary = Level3DAudio.SOUNDS[name]
+		var spec := Level3DAudio.spec_of(name)
+		var path := "%s%s_0.ogg" % [dir, name]
+		var kind := "missing"
+		if FileAccess.file_exists(path):
+			var bytes := FileAccess.get_file_as_bytes(path)
+			var base := FileAccess.get_file_as_bytes("%s%s_0.ogg" % [classic_dir, name])
+			if spec.has("original") and bytes == base:
+				kind = "original"
+			elif not spec.has("original") and bytes == base:
+				kind = "silence"
+			else:
+				kind = "new"
+			if classic:
+				if spec.has("original") and bytes != FileAccess.get_file_as_bytes(Level3DAudio.ORIGINAL + spec.original):
+					failures += _fail("%s: not a copy of %s" % [name, spec.original])
+				if not spec.has("original"):
+					if silence.is_empty():
+						silence = bytes
+					elif bytes != silence:
+						failures += _fail("%s: has no original, and is not the silence" % name)
+		else:
+			failures += _fail("%s is missing" % path)
 		var entry := Level3DAudio.resolve(name)
-		var kind := "silent"
 		var variants := 0
 		if entry.stream != null:
 			var first: AudioStream = entry.stream
@@ -95,11 +128,11 @@ func _check_mode() -> int:
 			if first is AudioStreamRandomizer:
 				variants = (first as AudioStreamRandomizer).streams_count
 				first = (first as AudioStreamRandomizer).get_stream(0)
-			kind = "original" if first.resource_path.begins_with(Level3DAudio.ORIGINAL) else "wt"
-			if kind == "wt" and spec.get("loop", false) and not (first as AudioStreamOggVorbis).loop:
-				failures += _fail("%s is a loop that does not loop" % name)
-		if not have_wt and kind != ("original" if spec.has("fallback") else "silent"):
-			failures += _fail("%s: %s without the placeholders" % [name, kind])
+			var looped: bool = first is AudioStreamOggVorbis and (first as AudioStreamOggVorbis).loop
+			if looped != (spec.get("loop", false) and not classic):
+				failures += _fail("%s: looped %s in %s" % [name, looped, "classic" if classic else "modern"])
+		elif kind != "missing":
+			failures += _fail("%s: a file, and nothing to play" % name)
 		counts[kind] += 1
 		print("%-16s %-8s %2d  %-10s %6.1f dB" % [name, kind, variants, Level3DAudio.bus(name), entry.db])
 		Level3DAudio.play(name, Vector3(3.0, 0.0, -2.0))
@@ -115,9 +148,8 @@ func _check_mode() -> int:
 	Level3DAudio.listen(Vector3(1.0, 0.0, 1.0))
 	for i in 30:
 		await process_frame
-	print("%s: wt %d, original %d, silent %d of %d%s" % [
-			"placeholders" if have_wt else "no placeholders", counts.wt, counts.original,
-			counts.silent, Level3DAudio.SOUNDS.size(), "" if failures == 0 else ", %d FAILED" % failures])
+	print("original %d, silence %d, new %d, missing %d of %d%s" % [counts.original, counts.silence,
+			counts.new, counts.missing, Level3DAudio.SOUNDS.size(), "" if failures == 0 else ", %d FAILED" % failures])
 	return failures
 
 

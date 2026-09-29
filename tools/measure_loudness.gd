@@ -1,12 +1,12 @@
 # How loud a sound file is: its peak and its loudest 50 ms (RMS), both dBFS,
-# played at 0 dB into an AudioEffectCapture. What Level3DAudio.SOUNDS' "db"
-# were set from: a placeholder swapped for another wants measuring again.
+# played at 0 dB into an AudioEffectCapture. What a new sound's "db" in
+# Level3DAudio.SOUNDS is set from: measure the classic file it replaces too,
+# and give the new one the difference, so that it sits where the old one did.
 #
-#     godot --path . --headless --script tools/measure_loudness.gd -- res://assets/sfx_wt/gun_0.ogg ...
+#     godot --path . --headless --script tools/measure_loudness.gd -- res://assets/sfx3d/modern/gun_0.ogg ...
 #
-# A path under assets/sfx_wt/ is read off the disk, as Level3DAudio reads it
-# (the folder is never imported); anything else through the importer. Plays
-# each in real time, so a long list takes as long as the files do (at most
+# Through the importer, so a file just put in wants --headless --import
+# first. Plays each in real time, so a long list takes as long as the files do (at most
 # four seconds each).
 extends SceneTree
 
@@ -33,8 +33,7 @@ class Measure extends Node:
 		_player.bus = "Measure"
 		add_child(_player)
 		for path in OS.get_cmdline_user_args():
-			var stream: AudioStream = AudioStreamOggVorbis.load_from_file(path) \
-					if path.begins_with(Level3DAudio.DIR) else load(path)
+			var stream: AudioStream = load(path)
 			if stream == null:
 				printerr("cannot read %s" % path)
 				continue

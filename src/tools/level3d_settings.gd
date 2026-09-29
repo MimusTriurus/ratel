@@ -87,8 +87,8 @@ var hud_corner := HudCorner.TOP
 var hud_scale := 1.0
 var keys := DEFAULT_KEYS.duplicate()
 # The sound (Level3DAudio): classic, the original's effects as the game plays
-# them, or modern, the placeholders in 3D with the engines, the ambience and
-# the enemies' fire the original never had. The volumes are 0 to 1, onto the
+# them, or modern, in 3D, with the engines, the ambience and the enemies'
+# fire the original never had; a folder of sounds each. The volumes are 0 to 1, onto the
 # buses; the enemies' fire has a switch and a volume of its own, since the
 # original fired in silence.
 enum SoundMode { CLASSIC, MODERN }

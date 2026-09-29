@@ -49,7 +49,7 @@ class_name Level3DChinook
 extends Node3D
 
 const MODEL_PATH := "res://resources/3d/jackal_chinook.glb"
-# Level3DAudio's: the placeholder, or helicopter.ogg, the original's.
+# Level3DAudio's: helicopter.ogg, the original's, in classic.
 const SOUND := "chinook"
 const MODEL_SCALE := Level3DBtr.MODEL_SCALE
 const PX := Level3DMap.PX
@@ -494,7 +494,7 @@ func _ramp_dust() -> void:
 
 # Main.play_sound_if_not_playing.
 #
-# The volume is set every time, not only when it starts: a looped placeholder
+# The volume is set every time, not only when it starts: a looped modern sound
 # never runs out to be started again, and would keep the volume it began at.
 # The stream is asked for every tick, since the menu can change the sound's
 # mode under it: a new one replaces the old at once.

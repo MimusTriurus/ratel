@@ -2050,7 +2050,7 @@ func _update_music() -> void:
 # follows it at ENGINE_RISE rather than jumping with it.
 #
 # Looked up every frame, not kept: a change of the sound's mode replaces them,
-# and without the placeholders, or in the classic mode, there are none.
+# and with no file in the mode's folder there are none.
 func _update_engine_sound(delta: float) -> void:
 	var idle := Level3DAudio.loop_on(btr, "btr_idle")
 	var drive := Level3DAudio.loop_on(btr, "btr_drive")

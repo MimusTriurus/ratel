@@ -58,8 +58,8 @@ class_name Level3DRescue
 extends Node3D
 
 const MODEL_PATH := "res://resources/3d/jackal_littlebird.glb"
-# Level3DAudio's: the placeholders, or helicopter2.ogg, helicopter_pickup.ogg
-# and weapon_upgrade.ogg, the original's. The rotor is a player of its own,
+# Level3DAudio's: helicopter2.ogg, helicopter_pickup.ogg and
+# weapon_upgrade.ogg, the original's, in classic. The rotor is a player of its own,
 # kept playing while it flies; the other two are one-shots.
 const SOUND := "rescue_rotor"
 const PICKUP_SOUND := "rescue_pickup"

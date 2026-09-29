@@ -29,7 +29,8 @@ __pycache__/
 /resources/3d/*.png.import
 /resources/3d/*.gif
 
-# The 3D preview's placeholder sounds, copied out of War Thunder's FMOD project
-# by tools/wt_placeholders.py. Licensed for War Thunder mods only: never
-# committed, and excluded from the export preset too.
+# The 3D preview's old placeholder sounds, copied out of War Thunder's FMOD
+# project. Licensed for War Thunder mods only, and no longer used (the preview
+# plays assets/sfx3d/): kept out of git and the export preset for as long as a
+# checkout may still have the folder.
 /assets/sfx_wt/

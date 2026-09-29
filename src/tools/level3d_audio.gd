@@ -2,55 +2,61 @@
 # on which bus. Nothing here is the game's -- Main's Sfx, Song and their 125 ms
 # throttle stay with the 2D game.
 #
-# Two modes, the menu's Sound tab (Level3DSettings.sound_mode):
+# Two modes, the menu's Sound tab (Level3DSettings.sound_mode), and a folder
+# for each, holding the same set of files under the same names:
 #
-#   CLASSIC  the original's effects only, as the game plays them: flat, at the
-#            game's gains (explode at 0.65, enemy_hit at 0.6 under it), inside
-#            Main's 125 ms throttle. What the original had no sound for --
-#            engines, the enemies' guns, rounds landing, the sea -- is silent.
-#   MODERN   placeholders where there are any, positional, with engines,
-#            ambience and the enemies' fire; the original's effect where there
-#            is none, and silence where the original had none either.
+#   CLASSIC  assets/sfx3d/classic/, the original's effects as the game plays
+#            them: flat, at the game's gains (explode at 0.65, enemy_hit at
+#            0.6 under it), not looped, not pitched, inside Main's 125 ms
+#            throttle. Each file is a copy of its "original" in
+#            assets/soundeffects/, and what the original had no sound for --
+#            engines, the enemies' guns, rounds landing, the sea -- is half a
+#            second of silence. It is the base, and does not change;
+#            tools/sfx3d_classic.gd made it.
+#   MODERN   assets/sfx3d/modern/, positional, looped where "loop" says,
+#            pitched, with the menu's per-sound gains. It started as a copy of
+#            classic; a new sound goes in by replacing its file.
 #
-# The placeholders are looked for in assets/sfx_wt/, which
-# tools/wt_placeholders.py fills from War Thunder's FMOD project for modders.
-# That content is licensed for War Thunder mods only, so the folder is in
-# .gitignore, excluded from the export preset and carries a .gdignore: never
-# imported, committed or shipped. The files are read straight off the disk
-# (AudioStreamOggVorbis.load_from_file) for the same reason. Without them --
-# a fresh clone, anyone else's machine, an exported build -- MODERN is CLASSIC
-# with positional sound. Every entry point below is a no-op when there is
-# nothing to play, and when there is no Level3DAudio in the tree at all.
+# A sound is <name>_0.ogg, and <name>_1.ogg ... for variants, one picked at
+# random each play (a loop takes _0 alone). Both folders are imported and
+# shipped as any other asset. A file missing is silence, which
+# tools/verify_level3d_audio.gd reports. Every entry point below is a no-op
+# when there is nothing to play, and when there is no Level3DAudio in the tree.
 #
 # The music is the original's in both modes, chained as Song chains it: an
 # intro, then a loop (MUSIC).
 #
 #   name -> {
 #     bus        a sub-bus of Sfx, BUSES
-#     db         gain for the placeholder, dB: set from its measured loudness
-#                (the loudest 50 ms, RMS) to a level per kind, so that the
-#                placeholders sit where the original's effects do and each
-#                kind against the others -- the enemies' fire well under the
-#                BTR's gun
-#     fallback   the original's file in assets/soundeffects/, or absent
-#     fdb        gain for the fallback, dB: the game's own (Main.play_sound's
-#                volume, 0.65 is -3.7 dB)
-#     with       another sound played with the fallback, as
-#                play_hit_explode_sound plays enemy_hit under explode
+#     db         gain for the file, dB: the game's own for the original's
+#                (Main.play_sound's volume, 0.65 is -3.7 dB). A file that
+#                replaces one in modern/ wants a gain of its own, from its
+#                measured loudness (tools/measure_loudness.gd), in "modern"
+#     original   the file in assets/soundeffects/ that classic's is a copy of,
+#                or absent where classic's is silence. For the tools only
+#     with       another sound played with this one, as
+#                play_hit_explode_sound plays enemy_hit under explode; ""
+#                for none
 #     always     not throttled in CLASSIC, as play_sound_always is not
-#     pitch      random pitch either way, a fraction (0.05 = +-5 %)
-#     loop       looped, for attach_loop and stream; no variants, no pitch
+#     pitch      random pitch in MODERN, a fraction (0.05 = +-5 %)
+#     loop       looped in MODERN, for attach_loop and stream; no variants, no
+#                pitch. CLASSIC plays the file once, as the original replays
+#                its helicopters when they run out, and the modules do too
 #     voices     how many can sound at once; the oldest is cut off after that
 #     gap        seconds: a second play inside it is dropped (CLASSIC takes
 #                the longer of it and Main's 125 ms)
 #     flat       not positional: the HUD's and the player's own
+#     classic, modern
+#                any of the above for that mode alone, over the rest: say,
+#                "modern": {"db": -9.0, "with": ""} for a new blast
 #   }
 class_name Level3DAudio
 extends Node3D
 
 enum Mode { CLASSIC, MODERN }
 
-const DIR := "res://assets/sfx_wt/"
+const DIRS := {Mode.CLASSIC: "res://assets/sfx3d/classic/", Mode.MODERN: "res://assets/sfx3d/modern/"}
+const MODE_KEYS := {Mode.CLASSIC: "classic", Mode.MODERN: "modern"}
 const ORIGINAL := "res://assets/soundeffects/"
 const MUSIC_DIR := "res://assets/music/"
 # name_0.ogg, name_1.ogg ... : looked for until the first one missing.
@@ -74,62 +80,60 @@ const MAX_DISTANCE := 60.0
 const PANNING := 0.6
 
 const SOUNDS := {
-	# The player's weapons. The gun at the original's machine_gun, -17 dB.
-	"gun": {"bus": &"Weapons", "db": -10.5, "pitch": 0.05, "voices": 6, "gap": 0.03,
-			"fallback": "machine_gun.ogg", "always": true, "flat": true},
-	"grenade_launch": {"bus": &"Weapons", "db": -13.0, "pitch": 0.05, "fallback": "throw.ogg", "flat": true},
-	"rocket_launch": {"bus": &"Weapons", "db": -6.5, "pitch": 0.05, "fallback": "missile.ogg", "flat": true},
+	# The player's weapons.
+	"gun": {"bus": &"Weapons", "pitch": 0.05, "voices": 6, "gap": 0.03,
+			"original": "machine_gun.ogg", "always": true, "flat": true},
+	"grenade_launch": {"bus": &"Weapons", "pitch": 0.05, "original": "throw.ogg", "flat": true},
+	"rocket_launch": {"bus": &"Weapons", "pitch": 0.05, "original": "missile.ogg", "flat": true},
 	# Where rounds land, the player's and the enemies'. The original had none.
-	"hit_ground": {"bus": &"Weapons", "db": -18.5, "pitch": 0.1, "voices": 4, "gap": 0.04},
-	"hit_water": {"bus": &"Weapons", "db": -21.0, "pitch": 0.1, "voices": 4, "gap": 0.04},
-	"hit_hard": {"bus": &"Weapons", "db": -25.0, "pitch": 0.1, "voices": 4, "gap": 0.04},
+	"hit_ground": {"bus": &"Weapons", "pitch": 0.1, "voices": 4, "gap": 0.04},
+	"hit_water": {"bus": &"Weapons", "pitch": 0.1, "voices": 4, "gap": 0.04},
+	"hit_hard": {"bus": &"Weapons", "pitch": 0.1, "voices": 4, "gap": 0.04},
 	# Enemy.bullet_attack's bullet_hit_sound: armour that took the round.
-	"hit_armor": {"bus": &"Weapons", "db": -13.5, "pitch": 0.08, "voices": 4, "gap": 0.04,
-			"fallback": "bullet_hit.ogg", "always": true},
+	"hit_armor": {"bus": &"Weapons", "pitch": 0.08, "voices": 4, "gap": 0.04,
+			"original": "bullet_hit.ogg", "always": true},
 	# The enemies' guns, which the original fired in silence: a machine gun
-	# for the soldiers, a cannon for the bunkers, tanks and boats, both at
-	# -26 dB, nine under the BTR's gun, and on EnemyFire.
-	"enemy_mg": {"bus": &"EnemyFire", "db": -21.0, "pitch": 0.06, "voices": 4, "gap": 0.05},
-	"enemy_cannon": {"bus": &"EnemyFire", "db": -21.0, "pitch": 0.05, "voices": 4, "gap": 0.05},
+	# for the soldiers, a cannon for the bunkers, tanks and boats, on
+	# EnemyFire, to sit well under the BTR's gun.
+	"enemy_mg": {"bus": &"EnemyFire", "pitch": 0.06, "voices": 4, "gap": 0.05},
+	"enemy_cannon": {"bus": &"EnemyFire", "pitch": 0.05, "voices": 4, "gap": 0.05},
 	# Blasts. A grenade's and the mortar's are explode_sound2, a missile's
 	# explode_sound3; both at 0.65.
-	"blast_small": {"bus": &"Explosions", "db": -6.5, "pitch": 0.08, "voices": 4,
-			"fallback": "explode2.ogg", "fdb": -3.7},
-	"blast_missile": {"bus": &"Explosions", "db": -6.5, "pitch": 0.08, "voices": 4,
-			"fallback": "explode3.ogg", "fdb": -3.7},
-	"blast_water": {"bus": &"Explosions", "db": -3.5, "pitch": 0.08, "voices": 3,
-			"fallback": "explode2.ogg", "fdb": -3.7},
+	"blast_small": {"bus": &"Explosions", "db": -3.7, "pitch": 0.08, "voices": 4,
+			"original": "explode2.ogg"},
+	"blast_missile": {"bus": &"Explosions", "db": -3.7, "pitch": 0.08, "voices": 4,
+			"original": "explode3.ogg"},
+	"blast_water": {"bus": &"Explosions", "db": -3.7, "pitch": 0.08, "voices": 3,
+			"original": "explode2.ogg"},
 	# Anything destroyed: play_hit_explode_sound, enemy_hit under explode.
-	"blast": {"bus": &"Explosions", "db": -3.5, "pitch": 0.06, "voices": 4,
-			"fallback": "explode.ogg", "fdb": -3.7, "with": "enemy_hit"},
-	"enemy_hit": {"bus": &"Explosions", "voices": 4, "fallback": "enemy_hit.ogg", "fdb": -4.4},
-	"building": {"bus": &"Explosions", "db": -2.0, "pitch": 0.05, "voices": 2, "fallback": "hut.ogg"},
+	"blast": {"bus": &"Explosions", "db": -3.7, "pitch": 0.06, "voices": 4,
+			"original": "explode.ogg", "with": "enemy_hit"},
+	"enemy_hit": {"bus": &"Explosions", "db": -4.4, "voices": 4, "original": "enemy_hit.ogg"},
+	"building": {"bus": &"Explosions", "pitch": 0.05, "voices": 2, "original": "hut.ogg"},
 	# A boss tank's first round of damage, which the preview shows as a breach.
-	"breach": {"bus": &"Explosions", "db": -13.5, "pitch": 0.05, "voices": 2,
-			"fallback": "bullet_hit.ogg", "always": true},
-	"player_explodes": {"bus": &"Explosions", "db": -2.5, "fallback": "player_explodes.ogg", "flat": true},
+	"breach": {"bus": &"Explosions", "pitch": 0.05, "voices": 2,
+			"original": "bullet_hit.ogg", "always": true},
+	"player_explodes": {"bus": &"Explosions", "original": "player_explodes.ogg", "flat": true},
 	"soldier_death": {"bus": &"Explosions", "pitch": 0.1, "voices": 3, "gap": 0.125,
-			"fallback": "soldier_killed.ogg"},
+			"original": "soldier_killed.ogg"},
 	# Engines. The original's jeep and tanks had none.
-	"btr_idle": {"bus": &"Engines", "db": -3.0, "loop": true},
-	"btr_drive": {"bus": &"Engines", "db": -6.5, "loop": true},
-	"tank_engine": {"bus": &"Engines", "db": -10.0, "loop": true},
-	"boat_engine": {"bus": &"Engines", "db": -16.0, "loop": true},
-	# The helicopters: helicopter_sound and helicopter_sound2, which the
-	# original replays each time it runs out rather than looping.
-	"chinook": {"bus": &"Engines", "db": -3.0, "loop": true, "fallback": "helicopter.ogg", "flat": true},
-	"rescue_rotor": {"bus": &"Engines", "db": -5.5, "loop": true, "fallback": "helicopter2.ogg",
-			"flat": true},
+	"btr_idle": {"bus": &"Engines", "loop": true},
+	"btr_drive": {"bus": &"Engines", "loop": true},
+	"tank_engine": {"bus": &"Engines", "loop": true},
+	"boat_engine": {"bus": &"Engines", "loop": true},
+	# The helicopters: helicopter_sound and helicopter_sound2.
+	"chinook": {"bus": &"Engines", "loop": true, "original": "helicopter.ogg", "flat": true},
+	"rescue_rotor": {"bus": &"Engines", "loop": true, "original": "helicopter2.ogg", "flat": true},
 	# Prisoners, the HUD and the menu.
-	"pickup": {"bus": &"Interface", "fallback": "pickup.ogg", "flat": true},
-	"rescue_pickup": {"bus": &"Interface", "db": -1.0, "fallback": "helicopter_pickup.ogg", "flat": true},
-	"upgrade": {"bus": &"Interface", "db": -11.0, "fallback": "weapon_upgrade.ogg", "flat": true},
-	"warning": {"bus": &"Interface", "db": 3.0, "flat": true},
+	"pickup": {"bus": &"Interface", "original": "pickup.ogg", "flat": true},
+	"rescue_pickup": {"bus": &"Interface", "original": "helicopter_pickup.ogg", "flat": true},
+	"upgrade": {"bus": &"Interface", "original": "weapon_upgrade.ogg", "flat": true},
+	"warning": {"bus": &"Interface", "flat": true},
 	# GameMode's pause key: the Escape menu opening and closing.
-	"pause": {"bus": &"Interface", "fallback": "pause.ogg", "flat": true},
+	"pause": {"bus": &"Interface", "original": "pause.ogg", "flat": true},
 	# Under everything, for as long as the preview runs.
-	"ambient_sea": {"bus": &"Ambient", "db": -6.5, "loop": true, "flat": true},
-	"ambient_jungle": {"bus": &"Ambient", "db": 10.0, "loop": true, "flat": true},
+	"ambient_sea": {"bus": &"Ambient", "loop": true, "flat": true},
+	"ambient_jungle": {"bus": &"Ambient", "loop": true, "flat": true},
 }
 const AMBIENCE: Array[String] = ["ambient_sea", "ambient_jungle"]
 
@@ -149,7 +153,8 @@ static var _gains := {}
 const MAX_GAIN := 2.0
 const SILENT_DB := -80.0
 static var _current: Level3DAudio
-# name -> {"stream", "db", "original"}: what a name resolved to in this mode.
+# name -> {"stream", "db", "spec"}: what a name resolved to in this mode,
+# with its SOUNDS entry, the mode's own over the rest.
 static var _resolved := {}
 
 var _listener: AudioListener3D
@@ -196,9 +201,9 @@ func _ready() -> void:
 		for name in SOUNDS:
 			if resolve(name).stream != null:
 				found += 1
-		print("audio: driver %s, %d Hz, output device \"%s\"; placeholders %s; %s; %d of %d sounds have something to play" % [
+		print("audio: driver %s, %d Hz, output device \"%s\"; sounds from %s; %s; %d of %d sounds have something to play" % [
 				AudioServer.get_driver_name(), AudioServer.get_mix_rate(), AudioServer.output_device,
-				"found" if DirAccess.dir_exists_absolute(DIR) else "absent",
+				DIRS[mode],
 				"classic" if mode == Mode.CLASSIC else "modern", found, SOUNDS.size()])
 
 
@@ -279,8 +284,8 @@ static func stream(name: String) -> AudioStream:
 	return resolve(name).stream
 
 
-# The gain the stream wants, dB, to add to the caller's own: its "db" or
-# "fdb", and the menu's gain for it over that.
+# The gain the stream wants, dB, to add to the caller's own: its "db", and
+# the menu's gain for it over that.
 static func volume_db(name: String) -> float:
 	var g := gain(name)
 	return resolve(name).db + (linear_to_db(g) if g > 0.0 else SILENT_DB)
@@ -301,7 +306,7 @@ static func set_gains(gains: Dictionary) -> void:
 
 
 static func bus(name: String) -> StringName:
-	var bus_name: StringName = SOUNDS.get(name, {}).get("bus", AudioSettings.SFX_BUS)
+	var bus_name: StringName = resolve(name).spec.get("bus", AudioSettings.SFX_BUS)
 	return bus_name if AudioServer.get_bus_index(bus_name) >= 0 else AudioSettings.SFX_BUS
 
 
@@ -346,42 +351,41 @@ static func stop_music() -> void:
 	play_music("")
 
 
-# The placeholder's variants, else the original's file, else nothing; in
-# CLASSIC, the original's or nothing.
+# The mode's folder's variants of `name`, or nothing.
 static func resolve(name: String) -> Dictionary:
 	if _resolved.has(name):
 		return _resolved[name]
+	var spec := spec_of(name)
+	var loop: bool = spec.get("loop", false) and mode == Mode.MODERN
+	var variants: Array[AudioStream] = []
+	for k in (1 if spec.get("loop", false) else MAX_VARIANTS):
+		var path := "%s%s_%d.ogg" % [DIRS[mode], name, k]
+		if not ResourceLoader.exists(path):
+			break
+		var stream: AudioStream = load(path)
+		if stream == null:
+			push_warning("Level3DAudio: cannot read %s" % path)
+			break
+		if stream is AudioStreamOggVorbis:
+			# A copy, as the music's is: the loop flag is this mode's.
+			stream = stream.duplicate()
+			(stream as AudioStreamOggVorbis).loop = loop
+		variants.append(stream)
+	var entry := {"stream": null, "db": float(spec.get("db", 0.0)), "spec": spec}
+	if not variants.is_empty():
+		var pitch: float = spec.get("pitch", 0.0) if mode == Mode.MODERN else 0.0
+		entry.stream = variants[0] if spec.get("loop", false) else _randomizer(variants, pitch)
+	_resolved[name] = entry
+	return entry
+
+
+# SOUNDS' entry for `name`, with its "classic" or "modern" over the rest: the
+# current mode's, or `for_mode`'s.
+static func spec_of(name: String, for_mode: int = -1) -> Dictionary:
 	var spec: Dictionary = SOUNDS.get(name, {})
 	if spec.is_empty():
 		push_warning("Level3DAudio: no sound called %s" % name)
-	var loop: bool = spec.get("loop", false)
-	var variants: Array[AudioStream] = []
-	if mode == Mode.MODERN:
-		for k in (1 if loop else MAX_VARIANTS):
-			var path := "%s%s_%d.ogg" % [DIR, name, k]
-			if not FileAccess.file_exists(path):
-				break
-			var ogg := AudioStreamOggVorbis.load_from_file(path)
-			if ogg == null:
-				push_warning("Level3DAudio: cannot read %s" % path)
-				break
-			ogg.loop = loop
-			variants.append(ogg)
-	var entry := {"stream": null, "db": 0.0, "original": false}
-	if not variants.is_empty():
-		entry.db = spec.get("db", 0.0)
-		entry.stream = variants[0] if loop else _randomizer(variants, spec.get("pitch", 0.0))
-	elif spec.has("fallback") and ResourceLoader.exists(ORIGINAL + spec.fallback):
-		# The original's own file, as it is: not looped even for a loop, since
-		# the original replays it when it runs out, and the modules that loop
-		# it do too; and in CLASSIC not pitched, as the game does not.
-		var original: AudioStream = load(ORIGINAL + spec.fallback)
-		entry.db = spec.get("fdb", 0.0)
-		entry.original = true
-		var pitch: float = spec.get("pitch", 0.0) if mode == Mode.MODERN else 0.0
-		entry.stream = original if loop else _randomizer([original], pitch)
-	_resolved[name] = entry
-	return entry
+	return spec.merged(spec.get(MODE_KEYS[mode if for_mode < 0 else for_mode], {}), true)
 
 
 static func _randomizer(streams: Array, pitch: float) -> AudioStreamRandomizer:
@@ -399,8 +403,8 @@ static func _randomizer(streams: Array, pitch: float) -> AudioStreamRandomizer:
 # The voices
 
 func _play(name: String, at: Variant) -> void:
-	var spec: Dictionary = SOUNDS.get(name, {})
 	var entry := resolve(name)
+	var spec: Dictionary = entry.spec
 	if entry.stream == null or gain(name) <= 0.0:
 		return
 	var gap: float = spec.get("gap", 0.0)
@@ -418,7 +422,7 @@ func _play(name: String, at: Variant) -> void:
 		(player as AudioStreamPlayer3D).global_position = at
 	player.volume_db = volume_db(name)
 	player.play()
-	if entry.original and spec.has("with"):
+	if spec.get("with", "") != "":
 		_play(spec.with, at)
 
 
@@ -433,7 +437,7 @@ func _voice(name: String, flat: bool):
 	for player in pool:
 		if not player.playing:
 			return player
-	var voices: int = SOUNDS.get(name, {}).get("voices", 1)
+	var voices: int = resolve(name).spec.get("voices", 1)
 	if pool.size() < voices:
 		var player = _new_player(name, flat)
 		if player != null:
