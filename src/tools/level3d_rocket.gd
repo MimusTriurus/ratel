@@ -870,7 +870,14 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3) -> void:
 		_reload_left = rocket.rearm
 	var there: Dictionary = ground.call(at.x, at.z)
 	var on_water: bool = there.hit and there.kind == "water" and at.y <= there.height + 0.05
-	Level3DAudio.play("blast_water" if on_water else "blast_missile" if rocket.missile else "blast_small", at)
+	# The weapon's blast wherever it goes off, and on the water the splash
+	# over it (blast_water), so that a missile and a bomb still sound like
+	# themselves there and one splash does for both. Modern only: the
+	# original knew no water, and played explode3 for a missile and
+	# explode2 for a grenade wherever they went off.
+	Level3DAudio.play("blast_missile" if rocket.missile else "blast_small", at)
+	if on_water and Level3DAudio.mode == Level3DAudio.Mode.MODERN:
+		Level3DAudio.play("blast_water", at)
 	# Asked first: a building that goes down brings its own soot, and a crater
 	# of the rocket's on top of it is a second, darker scorch.
 	var destroyed: bool = exploded.call(at) if exploded.is_valid() else false

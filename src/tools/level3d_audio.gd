@@ -110,16 +110,22 @@ const SOUNDS := {
 	"enemy_mg": {"bus": &"EnemyFire", "pitch": 0.06, "voices": 4, "gap": 0.05},
 	"enemy_cannon": {"bus": &"EnemyFire", "pitch": 0.05, "voices": 4, "gap": 0.05},
 	# Blasts. A grenade's and the mortar's are explode_sound2, a missile's
-	# explode_sound3; both at 0.65.
+	# explode_sound3; both at 0.65. The modern ones' gains bring their loudest
+	# 50 ms (RMS) to the originals', which keeps the missile's under the
+	# bomb's, as explode3 is under explode2.
 	"blast_small": {"bus": &"Explosions", "db": -3.7, "pitch": 0.08, "voices": 4,
-			"original": "explode2.ogg"},
+			"original": "explode2.ogg", "modern": {"db": -12.4}},
 	"blast_missile": {"bus": &"Explosions", "db": -3.7, "pitch": 0.08, "voices": 4,
-			"original": "explode3.ogg"},
+			"original": "explode3.ogg", "modern": {"db": -13.3}},
+	# The splash a rocket or a bomb raises on the water, over the weapon's own
+	# blast (Level3DRocket._explode); modern only, so classic's copy of
+	# explode2 is never heard. About 8 dB under the bomb's blast, which it is
+	# heard over rather than in place of.
 	"blast_water": {"bus": &"Explosions", "db": -3.7, "pitch": 0.08, "voices": 3,
-			"original": "explode2.ogg"},
+			"original": "explode2.ogg", "modern": {"db": -12.0}},
 	# Anything destroyed: play_hit_explode_sound, enemy_hit under explode.
 	"blast": {"bus": &"Explosions", "db": -3.7, "pitch": 0.06, "voices": 4,
-			"original": "explode.ogg", "with": "enemy_hit"},
+			"original": "explode.ogg", "with": "enemy_hit", "modern": {"db": -8.7}},
 	"enemy_hit": {"bus": &"Explosions", "db": -4.4, "voices": 4, "original": "enemy_hit.ogg"},
 	"building": {"bus": &"Explosions", "pitch": 0.05, "voices": 2, "original": "hut.ogg"},
 	# A boss tank's first round of damage, which the preview shows as a breach.

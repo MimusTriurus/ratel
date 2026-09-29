@@ -132,11 +132,15 @@
 > Rocket warhead explosion, sharp high-energy blast with a fiery whoosh and a
 > short crackling tail, snappier and bigger than a grenade, 1.2 seconds.
 
-### `blast_water` — взрыв в воде *(=2D `explode2`)*
-Граната или ракета упала в воду.
+### `blast_water` — всплеск от взрыва в воде
+Граната или ракета упала в воду. Играет **поверх** взрыва самого оружия
+(`blast_small` или `blast_missile`), так что здесь только вода: столб воды,
+брызги, шлепок и дождь капель, без самого взрыва. Один всплеск на все
+оружия. Только в современном режиме: оригинал воду не различал.
 
-> Explosion in water, muffled underwater boom followed by a tall splash of
-> water spray falling back down, 1.3 seconds.
+> Water splash from an explosion, a heavy slap of water thrown up into a tall
+> column, spray and droplets falling back down, no explosion, no boom, no fire,
+> 1.3 seconds.
 
 ### `blast` — уничтожение врага *(=2D `explode` + `enemy_hit`)*
 Уничтожен танк, грузовик, лодка, бункер. В классике это `explode` с `enemy_hit`
