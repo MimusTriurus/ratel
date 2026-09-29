@@ -2189,11 +2189,14 @@ func _physics_process(delta: float) -> void:
 		_gun_locked = false
 	gun.trigger = not gone and (_hold_fire or left_button and not _gun_locked or _key("gun"))
 	gun.aim_point = btr.aim_point
+	gun.at_cursor = _forced_aim != null or firing == Level3DSettings.Firing.MODERN and cursor != null
 	gun.step(delta)
 	launcher.aim_point = btr.aim_point
+	launcher.at_cursor = gun.at_cursor
 	if _forced_aim == null:
 		if firing == Level3DSettings.Firing.COMBINED:
 			launcher.aim_point = cursor
+			launcher.at_cursor = cursor != null
 		elif firing == Level3DSettings.Firing.CLASSIC and btr.classic:
 			launcher.aim_point = btr.position \
 					+ _game_direction(btr.classic_fire_angle()) * Level3DLauncher.RANGE

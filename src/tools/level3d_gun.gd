@@ -113,6 +113,9 @@ var long_reach := false     # RANGE rather than the game's CLASSIC_RANGE
 var rate := 1.0
 var _slowed := 0            # ticks until a press may fire again, rate < 1
 var aim_point = null        # Vector3 or null
+# Whether aim_point is the cursor, rather than a point the firing makes up up
+# the screen (level3d_preview.gd): unlimited, the round goes to it.
+var at_cursor := false
 # `intercept.call(from, to)`: the first enemy on the round's flight before the
 # grid stops it -- a bunker's gun, a soldier, a boat or a tank -- as {"t": 0-1
 # along from -> to, ...}, or empty. `struck.call(found)` when the round gets
@@ -223,9 +226,23 @@ func _fire() -> void:
 			var to: Vector3 = aim_point - from
 			reach = clampf(Vector2(to.x, to.z).length(), minf(MIN_RANGE, most), most)
 		reach *= 1.0 + _rng.randf_range(-RANGE_JITTER, RANGE_JITTER)
-	# Not even at the cursor: a stream of rounds is not aimed at a point.
+	# Unlimited aimed at the cursor: from the muzzle to the cursor and no
+	# further, however far that is, and along the line to it rather than
+	# the barrel's -- which lies off that line by the turret's offset from
+	# the hull's middle, which it is aimed from (Level3DBtr._update_turret),
+	# and lags it while the turret comes round. The spread and the jitter
+	# are about the cursor, as they are about the barrel. Not aimed at it,
+	# on until the grid or an enemy stops it.
 	if unlimited:
 		reach = UNLIMITED_RANGE
+		if at_cursor and aim_point != null:
+			var to: Vector3 = aim_point - from
+			if Vector2(to.x, to.z).length() > MIN_RANGE:
+				direction = Vector3(to.x, 0.0, to.z).normalized()
+				reach = Vector2(to.x, to.z).length()
+				if not btr.classic:
+					direction = direction.rotated(Vector3.UP, _rng.randf_range(-SPREAD, SPREAD))
+					reach *= 1.0 + _rng.randf_range(-RANGE_JITTER, RANGE_JITTER)
 	var stop := _grid_stop(from, direction, reach)
 	var struck_at := landed(from + direction * reach) if stop < 0.0 \
 			else stopped(from + direction * stop, direction)

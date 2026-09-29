@@ -219,6 +219,7 @@ var surface: Callable
 var strike: Callable
 var btr: Level3DBtr
 var aim_point = null        # Vector3 or null
+var at_cursor := false      # aim_point is the cursor, as Level3DGun's
 var unlimited := false      # the preview's unlimited reach, see _launch
 var long_reach := false     # RANGE rather than the game's, see _launch
 # The preview's rate cheat (Level3DSettings.launcher_rate): the reload that
@@ -486,14 +487,20 @@ func _launch() -> void:
 	if not classic and aim_point != null:
 		var to: Vector3 = aim_point - start
 		reach = clampf(Vector2(to.x, to.z).length(), minf(MIN_RANGE, most), most)
-	# Unlimited (Level3DGun.UNLIMITED_RANGE): aimed at the cursor it still goes
-	# off there, however far that is; otherwise it flies until it strikes.
-	if unlimited:
-		reach = Level3DGun.UNLIMITED_RANGE
-		if not classic and aim_point != null:
-			var to: Vector3 = aim_point - start
-			reach = maxf(Vector2(to.x, to.z).length(), MIN_RANGE)
+	# Unlimited (Level3DGun.UNLIMITED_RANGE): aimed at the cursor it goes off
+	# on it, however far that is and however the BTR drives -- on it, not
+	# that far along the mount's line, which the round leaves off to one side
+	# of the line the mount was turned along; otherwise it flies until it
+	# strikes.
 	var target := start + flat * reach
+	if unlimited:
+		target = start + flat * Level3DGun.UNLIMITED_RANGE
+		if at_cursor and aim_point != null:
+			var to: Vector3 = aim_point - start
+			if Vector2(to.x, to.z).length() >= MIN_RANGE:
+				target = Vector3(aim_point.x, start.y, aim_point.z)
+			else:
+				target = start + flat * MIN_RANGE
 	# Classic comes back to the height it left at, as the game's weapons fly
 	# flat, and goes off on the ground under the end of it (_fly). Dropping on
 	# to the ground instead, the nose met it a tenth of the distance short. A
