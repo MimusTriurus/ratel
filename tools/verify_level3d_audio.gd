@@ -6,7 +6,10 @@
 # resolved, played positional and flat, and, if it loops, hung on a node and
 # taken off again; the table says what each one got -- the original's, the
 # silence, or new (a modern file that is no longer classic's). Then the mode
-# is switched with a loop hung, and every song of MUSIC is started.
+# is switched with a loop hung. The music's folders, assets/music3d/classic/
+# and modern/, must hold every part of MUSIC and nothing else, classic's the
+# 2D game's byte for byte; every song is started in both modes, and one is
+# carried over a change of mode.
 #
 #     godot --path . --headless --script tools/verify_level3d_audio.gd
 #
@@ -32,11 +35,22 @@ func _initialize() -> void:
 	var modern_has := Level3DAudio.resolve("tank_engine").stream != null
 	if (Level3DAudio.loop_on(unit, "tank_engine") != null) != modern_has:
 		failures += _fail("tank_engine: not put back after the change of mode")
-	for song in Level3DAudio.MUSIC:
-		Level3DAudio.play_music(song)
-		await process_frame
-		if not audio._music.playing:
-			failures += _fail("music %s does not play" % song)
+	for mode in [Level3DAudio.Mode.MODERN, Level3DAudio.Mode.CLASSIC]:
+		Level3DAudio.set_mode(mode)
+		failures += _check_music_files()
+		for song in Level3DAudio.MUSIC:
+			Level3DAudio.play_music(song)
+			await process_frame
+			if not audio._music.playing:
+				failures += _fail("music %s does not play" % song)
+	# The music through a change of mode: the same part, from the other folder.
+	Level3DAudio.play_music("stage")
+	await process_frame
+	var part: String = audio._part
+	Level3DAudio.set_mode(Level3DAudio.Mode.MODERN)
+	await process_frame
+	if not audio._music.playing or audio._part != part:
+		failures += _fail("music: %s not carried over the change of mode (%s)" % [part, audio._part])
 	Level3DAudio.stop_music()
 	# The menu's per-sound gains: a slider for every sound but enemy_hit, a
 	# gain in dB over the sound's own, silence at 0, none in CLASSIC.
@@ -150,6 +164,33 @@ func _check_mode() -> int:
 		await process_frame
 	print("original %d, silence %d, new %d, missing %d of %d%s" % [counts.original, counts.silence,
 			counts.new, counts.missing, Level3DAudio.SOUNDS.size(), "" if failures == 0 else ", %d FAILED" % failures])
+	return failures
+
+
+# The mode's music folder: every part of MUSIC and nothing else, classic's a
+# copy of the 2D game's.
+func _check_music_files() -> int:
+	var classic := Level3DAudio.mode == Level3DAudio.Mode.CLASSIC
+	var dir: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.mode]
+	var classic_dir: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.Mode.CLASSIC]
+	var parts := {}
+	for song in Level3DAudio.MUSIC:
+		for file in Level3DAudio.MUSIC[song]:
+			parts[file] = true
+	var failures := 0
+	for file in DirAccess.get_files_at(dir):
+		if file.get_extension() == "ogg" and not parts.has(file):
+			failures += _fail("%s%s is no song's" % [dir, file])
+	var counts := {"original": 0, "new": 0}
+	for file in parts:
+		if not FileAccess.file_exists(dir + file):
+			failures += _fail("%s%s is missing" % [dir, file])
+			continue
+		var bytes := FileAccess.get_file_as_bytes(dir + file)
+		if classic and bytes != FileAccess.get_file_as_bytes(Level3DAudio.ORIGINAL_MUSIC + file):
+			failures += _fail("%s: not a copy of %s%s" % [file, Level3DAudio.ORIGINAL_MUSIC, file])
+		counts["original" if bytes == FileAccess.get_file_as_bytes(classic_dir + file) else "new"] += 1
+	print("music, %s: original %d, new %d of %d" % [dir, counts.original, counts.new, parts.size()])
 	return failures
 
 

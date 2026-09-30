@@ -554,9 +554,14 @@ the last with a switch of its own since the original's enemies fired in
 silence; under them, a 0–200 % slider for each of the modern mode's sounds
 (`Level3DMenu.SOUND_GROUPS`, which must list every sound in `SOUNDS` but the
 classic-only `enemy_hit` -- the verify script checks).
-The music is the original's in both, chained as `Song` chains it: `intro_song`
-at the start, `stage_song0` after a restart, `boss_song` from the boss's
-trigger, stopped when it is beaten or the last life goes.
+The music is chained as `Song` chains it: `intro_song` at the start,
+`stage_song0` after a restart, `boss_song` from the boss's trigger, stopped
+when it is beaten or the last life goes. It is split by mode as the effects
+are: `assets/music3d/classic/` holds copies of the parts of `MUSIC` from
+`assets/music/`, under their own names, and `assets/music3d/modern/` started
+as a copy of it, a new song going in by replacing its file. A change of mode
+swaps the part playing for the other folder's from the same position (an
+intro that runs out goes on to its loop, a loop wraps round).
 
 Each mode is a folder holding the same set of files under the same names,
 `<name>_0.ogg` and optionally `_1`, `_2`... as variants picked at random:
@@ -573,7 +578,9 @@ by replacing its file there. `SOUNDS`' `"classic"` / `"modern"` sub-dicts hold
 what differs for one mode -- a replaced file wants its own `db`, from its
 measured loudness against the classic one (`tools/measure_loudness.gd --
 <paths>`), and a new blast that already has the hit in it `"with": ""`. The
-2D game reads `assets/soundeffects/` and nothing here. Check both folders:
+2D game reads `assets/soundeffects/` and `assets/music/` and nothing here;
+`tools/sfx3d_classic.gd` writes `music3d/` the same way. Check all four
+folders:
 
 ```bash
 godot --path . --headless --script tools/verify_level3d_audio.gd

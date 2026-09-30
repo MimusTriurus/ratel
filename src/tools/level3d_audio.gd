@@ -23,8 +23,12 @@
 # tools/verify_level3d_audio.gd reports. Every entry point below is a no-op
 # when there is nothing to play, and when there is no Level3DAudio in the tree.
 #
-# The music is the original's in both modes, chained as Song chains it: an
-# intro, then a loop (MUSIC).
+# The music is split the same way, chained in both as Song chains it: an
+# intro, then a loop (MUSIC). assets/music3d/classic/ holds copies of the
+# original's songs from assets/music/, under their own names, and does not
+# change; assets/music3d/modern/ started as a copy of it, and a new song goes
+# in by replacing its file. A change of mode swaps the part playing for the
+# other folder's, from where it was.
 #
 #   name -> {
 #     bus        a sub-bus of Sfx, BUSES
@@ -60,7 +64,9 @@ enum Mode { CLASSIC, MODERN }
 const DIRS := {Mode.CLASSIC: "res://assets/sfx3d/classic/", Mode.MODERN: "res://assets/sfx3d/modern/"}
 const MODE_KEYS := {Mode.CLASSIC: "classic", Mode.MODERN: "modern"}
 const ORIGINAL := "res://assets/soundeffects/"
-const MUSIC_DIR := "res://assets/music/"
+const MUSIC_DIRS := {Mode.CLASSIC: "res://assets/music3d/classic/", Mode.MODERN: "res://assets/music3d/modern/"}
+# Where classic's songs are copies from: the 2D game's, Main.MUSIC.
+const ORIGINAL_MUSIC := "res://assets/music/"
 # name_0.ogg, name_1.ogg ... : looked for until the first one missing.
 const MAX_VARIANTS := 16
 # Main.MINIMUM_SOUND_TIME.
@@ -190,6 +196,7 @@ static var _frame := Rect2()
 var _listener: AudioListener3D
 var _music: AudioStreamPlayer
 var _song: Array = []       # the parts still to come, file names
+var _part := ""             # the part playing, "" for none
 var _pools := {}            # name -> Array of players
 var _next := {}             # name -> the voice to take when all are busy
 var _last := {}             # name -> Time.get_ticks_msec() of the last play
@@ -421,6 +428,7 @@ static func set_mode(new_mode: Mode) -> void:
 	_resolved.clear()
 	if _current != null:
 		_current._remake()
+		_current._swap_music()
 
 
 # The menu's volumes, 0 to 1, onto the buses: Master for everything, Music,
@@ -675,17 +683,53 @@ func _start_ambience() -> void:
 # The music
 
 func _next_part() -> void:
+	_part = ""
 	if _song.is_empty():
 		return
 	var file: String = _song.pop_front()
-	var stream: AudioStream = load(MUSIC_DIR + file) if ResourceLoader.exists(MUSIC_DIR + file) else null
+	var stream := _music_stream(file, _song.is_empty())
 	if stream == null:
-		push_warning("Level3DAudio: no music %s" % file)
+		push_warning("Level3DAudio: no music %s%s" % [MUSIC_DIRS[mode], file])
 		_song.clear()
 		return
+	_part = file
+	_music.stream = stream
+	_music.play()
+
+
+# The mode's folder's `file`, looped if it is the song's last part, or null.
+func _music_stream(file: String, loop: bool) -> AudioStream:
+	var path: String = MUSIC_DIRS[mode] + file
+	var stream: AudioStream = load(path) if ResourceLoader.exists(path) else null
+	if stream == null:
+		return null
 	# A copy, as Song.make_player makes one: the loop flag is the copy's.
 	stream = stream.duplicate()
 	if stream is AudioStreamOggVorbis:
-		(stream as AudioStreamOggVorbis).loop = _song.is_empty()
+		(stream as AudioStreamOggVorbis).loop = loop
+	return stream
+
+
+# After set_mode: the part playing, from the new mode's folder, from where the
+# old one had got to. A new song need not be as long as the original: past
+# its end an intro goes on to the next part, and the loop wraps round.
+func _swap_music() -> void:
+	if _part.is_empty() or not _music.playing:
+		return
+	var at := _music.get_playback_position()
+	var stream := _music_stream(_part, _song.is_empty())
+	if stream == null:
+		push_warning("Level3DAudio: no music %s%s" % [MUSIC_DIRS[mode], _part])
+		_music.stop()
+		_part = ""
+		_song.clear()
+		return
+	var length := stream.get_length()
+	if at >= length:
+		if not _song.is_empty():
+			_music.stop()
+			_next_part()
+			return
+		at = fmod(at, length) if length > 0.0 else 0.0
 	_music.stream = stream
-	_music.play()
+	_music.play(at)
