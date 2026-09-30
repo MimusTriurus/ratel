@@ -3,19 +3,20 @@
 # throttle stay with the 2D game.
 #
 # Two modes, the menu's Sound tab (Level3DSettings.sound_mode), and a folder
-# for each, holding the same set of files under the same names:
+# for each, holding its files under the same names:
 #
 #   CLASSIC  assets/sfx3d/classic/, the original's effects as the game plays
 #            them: flat, at the game's gains (explode at 0.65, enemy_hit at
 #            0.6 under it), not looped, not pitched, inside Main's 125 ms
 #            throttle. Each file is a copy of its "original" in
 #            assets/soundeffects/, and what the original had no sound for --
-#            engines, the enemies' guns, rounds landing, the sea -- is half a
-#            second of silence. It is the base, and does not change;
+#            engines, the enemies' guns, rounds landing, the sea -- has no
+#            file, and is silent. It is the base, and does not change;
 #            tools/sfx3d_classic.gd made it.
 #   MODERN   assets/sfx3d/modern/, positional, looped where "loop" says,
 #            pitched, with the menu's per-sound gains. It started as a copy of
-#            classic; a new sound goes in by replacing its file.
+#            classic; a new sound goes in by replacing its file, or by putting
+#            one where there is none.
 #
 # A sound is <name>_0.ogg, and <name>_1.ogg ... for variants, one picked at
 # random each play (a loop takes _0 alone). Both folders are imported and
@@ -37,7 +38,7 @@
 #   name -> {
 #     bus        a sub-bus of Sfx, BUSES
 #     original   the file in assets/soundeffects/ that classic's is a copy of,
-#                or absent where classic's is silence. For the tools only
+#                or absent where classic has none. For the tools only
 #     with       another sound played with this one, as
 #                play_hit_explode_sound plays enemy_hit under explode; ""
 #                for none
@@ -644,7 +645,9 @@ static func audition(name: String) -> void:
 		return
 	player.set_meta("sound", name)
 	_current._auditions.append(player)
-	player.tree_exited.connect(func(): _current._auditions.erase(player) if _current != null else null)
+	player.tree_exited.connect(func():
+		if _current != null:
+			_current._auditions.erase(player))
 	var tween := player.create_tween()
 	tween.tween_interval(AUDITION_SECONDS)
 	tween.tween_callback(func(): fade_out(player, player.queue_free))
@@ -667,6 +670,13 @@ static func audition_music(file: String) -> void:
 	c._music.stream = stream
 	c._music.volume_db = music_db(file)
 	c._music.play()
+
+
+# The part audition_music has on, or "" while the song plays as it was.
+static func auditioned_music() -> String:
+	if _current == null or _current._held_music == null:
+		return ""
+	return _current._part
 
 
 static func end_music_audition() -> void:

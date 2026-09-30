@@ -563,18 +563,19 @@ as a copy of it, a new song going in by replacing its file. A change of mode
 swaps the part playing for the other folder's from the same position (an
 intro that runs out goes on to its loop, a loop wraps round).
 
-Each mode is a folder holding the same set of files under the same names,
-`<name>_0.ogg` and optionally `_1`, `_2`... as variants picked at random:
+Each mode is a folder holding its files under the same names, `<name>_0.ogg`
+and optionally `_1`, `_2`... as variants picked at random:
 `assets/sfx3d/classic/` and `assets/sfx3d/modern/`, both imported, committed
-and shipped. Classic is the base and does not change: every file is a copy of
-the sound's `"original"` in `assets/soundeffects/`, or one shared half second
-of silence where the original had no sound (engines, the enemies' guns, rounds
-landing, the ambience), played flat, unpitched, unlooped and throttled as
-`Main.play_sound` plays it. `tools/sfx3d_classic.gd` wrote it (SoX encodes the
-silence) and filled in modern as a copy; run again, it rewrites classic and
-only adds to modern what is missing, never over a file already there. Modern
-is positional, pitched and looped where `SOUNDS` says, and a new sound goes in
-by replacing its file there. `SOUNDS`' `"classic"` / `"modern"` sub-dicts hold
+and shipped. A sound with no file is silent, in either mode. Classic is the
+base and does not change: every file is a copy of the sound's `"original"` in
+`assets/soundeffects/`, and a sound the original had no sound for (engines,
+the enemies' guns, rounds landing, the ambience) has none, played flat,
+unpitched, unlooped and throttled as `Main.play_sound` plays it.
+`tools/sfx3d_classic.gd` wrote it and filled in modern as a copy; run again,
+it rewrites classic and only adds to modern what is missing and classic has,
+never over a file already there. Modern is positional, pitched and looped
+where `SOUNDS` says, and a new sound goes in by replacing its file there, or
+by putting one where there is none. `SOUNDS`' `"classic"` / `"modern"` sub-dicts hold
 what differs for one mode -- a new blast that already has the hit in it
 `"with": ""`.
 

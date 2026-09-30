@@ -399,6 +399,7 @@ func _make_mixer_tab() -> Control:
 			func(i: int): settings.sound_mode = i)
 	_note(tab, "Громкость каждого звука и музыки в игре, в дБ, отдельно для каждого режима. "
 			+ "▶ — послушать; звук играет и после того, как ползунок отпущен. "
+			+ "Музыка играет по кругу, пока не нажать ■ или «Музыка уровня». "
 			+ "«Сохранить» записывает всё в assets/sfx3d/mix.json. "
 			+ "Ползунки вкладки «Звук» — настройки игрока — действуют поверх.")
 	var actions := HBoxContainer.new()
@@ -414,7 +415,9 @@ func _make_mixer_tab() -> Control:
 	_button(actions, "Вернуть сохранённое", func():
 		Level3DAudio.reload_mix()
 		_refresh_mixer())
-	_button(actions, "Музыка уровня", Level3DAudio.end_music_audition)
+	_button(actions, "Музыка уровня", func():
+		Level3DAudio.end_music_audition()
+		_refresh_music_buttons())
 	_mix_status = Label.new()
 	_mix_status.add_theme_font_size_override("font_size", FONT_SIZE - 6)
 	_mix_status.add_theme_color_override("font_color", ACCENT)
@@ -422,10 +425,17 @@ func _make_mixer_tab() -> Control:
 	tab.add_child(HSeparator.new())
 	_heading(tab, "Музыка")
 	var music := _mix_grid(tab)
+	music.set_meta("music", true)
 	for file in Level3DAudio.music_files():
 		_music_sliders[file] = _mix_row(music, "    " + MUSIC_NAMES.get(file, file),
-				func(): Level3DAudio.audition_music(file),
+				func(): _toggle_music(file),
 				func(db: float): Level3DAudio.set_music_db(file, db, _mixer_audio_mode()))
+		# Let go of the slider, the part is heard again rather than stopped.
+		var slider: HSlider = _music_sliders[file]
+		slider.drag_ended.connect(func(value_changed: bool):
+			if value_changed and Level3DAudio.auditioned_music() != file:
+				Level3DAudio.audition_music(file)
+				_refresh_music_buttons())
 	for group in SOUND_GROUPS:
 		tab.add_child(HSeparator.new())
 		_heading(tab, group[0])
@@ -450,6 +460,22 @@ func _mixer_audio_mode() -> int:
 			else Level3DAudio.Mode.MODERN
 
 
+# A music part's ▶: on, it plays the part alone, looped, and turns to ■;
+# again, it gives the stage's song back from where it was.
+func _toggle_music(file: String) -> void:
+	if Level3DAudio.auditioned_music() == file:
+		Level3DAudio.end_music_audition()
+	else:
+		Level3DAudio.audition_music(file)
+	_refresh_music_buttons()
+
+
+func _refresh_music_buttons() -> void:
+	var on := Level3DAudio.auditioned_music()
+	for file in _music_sliders:
+		(_music_sliders[file].get_meta("play") as Button).text = "■" if file == on else "▶"
+
+
 func _refresh_mixer() -> void:
 	var m := _mixer_audio_mode()
 	for sound in _mix_sliders:
@@ -457,6 +483,7 @@ func _refresh_mixer() -> void:
 	for file in _music_sliders:
 		_show_db(_music_sliders[file], Level3DAudio.music_db(file, m), Level3DAudio.saved_music_db(file, m))
 	_mix_update_status()
+	_refresh_music_buttons()
 
 
 func _mix_update_status() -> void:
@@ -501,13 +528,17 @@ func _mix_row(grid: GridContainer, text: String, audition: Callable, moved: Call
 	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	grid.add_child(value)
 	slider.set_meta("db", value)
+	slider.set_meta("play", play)
 	slider.value_changed.connect(func(db: float):
 		moved.call(db)
 		_show_db(slider, db, float(slider.get_meta("saved", db)))
 		_mix_update_status())
-	slider.drag_ended.connect(func(value_changed: bool):
-		if value_changed:
-			audition.call())
+	# A sound is heard again when the slider is let go; a music part's own
+	# row sees to it (_make_mixer_tab), since its ▶ is a switch.
+	if not grid.has_meta("music"):
+		slider.drag_ended.connect(func(value_changed: bool):
+			if value_changed:
+				audition.call())
 	return slider
 
 

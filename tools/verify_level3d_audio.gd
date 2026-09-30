@@ -1,11 +1,12 @@
 # Checks the 3D preview's sound (src/tools/level3d_audio.gd) in both of its
-# modes. Each mode's folder, assets/sfx3d/classic/ and modern/, must hold
-# <name>_0.ogg for every sound in Level3DAudio.SOUNDS and nothing that is not
-# one; classic's must be what tools/sfx3d_classic.gd made, the sound's
-# "original" byte for byte or the silence, and _0 alone. Every sound is then
-# resolved, played positional and flat, and, if it loops, hung on a node and
-# taken off again; the table says what each one got -- the original's, the
-# silence, or new (a modern file that is no longer classic's). Then the mode
+# modes. Each mode's folder, assets/sfx3d/classic/ and modern/, holds
+# nothing that is no sound's in Level3DAudio.SOUNDS; classic's must be what
+# tools/sfx3d_classic.gd made, <name>_0.ogg alone, the sound's "original"
+# byte for byte, and nothing for a sound with none. A sound with no file is
+# silent, in either mode, and not wrong. Every sound is then resolved,
+# played positional and flat, and, if it loops, hung on a node and taken off
+# again; the table says what each one got -- the original's, new (a modern
+# file that is no longer classic's), or missing, silent. Then the mode
 # is switched with a loop hung. The music's folders, assets/music3d/classic/
 # and modern/, must hold every part of MUSIC and nothing else, classic's the
 # 2D game's byte for byte; every song is started in both modes, and one is
@@ -107,7 +108,7 @@ func _check_mode() -> int:
 	var dir: String = Level3DAudio.DIRS[Level3DAudio.mode]
 	var classic_dir: String = Level3DAudio.DIRS[Level3DAudio.Mode.CLASSIC]
 	print("--- %s, %s" % ["classic" if classic else "modern", dir])
-	var counts := {"original": 0, "silence": 0, "new": 0, "missing": 0}
+	var counts := {"original": 0, "new": 0, "missing": 0}
 	var failures := 0
 	for file in DirAccess.get_files_at(dir):
 		if file.get_extension() != "ogg":
@@ -118,9 +119,6 @@ func _check_mode() -> int:
 			failures += _fail("%s%s is no sound's" % [dir, file])
 		elif classic and not base.ends_with("_0"):
 			failures += _fail("%s%s: classic has one of each" % [dir, file])
-	# The silence: every classic file of a sound without an original is one
-	# and the same file.
-	var silence := PackedByteArray()
 	for name in Level3DAudio.SOUNDS:
 		var spec := Level3DAudio.spec_of(name)
 		var path := "%s%s_0.ogg" % [dir, name]
@@ -128,21 +126,13 @@ func _check_mode() -> int:
 		if FileAccess.file_exists(path):
 			var bytes := FileAccess.get_file_as_bytes(path)
 			var base := FileAccess.get_file_as_bytes("%s%s_0.ogg" % [classic_dir, name])
-			if spec.has("original") and bytes == base:
-				kind = "original"
-			elif not spec.has("original") and bytes == base:
-				kind = "silence"
-			else:
-				kind = "new"
+			kind = "original" if spec.has("original") and bytes == base else "new"
 			if classic:
-				if spec.has("original") and bytes != FileAccess.get_file_as_bytes(Level3DAudio.ORIGINAL + spec.original):
-					failures += _fail("%s: not a copy of %s" % [name, spec.original])
 				if not spec.has("original"):
-					if silence.is_empty():
-						silence = bytes
-					elif bytes != silence:
-						failures += _fail("%s: has no original, and is not the silence" % name)
-		else:
+					failures += _fail("%s: the original had no sound for it, and classic has one" % path)
+				elif bytes != FileAccess.get_file_as_bytes(Level3DAudio.ORIGINAL + spec.original):
+					failures += _fail("%s: not a copy of %s" % [name, spec.original])
+		elif classic and spec.has("original"):
 			failures += _fail("%s is missing" % path)
 		var entry := Level3DAudio.resolve(name)
 		var variants := 0
@@ -172,7 +162,7 @@ func _check_mode() -> int:
 	Level3DAudio.listen(Vector3(1.0, 0.0, 1.0))
 	for i in 30:
 		await process_frame
-	print("original %d, silence %d, new %d, missing %d of %d%s" % [counts.original, counts.silence,
+	print("original %d, new %d, missing (silent) %d of %d%s" % [counts.original,
 			counts.new, counts.missing, Level3DAudio.SOUNDS.size(), "" if failures == 0 else ", %d FAILED" % failures])
 	return failures
 
