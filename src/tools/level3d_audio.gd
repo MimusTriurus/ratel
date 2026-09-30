@@ -30,12 +30,12 @@
 # in by replacing its file. A change of mode swaps the part playing for the
 # other folder's, from where it was.
 #
+# The gains, of the effects and of the music, are not in SOUNDS but in the
+# mix (MIX_PATH), which the menu's Mixer tab sets by ear; the comments below
+# say where some of them came from.
+#
 #   name -> {
 #     bus        a sub-bus of Sfx, BUSES
-#     db         gain for the file, dB: the game's own for the original's
-#                (Main.play_sound's volume, 0.65 is -3.7 dB). A file that
-#                replaces one in modern/ wants a gain of its own, from its
-#                measured loudness (tools/measure_loudness.gd), in "modern"
 #     original   the file in assets/soundeffects/ that classic's is a copy of,
 #                or absent where classic's is silence. For the tools only
 #     with       another sound played with this one, as
@@ -54,7 +54,7 @@
 #                the frame's gain is left to (_process)
 #     classic, modern
 #                any of the above for that mode alone, over the rest: say,
-#                "modern": {"db": -9.0, "with": ""} for a new blast
+#                "modern": {"with": ""} for a new blast that has the hit in it
 #   }
 class_name Level3DAudio
 extends Node3D
@@ -96,25 +96,23 @@ const SOUNDS := {
 	# since throw is 10 dB under the gun, and at its level the new one was
 	# lost under it.
 	"gun": {"bus": &"Weapons", "pitch": 0.05, "voices": 6, "gap": 0.03,
-			"original": "machine_gun.ogg", "always": true, "flat": true, "modern": {"db": -7.6}},
-	"grenade_launch": {"bus": &"Weapons", "pitch": 0.05, "original": "throw.ogg", "flat": true,
-			"modern": {"db": -12.0}},
+			"original": "machine_gun.ogg", "always": true, "flat": true},
+	"grenade_launch": {"bus": &"Weapons", "pitch": 0.05, "original": "throw.ogg", "flat": true},
 	# The modern launch and flight were one recording, cut in two; both come
 	# down by as much as brings the launch to missile's loudness, which keeps
 	# the flight where the recording had it, 17 dB under.
-	"rocket_launch": {"bus": &"Weapons", "pitch": 0.05, "original": "missile.ogg", "flat": true,
-			"modern": {"db": -8.0}},
+	"rocket_launch": {"bus": &"Weapons", "pitch": 0.05, "original": "missile.ogg", "flat": true},
 	# The rocket's motor, on the rocket from its launch to its blast
 	# (Level3DRocket), pitched up as it speeds up. The original's missile
 	# was one sound at the launch, which rocket_launch is.
-	"rocket_flight": {"bus": &"Weapons", "loop": true, "modern": {"db": -8.0}},
+	"rocket_flight": {"bus": &"Weapons", "loop": true},
 	# Where rounds land, the player's and the enemies'. The original had none.
 	"hit_ground": {"bus": &"Weapons", "pitch": 0.1, "voices": 4, "gap": 0.04},
 	"hit_water": {"bus": &"Weapons", "pitch": 0.1, "voices": 4, "gap": 0.04},
 	"hit_hard": {"bus": &"Weapons", "pitch": 0.1, "voices": 4, "gap": 0.04},
 	# Enemy.bullet_attack's bullet_hit_sound: armour that took the round.
 	"hit_armor": {"bus": &"Weapons", "pitch": 0.08, "voices": 4, "gap": 0.04,
-			"original": "bullet_hit.ogg", "always": true, "modern": {"db": -12.5}},
+			"original": "bullet_hit.ogg", "always": true},
 	# The enemies' guns, which the original fired in silence: a machine gun
 	# for the soldiers, a cannon for the bunkers, tanks and boats, on
 	# EnemyFire, to sit well under the BTR's gun.
@@ -124,26 +122,24 @@ const SOUNDS := {
 	# explode_sound3; both at 0.65. The modern ones' gains bring their loudest
 	# 50 ms (RMS) to the originals', which keeps the missile's under the
 	# bomb's, as explode3 is under explode2.
-	"blast_small": {"bus": &"Explosions", "db": -3.7, "pitch": 0.08, "voices": 4,
-			"original": "explode2.ogg", "modern": {"db": -12.4}},
-	"blast_missile": {"bus": &"Explosions", "db": -3.7, "pitch": 0.08, "voices": 4,
-			"original": "explode3.ogg", "modern": {"db": -13.3}},
+	"blast_small": {"bus": &"Explosions", "pitch": 0.08, "voices": 4,
+			"original": "explode2.ogg"},
+	"blast_missile": {"bus": &"Explosions", "pitch": 0.08, "voices": 4,
+			"original": "explode3.ogg"},
 	# The splash a rocket or a bomb raises on the water, over the weapon's own
 	# blast (Level3DRocket._explode); modern only, so classic's copy of
 	# explode2 is never heard. About 8 dB under the bomb's blast, which it is
 	# heard over rather than in place of.
-	"blast_water": {"bus": &"Explosions", "db": -3.7, "pitch": 0.08, "voices": 3,
-			"original": "explode2.ogg", "modern": {"db": -12.0}},
+	"blast_water": {"bus": &"Explosions", "pitch": 0.08, "voices": 3,
+			"original": "explode2.ogg"},
 	# Anything destroyed: play_hit_explode_sound, enemy_hit under explode.
-	"blast": {"bus": &"Explosions", "db": -3.7, "pitch": 0.06, "voices": 4,
-			"original": "explode.ogg", "with": "enemy_hit", "modern": {"db": -8.7}},
-	"enemy_hit": {"bus": &"Explosions", "db": -4.4, "voices": 4, "original": "enemy_hit.ogg",
-			"modern": {"db": -12.8}},
-	"building": {"bus": &"Explosions", "pitch": 0.05, "voices": 2, "original": "hut.ogg",
-			"modern": {"db": -3.2}},
+	"blast": {"bus": &"Explosions", "pitch": 0.06, "voices": 4,
+			"original": "explode.ogg", "with": "enemy_hit"},
+	"enemy_hit": {"bus": &"Explosions", "voices": 4, "original": "enemy_hit.ogg"},
+	"building": {"bus": &"Explosions", "pitch": 0.05, "voices": 2, "original": "hut.ogg"},
 	# A boss tank's first round of damage, which the preview shows as a breach.
 	"breach": {"bus": &"Explosions", "pitch": 0.05, "voices": 2,
-			"original": "bullet_hit.ogg", "always": true, "modern": {"db": -12.5}},
+			"original": "bullet_hit.ogg", "always": true},
 	"player_explodes": {"bus": &"Explosions", "original": "player_explodes.ogg", "flat": true},
 	"soldier_death": {"bus": &"Explosions", "pitch": 0.1, "voices": 3, "gap": 0.125,
 			"original": "soldier_killed.ogg"},
@@ -154,10 +150,8 @@ const SOUNDS := {
 	"boat_engine": {"bus": &"Engines", "loop": true},
 	# The helicopters: helicopter_sound and helicopter_sound2. The modern
 	# files' gains bring their loudest 50 ms (RMS) down to the originals'.
-	"chinook": {"bus": &"Engines", "loop": true, "original": "helicopter.ogg", "flat": true,
-			"modern": {"db": -9.1}},
-	"rescue_rotor": {"bus": &"Engines", "loop": true, "original": "helicopter2.ogg", "flat": true,
-			"modern": {"db": -3.4}},
+	"chinook": {"bus": &"Engines", "loop": true, "original": "helicopter.ogg", "flat": true},
+	"rescue_rotor": {"bus": &"Engines", "loop": true, "original": "helicopter2.ogg", "flat": true},
 	# Prisoners, the HUD and the menu.
 	"pickup": {"bus": &"Interface", "original": "pickup.ogg", "flat": true},
 	"rescue_pickup": {"bus": &"Interface", "original": "helicopter_pickup.ogg", "flat": true},
@@ -179,6 +173,19 @@ const MUSIC := {
 	"stage": ["stage0_intro.ogg", "stage0_repeat.ogg"],
 	"boss": ["boss_intro.ogg", "boss_repeat.ogg"],
 }
+
+# Every sound's gain and every music part's, dB, for each mode: the game's
+# mix, set by ear on the menu's Mixer tab, which writes it back here (save_mix).
+#
+#   {"classic": {"sounds": {name: dB}, "music": {file: dB}}, "modern": {...}}
+#
+# Classic's sounds start at the game's own gains (Main.play_sound's volume,
+# 0.65 is -3.7 dB); a file that replaces one in modern/ starts at a gain from
+# its measured loudness against the classic one (tools/measure_loudness.gd).
+# Missing is 0 dB; tools/verify_level3d_audio.gd holds it to SOUNDS and MUSIC.
+const MIX_PATH := "res://assets/sfx3d/mix.json"
+static var _mix := {}
+static var _mix_saved := {}     # as the file has it, for is_mix_changed
 
 static var mode := Mode.MODERN
 # The menu's gain for each sound, 0 to MAX_GAIN over its "db" (set_gains):
@@ -202,6 +209,10 @@ var _next := {}             # name -> the voice to take when all are busy
 var _last := {}             # name -> Time.get_ticks_msec() of the last play
 var _loops: Array = []      # [WeakRef to the parent, name]: attach_loop's
 var _ambience: Array = []
+var _auditions: Array = []  # audition's players of loops, while they last
+# What audition_music took the music off: [the parts still to come, the part,
+# where it had got to or -1], or null.
+var _held_music = null
 # --audio-debug: every bus's mute, gain and peak, once a second, on the
 # console -- whether anything reaches Master, and what is holding it back.
 var _debug := false
@@ -476,6 +487,7 @@ static func hold(name: String) -> AudioStreamPlayer:
 static func play_music(song: String) -> void:
 	if _current == null:
 		return
+	_current._held_music = null
 	_current._song = MUSIC.get(song, []).duplicate()
 	_current._music.stop()
 	_current._next_part()
@@ -483,6 +495,198 @@ static func play_music(song: String) -> void:
 
 static func stop_music() -> void:
 	play_music("")
+
+
+# ----------------------------------------------------------------------------
+# The mix (MIX_PATH), and hearing it: the menu's Mixer tab
+
+static func _mix_loaded() -> Dictionary:
+	if _mix.is_empty():
+		reload_mix()
+	return _mix
+
+
+static func _mode_key(for_mode: int) -> String:
+	return MODE_KEYS[mode if for_mode < 0 else for_mode]
+
+
+# `name`'s gain in the mix, dB: the current mode's, or `for_mode`'s.
+static func mix_db(name: String, for_mode: int = -1) -> float:
+	return float(_mix_loaded().get(_mode_key(for_mode), {}).get("sounds", {}).get(name, 0.0))
+
+
+# A music part's gain in the mix, dB, by its file name.
+static func music_db(file: String, for_mode: int = -1) -> float:
+	return float(_mix_loaded().get(_mode_key(for_mode), {}).get("music", {}).get(file, 0.0))
+
+
+# What the file says, as against what the mix is now.
+static func saved_mix_db(name: String, for_mode: int = -1) -> float:
+	return float(_mix_saved.get(_mode_key(for_mode), {}).get("sounds", {}).get(name, 0.0))
+
+
+static func saved_music_db(file: String, for_mode: int = -1) -> float:
+	return float(_mix_saved.get(_mode_key(for_mode), {}).get("music", {}).get(file, 0.0))
+
+
+static func is_mix_changed() -> bool:
+	return _mix_loaded() != _mix_saved
+
+
+# `name`'s gain in `for_mode`'s mix, heard at once if that is the mode
+# playing, as set_gains is: the voices as they are next played, the loops and
+# the ambience now, the helicopters and the BTR's engine on their next tick.
+static func set_mix_db(name: String, db: float, for_mode: int = -1) -> void:
+	_set_mix(_mode_key(for_mode), "sounds", name, db)
+	if for_mode >= 0 and for_mode != mode:
+		return
+	if _resolved.has(name):
+		_resolved[name].db = db
+	if _current != null:
+		_current._regain()
+
+
+static func set_music_db(file: String, db: float, for_mode: int = -1) -> void:
+	_set_mix(_mode_key(for_mode), "music", file, db)
+	if _current != null and (for_mode < 0 or for_mode == mode) and _current._part == file:
+		_current._music.volume_db = db
+
+
+static func _set_mix(key: String, kind: String, name: String, db: float) -> void:
+	var mix := _mix_loaded()
+	if not mix.has(key):
+		mix[key] = {"sounds": {}, "music": {}}
+	if not mix[key].has(kind):
+		mix[key][kind] = {}
+	mix[key][kind][name] = db
+
+
+# The file again, over whatever was changed since.
+static func reload_mix() -> void:
+	var text := FileAccess.get_file_as_string(MIX_PATH)
+	var parsed = JSON.parse_string(text) if not text.is_empty() else null
+	if typeof(parsed) != TYPE_DICTIONARY:
+		if not text.is_empty():
+			push_warning("Level3DAudio: cannot read %s" % MIX_PATH)
+		parsed = {}
+	for key in MODE_KEYS.values():
+		if not parsed.has(key):
+			parsed[key] = {}
+		for kind in ["sounds", "music"]:
+			if typeof(parsed[key].get(kind)) != TYPE_DICTIONARY:
+				parsed[key][kind] = {}
+	_mix = parsed
+	_mix_saved = parsed.duplicate(true)
+	for name in _resolved:
+		_resolved[name].db = mix_db(name)
+	if _current != null:
+		_current._regain()
+		if not _current._part.is_empty():
+			_current._music.volume_db = music_db(_current._part)
+
+
+# The mix into MIX_PATH, which only works where res:// is the project's folder
+# (the editor, a run from the source), not in an exported build.
+static func save_mix() -> Error:
+	var out := FileAccess.open(MIX_PATH, FileAccess.WRITE)
+	if out == null:
+		return FileAccess.get_open_error()
+	out.store_string(serialize_mix(_mix_loaded()))
+	out.close()
+	_mix_saved = _mix.duplicate(true)
+	return OK
+
+
+# The file's layout: every sound of SOUNDS and every part of MUSIC, in their
+# order, one to a line, so that a change of one gain is one line of diff.
+static func serialize_mix(mix: Dictionary) -> String:
+	var modes: Array[String] = []
+	for key in MODE_KEYS.values():
+		var section: Dictionary = mix.get(key, {})
+		var sounds: Array[String] = []
+		for name in SOUNDS:
+			sounds.append("      %s: %s" % [JSON.stringify(name), _db_text(section.get("sounds", {}).get(name, 0.0))])
+		var music: Array[String] = []
+		for file in music_files():
+			music.append("      %s: %s" % [JSON.stringify(file), _db_text(section.get("music", {}).get(file, 0.0))])
+		modes.append("  %s: {\n    \"sounds\": {\n%s\n    },\n    \"music\": {\n%s\n    }\n  }" % [
+				JSON.stringify(key), ",\n".join(sounds), ",\n".join(music)])
+	return "{\n%s\n}\n" % ",\n".join(modes)
+
+
+static func _db_text(db: float) -> String:
+	return "%.1f" % snappedf(db, 0.1)
+
+
+# Every part of every song of MUSIC, once each, in order.
+static func music_files() -> Array[String]:
+	var files: Array[String] = []
+	for song in MUSIC:
+		for file in MUSIC[song]:
+			if not files.has(file):
+				files.append(file)
+	return files
+
+
+# `name` once, flat, as the mix has it: a one-shot as play plays it, "with"
+# and all; a loop for AUDITION_SECONDS, then faded out.
+const AUDITION_SECONDS := 3.0
+
+static func audition(name: String) -> void:
+	if _current == null:
+		return
+	if not spec_of(name).get("loop", false):
+		_current._last.erase(name)
+		play(name)
+		return
+	var player := hold(name)
+	if player == null:
+		return
+	player.set_meta("sound", name)
+	_current._auditions.append(player)
+	player.tree_exited.connect(func(): _current._auditions.erase(player) if _current != null else null)
+	var tween := player.create_tween()
+	tween.tween_interval(AUDITION_SECONDS)
+	tween.tween_callback(func(): fade_out(player, player.queue_free))
+
+
+# A music part alone, looped, in place of the song playing, which
+# end_music_audition gives back from where it was.
+static func audition_music(file: String) -> void:
+	if _current == null:
+		return
+	var c := _current
+	var stream := c._music_stream(file, true)
+	if stream == null:
+		return
+	if c._held_music == null:
+		c._held_music = [c._song.duplicate(), c._part,
+				c._music.get_playback_position() if c._music.playing else -1.0]
+	c._song = []
+	c._part = file
+	c._music.stream = stream
+	c._music.volume_db = music_db(file)
+	c._music.play()
+
+
+static func end_music_audition() -> void:
+	if _current == null or _current._held_music == null:
+		return
+	var c := _current
+	var held: Array = c._held_music
+	c._held_music = null
+	c._music.stop()
+	c._song = held[0]
+	c._part = ""
+	if held[1] == "" or held[2] < 0.0:
+		return
+	var stream := c._music_stream(held[1], c._song.is_empty())
+	if stream == null:
+		return
+	c._part = held[1]
+	c._music.stream = stream
+	c._music.volume_db = music_db(held[1])
+	c._music.play(held[2])
 
 
 # The mode's folder's variants of `name`, or nothing.
@@ -505,7 +709,7 @@ static func resolve(name: String) -> Dictionary:
 			stream = stream.duplicate()
 			(stream as AudioStreamOggVorbis).loop = loop
 		variants.append(stream)
-	var entry := {"stream": null, "db": float(spec.get("db", 0.0)), "spec": spec}
+	var entry := {"stream": null, "db": mix_db(name), "spec": spec}
 	if not variants.is_empty():
 		var pitch: float = spec.get("pitch", 0.0) if mode == Mode.MODERN else 0.0
 		entry.stream = variants[0] if spec.get("loop", false) else _randomizer(variants, pitch)
@@ -668,6 +872,9 @@ func _regain() -> void:
 				player.volume_db = volume_db(loop[1])
 	for player in _ambience:
 		player.volume_db = volume_db(player.get_meta("sound"))
+	for player in _auditions:
+		if is_instance_valid(player) and not player.has_meta("fading"):
+			player.volume_db = volume_db(player.get_meta("sound"))
 
 
 func _start_ambience() -> void:
@@ -694,6 +901,7 @@ func _next_part() -> void:
 		return
 	_part = file
 	_music.stream = stream
+	_music.volume_db = music_db(file)
 	_music.play()
 
 
@@ -732,4 +940,5 @@ func _swap_music() -> void:
 			return
 		at = fmod(at, length) if length > 0.0 else 0.0
 	_music.stream = stream
+	_music.volume_db = music_db(_part)
 	_music.play(at)

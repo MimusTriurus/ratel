@@ -575,12 +575,22 @@ silence) and filled in modern as a copy; run again, it rewrites classic and
 only adds to modern what is missing, never over a file already there. Modern
 is positional, pitched and looped where `SOUNDS` says, and a new sound goes in
 by replacing its file there. `SOUNDS`' `"classic"` / `"modern"` sub-dicts hold
-what differs for one mode -- a replaced file wants its own `db`, from its
-measured loudness against the classic one (`tools/measure_loudness.gd --
-<paths>`), and a new blast that already has the hit in it `"with": ""`. The
+what differs for one mode -- a new blast that already has the hit in it
+`"with": ""`.
+
+The gains are not in `SOUNDS`: `assets/sfx3d/mix.json` holds every sound's
+and every music part's, in dB, for each mode, one to a line. The Escape
+menu's Mixer tab (always there, as the other tabs are) is where they are set
+by ear -- a slider and a ▶ for each, the mode picked on the tab, the
+changes heard at once -- and Save writes the file through
+`Level3DAudio.save_mix`, which only works where `res://` is the project
+folder, not in an exported build. A replaced file starts from its measured
+loudness against the classic one (`tools/measure_loudness.gd -- <paths>`).
+The player's own 0–200 % sliders on the Sound tab act over the mix. The
 2D game reads `assets/soundeffects/` and `assets/music/` and nothing here;
 `tools/sfx3d_classic.gd` writes `music3d/` the same way. Check all four
-folders:
+folders and the mix (every sound and part in both modes, laid out as a save
+writes it):
 
 ```bash
 godot --path . --headless --script tools/verify_level3d_audio.gd

@@ -1,7 +1,8 @@
 # How loud a sound file is: its peak and its loudest 50 ms (RMS), both dBFS,
-# played at 0 dB into an AudioEffectCapture. What a new sound's "db" in
-# Level3DAudio.SOUNDS is set from: measure the classic file it replaces too,
-# and give the new one the difference, so that it sits where the old one did.
+# played at 0 dB into an AudioEffectCapture. What a new sound's first gain in
+# the mix (Level3DAudio.MIX_PATH, "modern") is set from: measure the classic
+# file it replaces too, and give the new one the difference, so that it sits
+# where the old one did -- then the menu's Mixer tab, by ear.
 #
 #     godot --path . --headless --script tools/measure_loudness.gd -- res://assets/sfx3d/modern/gun_0.ogg ...
 #

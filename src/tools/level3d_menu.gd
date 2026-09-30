@@ -1,9 +1,11 @@
 # The 3D preview's Escape menu: continue, settings, quit, over the stage
-# frozen by pausing the tree. The settings are five tabs of
+# frozen by pausing the tree. The settings are six tabs: five of
 # Level3DSettings -- graphics (the camera and the look), interface (what the
 # HUD shows, where and how big), sound (classic or modern, the volumes, the
 # enemies' fire), controls (the keys, how the BTR drives and how it fires) and
-# cheats -- and every change is handed
+# cheats -- and the mixer, the game's own gain for every sound and every part
+# of the music in each mode, which is Level3DAudio's mix and is saved into the
+# project rather than the player's settings. Every settings change is handed
 # back through `changed` at once, the menu staying open, so a switch shows
 # what it does behind it.
 #
@@ -41,6 +43,18 @@ const SOUND_GROUPS := [
 			["upgrade", "Улучшение оружия"], ["warning", "Предупреждение о боссе"], ["pause", "Пауза"]]],
 	["Окружение", [["ambient_sea", "Море"], ["ambient_jungle", "Джунгли"]]],
 ]
+# The Mixer tab: the game's own gains (Level3DAudio's mix), in dB, for the
+# mode picked on it. SOUND_GROUPS' sounds, with enemy_hit after the blast it
+# is played under in classic, and the music's parts.
+const MIX_EXTRA := {"blast": ["enemy_hit", "Удар под взрывом (enemy_hit)"]}
+const MUSIC_NAMES := {
+	"start.ogg": "Заставка перед высадкой", "stage0_intro.ogg": "Этап: вступление",
+	"stage0_repeat.ogg": "Этап: петля", "boss_intro.ogg": "Босс: вступление",
+	"boss_repeat.ogg": "Босс: петля",
+}
+const MIX_MIN_DB := -40.0
+const MIX_MAX_DB := 12.0
+const MIX_STEP_DB := 0.5
 # Level3DSettings.Reach as the menu lists it, shortest first.
 const REACH_ORDER := [Level3DSettings.Reach.CLASSIC, Level3DSettings.Reach.LONG, Level3DSettings.Reach.UNLIMITED]
 const ACTION_NAMES := {
@@ -92,6 +106,11 @@ var _enemy_fire: CheckBox
 var _enemy_fire_volume: HSlider
 var _gain_sliders := {}      # sound -> HSlider
 var _gains_reset: Button
+var _mixer_mode: OptionButton
+var _mix_sliders := {}       # sound -> HSlider
+var _music_sliders := {}     # music file -> HSlider
+var _mix_status: Label
+var _mix_save: Button
 var _key_buttons := {}       # action -> Button
 var _waiting := ""           # the action a key prompt is open for
 var _continue: Button
@@ -140,6 +159,8 @@ func open() -> void:
 func close() -> void:
 	_waiting = ""
 	visible = false
+	# The stage's song again, if the Mixer tab put a part of another on.
+	Level3DAudio.end_music_audition()
 	get_tree().paused = false
 	Level3DAudio.play("pause")
 	if resumed.is_valid():
@@ -207,6 +228,8 @@ func refresh() -> void:
 	_gains_reset.disabled = not modern
 	for slider in [_master_volume, _music_volume, _effects_volume, _enemy_fire_volume]:
 		_show_percent(slider)
+	_mixer_mode.select(settings.sound_mode)
+	_refresh_mixer()
 	# Greyed out, not hidden, with the HUD off: what it would show stays set.
 	for widget in [_hud_score, _hud_lives, _hud_pows, _hud_weapon, _hud_modes, _hud_cheats, _hud_pad_arrow,
 			_banner_stage, _banner_warning, _banner_mission, _hud_corner, _hud_scale]:
@@ -250,6 +273,7 @@ func _make_settings_page() -> Control:
 	_tabs.add_child(_make_graphics_tab())
 	_tabs.add_child(_make_interface_tab())
 	_tabs.add_child(_make_sound_tab())
+	_tabs.add_child(_make_mixer_tab())
 	_tabs.add_child(_make_controls_tab())
 	_tabs.add_child(_make_cheats_tab())
 	_button(box, "Назад", _show_main)
@@ -310,7 +334,7 @@ func _make_sound_tab() -> Control:
 				settings.sound_mode = i
 				_preview("pickup"))
 	_note(tab, "Классический: звуки оригинальной игры, как в ней. "
-			+ "Новый: объёмный звук, двигатели, окружение и выстрелы врагов. Музыка в обоих одна.")
+			+ "Новый: объёмный звук, двигатели, окружение, выстрелы врагов и своя музыка.")
 	tab.add_child(HSeparator.new())
 	_heading(tab, "Громкость")
 	var volumes := _grid(tab)
@@ -362,6 +386,140 @@ func _gain_moved(sound: String) -> Callable:
 		settings.sound_gains[sound] = v
 		if not Level3DAudio.SOUNDS[sound].get("loop", false):
 			_preview(sound)
+
+
+# The game's mix, not the player's: every sound's and every music part's gain
+# in dB, for the mode picked here (the same setting as the Sound tab's), heard
+# as it is moved and written to Level3DAudio.MIX_PATH by Save. The player's
+# own sliders on the Sound tab still act over it.
+func _make_mixer_tab() -> Control:
+	var tab := _tab("Микшер")
+	var modes := _grid(tab)
+	_mixer_mode = _choice(modes, "Режим", ["Классический", "Новый"],
+			func(i: int): settings.sound_mode = i)
+	_note(tab, "Громкость каждого звука и музыки в игре, в дБ, отдельно для каждого режима. "
+			+ "▶ — послушать; звук играет и после того, как ползунок отпущен. "
+			+ "«Сохранить» записывает всё в assets/sfx3d/mix.json. "
+			+ "Ползунки вкладки «Звук» — настройки игрока — действуют поверх.")
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 12)
+	tab.add_child(actions)
+	_mix_save = _button(actions, "Сохранить", func():
+		var err := Level3DAudio.save_mix()
+		_refresh_mixer()
+		if err != OK:
+			_mix_status.text = "Не сохранено (%s): в собранной игре файлы проекта только для чтения." % error_string(err)
+		else:
+			_mix_status.text = "Сохранено в %s" % Level3DAudio.MIX_PATH)
+	_button(actions, "Вернуть сохранённое", func():
+		Level3DAudio.reload_mix()
+		_refresh_mixer())
+	_button(actions, "Музыка уровня", Level3DAudio.end_music_audition)
+	_mix_status = Label.new()
+	_mix_status.add_theme_font_size_override("font_size", FONT_SIZE - 6)
+	_mix_status.add_theme_color_override("font_color", ACCENT)
+	tab.add_child(_mix_status)
+	tab.add_child(HSeparator.new())
+	_heading(tab, "Музыка")
+	var music := _mix_grid(tab)
+	for file in Level3DAudio.music_files():
+		_music_sliders[file] = _mix_row(music, "    " + MUSIC_NAMES.get(file, file),
+				func(): Level3DAudio.audition_music(file),
+				func(db: float): Level3DAudio.set_music_db(file, db, _mixer_audio_mode()))
+	for group in SOUND_GROUPS:
+		tab.add_child(HSeparator.new())
+		_heading(tab, group[0])
+		var grid := _mix_grid(tab)
+		var rows: Array = []
+		for pair in group[1]:
+			rows.append(pair)
+			if MIX_EXTRA.has(pair[0]):
+				rows.append(MIX_EXTRA[pair[0]])
+		for pair in rows:
+			var sound: String = pair[0]
+			_mix_sliders[sound] = _mix_row(grid, "    " + pair[1],
+					func(): Level3DAudio.audition(sound),
+					func(db: float): Level3DAudio.set_mix_db(sound, db, _mixer_audio_mode()))
+	return tab.get_parent().get_parent()
+
+
+# The Mixer tab's mode as Level3DAudio has it: the setting's, which the
+# preview hands on to Level3DAudio only after the menu's refresh.
+func _mixer_audio_mode() -> int:
+	return Level3DAudio.Mode.CLASSIC if settings.sound_mode == Level3DSettings.SoundMode.CLASSIC \
+			else Level3DAudio.Mode.MODERN
+
+
+func _refresh_mixer() -> void:
+	var m := _mixer_audio_mode()
+	for sound in _mix_sliders:
+		_show_db(_mix_sliders[sound], Level3DAudio.mix_db(sound, m), Level3DAudio.saved_mix_db(sound, m))
+	for file in _music_sliders:
+		_show_db(_music_sliders[file], Level3DAudio.music_db(file, m), Level3DAudio.saved_music_db(file, m))
+	_mix_update_status()
+
+
+func _mix_update_status() -> void:
+	var changed_now := Level3DAudio.is_mix_changed()
+	_mix_save.disabled = not changed_now
+	if changed_now:
+		_mix_status.text = "Есть несохранённые изменения"
+	elif _mix_status.text == "Есть несохранённые изменения":
+		_mix_status.text = ""
+
+
+func _mix_grid(parent: Control) -> GridContainer:
+	var grid := GridContainer.new()
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 12)
+	grid.add_theme_constant_override("v_separation", 6)
+	parent.add_child(grid)
+	return grid
+
+
+# A row of the Mixer tab: the name, a button to hear it, the gain in dB, and
+# the gain in figures, in ACCENT while it differs from the file's.
+func _mix_row(grid: GridContainer, text: String, audition: Callable, moved: Callable) -> HSlider:
+	var label := Label.new()
+	label.text = text
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_child(label)
+	var play := Button.new()
+	play.text = "▶"
+	play.custom_minimum_size = Vector2(44, 0)
+	play.pressed.connect(audition)
+	grid.add_child(play)
+	var slider := HSlider.new()
+	slider.min_value = MIX_MIN_DB
+	slider.max_value = MIX_MAX_DB
+	slider.step = MIX_STEP_DB
+	slider.custom_minimum_size = Vector2(220, 0)
+	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	grid.add_child(slider)
+	var value := Label.new()
+	value.custom_minimum_size = Vector2(110, 0)
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	grid.add_child(value)
+	slider.set_meta("db", value)
+	slider.value_changed.connect(func(db: float):
+		moved.call(db)
+		_show_db(slider, db, float(slider.get_meta("saved", db)))
+		_mix_update_status())
+	slider.drag_ended.connect(func(value_changed: bool):
+		if value_changed:
+			audition.call())
+	return slider
+
+
+func _show_db(slider: HSlider, db: float, saved: float) -> void:
+	slider.set_meta("saved", saved)
+	slider.set_value_no_signal(db)
+	var label: Label = slider.get_meta("db")
+	label.text = "%+.1f дБ" % db
+	if is_equal_approx(db, saved):
+		label.remove_theme_color_override("font_color")
+	else:
+		label.add_theme_color_override("font_color", ACCENT)
 
 
 func _make_controls_tab() -> Control:

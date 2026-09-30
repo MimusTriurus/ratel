@@ -35,6 +35,16 @@ func _initialize() -> void:
 	var modern_has := Level3DAudio.resolve("tank_engine").stream != null
 	if (Level3DAudio.loop_on(unit, "tank_engine") != null) != modern_has:
 		failures += _fail("tank_engine: not put back after the change of mode")
+	failures += _check_mix()
+	# A gain moved: heard at once, the mix changed, and put back unchanged.
+	var was := Level3DAudio.mix_db("gun")
+	Level3DAudio.set_mix_db("gun", was - 6.0)
+	if not is_equal_approx(Level3DAudio.volume_db("gun"), was - 6.0 + linear_to_db(Level3DAudio.gain("gun"))) \
+			or not Level3DAudio.is_mix_changed():
+		failures += _fail("the mix's gun at -6 dB is not what plays")
+	Level3DAudio.reload_mix()
+	if Level3DAudio.is_mix_changed() or not is_equal_approx(Level3DAudio.mix_db("gun"), was):
+		failures += _fail("reload_mix did not give the file's mix back")
 	for mode in [Level3DAudio.Mode.MODERN, Level3DAudio.Mode.CLASSIC]:
 		Level3DAudio.set_mode(mode)
 		failures += _check_music_files()
@@ -164,6 +174,34 @@ func _check_mode() -> int:
 		await process_frame
 	print("original %d, silence %d, new %d, missing %d of %d%s" % [counts.original, counts.silence,
 			counts.new, counts.missing, Level3DAudio.SOUNDS.size(), "" if failures == 0 else ", %d FAILED" % failures])
+	return failures
+
+
+# The mix: a gain for every sound of SOUNDS and every part of MUSIC in both
+# modes and nothing else, and the file as save_mix would write it, so that a
+# save with nothing moved leaves no diff.
+func _check_mix() -> int:
+	var failures := 0
+	var text := FileAccess.get_file_as_string(Level3DAudio.MIX_PATH)
+	var mix = JSON.parse_string(text)
+	if typeof(mix) != TYPE_DICTIONARY:
+		return _fail("%s: not a JSON object" % Level3DAudio.MIX_PATH)
+	for key in mix:
+		if not Level3DAudio.MODE_KEYS.values().has(key):
+			failures += _fail("mix: %s is no mode" % key)
+	var wants := {"sounds": Level3DAudio.SOUNDS.keys(), "music": Level3DAudio.music_files()}
+	for key in Level3DAudio.MODE_KEYS.values():
+		for kind in wants:
+			var have: Dictionary = mix.get(key, {}).get(kind, {})
+			for name in wants[kind]:
+				if not have.has(name):
+					failures += _fail("mix: %s has no %s %s" % [key, kind, name])
+			for name in have:
+				if not wants[kind].has(name):
+					failures += _fail("mix: %s %s %s is none of the game's" % [key, kind, name])
+	if Level3DAudio.serialize_mix(mix) != text:
+		failures += _fail("mix: %s is not laid out as save_mix writes it" % Level3DAudio.MIX_PATH)
+	print("mix: %d sounds and %d music parts a mode" % [wants.sounds.size(), wants.music.size()])
 	return failures
 
 
