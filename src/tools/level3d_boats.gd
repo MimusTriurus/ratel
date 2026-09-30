@@ -452,6 +452,7 @@ func _kill(i: int, by: String) -> void:
 	boats.remove_at(i)
 	var at := Level3DMap.to_level(Vector2(b.x, b.y))
 	var height: float = ground.call(at.x, at.y).height
+	Level3DAudio.armor_hit(by, Vector3(at.x, height, at.y))
 	guns.blast.call(Vector3(at.x, height + BLAST_HEIGHT, at.y), BLAST_SCALE)
 	guns.explode(Vector3(at.x, height, at.y))
 	Level3DAudio.stop_loop(b.root, "boat_engine")

@@ -114,6 +114,11 @@ const SOUNDS := {
 	# Enemy.bullet_attack's bullet_hit_sound: armour that took the round.
 	"hit_armor": {"bus": &"Weapons", "pitch": 0.08, "voices": 4, "gap": 0.04,
 			"original": "bullet_hit.ogg", "always": true},
+	# A rocket or a bomb striking armour -- a tank, a boat, a bunker, a boss
+	# tank -- over the weapon's own blast (armor_hit), whether it destroys
+	# what it strikes or not. The original had no sound for it: its grenade
+	# and missile went off the same on armour as on sand.
+	"hit_armor_blast": {"bus": &"Explosions", "pitch": 0.08, "voices": 4},
 	# The enemies' guns, which the original fired in silence: a machine gun
 	# for the soldiers, a cannon for the bunkers, tanks and boats, on
 	# EnemyFire, to sit well under the BTR's gun.
@@ -138,11 +143,23 @@ const SOUNDS := {
 			"original": "explode.ogg", "with": "enemy_hit"},
 	"enemy_hit": {"bus": &"Explosions", "voices": 4, "original": "enemy_hit.ogg"},
 	"building": {"bus": &"Explosions", "pitch": 0.05, "voices": 2, "original": "hut.ogg"},
-	# A boss tank's first round of damage, which the preview shows as a breach.
-	"breach": {"bus": &"Explosions", "pitch": 0.05, "voices": 2,
+	# A boss tank's first round of damage, which the preview shows as a breach,
+	# by what did it: the machine gun's fifth round or a rocket or bomb
+	# (Level3DBoss._attacked). The original had bullet_hit for both.
+	"breach_gun": {"bus": &"Explosions", "pitch": 0.05, "voices": 2,
+			"original": "bullet_hit.ogg", "always": true},
+	"breach_blast": {"bus": &"Explosions", "pitch": 0.05, "voices": 2,
 			"original": "bullet_hit.ogg", "always": true},
 	"player_explodes": {"bus": &"Explosions", "original": "player_explodes.ogg", "flat": true},
-	"soldier_death": {"bus": &"Explosions", "pitch": 0.1, "voices": 3, "gap": 0.125,
+	# A soldier's death, by what killed him (Level3DSoldiers._kill): the
+	# machine gun, a rocket or a bomb (its flight or its blast), or the BTR
+	# running him over. The original had the one soldier_killed for all three,
+	# which is what classic plays for each.
+	"soldier_death_gun": {"bus": &"Explosions", "pitch": 0.1, "voices": 3, "gap": 0.125,
+			"original": "soldier_killed.ogg"},
+	"soldier_death_blast": {"bus": &"Explosions", "pitch": 0.1, "voices": 3, "gap": 0.125,
+			"original": "soldier_killed.ogg"},
+	"soldier_death_run_over": {"bus": &"Explosions", "pitch": 0.1, "voices": 3, "gap": 0.125,
 			"original": "soldier_killed.ogg"},
 	# Engines. The original's jeep and tanks had none.
 	"btr_idle": {"bus": &"Engines", "loop": true, "mixed": true},
@@ -304,6 +321,17 @@ func _process(delta: float) -> void:
 static func play(name: String, at: Variant = null) -> void:
 	if _current != null:
 		_current._play(name, at)
+
+
+# What a rocket or a bomb does to armour, as the enemies pass on what hit
+# them: "rocket" for the round itself, "explosion" and "traveling explosion"
+# for its blasts (Level3DGuns). hit_armor_blast for those, at `at`, and
+# nothing for the machine gun, which has hit_armor of its own.
+const BLAST_CAUSES: Array[String] = ["rocket", "explosion", "traveling explosion"]
+
+static func armor_hit(by: String, at: Vector3) -> void:
+	if BLAST_CAUSES.has(by):
+		play("hit_armor_blast", at)
 
 
 # The looping `name` on `parent`, playing, to follow it about: an engine. Null

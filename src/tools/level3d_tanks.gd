@@ -649,6 +649,7 @@ func _kill(i: int, by: String) -> void:
 	var t := tanks[i]
 	tanks.remove_at(i)
 	var at := t.root.position
+	Level3DAudio.armor_hit(by, t.root.global_position)
 	guns.blast.call(at + Vector3.UP * BLAST_HEIGHT, BLAST_SCALE)
 	guns.explode(at)
 	Level3DAudio.stop_loop(t.root, "tank_engine")

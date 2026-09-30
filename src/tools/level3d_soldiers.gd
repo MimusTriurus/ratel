@@ -614,9 +614,10 @@ func _pose(s: Soldier, delta: float) -> void:
 # ----------------------------------------------------------------------------
 # Dying
 
-# EnemySoldier.do_remove + DeadEnemySoldier. `knock`, from the BTR running him
-# over, is how far he goes to be clear of it (KNOCK_CLEAR).
-func _kill(i: int, by: String, knock := Vector3.ZERO) -> void:
+# EnemySoldier.do_remove + DeadEnemySoldier. `sound` is his death's, by what
+# killed him (Level3DAudio's soldier_death_*); `knock`, from the BTR running
+# him over, is how far he goes to be clear of it (KNOCK_CLEAR).
+func _kill(i: int, by: String, sound: String, knock := Vector3.ZERO) -> void:
 	var s := soldiers[i]
 	soldiers.remove_at(i)
 	s.dead = true
@@ -632,7 +633,7 @@ func _kill(i: int, by: String, knock := Vector3.ZERO) -> void:
 		s.knock_left = KNOCK_TIME
 		s.yaw = atan2(-knock.x, -knock.z)
 	_corpses.append(s)
-	Level3DAudio.play("soldier_death", s.root.global_position)
+	Level3DAudio.play(sound, s.root.global_position)
 	scored.call(POINTS)
 	if verbose:
 		print("soldier killed (%s) at %.0f, %.0f, tick %d" % [by, s.x, s.y, Engine.get_physics_frames()])
@@ -681,7 +682,7 @@ func intercept(from: Vector3, to: Vector3, margin: float) -> Dictionary:
 func bullet_attack(found: Dictionary) -> void:
 	var i := soldiers.find(found.soldier)
 	if i >= 0:
-		_kill(i, "machine gun")
+		_kill(i, "machine gun", "soldier_death_gun")
 
 
 # A grenade's or missile's flight from `from` to `to`: every soldier it passes
@@ -692,14 +693,14 @@ func sweep(from: Vector3, to: Vector3, margin: float) -> void:
 	for i in range(soldiers.size() - 1, -1, -1):
 		var box := _hit_box(soldiers[i], margin)
 		if view.intersects(box) and Level3DGuns._segment_enters(Vector2(from.x, from.z), Vector2(to.x, to.z), box) >= 0.0:
-			_kill(i, "rocket")
+			_kill(i, "rocket", "soldier_death_blast")
 
 
 # An Explosion's box this tick (Level3DGuns): any soldier in it dies.
 func explosion_hit(box: Rect2, player: bool) -> void:
 	for i in range(soldiers.size() - 1, -1, -1):
 		if box.intersects(_hit_box(soldiers[i], 0.0)):
-			_kill(i, "the player's explosion" if player else "explosion")
+			_kill(i, "the player's explosion" if player else "explosion", "soldier_death_blast")
 
 
 # EnemySoldier.bump: the player ran him over. He dies; the player does not.
@@ -722,4 +723,4 @@ func bump(player_box: Rect2) -> void:
 			var away := Vector2(at.x, at.z) - player_box.get_center()
 			away = away.normalized() if away.length_squared() > 1e-6 else Vector2.DOWN
 			knock = Vector3(away.x, 0.0, away.y) * KNOCK_CLEAR
-		_kill(i, "run over", knock)
+		_kill(i, "run over", "soldier_death_run_over", knock)

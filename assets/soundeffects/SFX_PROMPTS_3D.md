@@ -1,6 +1,6 @@
 # Звуки 3D-превью: описания для генерации
 
-Все 32 звука из таблицы `SOUNDS` в `src/tools/level3d_audio.gd`. Здесь они
+Все 36 звуков из таблицы `SOUNDS` в `src/tools/level3d_audio.gd`. Здесь они
 разбиты на те же группы, что и ползунки на вкладке «Звук» меню Escape
 (`Level3DMenu.SOUND_GROUPS`). Эффекты 2D-игры описаны в
 [SFX_PROMPTS.md](SFX_PROMPTS.md), и **общий стиль у обоих файлов один**: ставьте
@@ -90,12 +90,22 @@
 > Bullet impact on concrete or stone wall, short hard crack with a tiny chip of
 > debris and a faint whizz of a ricochet, quiet and subtle, 0.2 seconds.
 
-### `hit_armor` — по броне *(=2D `bullet_hit`)*
+### `hit_armor` — по броне, пулемёт *(=2D `bullet_hit`)*
 Бронированная цель приняла пулю и не разрушилась. Заметнее трёх остальных:
 игрок должен понимать, что стреляет не туда.
 
 > Bullet ricocheting off thick tank armor, sharp metallic clank with a short
 > ringing ping, 0.35 seconds.
+
+### `hit_armor_blast` — по броне, ракета или мина
+Ракета или мина ударила в технику: танк, лодку, бункер, танк босса. Играет
+**поверх** взрыва самого оружия, убило попадание или нет, так что здесь только
+металл: удар и скрежет, без взрыва. Только в современном режиме: в оригинале
+граната и ракета взрывались по броне так же, как по песку.
+
+> Heavy impact of a warhead against thick steel armor, a deep resonant metal
+> slam with a short grinding crunch and scattering metal debris, no explosion,
+> no fire, 0.6 seconds.
 
 ---
 
@@ -155,12 +165,21 @@
 > Building destroyed by an explosion, heavy boom followed by cracking timber,
 > crumbling masonry and a dusty collapse, 1.5 seconds.
 
-### `breach` — пробитие танка босса *(=2D `bullet_hit`)*
+### Пробитие танка босса *(=2D `bullet_hit`)*
 Танк-босс получил первое повреждение: в броне появилась пробоина, но танк ещё
-цел. Больше попадания, меньше взрыва.
+цел. Больше попадания, меньше взрыва. Два звука по тому, чем пробили; в
+оригинале оба `bullet_hit`.
 
-> Heavy armor plate being breached, deep metallic crunch and a short burst of
-> sparks and hissing, damaged but not destroyed, 0.6 seconds.
+#### `breach_gun` — пулемётом (пятое попадание)
+> Heavy armor plate giving way under sustained machine gun fire, a last sharp
+> bullet strike and a deep metallic crunch with a short burst of sparks and
+> hissing, damaged but not destroyed, 0.6 seconds.
+
+#### `breach_blast` — ракетой или миной
+Поверх взрыва оружия и `hit_armor_blast`, так что без взрыва.
+> Heavy armor plate torn open, deep tearing metallic crunch, a groan of bent
+> steel and a short burst of sparks and hissing, no explosion, damaged but not
+> destroyed, 0.8 seconds.
 
 ### `player_explodes` — гибель BTR *(flat, =2D `player_explodes`)*
 
@@ -168,11 +187,26 @@
 > wreck and a dramatic descending low rumble, clearly a defeat moment,
 > 2 seconds.
 
-### `soldier_death` — гибель солдата *(=2D `soldier_killed`)*
-Без крика и крови, как в оригинале. До 3 одновременно.
+### Гибель солдата *(=2D `soldier_killed`)*
+Три звука по тому, что убило: в оригинале один `soldier_killed` на всё, и
+классический режим играет его для каждого. Без крика и крови, как в
+оригинале. До 3 одновременно каждого.
 
-> Enemy foot soldier knocked down, short dull body thud on the ground with a
-> quick cloth rustle, no voice, no gore, 0.4 seconds.
+#### `soldier_death_gun` — от пулемёта
+> Enemy foot soldier hit by machine gun fire and falling, a couple of sharp
+> muffled bullet impacts on the body, then a short dull body thud on the
+> ground with a quick cloth rustle, no voice, no gore, 0.5 seconds.
+
+#### `soldier_death_blast` — от ракеты или мины
+Играет поверх взрыва самого оружия, так что здесь только солдат: без взрыва.
+> Enemy foot soldier thrown by a blast, a quick whoosh of a body flung
+> through the air and a heavy thud landing on the ground with scattering dirt,
+> no explosion, no voice, no gore, 0.6 seconds.
+
+#### `soldier_death_run_over` — под колёсами BTR
+> Enemy foot soldier knocked down by a heavy armored vehicle, a hard dull body
+> impact against steel and a heavy thud on the ground, no engine, no voice,
+> no gore, 0.5 seconds.
 
 ---
 

@@ -809,13 +809,14 @@ func _pose(t: Tank, delta: float) -> void:
 # the second destroys it.
 func _attacked(i: int, by: String) -> void:
 	var t := tanks[i]
+	Level3DAudio.armor_hit(by, t.root.global_position)
 	t.bullet_hits = HITS
 	if not t.breached:
 		t.breached = true
 		(t.players.hull as AnimationPlayer).play("Damage", 0.05)
 		(t.players.damage as AnimationPlayer).play("Breach")
 		_breach(t)
-		Level3DAudio.play("breach", t.root.global_position)
+		Level3DAudio.play("breach_gun" if by == "machine gun" else "breach_blast", t.root.global_position)
 		if verbose:
 			print("boss tank breached (%s) at %.0f, %.0f, tick %d" % [by, t.x, t.y, Engine.get_physics_frames()])
 		return

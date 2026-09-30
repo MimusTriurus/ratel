@@ -634,6 +634,7 @@ func bump(player_box: Rect2, invincible: bool) -> bool:
 # to hit whatever is next to it.
 func _destroy(gun: Gun, by: String) -> void:
 	gun.dead = true
+	Level3DAudio.armor_hit(by, Vector3(gun.at.x, ROUND_HEIGHT, gun.at.y))
 	gun.recoil = 0.0
 	_base_solid(gun, true)
 	_pose(gun)
