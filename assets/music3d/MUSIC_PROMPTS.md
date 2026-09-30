@@ -2,103 +2,63 @@
 
 Пять частей музыки из `Level3DAudio.MUSIC` (`src/tools/level3d_audio.gd`), по
 папке на режим: `assets/music3d/classic/` — оригинал с NES, не меняется;
-`assets/music3d/modern/` — то, что заменяется. Звуковые эффекты описаны в
+`assets/music3d/modern/` — то, что заменяется, файл за файлом, под тем же
+именем. Звуковые эффекты описаны в
 [SFX_PROMPTS_3D.md](../soundeffects/SFX_PROMPTS_3D.md).
 
-| файл | длина | темп (оценка) | такты | как играет |
+Игра играет их цепочкой: `start` один раз → `stage0_intro` один раз →
+`stage0_repeat` по кругу; с триггера босса `boss_intro` один раз →
+`boss_repeat` по кругу. Интро кончается и сразу, без паузы, начинается петля.
+
+## Файлы и промпты
+
+У каждого файла свой промпт: интро и петля генерируются отдельно. Темп,
+размер и тональность у интро и его петли **обязаны совпадать** — они стоят в
+обоих промптах одинаково; иначе переход из одного в другое будет слышен.
+
+| файл | такты / длина | Style (поле Style of Music) | Exclude styles | Lyrics (структура) |
 |---|---|---|---|---|
-| `start.ogg` | 7.2 с | ~100 BPM | 3 | один раз, заставка перед высадкой |
-| `stage0_intro.ogg` | 5.6 с | ~100 BPM | 2 | один раз, затем петля этапа |
-| `stage0_repeat.ogg` | 37.2 с | ~100 BPM | 16 | петля этапа |
-| `boss_intro.ogg` | 7.6 с | ~120 BPM | 4 | один раз, от триггера босса |
-| `boss_repeat.ogg` | 16.0 с | ~120 BPM | 8 | петля босса |
+| `start.ogg` | 3 такта, ~7.2 с | instrumental, modern military action game soundtrack with retro arcade roots, short heroic fanfare jingle, 100 BPM, 4/4, D minor, bold brass fanfare, marching snare roll, orchestral hit, bright square-wave lead doubling the brass, ends on a sustained final chord, clean punchy mix | vocals, choir, long intro, fade out, ambient | `[Instrumental]`<br>`[Intro: snare roll]`<br>`[Brass fanfare]`<br>`[Final chord]`<br>`[End]` |
+| `stage0_intro.ogg` | 2 такта, ~4.8–5.6 с | instrumental, modern military action game soundtrack with retro arcade roots, short intro leading into a jungle combat march, 100 BPM, 4/4, C major, drum fill with marching snare, rising brass pickup, synth bass entering, builds straight into the main theme, does not end, no final chord | vocals, choir, fade out, ending, ambient, slow build | `[Instrumental]`<br>`[Intro: drum fill]`<br>`[Brass pickup]`<br>`[Build into main theme]` |
+| `stage0_repeat.ogg` | 16 тактов, ~38.4 с | instrumental, modern military action game soundtrack with retro arcade roots, upbeat jungle combat march, 100 BPM, 4/4, C major, punchy live drums and marching snare, driving synth bass, memorable bright square-wave lead doubled by brass, call-and-response brass, orchestral hits, constant energy, steady groove for looping | vocals, choir, intro, breakdown, fade out, ending, tempo change | `[Instrumental]`<br>`[Main Theme A]`<br>`[Main Theme B]`<br>`[Main Theme A]`<br>`[Main Theme B]` |
+| `boss_intro.ogg` | 4 такта, ~8.0 с | instrumental, modern military action game soundtrack with retro arcade roots, tense boss battle intro, 120 BPM, 4/4, A minor, pounding toms, low brass swell, rising tension, alarm-like synth stabs, builds straight into the battle theme, does not end, no final chord | vocals, choir, fade out, ending, ambient, calm | `[Instrumental]`<br>`[Intro: pounding toms]`<br>`[Low brass swell]`<br>`[Rising tension into battle theme]` |
+| `boss_repeat.ogg` | 8 тактов, 16.0 с | instrumental, modern military action game soundtrack with retro arcade roots, tense boss battle, 120 BPM, 4/4, A minor, heavy low brass ostinato, pounding toms, urgent staccato strings, menacing synth lead, relentless, steady groove for looping | vocals, choir, intro, breakdown, fade out, ending, tempo change | `[Instrumental]`<br>`[Battle Theme]`<br>`[Battle Theme]`<br>`[Battle Theme]` |
 
-Темп и тональность оценены по файлам грубо: перед генерацией проверьте на слух.
-Длины ложатся на целые такты 4/4 — при 100 BPM такт 2.4 с, и 16 тактов дают
-38.4 с против оригинальных 38.3. Это главное: петля должна быть целым числом
-тактов, иначе шов слышен.
+## Настройки SUNO — одни для всех
 
-## Общие правила
+| настройка | значение | зачем |
+|---|---|---|
+| Instrumental | вкл. | без голоса |
+| Модель | последняя (v4.5 и новее) | лучше держит темп и структуру |
+| Style Influence | высоко, ~70–80 % | держаться BPM, тональности и инструментов из Style |
+| Weirdness | низко, ~20–30 % | ровный, предсказуемый трек, без неожиданных смен |
+| Длина | не задаётся | генерировать длинный трек и резать самим (ниже) |
 
-1. **Без имён.** Не пишите в промпте Konami, Jackal и названия треков: SUNO
-   блокирует имена правообладателей и артистов, и копия чужой мелодии нам не
-   нужна. Только жанр, инструменты, настроение, темп.
-2. **Instrumental включён**, структура — метатегами в поле Lyrics: `[Intro]`,
-   `[Main Theme]`, `[Loop]`, `[End]`.
-3. **BPM и размер — всегда** в Style. SUNO их не гарантирует, но держится
-   ближе.
-4. **Генерировать длинный трек и резать самим.** Точной длины SUNO не даёт:
-   интро и петлю вырезать по границам тактов (ffmpeg, по известному BPM).
-5. **Формат:** стерео, затем Ogg Vorbis 44.1 кГц под тем же именем в
+## Порядок работы
+
+1. **Сначала петля** (`*_repeat`): по ней слышно, нравится ли тема. Сделать
+   2–4 генерации, выбрать одну.
+2. **Потом интро** (`*_intro`) тем же стилем, темпом и тональностью. Если
+   переход с интро на петлю не складывается, другой способ: взять интро и
+   петлю из **одной** генерации петли — её начало, до того как тема пошла по
+   кругу, и есть интро.
+3. **Резать по тактам** (ffmpeg, по известному BPM): такт 4/4 при 100 BPM —
+   2.4 с, при 120 BPM — 2.0 с.
+   - Петля: место, где тема повторяется без изменений, ровно целыми тактами:
+     16 тактов при 100 BPM = 38.4 с, 8 тактов при 120 BPM = 16.0 с. Начало и
+     конец — на сильную долю. На концах — 5–10 мс мягкого наложения, не fade:
+     конец петли переходит в её же начало.
+   - Интро: целыми тактами, и кончается ровно там, где петля начинается.
+4. **Формат**: стерео, Ogg Vorbis 44.1 кГц, под именем из таблицы в
    `assets/music3d/modern/`. Громкость — на вкладке «Микшер» меню Escape.
 
-**Общий стиль** — в начало Style каждого трека, чтобы музыка была одной игрой:
+## Чего не писать
 
-> instrumental, modern military action game soundtrack with retro arcade roots,
-> punchy live drums and marching snare, driving synth bass, bright square-wave
-> lead doubled by brass, orchestral hits, energetic, heroic, clean mix, no
-> vocals
+Konami, Jackal, названия треков и имена композиторов: SUNO блокирует имена
+правообладателей и артистов, а копия чужой мелодии нам и не нужна. Только
+жанр, инструменты, настроение, темп.
 
----
-
-## `start` — заставка перед высадкой
-3 такта, ~7 с, звучит один раз и ведёт в этап.
-
-Style:
-> [общий стиль], short heroic fanfare, 100 BPM, 4/4, D minor, brass and snare
-> roll, ends on a sustained chord
-
-Lyrics:
-```
-[Intro]
-[Brass fanfare]
-[Snare roll]
-[Final chord]
-[End]
-```
-
-## `stage0_intro` + `stage0_repeat` — этап
-Интро 2 такта, затем петля 16 тактов. Новые версии уже есть: этот промпт
-нужен, чтобы остальные треки звучали с ними в одном стиле, или для замены.
-
-Style:
-> [общий стиль], upbeat jungle combat march, 100 BPM, 4/4, C major, steady
-> groove for looping, memorable lead melody, call-and-response brass, constant
-> energy, no breakdown, no fade
-
-Lyrics:
-```
-[Intro: drum fill and brass pickup]
-[Main Theme A]
-[Main Theme B]
-[Main Theme A]
-[Main Theme B]
-```
-
-## `boss_intro` + `boss_repeat` — босс
-Интро 4 такта, затем петля 8 тактов.
-
-Style:
-> [общий стиль], tense boss battle, 120 BPM, 4/4, A minor, heavy low brass
-> ostinato, pounding toms, urgent staccato strings, menacing synth lead,
-> relentless, steady loop, no breakdown, no fade
-
-Lyrics:
-```
-[Intro: rising tension, toms and low brass]
-[Battle Theme]
-[Battle Theme]
-[Battle Theme]
-```
-
----
-
-## Как резать
-
-- **Петля.** Место, где тема повторяется без изменений, ровно по тактам:
-  16 тактов при 100 BPM = 38.4 с, 8 тактов при 120 BPM = 16.0 с. Начало и
-  конец — на сильную долю.
-- **Интро.** Кусок прямо перед петлёй, тоже целыми тактами, чтобы петля
-  продолжила его без паузы: `Level3DAudio` играет интро и сразу петлю.
-- **Без затуханий.** На концах петли — 5–10 мс мягкого наложения, не fade: её
-  конец переходит в её же начало.
+Темп и тональность в таблице оценены по файлам грубо: перед генерацией
+проверьте их на слух. Длины оригинала ложатся на целые такты 4/4 — при
+100 BPM 16 тактов дают 38.4 с против оригинальных 38.3 — и на это стоит
+опираться: петля должна быть целым числом тактов, иначе шов слышен.
