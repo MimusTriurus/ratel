@@ -8,9 +8,11 @@
 # again; the table says what each one got -- the original's, new (a modern
 # file that is no longer classic's), or missing, silent. Then the mode
 # is switched with a loop hung. The music's folders, assets/music3d/classic/
-# and modern/, must hold every part of MUSIC and nothing else, classic's the
-# 2D game's byte for byte; every song is started in both modes, and one is
-# carried over a change of mode.
+# and modern/, must hold every file the mode plays and nothing else, classic's
+# the 2D game's byte for byte; every song is started in both modes, and one is
+# carried over a change of mode. The boss's song, which in modern follows the
+# fight (ADAPTIVE), is checked part by part, through a layer, an accent and a
+# change of mode.
 #
 #     godot --path . --headless --script tools/verify_level3d_audio.gd
 #
@@ -62,6 +64,7 @@ func _initialize() -> void:
 	await process_frame
 	if not audio._music.playing or audio._part != part:
 		failures += _fail("music: %s not carried over the change of mode (%s)" % [part, audio._part])
+	failures += await _check_adaptive(audio)
 	Level3DAudio.stop_music()
 	# The menu's per-sound gains: a slider for every sound but enemy_hit, a
 	# gain in dB over the sound's own, silence at 0, none in CLASSIC.
@@ -195,16 +198,90 @@ func _check_mix() -> int:
 	return failures
 
 
-# The mode's music folder: every part of MUSIC and nothing else, classic's a
-# copy of the 2D game's.
+# The songs that follow the fight (Level3DAudio.ADAPTIVE), in modern: one
+# AudioStreamInteractive of the intro, the loop and the end -- the intro and
+# every part of the loop a whole number of bars, the loop's parts looped and
+# all as long as each other, so that they stay together -- with the layers
+# silent until an enemy is on the field, then on, and the accent played.
+# Then in classic: the classic song, and the end its stop.
+func _check_adaptive(audio: Level3DAudio) -> int:
+	var failures := 0
+	for song in Level3DAudio.ADAPTIVE:
+		var spec: Dictionary = Level3DAudio.ADAPTIVE[song]
+		var bar := int(spec.bar_beats)
+		Level3DAudio.set_mode(Level3DAudio.Mode.MODERN)
+		Level3DAudio.play_music(song)
+		await process_frame
+		var stream := audio._music.stream as AudioStreamInteractive
+		if stream == null or stream.clip_count != 3:
+			failures += _fail("%s: not an AudioStreamInteractive of an intro, a loop and an end" % song)
+			continue
+		var intro := stream.get_clip_stream(Level3DAudio.CLIP_INTRO) as AudioStreamOggVorbis
+		if intro == null or intro.loop or intro.beat_count == 0 or intro.beat_count % bar != 0:
+			failures += _fail("%s: %s is not a clip of whole bars" % [song, spec.intro])
+		var sync := stream.get_clip_stream(Level3DAudio.CLIP_LOOP) as AudioStreamSynchronized
+		var parts: Array = [spec.lead] + spec.layers
+		if sync == null or sync.stream_count != parts.size():
+			failures += _fail("%s: its loop is not the lead and %d layers" % [song, spec.layers.size()])
+			continue
+		var beats := -1
+		for i in parts.size():
+			var part := sync.get_sync_stream(i) as AudioStreamOggVorbis
+			if part == null or not part.loop or part.beat_count == 0 or part.beat_count % bar != 0 					or (beats >= 0 and part.beat_count != beats):
+				failures += _fail("%s: %s is not a loop of whole bars as long as the lead" % [song, parts[i]])
+			elif beats < 0:
+				beats = part.beat_count
+		if sync.get_sync_stream_volume(1) > Level3DAudio.SILENT_DB:
+			failures += _fail("%s: a layer is heard with no enemy on the field" % song)
+		var on := []
+		on.resize(spec.layers.size())
+		on.fill(false)
+		on[0] = true
+		Level3DAudio.music_layers(on)
+		if audio._layers_on != on or audio._layer_from[0] < audio._beat_zero:
+			failures += _fail("%s: the first layer is not on its way in" % song)
+		if spec.has("accent"):
+			Level3DAudio.music_accent()
+			await process_frame
+			if audio._accent == null or not audio._accent.playing:
+				failures += _fail("%s: the accent does not play" % song)
+		# Linearly: the same, the loop the one file of them all, as long as the
+		# lead; and back, the layers again.
+		Level3DAudio.set_adaptive(false)
+		await process_frame
+		stream = audio._music.stream as AudioStreamInteractive
+		var full := stream.get_clip_stream(Level3DAudio.CLIP_LOOP) as AudioStreamOggVorbis if stream != null else null
+		if full == null or not full.loop or full.beat_count != beats or audio._sync != null:
+			failures += _fail("%s: played linearly, its loop is not %s, a loop as long as the lead" % [song, spec.full])
+		Level3DAudio.set_adaptive(true)
+		await process_frame
+		stream = audio._music.stream as AudioStreamInteractive
+		if stream == null or not stream.get_clip_stream(Level3DAudio.CLIP_LOOP) is AudioStreamSynchronized:
+			failures += _fail("%s: not layered again after linear" % song)
+		Level3DAudio.set_mode(Level3DAudio.Mode.CLASSIC)
+		await process_frame
+		if not audio._music.playing or not Level3DAudio.MUSIC[song].has(audio._part):
+			failures += _fail("%s: in classic not its own song (%s)" % [song, audio._part])
+		Level3DAudio.music_end()
+		if audio._music.playing:
+			failures += _fail("%s: in classic the end does not stop it" % song)
+		print("adaptive %s: an intro, a loop of the lead and %d layers of %d bars, an end" % [
+				song, spec.layers.size(), beats / bar])
+	# The checks after this one are the modern mode's, as before it.
+	Level3DAudio.set_mode(Level3DAudio.Mode.MODERN)
+	return failures
+
+
+# The mode's music folder: every file the mode plays and nothing else --
+# MUSIC's parts, and in modern ADAPTIVE's clips in place of a song's it has --
+# classic's a copy of the 2D game's.
 func _check_music_files() -> int:
 	var classic := Level3DAudio.mode == Level3DAudio.Mode.CLASSIC
 	var dir: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.mode]
 	var classic_dir: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.Mode.CLASSIC]
 	var parts := {}
-	for song in Level3DAudio.MUSIC:
-		for file in Level3DAudio.MUSIC[song]:
-			parts[file] = true
+	for file in Level3DAudio.mode_music_files():
+		parts[file] = true
 	var failures := 0
 	for file in DirAccess.get_files_at(dir):
 		if file.get_extension() == "ogg" and not parts.has(file):

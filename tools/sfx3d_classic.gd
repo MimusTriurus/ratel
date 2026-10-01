@@ -10,7 +10,9 @@
 #       sound added to SOUNDS.
 #   assets/music3d/classic/<file>      every part of Level3DAudio.MUSIC, a
 #       copy of the 2D game's in assets/music/, and modern/<file> a copy of
-#       it where modern has none yet: the same, song for song.
+#       it where modern has none yet and plays it: the same, song for song,
+#       but for a song modern plays as Level3DAudio.ADAPTIVE has it, whose
+#       clips are its own.
 #
 #     godot --path . --headless --script tools/sfx3d_classic.gd
 #
@@ -65,7 +67,9 @@ func _initialize() -> void:
 		out.store_buffer(bytes)
 		out.close()
 		songs += 1
-		if not FileAccess.file_exists(music_modern + file):
+		# Not a part modern plays otherwise (the boss's loop, Level3DAudio.ADAPTIVE).
+		if Level3DAudio.mode_music_files(Level3DAudio.Mode.MODERN).has(file) \
+				and not FileAccess.file_exists(music_modern + file):
 			DirAccess.copy_absolute(ProjectSettings.globalize_path(music_classic + file),
 					ProjectSettings.globalize_path(music_modern + file))
 			songs_filled += 1

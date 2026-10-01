@@ -563,6 +563,38 @@ as a copy of it, a new song going in by replacing its file. A change of mode
 swaps the part playing for the other folder's from the same position (an
 intro that runs out goes on to its loop, a loop wraps round).
 
+The modern boss is the exception: its music follows the fight
+(`Level3DAudio.ADAPTIVE`). It is one `AudioStreamInteractive` of three clips:
+the intro over the pan, running on into the loop by itself; the loop, an
+`AudioStreamSynchronized` of the lead part (drums, bass, the theme) and a
+layer for each of the four tanks -- guitars, double kick, orchestra,
+arpeggio, by the order the tanks come in (`Level3DBoss.alive_layers`) -- all
+16 bars and summed sample for sample; and the victory, which anything goes
+to on the next beat (`music_end`). `Level3DPreview._update_music` says which
+tanks are on the field every tick (`music_layers`): a layer comes in on the
+next bar and goes as soon as its tank does, over a beat either way, by its
+volume in the synchronized stream, which takes a change while it plays; and
+the lead is up to 4 dB louder as layers go, so that the music thins and does
+not die away. Every part is at 150 BPM and starts on a bar, so the bars run on
+unbroken from the intro's first: that is what a layer comes in on, and what
+`music_accent` -- a tank breached -- counts the beat its `boss_breach.ogg`
+lands on from (the file starts a beat in, and is played from as far into the
+beat as the song has got). The count is the system clock, which agrees with a
+real audio driver and not with `--headless`'s Dummy one, which runs slow;
+`get_playback_position()` of an interactive stream is always 0. The parts are
+mixed linearly, EQ and gain and no compressor, because they are summed in the
+game. `modern/` holds the nine files in place of `boss_repeat.ogg`
+(`mode_music_files`); the mix has every file of both modes, so each layer has
+its own gain in the Mixer, which shows each mode's own. Classic plays the
+intro and loop as before and stops at the end, as the game stops its song.
+The Sound tab's "Музыка босса" (`Level3DSettings.boss_music`,
+`Level3DAudio.set_adaptive`) plays it linearly instead: the same stream with
+`boss_full.ogg` -- the lead and every layer mixed into one file -- for its
+loop, so the fight changes only the accent and the end. A switch while it
+plays starts the other loop from its first bar, since there is no position
+to carry over. The score and how the files are made are in
+`build/music3d_boss/`.
+
 Each mode is a folder holding its files under the same names, `<name>_0.ogg`
 and optionally `_1`, `_2`... as variants picked at random:
 `assets/sfx3d/classic/` and `assets/sfx3d/modern/`, both imported, committed

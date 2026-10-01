@@ -261,9 +261,8 @@ var _gun_locked := false
 var _live := false
 # The BTR's engine, two loops on it mixed by speed (_update_engine_sound).
 var _engine_level := 0.0
-# The music's edges (_update_music): the boss armed, the boss beaten.
+# The music's edge (_update_music): the boss armed.
 var _saw_boss := false
-var _saw_beaten := false
 const ENGINE_RISE := 2.5         # the mix's travel a second, 0 to 1
 var _forced_aim = null  # --fire's or --rocket's target
 var _hold_fire := false # --fire: the gun's trigger held throughout
@@ -1940,6 +1939,7 @@ func _apply_settings() -> void:
 	_set_score(_score)
 	Level3DAudio.set_mode(Level3DAudio.Mode.CLASSIC if settings.sound_mode == Level3DSettings.SoundMode.CLASSIC
 			else Level3DAudio.Mode.MODERN)
+	Level3DAudio.set_adaptive(settings.boss_music == Level3DSettings.BossMusic.ADAPTIVE)
 	Level3DAudio.set_volumes(settings.master_volume, settings.music_volume, settings.effects_volume,
 			settings.enemy_fire_volume, settings.enemy_fire)
 	Level3DAudio.set_gains(settings.sound_gains)
@@ -2034,16 +2034,19 @@ func _update_camera() -> void:
 
 # GameMode's songs: boss_song from the boss's trigger, which is when it arms
 # and the camera starts for its arena, and nothing once it is beaten
-# (mark_stage_completed's stop_song).
+# (mark_stage_completed's stop_song). Where the boss music follows the fight
+# -- the modern mode's, Level3DAudio.ADAPTIVE -- it is told which tanks are
+# on the field, a layer of it each, and the end once all four are gone: its
+# victory, and in classic the stop.
 func _update_music() -> void:
 	var armed := boss != null and boss.camera_top() >= 0.0
 	if armed and not _saw_boss:
 		Level3DAudio.play_music("boss")
 	_saw_boss = armed
-	var beaten := boss != null and boss.is_defeated()
-	if beaten and not _saw_beaten:
-		Level3DAudio.stop_music()
-	_saw_beaten = beaten
+	if armed:
+		Level3DAudio.music_layers(boss.alive_layers())
+	if boss != null and boss.is_defeated():
+		Level3DAudio.music_end()
 
 
 # The BTR's engine: idling at rest, pulling as it goes, the pull's pitch up
@@ -2422,7 +2425,6 @@ func _restart() -> void:
 	_saw_pan = false
 	_saw_defeat = false
 	_saw_boss = false
-	_saw_beaten = false
 	btr.visible = true
 	btr.blink(true)
 	_set_score(0)

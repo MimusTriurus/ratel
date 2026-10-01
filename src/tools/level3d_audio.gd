@@ -29,7 +29,10 @@
 # original's songs from assets/music/, under their own names, and does not
 # change; assets/music3d/modern/ started as a copy of it, and a new song goes
 # in by replacing its file. A change of mode swaps the part playing for the
-# other folder's, from where it was.
+# other folder's, from where it was. One song is the exception: in MODERN
+# the boss's follows the fight (ADAPTIVE) -- a lead part, a layer over it for
+# each tank on the field, a victory at the end and an accent on the beat when
+# a tank is breached -- and modern/ holds those parts in place of its own.
 #
 # The gains, of the effects and of the music, are not in SOUNDS but in the
 # mix (MIX_PATH), which the menu's Mixer tab sets by ear; the comments below
@@ -192,6 +195,42 @@ const MUSIC := {
 	"boss": ["boss_intro.ogg", "boss_repeat.ogg"],
 }
 
+# The modern mode's songs that follow the fight, in place of MUSIC's song of
+# the same name. An intro, then a loop of layers playing together (an
+# AudioStreamSynchronized): the lead part always, and a layer for each enemy
+# the preview says is on the field (music_layers), in the order they came,
+# which comes in on the next bar and goes as soon as the enemy does, over
+# "layer_fade_beats" either way; then, once they are all gone (music_end),
+# the end, on the next beat, the loop fading out over FADE_BEATS. All of it
+# one AudioStreamInteractive, whose intro runs on into the loop by itself.
+# The lead is "lead_boost_db" louder with no layer on, less with each, so
+# that the music thins as the fight goes and does not die away. Every part is
+# at "bpm" and starts on a bar, so the bars run on unbroken from the intro's
+# first: that is what a layer comes in on, and what music_accent counts the
+# beat its "accent" lands on from. CLASSIC plays MUSIC's song, as the game did.
+# Played linearly (set_adaptive, the Sound tab's boss music) the loop is
+# "full" instead -- the lead and every layer mixed into one file -- and the
+# fight changes nothing but the end, and the accent.
+const ADAPTIVE := {
+	"boss": {
+		"bpm": 150.0,
+		"bar_beats": 4,
+		"intro": "boss_intro.ogg",
+		"lead": "boss_lead.ogg",
+		# The four tanks', by the order they come in (Level3DBoss.alive_layers):
+		# weight, drive, the orchestra, the arpeggio.
+		"layers": ["boss_tank_1.ogg", "boss_tank_2.ogg", "boss_tank_3.ogg", "boss_tank_4.ogg"],
+		"full": "boss_full.ogg",
+		"end": "boss_victory.ogg",
+		# A tank breached (Level3DBoss._attacked).
+		"accent": "boss_breach.ogg",
+		"layer_fade_beats": 1.0,
+		"lead_boost_db": 4.0,
+	},
+}
+const FADE_BEATS := 0.06
+enum { CLIP_INTRO, CLIP_LOOP, CLIP_END }
+
 # Every sound's gain and every music part's, dB, for each mode: the game's
 # mix, set by ear on the menu's Mixer tab, which writes it back here (save_mix).
 #
@@ -206,6 +245,8 @@ static var _mix := {}
 static var _mix_saved := {}     # as the file has it, for is_mix_changed
 
 static var mode := Mode.MODERN
+# Whether MODERN plays ADAPTIVE's songs as they follow the fight, or linearly.
+static var adaptive := true
 # The menu's gain for each sound, 0 to MAX_GAIN over its "db" (set_gains):
 # the modern mode's only -- the classic one is the game's, as the game has it.
 static var _gains := {}
@@ -222,6 +263,18 @@ var _listener: AudioListener3D
 var _music: AudioStreamPlayer
 var _song: Array = []       # the parts still to come, file names
 var _part := ""             # the part playing, "" for none
+var _song_name := ""        # the song play_music last started, "" for none
+var _adaptive := ""         # that song, while it plays as ADAPTIVE has it
+# What music_layers last said is on the field, and whether music_end has been
+# called: the fight, kept over a change of mode and an audition.
+var _layers_on: Array = []
+var _ended := false
+var _clip := -1             # the adaptive song's clip, CLIP_*, as last seen (_process)
+var _sync: AudioStreamSynchronized  # its loop: the lead, then the layers
+var _layer_gain := PackedFloat32Array()   # each layer's now, 0 to 1
+var _layer_from := PackedInt64Array()     # Time.get_ticks_usec() its fade in may start at
+var _beat_zero := 0         # Time.get_ticks_usec() at its start: where its bars count from
+var _accent: AudioStreamPlayer
 var _pools := {}            # name -> Array of players
 var _next := {}             # name -> the voice to take when all are busy
 var _last := {}             # name -> Time.get_ticks_msec() of the last play
@@ -293,6 +346,8 @@ func _process(delta: float) -> void:
 		if player == null or player.has_meta("fading") or resolve(loop[1]).spec.get("mixed", false):
 			continue
 		player.volume_db = volume_db(loop[1]) + _gain_db(frame_gain(player.global_position))
+	if not _adaptive.is_empty() and _music.playing:
+		_update_adaptive(delta)
 	if not _debug:
 		return
 	_debug_left -= delta
@@ -471,6 +526,20 @@ static func set_mode(new_mode: Mode) -> void:
 		_current._swap_music()
 
 
+# ADAPTIVE's songs as they follow the fight, or linearly. An adaptive song
+# playing goes on the other way from the same point: the intro, or the loop.
+static func set_adaptive(on: bool) -> void:
+	if on == adaptive:
+		return
+	adaptive = on
+	if _current == null or _current._adaptive.is_empty() or not _current._music.playing or _current._ended:
+		return
+	var c := _current
+	var first := c._clip
+	c._music.stop()
+	c._play_adaptive(c._song_name, CLIP_INTRO if first == CLIP_INTRO else CLIP_LOOP)
+
+
 # The menu's volumes, 0 to 1, onto the buses: Master for everything, Music,
 # Sfx for every effect, EnemyFire for the enemies' guns alone, and whether
 # those are heard at all.
@@ -512,18 +581,90 @@ static func hold(name: String) -> AudioStreamPlayer:
 	return player
 
 
-# One of MUSIC's songs, from its start; "" stops the music.
+# One of MUSIC's songs, from its start -- in MODERN ADAPTIVE's, if it has
+# the song; "" stops the music.
 static func play_music(song: String) -> void:
 	if _current == null:
 		return
-	_current._held_music = null
-	_current._song = MUSIC.get(song, []).duplicate()
-	_current._music.stop()
-	_current._next_part()
+	var c := _current
+	c._held_music = null
+	c._music.stop()
+	c._song_name = song
+	c._layers_on = []
+	c._ended = false
+	c._adaptive = ""
+	if mode == Mode.MODERN and ADAPTIVE.has(song):
+		c._play_adaptive(song, CLIP_INTRO)
+		return
+	c._song = MUSIC.get(song, []).duplicate()
+	c._next_part()
 
 
 static func stop_music() -> void:
 	play_music("")
+
+
+# Which enemies are on the field, for a song that follows the fight: a bool
+# for each of ADAPTIVE's layers, in the order the enemies came. One newly on
+# comes in on the next bar, one newly off goes now. Nothing for a song that
+# plays as MUSIC has it.
+static func music_layers(on: Array) -> void:
+	if _current == null or on == _current._layers_on:
+		return
+	var c := _current
+	var was: Array = c._layers_on
+	c._layers_on = on.duplicate()
+	if c._adaptive.is_empty() or c._layer_from.size() != on.size():
+		return
+	var spec: Dictionary = ADAPTIVE[c._adaptive]
+	var bar := int(60.0 / float(spec.bpm) * int(spec.bar_beats) * 1e6)
+	var now := Time.get_ticks_usec()
+	for i in on.size():
+		if on[i] and not (i < was.size() and was[i]):
+			c._layer_from[i] = c._beat_zero + ceili(float(now - c._beat_zero) / bar) * bar
+
+
+# All of them gone: the song's end, on the next beat. A song that plays as
+# MUSIC has it, CLASSIC's, stops, as the game stops its song when the boss is
+# beaten.
+static func music_end() -> void:
+	if _current == null or _current._ended or not ADAPTIVE.has(_current._song_name):
+		return
+	var c := _current
+	c._ended = true
+	if c._adaptive.is_empty():
+		if c._held_music == null:
+			c._music.stop()
+			c._song.clear()
+			c._part = ""
+		return
+	var playback := c._music.get_stream_playback() as AudioStreamPlaybackInteractive
+	if playback != null:
+		playback.switch_to_clip(CLIP_END)
+
+
+# The adaptive song's accent, over it, on its next beat: the file starts a
+# beat in, and is played from as far into that beat as the song has got.
+# Nothing once the song is at its end, and nothing for a song that plays as
+# MUSIC has it.
+static func music_accent() -> void:
+	if _current == null or _current._adaptive.is_empty() or _current._ended:
+		return
+	var c := _current
+	var spec: Dictionary = ADAPTIVE[c._adaptive]
+	if not spec.has("accent"):
+		return
+	var stream := c._music_stream(spec.accent, false)
+	if stream == null:
+		return
+	if c._accent == null:
+		c._accent = AudioStreamPlayer.new()
+		c._accent.bus = AudioSettings.MUSIC_BUS
+		c.add_child(c._accent)
+	var beat := 60.0 / float(spec.bpm)
+	c._accent.stream = stream
+	c._accent.volume_db = music_db(spec.accent)
+	c._accent.play(fmod((Time.get_ticks_usec() - c._beat_zero) / 1e6, beat))
 
 
 # ----------------------------------------------------------------------------
@@ -577,7 +718,8 @@ static func set_mix_db(name: String, db: float, for_mode: int = -1) -> void:
 
 static func set_music_db(file: String, db: float, for_mode: int = -1) -> void:
 	_set_mix(_mode_key(for_mode), "music", file, db)
-	if _current != null and (for_mode < 0 or for_mode == mode) and _current._part == file:
+	if _current != null and (for_mode < 0 or for_mode == mode) and _current._part == file \
+			and _current._adaptive.is_empty():
 		_current._music.volume_db = db
 
 
@@ -610,7 +752,7 @@ static func reload_mix() -> void:
 		_resolved[name].db = mix_db(name)
 	if _current != null:
 		_current._regain()
-		if not _current._part.is_empty():
+		if not _current._part.is_empty() and _current._adaptive.is_empty():
 			_current._music.volume_db = music_db(_current._part)
 
 
@@ -647,13 +789,39 @@ static func _db_text(db: float) -> String:
 	return "%.1f" % snappedf(db, 0.1)
 
 
-# Every part of every song of MUSIC, once each, in order.
-static func music_files() -> Array[String]:
+# The music files `for_mode` plays (the current mode's by default), once each,
+# in order: MUSIC's songs' parts, and in MODERN ADAPTIVE's clips and accent in
+# place of the parts of a song it has. What the mode's folder holds.
+static func mode_music_files(for_mode: int = -1) -> Array[String]:
+	var m: int = mode if for_mode < 0 else for_mode
 	var files: Array[String] = []
 	for song in MUSIC:
-		for file in MUSIC[song]:
+		var parts: Array = adaptive_files(song) if m == Mode.MODERN and ADAPTIVE.has(song) else MUSIC[song]
+		for file in parts:
 			if not files.has(file):
 				files.append(file)
+	return files
+
+
+# Every music file of either mode, once each, in order: the mix's, which
+# holds a gain for each in both, and the Mixer tab's rows.
+static func music_files() -> Array[String]:
+	var files := mode_music_files(Mode.CLASSIC)
+	for file in mode_music_files(Mode.MODERN):
+		if not files.has(file):
+			files.append(file)
+	return files
+
+
+static func adaptive_files(song: String) -> Array[String]:
+	var spec: Dictionary = ADAPTIVE[song]
+	var files: Array[String] = [spec.intro, spec.lead]
+	for layer in spec.layers:
+		files.append(layer)
+	files.append(spec.full)
+	files.append(spec.end)
+	if spec.has("accent"):
+		files.append(spec.accent)
 	return files
 
 
@@ -692,7 +860,11 @@ static func audition_music(file: String) -> void:
 		return
 	if c._held_music == null:
 		c._held_music = [c._song.duplicate(), c._part,
-				c._music.get_playback_position() if c._music.playing else -1.0]
+				c._music.get_playback_position() if c._music.playing else -1.0, c._adaptive]
+	# Not the adaptive song's any more: music_layers, music_end and
+	# music_accent leave the part alone, and the song is given back where the
+	# fight has got to.
+	c._adaptive = ""
 	c._song = []
 	c._part = file
 	c._music.stream = stream
@@ -716,6 +888,10 @@ static func end_music_audition() -> void:
 	c._music.stop()
 	c._song = held[0]
 	c._part = ""
+	if not String(held[3]).is_empty():
+		if not c._ended:
+			c._play_adaptive(held[3], CLIP_LOOP)
+		return
 	if held[1] == "" or held[2] < 0.0:
 		return
 	var stream := c._music_stream(held[1], c._song.is_empty())
@@ -929,6 +1105,8 @@ func _start_ambience() -> void:
 
 func _next_part() -> void:
 	_part = ""
+	_adaptive = ""
+	_clip = -1
 	if _song.is_empty():
 		return
 	var file: String = _song.pop_front()
@@ -956,11 +1134,146 @@ func _music_stream(file: String, loop: bool) -> AudioStream:
 	return stream
 
 
+# ADAPTIVE's `song` from CLIP_INTRO or CLIP_LOOP, the bars counted from now.
+# From the loop, the layers the fight has on are on at once.
+func _play_adaptive(song: String, first: int) -> void:
+	var stream := _adaptive_stream(song)
+	if stream == null:
+		push_warning("Level3DAudio: no music for %s in %s" % [song, MUSIC_DIRS[mode]])
+		return
+	var spec: Dictionary = ADAPTIVE[song]
+	var n: int = spec.layers.size()
+	_layer_gain.resize(n)
+	_layer_from.resize(n)
+	for i in n:
+		var on: bool = i < _layers_on.size() and _layers_on[i]
+		_layer_gain[i] = 1.0 if on and first == CLIP_LOOP else 0.0
+		_layer_from[i] = 0
+	stream.initial_clip = first
+	_adaptive = song
+	_song = []
+	_clip = first
+	_music.stream = stream
+	_update_adaptive(0.0)
+	_music.play()
+	_beat_zero = Time.get_ticks_usec()
+
+
+# The adaptive song, every frame: which clip it is in (it goes on to the loop
+# by itself, and to the end on the beat), the player's gain for that, and in
+# the loop each layer's fade and the lead's gain over them. The loop's gains
+# are on its parts, so that the Mixer's for each layer is heard at once.
+func _update_adaptive(delta: float) -> void:
+	var spec: Dictionary = ADAPTIVE[_adaptive]
+	if _music.playing:
+		var playback := _music.get_stream_playback() as AudioStreamPlaybackInteractive
+		if playback != null:
+			_clip = maxi(playback.get_current_clip_index(), _clip)
+	var layered := _sync != null
+	_part = [spec.intro, spec.lead if layered else spec.full, spec.end][clampi(_clip, CLIP_INTRO, CLIP_END)]
+	_music.volume_db = 0.0 if _clip == CLIP_LOOP and layered else music_db(_part)
+	if not layered:
+		return
+	var step := delta / (60.0 / float(spec.bpm) * float(spec.layer_fade_beats))
+	var now := Time.get_ticks_usec()
+	var sum := 0.0
+	for i in _layer_gain.size():
+		var on: bool = i < _layers_on.size() and _layers_on[i] and now >= _layer_from[i]
+		_layer_gain[i] = clampf(_layer_gain[i] + (step if on else -step), 0.0, 1.0)
+		sum += _layer_gain[i]
+		_sync.set_sync_stream_volume(1 + i, music_db(spec.layers[i])
+				+ (linear_to_db(_layer_gain[i]) if _layer_gain[i] > 0.0 else SILENT_DB))
+	_sync.set_sync_stream_volume(0, music_db(spec.lead)
+			+ float(spec.lead_boost_db) * (1.0 - sum / maxf(1.0, _layer_gain.size())))
+
+
+# ADAPTIVE's `song` out of the mode's folder, or null when a part is missing:
+# the intro, running on into the loop, and the end, which anything goes to on
+# the next beat. The loop is the lead and the layers together, the layers
+# silent until _update_adaptive -- or, played linearly, the one file of them
+# all, and _sync null.
+func _adaptive_stream(song: String) -> AudioStreamInteractive:
+	var spec: Dictionary = ADAPTIVE[song]
+	var intro := _beat_stream(spec.intro, false, spec)
+	var end := _beat_stream(spec.end, false, spec)
+	if intro == null or end == null:
+		return null
+	var loop: AudioStream
+	_sync = null
+	if adaptive:
+		var parts: Array = [spec.lead] + spec.layers
+		var sync := AudioStreamSynchronized.new()
+		sync.stream_count = parts.size()
+		for i in parts.size():
+			var part := _beat_stream(parts[i], true, spec)
+			if part == null:
+				return null
+			sync.set_sync_stream(i, part)
+			sync.set_sync_stream_volume(i, music_db(spec.lead) if i == 0 else SILENT_DB)
+		_sync = sync
+		loop = sync
+	else:
+		loop = _beat_stream(spec.full, true, spec)
+		if loop == null:
+			return null
+	var stream := AudioStreamInteractive.new()
+	stream.clip_count = 3
+	for clip in [[CLIP_INTRO, "intro", intro], [CLIP_LOOP, "loop", loop], [CLIP_END, "end", end]]:
+		stream.set_clip_name(clip[0], clip[1])
+		stream.set_clip_stream(clip[0], clip[2])
+	stream.set_clip_auto_advance(CLIP_INTRO, AudioStreamInteractive.AUTO_ADVANCE_ENABLED)
+	stream.set_clip_auto_advance_next_clip(CLIP_INTRO, CLIP_LOOP)
+	stream.add_transition(AudioStreamInteractive.CLIP_ANY, CLIP_END,
+			AudioStreamInteractive.TRANSITION_FROM_TIME_NEXT_BEAT, AudioStreamInteractive.TRANSITION_TO_TIME_START,
+			AudioStreamInteractive.FADE_OUT, FADE_BEATS)
+	return stream
+
+
+# The mode's folder's `file` with the song's tempo on it: the beats
+# AudioStreamInteractive switches on and, for a part of whole bars, where it
+# wraps. A part of no whole number of beats -- the end, rung out -- has none,
+# and plays to its end.
+func _beat_stream(file: String, loop: bool, spec: Dictionary) -> AudioStream:
+	var clip := _music_stream(file, loop)
+	var ogg := clip as AudioStreamOggVorbis
+	if ogg != null:
+		ogg.bpm = spec.bpm
+		ogg.bar_beats = spec.bar_beats
+		var beats := ogg.get_length() * float(spec.bpm) / 60.0
+		ogg.beat_count = roundi(beats) if absf(beats - roundf(beats)) < 0.01 else 0
+	return clip
+
+
+# After set_mode, for a song ADAPTIVE has: the other mode's way of playing it,
+# at the same point -- the intro for the intro, the loop for the loop, with
+# the layers the fight has on -- and after the end, which classic marks with
+# silence, nothing.
+func _swap_adaptive() -> void:
+	var intro: String = ADAPTIVE[_song_name].intro if not _adaptive.is_empty() else MUSIC[_song_name][0]
+	var in_intro := _part == intro
+	_music.stop()
+	_adaptive = ""
+	_clip = -1
+	_part = ""
+	if _ended:
+		return
+	if mode == Mode.MODERN:
+		_play_adaptive(_song_name, CLIP_INTRO if in_intro else CLIP_LOOP)
+		return
+	_song = MUSIC[_song_name].duplicate()
+	if not in_intro:
+		_song.pop_front()
+	_next_part()
+
+
 # After set_mode: the part playing, from the new mode's folder, from where the
 # old one had got to. A new song need not be as long as the original: past
 # its end an intro goes on to the next part, and the loop wraps round.
 func _swap_music() -> void:
 	if _part.is_empty() or not _music.playing:
+		return
+	if ADAPTIVE.has(_song_name) and _held_music == null:
+		_swap_adaptive()
 		return
 	var at := _music.get_playback_position()
 	var stream := _music_stream(_part, _song.is_empty())

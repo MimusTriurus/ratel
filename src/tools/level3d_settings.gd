@@ -93,6 +93,10 @@ var keys := DEFAULT_KEYS.duplicate()
 # original fired in silence.
 enum SoundMode { CLASSIC, MODERN }
 var sound_mode := SoundMode.MODERN
+# The modern boss music: following the fight, a layer a tank on the field
+# (Level3DAudio.ADAPTIVE), or the same parts as one track.
+enum BossMusic { ADAPTIVE, LINEAR }
+var boss_music := BossMusic.ADAPTIVE
 var master_volume := 1.0
 var music_volume := 0.8
 var effects_volume := 1.0
@@ -166,6 +170,7 @@ func load_saved() -> void:
 	var scale = config.get_value("interface", "scale", hud_scale)
 	hud_scale = float(scale) if (scale is int or scale is float) and HUD_SCALES.has(float(scale)) else 1.0
 	sound_mode = clampi(config.get_value("sound", "mode", sound_mode), 0, SoundMode.size() - 1)
+	boss_music = clampi(config.get_value("sound", "boss_music", boss_music), 0, BossMusic.size() - 1)
 	master_volume = _volume(config.get_value("sound", "master", master_volume))
 	music_volume = _volume(config.get_value("sound", "music", music_volume))
 	effects_volume = _volume(config.get_value("sound", "effects", effects_volume))
@@ -220,6 +225,7 @@ func save() -> void:
 	config.set_value("interface", "corner", hud_corner)
 	config.set_value("interface", "scale", hud_scale)
 	config.set_value("sound", "mode", sound_mode)
+	config.set_value("sound", "boss_music", boss_music)
 	config.set_value("sound", "master", master_volume)
 	config.set_value("sound", "music", music_volume)
 	config.set_value("sound", "effects", effects_volume)
