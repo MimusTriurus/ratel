@@ -474,9 +474,9 @@ func _launch() -> void:
 	# round went off wherever the ground had rocked the jeep. How steeply it
 	# rises is the rails' elevation on the hull, for the same reason.
 	# A rocket's launch runs on into its flight, and is taken back when it
-	# goes off first (_explode); classic's is the original's, played out.
+	# goes off first (_explode); the original mode's is the original's, played out.
 	var launch_sound: AudioStreamPlayer = null
-	if has_missiles and Level3DAudio.mode == Level3DAudio.Mode.MODERN:
+	if has_missiles and not Level3DAudio.as_original():
 		launch_sound = Level3DAudio.hold("rocket_launch")
 	else:
 		Level3DAudio.play("rocket_launch" if has_missiles else "grenade_launch", start)
@@ -882,7 +882,7 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3) -> void:
 	# original knew no water, and played explode3 for a missile and
 	# explode2 for a grenade wherever they went off.
 	Level3DAudio.play("blast_missile" if rocket.missile else "blast_small", at)
-	if on_water and Level3DAudio.mode == Level3DAudio.Mode.MODERN:
+	if on_water and not Level3DAudio.as_original():
 		Level3DAudio.play("blast_water", at)
 	# Asked first: a building that goes down brings its own soot, and a crater
 	# of the rocket's on top of it is a second, darker scorch.

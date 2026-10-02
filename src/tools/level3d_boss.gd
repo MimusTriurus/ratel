@@ -189,6 +189,7 @@ var _rng := RandomNumberGenerator.new()
 class Tank:
 	var x: float            # map pixels
 	var y: float
+	var order := 0          # 0 to 3, the order it came in: its layer of the boss music
 	var shoot_delay := BossBlueTank.SHOOT_DELAY
 	var shoot_count := BossBlueTank.SHOOT_COUNT
 	var move_steps := 0
@@ -398,6 +399,17 @@ func is_defeated() -> bool:
 	return _destroyed == BossBlueTanksManager.TANKS
 
 
+# Which of the four are on the field, by the order they came in: the boss
+# music's layers (Level3DAudio.music_layers), one a tank, on while it is.
+func alive_layers() -> Array:
+	var on := []
+	on.resize(BossBlueTanksManager.TANKS)
+	on.fill(false)
+	for t in tanks:
+		on[t.order] = true
+	return on
+
+
 # ----------------------------------------------------------------------------
 # The tick: BossBlueTanksManager, then each tank.
 
@@ -443,6 +455,7 @@ func _spawn(x: float, y: float, from_top: bool) -> void:
 	var t := Tank.new()
 	t.x = x
 	t.y = y
+	t.order = _spawned - 1
 	var sgn := 1.0 if from_top else -1.0
 	t.display_angle = 90.0 if from_top else 270.0
 	t.target_angle = 90 if from_top else 270
@@ -822,6 +835,7 @@ func _attacked(i: int, by: String) -> void:
 		(t.players.damage as AnimationPlayer).play("Breach")
 		_breach(t)
 		Level3DAudio.play("breach_gun" if by == "machine gun" else "breach_blast", t.root.global_position)
+		Level3DAudio.music_accent()
 		if verbose:
 			print("boss tank breached (%s) at %.0f, %.0f, tick %d" % [by, t.x, t.y, Engine.get_physics_frames()])
 		return

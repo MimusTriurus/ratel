@@ -64,8 +64,8 @@ extends Node3D
 
 const MODEL_PATH := "res://resources/3d/jackal_littlebird.glb"
 # Level3DAudio's: helicopter2.ogg, helicopter_pickup.ogg and
-# weapon_upgrade.ogg, the original's, in classic. The rotor is a player of its own,
-# kept playing while it flies; the other two are one-shots.
+# weapon_upgrade.ogg, the original's, in the original mode. The rotor is a
+# player of its own, kept playing while it flies; the other two are one-shots.
 const SOUND := "rescue_rotor"
 const PICKUP_SOUND := "rescue_pickup"
 const UPGRADE_SOUND := "upgrade"
@@ -277,10 +277,10 @@ func tick() -> void:
 	# FriendlyHelicopter.update's: heard from STATE_ACCELERATING, and here
 	# coming in, which the original's never was; on the pad it is silent. The
 	# modern rotor is heard on the pad as well, idling, since it turns there.
-	if Level3DAudio.mode == Level3DAudio.Mode.MODERN or state >= ACCELERATING or state <= BRAKING:
+	if not Level3DAudio.as_original() or state >= ACCELERATING or state <= BRAKING:
 		_play_sound()
 	elif _sound.stream != Level3DAudio.stream(SOUND):
-		# Switched to classic on the pad: the modern loop would play on.
+		# Switched to the original on the pad: the modern loop would play on.
 		_sound.stop()
 		_sound.stream = null
 	match state:
@@ -499,7 +499,7 @@ func _play_sound() -> void:
 	# rotor never runs out to be started again with a new volume.
 	var gain := Level3DAudio.edge_fade(Level3DMap.to_level(Vector2(x, y)), frame.call())
 	_sound.pitch_scale = 1.0
-	if Level3DAudio.mode == Level3DAudio.Mode.MODERN:
+	if not Level3DAudio.as_original():
 		var spin := inverse_lerp(SLOW_ROTOR, FAST_ROTOR, rotor_speed)
 		gain *= lerpf(IDLE_GAIN, 1.0, spin)
 		_sound.pitch_scale = lerpf(IDLE_PITCH, 1.0, spin)

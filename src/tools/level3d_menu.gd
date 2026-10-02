@@ -2,7 +2,7 @@
 # settings, quit, over the stage
 # frozen by pausing the tree. The settings are six tabs: five of
 # Level3DSettings -- graphics (the camera and the look), interface (what the
-# HUD shows, where and how big), sound (classic or modern, the volumes, the
+# HUD shows, where and how big), sound (original, classic or modern, the volumes, the
 # enemies' fire), controls (the keys, how the BTR drives and how it fires) and
 # cheats -- and the mixer, the game's own gain for every sound and every part
 # of the music in each mode, which is Level3DAudio's mix and is saved into the
@@ -56,6 +56,10 @@ const MUSIC_NAMES := {
 	"start.ogg": "Заставка перед высадкой", "stage0_intro.ogg": "Этап: вступление",
 	"stage0_repeat.ogg": "Этап: петля", "boss_intro.ogg": "Босс: вступление",
 	"boss_repeat.ogg": "Босс: петля",
+	"boss_lead.ogg": "Босс: ведущая партия", "boss_tank_1.ogg": "Босс: танк 1 (гитары)",
+	"boss_tank_2.ogg": "Босс: танк 2 (двойная бочка)", "boss_tank_3.ogg": "Босс: танк 3 (струнные)",
+	"boss_tank_4.ogg": "Босс: танк 4 (арпеджиатор)", "boss_full.ogg": "Босс: петля целиком (линейная)",
+	"boss_victory.ogg": "Босс: победа", "boss_breach.ogg": "Босс: акцент на пробитие",
 }
 const MIX_MIN_DB := -40.0
 const MIX_MAX_DB := 12.0
@@ -111,6 +115,12 @@ var _hud_rows: OptionButton
 var _font: OptionButton
 var _hud_scale: OptionButton
 var _sound_mode: OptionButton
+# The Sound tab's and the Mixer tab's choice of mode, in the order they list
+# it, and what each is called.
+const SOUND_MODES := [Level3DSettings.SoundMode.ORIGINAL, Level3DSettings.SoundMode.CLASSIC,
+		Level3DSettings.SoundMode.MODERN]
+const SOUND_MODE_NAMES := ["Оригинал", "Классический (8-bit)", "Новый"]
+var _boss_music: OptionButton
 var _master_volume: HSlider
 var _music_volume: HSlider
 var _effects_volume: HSlider
@@ -226,25 +236,29 @@ func refresh() -> void:
 	_hud_rows.select(1 if settings.hud_two_rows else 0)
 	_font.select(settings.font)
 	_hud_scale.select(Level3DSettings.HUD_SCALES.find(settings.hud_scale))
-	_sound_mode.select(settings.sound_mode)
+	_sound_mode.select(SOUND_MODES.find(settings.sound_mode))
 	_master_volume.set_value_no_signal(settings.master_volume * 100.0)
 	_music_volume.set_value_no_signal(settings.music_volume * 100.0)
 	_effects_volume.set_value_no_signal(settings.effects_volume * 100.0)
 	_enemy_fire.set_pressed_no_signal(settings.enemy_fire)
 	_enemy_fire_volume.set_value_no_signal(settings.enemy_fire_volume * 100.0)
-	# The classic mode has no enemies' fire to switch: the original had none.
-	var modern := settings.sound_mode == Level3DSettings.SoundMode.MODERN
-	_enemy_fire.disabled = not modern
-	_enemy_fire_volume.editable = modern and settings.enemy_fire
+	# The original has no enemies' fire to switch, and no gains but the game's;
+	# classic is played as modern is. The boss's music follows the fight in
+	# modern alone: classic's is linear.
+	var own := settings.sound_mode != Level3DSettings.SoundMode.ORIGINAL
+	_boss_music.select(settings.boss_music)
+	_boss_music.disabled = settings.sound_mode != Level3DSettings.SoundMode.MODERN
+	_enemy_fire.disabled = not own
+	_enemy_fire_volume.editable = own and settings.enemy_fire
 	for sound in _gain_sliders:
 		var slider: HSlider = _gain_sliders[sound]
 		slider.set_value_no_signal(float(settings.sound_gains.get(sound, 1.0)) * 100.0)
-		slider.editable = modern
+		slider.editable = own
 		_show_percent(slider)
-	_gains_reset.disabled = not modern
+	_gains_reset.disabled = not own
 	for slider in [_master_volume, _music_volume, _effects_volume, _enemy_fire_volume]:
 		_show_percent(slider)
-	_mixer_mode.select(settings.sound_mode)
+	_mixer_mode.select(SOUND_MODES.find(settings.sound_mode))
 	_refresh_mixer()
 	# Greyed out, not hidden, with the HUD off: what it would show stays set.
 	for widget in [_hud_score, _hud_lives, _hud_pows, _hud_weapon, _hud_modes, _hud_cheats, _hud_pad_arrow,
@@ -356,12 +370,18 @@ func _make_interface_tab() -> Control:
 func _make_sound_tab() -> Control:
 	var tab := _tab("Звук")
 	var modes := _grid(tab)
-	_sound_mode = _choice(modes, "Звук", ["Классический", "Новый"],
+	_sound_mode = _choice(modes, "Звук", SOUND_MODE_NAMES,
 			func(i: int):
-				settings.sound_mode = i
+				settings.sound_mode = SOUND_MODES[i]
 				_preview("pickup"))
-	_note(tab, "Классический: звуки оригинальной игры, как в ней. "
+	_note(tab, "Оригинал: звуки оригинальной игры, как в ней. "
+			+ "Классический: звуки и музыка нового режима в звучании NES (с чипом VRC6), по тем же правилам. "
 			+ "Новый: объёмный звук, двигатели, окружение, выстрелы врагов и своя музыка.")
+	var boss := _grid(tab)
+	_boss_music = _choice(boss, "Музыка босса", ["Адаптивная", "Линейная"],
+			func(i: int): settings.boss_music = i)
+	_note(tab, "Адаптивная: каждый танк на поле добавляет к музыке свою партию, подбитый уносит её. "
+			+ "Линейная: те же партии одним треком. В обоих после победы — фанфары. Только в новом режиме.")
 	tab.add_child(HSeparator.new())
 	_heading(tab, "Громкость")
 	var volumes := _grid(tab)
@@ -422,8 +442,8 @@ func _gain_moved(sound: String) -> Callable:
 func _make_mixer_tab() -> Control:
 	var tab := _tab("Микшер")
 	var modes := _grid(tab)
-	_mixer_mode = _choice(modes, "Режим", ["Классический", "Новый"],
-			func(i: int): settings.sound_mode = i)
+	_mixer_mode = _choice(modes, "Режим", SOUND_MODE_NAMES,
+			func(i: int): settings.sound_mode = SOUND_MODES[i])
 	_note(tab, "Громкость каждого звука и музыки в игре, в дБ, отдельно для каждого режима. "
 			+ "▶ — послушать; звук играет и после того, как ползунок отпущен. "
 			+ "Музыка играет по кругу, пока не нажать ■ или «Музыка уровня». "
@@ -483,8 +503,7 @@ func _make_mixer_tab() -> Control:
 # The Mixer tab's mode as Level3DAudio has it: the setting's, which the
 # preview hands on to Level3DAudio only after the menu's refresh.
 func _mixer_audio_mode() -> int:
-	return Level3DAudio.Mode.CLASSIC if settings.sound_mode == Level3DSettings.SoundMode.CLASSIC \
-			else Level3DAudio.Mode.MODERN
+	return settings.sound_mode
 
 
 # A music part's ▶: on, it plays the part alone, looped, and turns to ■;
@@ -507,8 +526,13 @@ func _refresh_mixer() -> void:
 	var m := _mixer_audio_mode()
 	for sound in _mix_sliders:
 		_show_db(_mix_sliders[sound], Level3DAudio.mix_db(sound, m), Level3DAudio.saved_mix_db(sound, m))
+	# A music part's row only in the mode that plays it: the boss's clips in
+	# modern, its loop in classic (Level3DAudio.ADAPTIVE).
+	var played := Level3DAudio.mode_music_files(m)
 	for file in _music_sliders:
 		_show_db(_music_sliders[file], Level3DAudio.music_db(file, m), Level3DAudio.saved_music_db(file, m))
+		for control in _music_sliders[file].get_meta("row"):
+			(control as Control).visible = played.has(file)
 	_mix_update_status()
 	_refresh_music_buttons()
 
@@ -556,6 +580,7 @@ func _mix_row(grid: GridContainer, text: String, audition: Callable, moved: Call
 	grid.add_child(value)
 	slider.set_meta("db", value)
 	slider.set_meta("play", play)
+	slider.set_meta("row", [label, play, slider, value])
 	slider.value_changed.connect(func(db: float):
 		moved.call(db)
 		_show_db(slider, db, float(slider.get_meta("saved", db)))

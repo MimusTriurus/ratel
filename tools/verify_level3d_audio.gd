@@ -1,16 +1,20 @@
-# Checks the 3D preview's sound (src/tools/level3d_audio.gd) in both of its
-# modes. Each mode's folder, assets/sfx3d/classic/ and modern/, holds
-# nothing that is no sound's in Level3DAudio.SOUNDS; classic's must be what
-# tools/sfx3d_classic.gd made, <name>_0.ogg alone, the sound's "original"
-# byte for byte, and nothing for a sound with none. A sound with no file is
+# Checks the 3D preview's sound (src/tools/level3d_audio.gd) in its three
+# modes. Each mode's folder, assets/sfx3d/original/, classic/ and modern/,
+# holds nothing that is no sound's in Level3DAudio.SOUNDS; the original's
+# must be what tools/sfx3d_classic.gd made, <name>_0.ogg alone, the sound's
+# "original" byte for byte, and nothing for a sound with none; classic's
+# exactly modern's files (tools/sfx_chiptune.py --install), the original's
+# own where modern's is a copy of it. A sound with no file is
 # silent, in either mode, and not wrong. Every sound is then resolved,
 # played positional and flat, and, if it loops, hung on a node and taken off
 # again; the table says what each one got -- the original's, new (a modern
-# file that is no longer classic's), or missing, silent. Then the mode
+# file that is no longer the original's), or missing, silent. Then the mode
 # is switched with a loop hung. The music's folders, assets/music3d/classic/
-# and modern/, must hold every part of MUSIC and nothing else, classic's the
-# 2D game's byte for byte; every song is started in both modes, and one is
-# carried over a change of mode.
+# and modern/, must hold every file the mode plays and nothing else, classic's
+# the 2D game's byte for byte; every song is started in both modes, and one is
+# carried over a change of mode. The boss's song, which in modern follows the
+# fight (ADAPTIVE), is checked part by part, through a layer, an accent and a
+# change of mode.
 #
 #     godot --path . --headless --script tools/verify_level3d_audio.gd
 #
@@ -23,7 +27,7 @@ func _initialize() -> void:
 	root.add_child(audio)
 	await process_frame
 	var failures := 0
-	for mode in [Level3DAudio.Mode.MODERN, Level3DAudio.Mode.CLASSIC]:
+	for mode in [Level3DAudio.Mode.MODERN, Level3DAudio.Mode.CLASSIC, Level3DAudio.Mode.ORIGINAL]:
 		Level3DAudio.set_mode(mode)
 		failures += await _check_mode()
 	# A loop on a unit through a change of mode: put back on it in the new
@@ -46,7 +50,7 @@ func _initialize() -> void:
 	Level3DAudio.reload_mix()
 	if Level3DAudio.is_mix_changed() or not is_equal_approx(Level3DAudio.mix_db("gun"), was):
 		failures += _fail("reload_mix did not give the file's mix back")
-	for mode in [Level3DAudio.Mode.MODERN, Level3DAudio.Mode.CLASSIC]:
+	for mode in [Level3DAudio.Mode.MODERN, Level3DAudio.Mode.CLASSIC, Level3DAudio.Mode.ORIGINAL]:
 		Level3DAudio.set_mode(mode)
 		failures += _check_music_files()
 		for song in Level3DAudio.MUSIC:
@@ -62,6 +66,8 @@ func _initialize() -> void:
 	await process_frame
 	if not audio._music.playing or audio._part != part:
 		failures += _fail("music: %s not carried over the change of mode (%s)" % [part, audio._part])
+	failures += await _check_chain(audio)
+	failures += await _check_adaptive(audio)
 	Level3DAudio.stop_music()
 	# The menu's per-sound gains: a slider for every sound but enemy_hit, a
 	# gain in dB over the sound's own, silence at 0, none in CLASSIC.
@@ -84,9 +90,12 @@ func _initialize() -> void:
 	Level3DAudio.play("hit_armor")
 	if audio.get_child_count() != voices and audio._pools.get("hit_armor/flat", []).any(func(p): return p.playing):
 		failures += _fail("hit_armor at 0 % still plays")
-	Level3DAudio.set_mode(Level3DAudio.Mode.CLASSIC)
+	Level3DAudio.set_mode(Level3DAudio.Mode.ORIGINAL)
 	if not is_equal_approx(Level3DAudio.gain("gun"), 1.0):
-		failures += _fail("a gain applied in the classic mode")
+		failures += _fail("a gain applied in the original mode")
+	Level3DAudio.set_mode(Level3DAudio.Mode.CLASSIC)
+	if not is_equal_approx(Level3DAudio.volume_db("gun"), Level3DAudio.mix_db("gun") + linear_to_db(0.5)):
+		failures += _fail("the Sound tab's gain not applied in the classic mode, which plays as modern")
 	Level3DAudio.set_mode(Level3DAudio.Mode.MODERN)
 	Level3DAudio.set_gains({})
 	Level3DAudio.set_volumes(1.0, 0.5, 1.0, 0.3, false)
@@ -104,10 +113,12 @@ func _initialize() -> void:
 
 
 func _check_mode() -> int:
-	var classic := Level3DAudio.mode == Level3DAudio.Mode.CLASSIC
+	var original := Level3DAudio.mode == Level3DAudio.Mode.ORIGINAL
+	var chip := Level3DAudio.mode == Level3DAudio.Mode.CLASSIC
 	var dir: String = Level3DAudio.DIRS[Level3DAudio.mode]
-	var classic_dir: String = Level3DAudio.DIRS[Level3DAudio.Mode.CLASSIC]
-	print("--- %s, %s" % ["classic" if classic else "modern", dir])
+	var original_dir: String = Level3DAudio.DIRS[Level3DAudio.Mode.ORIGINAL]
+	var modern_dir: String = Level3DAudio.DIRS[Level3DAudio.Mode.MODERN]
+	print("--- %s, %s" % [Level3DAudio.MODE_KEYS[Level3DAudio.mode], dir])
 	var counts := {"original": 0, "new": 0, "missing": 0}
 	var failures := 0
 	for file in DirAccess.get_files_at(dir):
@@ -117,22 +128,36 @@ func _check_mode() -> int:
 		var name := base.left(base.rfind("_"))
 		if not Level3DAudio.SOUNDS.has(name) or not base.substr(base.rfind("_") + 1).is_valid_int():
 			failures += _fail("%s%s is no sound's" % [dir, file])
-		elif classic and not base.ends_with("_0"):
-			failures += _fail("%s%s: classic has one of each" % [dir, file])
+		elif original and not base.ends_with("_0"):
+			failures += _fail("%s%s: the original has one of each" % [dir, file])
+		elif chip and not FileAccess.file_exists(modern_dir + file):
+			failures += _fail("%s%s: modern has no %s" % [dir, file, file])
+	if chip:
+		for file in DirAccess.get_files_at(modern_dir):
+			if file.get_extension() != "ogg" or FileAccess.file_exists(dir + file):
+				continue
+			failures += _fail("%s%s is missing: modern has one" % [dir, file])
 	for name in Level3DAudio.SOUNDS:
 		var spec := Level3DAudio.spec_of(name)
 		var path := "%s%s_0.ogg" % [dir, name]
 		var kind := "missing"
 		if FileAccess.file_exists(path):
 			var bytes := FileAccess.get_file_as_bytes(path)
-			var base := FileAccess.get_file_as_bytes("%s%s_0.ogg" % [classic_dir, name])
+			var base := FileAccess.get_file_as_bytes("%s%s_0.ogg" % [original_dir, name])
 			kind = "original" if spec.has("original") and bytes == base else "new"
-			if classic:
+			if original:
 				if not spec.has("original"):
-					failures += _fail("%s: the original had no sound for it, and classic has one" % path)
+					failures += _fail("%s: the original had no sound for it, and has one" % path)
 				elif bytes != FileAccess.get_file_as_bytes(Level3DAudio.ORIGINAL + spec.original):
 					failures += _fail("%s: not a copy of %s" % [name, spec.original])
-		elif classic and spec.has("original"):
+			elif chip:
+				# The original's own where modern's is still a copy of it, and
+				# a rendering of modern's otherwise.
+				var modern := FileAccess.get_file_as_bytes("%s%s_0.ogg" % [modern_dir, name])
+				if (modern == base) != (bytes == base):
+					failures += _fail("%s: %s" % [path, "not the original's, as modern's is"
+							if modern == base else "the original's, and modern has its own"])
+		elif original and spec.has("original"):
 			failures += _fail("%s is missing" % path)
 		var entry := Level3DAudio.resolve(name)
 		var variants := 0
@@ -143,8 +168,8 @@ func _check_mode() -> int:
 				variants = (first as AudioStreamRandomizer).streams_count
 				first = (first as AudioStreamRandomizer).get_stream(0)
 			var looped: bool = first is AudioStreamOggVorbis and (first as AudioStreamOggVorbis).loop
-			if looped != (spec.get("loop", false) and not classic):
-				failures += _fail("%s: looped %s in %s" % [name, looped, "classic" if classic else "modern"])
+			if looped != (spec.get("loop", false) and not original):
+				failures += _fail("%s: looped %s in %s" % [name, looped, Level3DAudio.MODE_KEYS[Level3DAudio.mode]])
 		elif kind != "missing":
 			failures += _fail("%s: a file, and nothing to play" % name)
 		counts[kind] += 1
@@ -195,16 +220,133 @@ func _check_mix() -> int:
 	return failures
 
 
-# The mode's music folder: every part of MUSIC and nothing else, classic's a
-# copy of the 2D game's.
+# A song of several parts, in both modes: one AudioStreamInteractive of them
+# all, each running on into the next and the last looped, so that no part
+# waits for the one before's `finished`; and through a change of mode, the
+# same part with the same parts to come.
+func _check_chain(audio: Level3DAudio) -> int:
+	var failures := 0
+	for mode in [Level3DAudio.Mode.MODERN, Level3DAudio.Mode.CLASSIC]:
+		Level3DAudio.set_mode(mode)
+		Level3DAudio.play_music("intro")
+		await process_frame
+		var files: Array = Level3DAudio.MUSIC["intro"]
+		var stream := audio._music.stream as AudioStreamInteractive
+		if stream == null or stream.clip_count != files.size():
+			failures += _fail("intro in %s: not one stream of its %d parts" % [mode, files.size()])
+			continue
+		for i in files.size():
+			var last := i == files.size() - 1
+			var ogg := stream.get_clip_stream(i) as AudioStreamOggVorbis
+			if stream.get_clip_name(i) != StringName(files[i]) or ogg == null or ogg.loop != last:
+				failures += _fail("intro in %s: clip %d is not %s%s" % [mode, i, files[i], ", looped" if last else ""])
+			elif not last and (stream.get_clip_auto_advance(i) != AudioStreamInteractive.AUTO_ADVANCE_ENABLED
+					or stream.get_clip_auto_advance_next_clip(i) != i + 1):
+				failures += _fail("intro in %s: %s does not run on into the next part" % [mode, files[i]])
+		if audio._part != files[0] or audio._parts_to_come() != files.slice(1):
+			failures += _fail("intro in %s: at %s, %s to come" % [mode, audio._part, audio._parts_to_come()])
+	# A change of mode in the chain: its part alone, the rest still to come.
+	Level3DAudio.set_mode(Level3DAudio.Mode.MODERN)
+	await process_frame
+	if not audio._music.playing or audio._part != "start.ogg" or audio._song != ["stage0_intro.ogg", "stage0_repeat.ogg"]:
+		failures += _fail("intro: not carried over the change of mode (%s, then %s)" % [audio._part, audio._song])
+	Level3DAudio.stop_music()
+	return failures
+
+
+# The songs that follow the fight (Level3DAudio.ADAPTIVE), in modern: one
+# AudioStreamInteractive of the intro, the loop and the end -- the intro and
+# every part of the loop a whole number of bars, the loop's parts looped and
+# all as long as each other, so that they stay together -- with the layers
+# silent until an enemy is on the field, then on, and the accent played.
+# Then in classic: the classic song, and the end its stop.
+func _check_adaptive(audio: Level3DAudio) -> int:
+	var failures := 0
+	for song in Level3DAudio.ADAPTIVE:
+		var spec: Dictionary = Level3DAudio.ADAPTIVE[song]
+		var bar := int(spec.bar_beats)
+		Level3DAudio.set_mode(Level3DAudio.Mode.MODERN)
+		Level3DAudio.play_music(song)
+		await process_frame
+		var stream := audio._music.stream as AudioStreamInteractive
+		if stream == null or stream.clip_count != 3:
+			failures += _fail("%s: not an AudioStreamInteractive of an intro, a loop and an end" % song)
+			continue
+		var intro := stream.get_clip_stream(Level3DAudio.CLIP_INTRO) as AudioStreamOggVorbis
+		if intro == null or intro.loop or intro.beat_count == 0 or intro.beat_count % bar != 0:
+			failures += _fail("%s: %s is not a clip of whole bars" % [song, spec.intro])
+		var sync := stream.get_clip_stream(Level3DAudio.CLIP_LOOP) as AudioStreamSynchronized
+		var parts: Array = [spec.lead] + spec.layers
+		if sync == null or sync.stream_count != parts.size():
+			failures += _fail("%s: its loop is not the lead and %d layers" % [song, spec.layers.size()])
+			continue
+		var beats := -1
+		for i in parts.size():
+			var part := sync.get_sync_stream(i) as AudioStreamOggVorbis
+			if part == null or not part.loop or part.beat_count == 0 or part.beat_count % bar != 0 					or (beats >= 0 and part.beat_count != beats):
+				failures += _fail("%s: %s is not a loop of whole bars as long as the lead" % [song, parts[i]])
+			elif beats < 0:
+				beats = part.beat_count
+		if sync.get_sync_stream_volume(1) > Level3DAudio.SILENT_DB:
+			failures += _fail("%s: a layer is heard with no enemy on the field" % song)
+		var on := []
+		on.resize(spec.layers.size())
+		on.fill(false)
+		on[0] = true
+		Level3DAudio.music_layers(on)
+		if audio._layers_on != on or audio._layer_from[0] < audio._beat_zero:
+			failures += _fail("%s: the first layer is not on its way in" % song)
+		if spec.has("accent"):
+			Level3DAudio.music_accent()
+			await process_frame
+			if audio._accent == null or not audio._accent.playing:
+				failures += _fail("%s: the accent does not play" % song)
+		# Linearly: the same, the loop the one file of them all, as long as the
+		# lead; and back, the layers again.
+		Level3DAudio.set_adaptive(false)
+		await process_frame
+		stream = audio._music.stream as AudioStreamInteractive
+		var full := stream.get_clip_stream(Level3DAudio.CLIP_LOOP) as AudioStreamOggVorbis if stream != null else null
+		if full == null or not full.loop or full.beat_count != beats or audio._sync != null:
+			failures += _fail("%s: played linearly, its loop is not %s, a loop as long as the lead" % [song, spec.full])
+		Level3DAudio.set_adaptive(true)
+		await process_frame
+		stream = audio._music.stream as AudioStreamInteractive
+		if stream == null or not stream.get_clip_stream(Level3DAudio.CLIP_LOOP) is AudioStreamSynchronized:
+			failures += _fail("%s: not layered again after linear" % song)
+		# Classic: linear whatever the setting, its own folder's.
+		Level3DAudio.set_mode(Level3DAudio.Mode.CLASSIC)
+		await process_frame
+		stream = audio._music.stream as AudioStreamInteractive
+		full = stream.get_clip_stream(Level3DAudio.CLIP_LOOP) as AudioStreamOggVorbis if stream != null else null
+		if full == null or not full.loop or full.beat_count % bar != 0 or audio._sync != null \
+				or not FileAccess.file_exists(Level3DAudio.MUSIC_DIRS[Level3DAudio.Mode.CLASSIC] + spec.full):
+			failures += _fail("%s: in classic, not played linearly from its own %s" % [song, spec.full])
+		# The original: its own song, and the end its stop.
+		Level3DAudio.set_mode(Level3DAudio.Mode.ORIGINAL)
+		await process_frame
+		if not audio._music.playing or not Level3DAudio.MUSIC[song].has(audio._part):
+			failures += _fail("%s: in the original not its own song (%s)" % [song, audio._part])
+		Level3DAudio.music_end()
+		if audio._music.playing:
+			failures += _fail("%s: in the original the end does not stop it" % song)
+		print("adaptive %s: an intro, a loop of the lead and %d layers of %d bars, an end" % [
+				song, spec.layers.size(), beats / bar])
+	# The checks after this one are the modern mode's, as before it.
+	Level3DAudio.set_mode(Level3DAudio.Mode.MODERN)
+	return failures
+
+
+# The mode's music folder: every file the mode plays and nothing else --
+# MUSIC's parts, and in modern ADAPTIVE's clips in place of a song's it has,
+# in classic its linear ones -- the original's a copy of the 2D game's.
 func _check_music_files() -> int:
-	var classic := Level3DAudio.mode == Level3DAudio.Mode.CLASSIC
+	var classic := Level3DAudio.mode == Level3DAudio.Mode.ORIGINAL
 	var dir: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.mode]
-	var classic_dir: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.Mode.CLASSIC]
+	var classic_dir: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.Mode.ORIGINAL]
 	var parts := {}
-	for song in Level3DAudio.MUSIC:
-		for file in Level3DAudio.MUSIC[song]:
-			parts[file] = true
+	for file in Level3DAudio.mode_music_files():
+		parts[file] = true
 	var failures := 0
 	for file in DirAccess.get_files_at(dir):
 		if file.get_extension() == "ogg" and not parts.has(file):

@@ -99,13 +99,20 @@ var hud_corner := HudCorner.BOTTOM
 var hud_two_rows := true
 var hud_scale := 1.0
 var keys := DEFAULT_KEYS.duplicate()
-# The sound (Level3DAudio): classic, the original's effects as the game plays
-# them, or modern, in 3D, with the engines, the ambience and the enemies'
-# fire the original never had; a folder of sounds each. The volumes are 0 to 1, onto the
+# The sound (Level3DAudio): original, the original's effects as the game plays
+# them; classic, modern's sounds and music on an NES's sound chips, played
+# as modern's are; or modern, in 3D, with the engines, the ambience and the
+# enemies' fire the original never had; a folder of sounds each. The values
+# are Level3DAudio.Mode's, and ORIGINAL came last, so a config saved before
+# it still means what it did by its number. The volumes are 0 to 1, onto the
 # buses; the enemies' fire has a switch and a volume of its own, since the
 # original fired in silence.
-enum SoundMode { CLASSIC, MODERN }
+enum SoundMode { CLASSIC, MODERN, ORIGINAL }
 var sound_mode := SoundMode.MODERN
+# The modern boss music: following the fight, a layer a tank on the field
+# (Level3DAudio.ADAPTIVE), or the same parts as one track.
+enum BossMusic { ADAPTIVE, LINEAR }
+var boss_music := BossMusic.LINEAR   # the default: adaptive was tried as it and turned down
 var master_volume := 1.0
 var music_volume := 0.8
 var effects_volume := 1.0
@@ -183,6 +190,7 @@ func load_saved() -> void:
 	var scale = config.get_value("interface", "scale", hud_scale)
 	hud_scale = float(scale) if (scale is int or scale is float) and HUD_SCALES.has(float(scale)) else 1.0
 	sound_mode = clampi(config.get_value("sound", "mode", sound_mode), 0, SoundMode.size() - 1)
+	boss_music = clampi(config.get_value("sound", "boss_music", boss_music), 0, BossMusic.size() - 1)
 	master_volume = _volume(config.get_value("sound", "master", master_volume))
 	music_volume = _volume(config.get_value("sound", "music", music_volume))
 	effects_volume = _volume(config.get_value("sound", "effects", effects_volume))
@@ -241,6 +249,7 @@ func save() -> void:
 	config.set_value("interface", "two_rows", hud_two_rows)
 	config.set_value("interface", "scale", hud_scale)
 	config.set_value("sound", "mode", sound_mode)
+	config.set_value("sound", "boss_music", boss_music)
 	config.set_value("sound", "master", master_volume)
 	config.set_value("sound", "music", music_volume)
 	config.set_value("sound", "effects", effects_volume)
