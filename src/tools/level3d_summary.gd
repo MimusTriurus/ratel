@@ -55,7 +55,6 @@ var icons := {}
 var scale_factor := 1.0
 var shown := false
 
-var _fonts: Array = []          # [white, gray] -> {code point -> Spr}
 var _sound: AudioStreamPlayer
 var _lost_layer: Node2D
 var _lost: Array[Rect2] = []    # this frame's places for the ones not rescued
@@ -75,8 +74,6 @@ var _rescued_played := 0
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for colour in [Level3DFont.WHITE, Level3DFont.GRAY]:
-		_fonts.append(Level3DFont.glyphs(colour))
 	# The ones not rescued, over the plate as grey silhouettes of the icon:
 	# dimmed, the icon stayed a dark green, one of the rescued in shadow.
 	var shader := Shader.new()
@@ -187,7 +184,7 @@ func _draw() -> void:
 	var per_row := mini(_total, ICONS_PER_ROW)
 
 	var lines := _lines()
-	var width := maxf(tg * TITLE.length(), per_row * icon_step)
+	var width := maxf(Level3DFont.width(TITLE, tg), per_row * icon_step)
 	for line in lines:
 		width = maxf(width, _width(line, g))
 	var height := tg + gap + rows * (icon_h + gap) + lines.size() * (g + gap) + pg
@@ -198,7 +195,7 @@ func _draw() -> void:
 	var y := plate.position.y + PADDING.y * s
 	# The title, typed.
 	var typed := TITLE.substr(0, mini(int(_time / TYPE_TIME) + 1, TITLE.length()))
-	_text(typed, roundf(size.x * 0.5 - tg * TITLE.length() * 0.5), y, tg, 0, Color.WHITE)
+	_text(typed, roundf(size.x * 0.5 - Level3DFont.width(TITLE, tg) * 0.5), y, tg, 0, Color.WHITE)
 	y += tg + gap
 	if _time < _icons_from:
 		return
@@ -225,7 +222,7 @@ func _draw() -> void:
 		_segments(line, roundf(size.x * 0.5 - _width(line, g) * 0.5), y, g)
 		y += g + gap
 	if _time >= _done_at() and int((_time - _done_at()) / BLINK) % 2 == 0:
-		_text(PROMPT, roundf(size.x * 0.5 - pg * PROMPT.length() * 0.5), y, pg, 1, Color.WHITE)
+		_text(PROMPT, roundf(size.x * 0.5 - Level3DFont.width(PROMPT, pg) * 0.5), y, pg, 1, Color.WHITE)
 
 
 # The lines under the row, each [[text, font, colour], ...].
@@ -255,10 +252,10 @@ static func draw_plate(on: CanvasItem, plate: Rect2, s: float) -> void:
 
 
 func _width(line: Array, g: float) -> float:
-	var n := 0
+	var w := 0.0
 	for part in line:
-		n += (part[0] as String).length()
-	return n * g
+		w += Level3DFont.width(part[0], g)
+	return w
 
 
 func _segments(line: Array, x: float, y: float, g: float) -> void:
@@ -267,13 +264,7 @@ func _segments(line: Array, x: float, y: float, g: float) -> void:
 
 
 func _text(text: String, x: float, y: float, g: float, font: int, tint: Color) -> float:
-	var glyphs: Dictionary = _fonts[font]
-	for i in text.length():
-		var sp: Spr = glyphs.get(text.unicode_at(i))
-		if sp != null:
-			draw_texture_rect_region(sp.tex, Rect2(x, y, g, g), sp.region, tint)
-		x += g
-	return x
+	return Level3DFont.draw(self, text, x, y, g, Level3DFont.WHITE if font == 0 else Level3DFont.GRAY, tint)
 
 
 static func _whole(g: float) -> float:

@@ -2069,7 +2069,7 @@ func _make_hud() -> void:
 # and their icons rendered again for a new size.
 func _layout_hud() -> void:
 	_callouts.scale_factor = settings.hud_scale
-	Level3DFont.smooth = settings.font_smooth
+	Level3DFont.style = settings.font
 	_hints.scale_factor = settings.hud_scale
 	_banners.scale_factor = settings.hud_scale
 	_summary.scale_factor = settings.hud_scale

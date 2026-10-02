@@ -129,7 +129,6 @@ var scale_factor := 1.0
 # Level3DIcons.render_all's: {"lives", "pow", "weapons": [4]}, or empty.
 var icons := {}
 
-var _fonts: Array = []      # [colour] -> {code point -> Spr}
 var _sprites := {}          # sprite name -> Spr, until the icons come
 var _weapon_was := -1       # the weapon's level last shown, -1 before the first
 var _weapon_time := INF     # seconds since an upgrade, as _roll_time
@@ -155,8 +154,6 @@ var _pows_time := INF       # and a prisoner
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for colour in COLOURS:
-		_fonts.append(Level3DFont.glyphs(colour))
 	# The icons, nearest however the font is drawn (Level3DFont.filter), under
 	# the weapon's wash.
 	_icon_layer = Control.new()
@@ -398,16 +395,12 @@ func _gap(x: float, g: float, groups: int) -> float:
 	return x + g * GAP if groups > 0 else x
 
 
-# The game's draw_text: a glyph every GLYPH, missing ones left as spaces.
+# The game's draw_text, in the preview's font (Level3DFont).
 func _text(text: String, x: float, y: float, g: float, colour: int, alpha := 1.0,
 		tint := Color.WHITE) -> float:
-	var glyphs: Dictionary = _fonts[colour]
-	for i in text.length():
-		var s: Spr = glyphs.get(text.to_upper().unicode_at(i))
-		if s != null and not _measuring:
-			draw_texture_rect_region(s.tex, Rect2(x, y, g, g), s.region, Color(tint, alpha))
-		x += g
-	return x
+	if _measuring:
+		return x + Level3DFont.width(text, g)
+	return Level3DFont.draw(self, text, x, y, g, COLOURS[colour], Color(tint, alpha))
 
 
 # A rendered icon at the line's height, its own proportions kept, or the

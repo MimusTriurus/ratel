@@ -47,7 +47,6 @@ void fragment() { COLOR = vec4(tint.rgb, texture(TEXTURE, UV).a * tint.a); }
 var camera: Camera3D
 var scale_factor := 1.0
 
-var _glyphs := {}               # code point -> Spr
 var _material: ShaderMaterial
 var _pops: Array[Pop] = []
 
@@ -79,7 +78,6 @@ func _init() -> void:
 	shader.code = OUTLINE_SHADER
 	_material = ShaderMaterial.new()
 	_material.shader = shader
-	_glyphs = Level3DFont.glyphs()
 
 
 # A pop of `points` at `at`, in `colour`.
@@ -117,7 +115,7 @@ func add_text(follow: Callable, text: String, colour: Color) -> void:
 func _push(pop: Pop) -> void:
 	pop.g = _glyph(pop)
 	var anchor := _anchor(pop)
-	var width := pop.g * pop.text.length()
+	var width := Level3DFont.width(pop.text, pop.g)
 	var moved := true
 	while moved:
 		moved = false
@@ -125,7 +123,7 @@ func _push(pop: Pop) -> void:
 			if before.big != pop.big:
 				continue
 			var g := _glyph(before)
-			if absf(anchor.x - _anchor(before).x) >= (width + g * before.text.length()) * 0.5:
+			if absf(anchor.x - _anchor(before).x) >= (width + Level3DFont.width(before.text, g)) * 0.5:
 				continue
 			var b_foot := _anchor(before).y - _rise(before) - before.lift
 			var b_top := b_foot - g
@@ -185,7 +183,7 @@ func _process(delta: float) -> void:
 		var g := _glyph(pop)
 		var anchor := camera.unproject_position(pop.at)
 		pop.g = g
-		pop.x = roundf(anchor.x - g * pop.text.length() * 0.5)
+		pop.x = roundf(anchor.x - Level3DFont.width(pop.text, g) * 0.5)
 		pop.y = roundf(anchor.y - g - _rise(pop) - pop.lift)
 		pop.self_modulate.a = clampf((pop.life - pop.age) / FADE, 0.0, 1.0)
 		pop.rings.texture_filter = Level3DFont.filter()
@@ -212,8 +210,4 @@ func _draw_digits(pop: Pop) -> void:
 
 
 func _glyph_line(on: CanvasItem, text: String, x: float, y: float, g: float, tint: Color) -> void:
-	for i in text.length():
-		var sp: Spr = _glyphs.get(text.unicode_at(i))
-		if sp != null:
-			on.draw_texture_rect_region(sp.tex, Rect2(x, y, g, g), sp.region, tint)
-		x += g
+	Level3DFont.draw(on, text, x, y, g, Level3DFont.WHITE, tint)

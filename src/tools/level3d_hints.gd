@@ -38,7 +38,6 @@ const RING_LINE := 1.0
 var camera: Camera3D
 var scale_factor := 1.0
 
-var _glyphs := {}               # code point -> Spr
 # The hints up: {"keys": [String], "word", "at": Callable -> Vector3, "age",
 # "leaving" -- seconds since it was done, -1 while it is not}.
 var _hints: Array[Dictionary] = []
@@ -47,7 +46,6 @@ var _hints: Array[Dictionary] = []
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_glyphs = Level3DFont.glyphs()
 
 
 # A hint, `keys` in frames and `word` after them, over `at.call()`; returns
@@ -100,14 +98,14 @@ func _draw() -> void:
 		var word: String = hint.word
 		var width := 0.0
 		for k in keys:
-			width += (k as String).length() * kg + pad.x * 2.0 + roundf(KEY_GAP * s)
-		width += roundf(WORD_GAP * s) - roundf(KEY_GAP * s) + word.length() * wg
+			width += Level3DFont.width(k, kg) + pad.x * 2.0 + roundf(KEY_GAP * s)
+		width += roundf(WORD_GAP * s) - roundf(KEY_GAP * s) + Level3DFont.width(word, wg)
 		var foot := camera.unproject_position(at)
 		var x := roundf(foot.x - width * 0.5)
 		var top := roundf(foot.y - key_h)
 		for k in keys:
 			var key: String = k
-			var box := Rect2(x, top, key.length() * kg + pad.x * 2.0, key_h)
+			var box := Rect2(x, top, roundf(Level3DFont.width(key, kg)) + pad.x * 2.0, key_h)
 			draw_rect(box, Color(KEY_FILL, KEY_FILL.a * alpha))
 			draw_rect(box.grow(ring + line_w * 0.5), Color(0, 0, 0, alpha), false, line_w)
 			draw_rect(box.grow(ring * 0.5), Color(1, 1, 1, alpha), false, ring)
@@ -118,11 +116,7 @@ func _draw() -> void:
 
 
 func _text(text: String, x: float, y: float, g: float, alpha: float) -> void:
-	for i in text.length():
-		var sp: Spr = _glyphs.get(text.unicode_at(i))
-		if sp != null:
-			draw_texture_rect_region(sp.tex, Rect2(x, y, g, g), sp.region, Color(1, 1, 1, alpha))
-		x += g
+	Level3DFont.draw(self, text, x, y, g, Level3DFont.WHITE, Color(1, 1, 1, alpha))
 
 
 static func _whole(g: float) -> float:

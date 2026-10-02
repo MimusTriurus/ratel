@@ -34,13 +34,11 @@ var camera: Camera3D
 var marks: Callable
 var scale_factor := 1.0
 
-var _glyphs := {}               # code point -> Spr
 
 
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_glyphs = Level3DFont.glyphs()
 
 
 func _process(_delta: float) -> void:
@@ -66,7 +64,7 @@ func _draw() -> void:
 # One call, its tail's tip at `tip`, its glyphs `g` px, `text` in `colour`.
 func _burst(tip: Vector2, g: float, age: int, seed: int, text: String, colour: Color) -> void:
 	g = maxf(roundf(g / 8.0), 1.0) * 8.0     # whole font pixels
-	var text_w := g * text.length()
+	var text_w := Level3DFont.width(text, g)
 	var radius := Vector2(text_w * 0.5 + g * PADDING, g * 0.5 + g * PADDING)
 	var centre := tip - Vector2(0.0, radius.y + g * TAIL)
 	var pop := 1.0 + (POP - 1.0) * clampf(1.0 - float(age) / POP_TICKS, 0.0, 1.0)
@@ -96,11 +94,7 @@ func _burst(tip: Vector2, g: float, age: int, seed: int, text: String, colour: C
 
 	var x := roundf(centre.x - text_w * 0.5)
 	var y := roundf(centre.y - g * 0.5)
-	for i in text.length():
-		var s: Spr = _glyphs.get(text.unicode_at(i))
-		if s != null:
-			draw_texture_rect_region(s.tex, Rect2(x, y, g, g), s.region, colour)
-		x += g
+	Level3DFont.draw(self, text, x, y, g, Level3DFont.WHITE, colour)
 
 
 

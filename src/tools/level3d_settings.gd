@@ -81,8 +81,9 @@ var hud_cheats := true      # a line saying which cheats are on
 var hud_help := true
 # The controls taught over the jeep as they are first wanted (Level3DHints).
 var hud_hints := true
-# The overlays' font drawn smoothed rather than sharp (Level3DFont.smooth).
-var font_smooth := true
+# The overlays' font (Level3DFont.Style): Press Start 2P sharp or smoothed,
+# or Black Ops One.
+var font := Level3DFont.Style.CLASSIC_SMOOTH
 # The three banners (Level3DBanners): STAGE 1 under the Chinook, WARNING on
 # the boss's pan, the mission's lines when it is beaten. Under `hud`.
 var banner_stage := true
@@ -171,7 +172,7 @@ func load_saved() -> void:
 	hud_pad_arrow = config.get_value("interface", "pad_arrow", hud_pad_arrow)
 	hud_help = config.get_value("interface", "help", hud_help)
 	hud_hints = config.get_value("interface", "hints", hud_hints)
-	font_smooth = config.get_value("interface", "font_smooth", font_smooth)
+	font = clampi(config.get_value("interface", "font", font), 0, Level3DFont.Style.size() - 1)
 	hud_cheats = config.get_value("interface", "cheats", hud_cheats)
 	hud_crosshair = config.get_value("interface", "crosshair", hud_crosshair)
 	banner_stage = config.get_value("interface", "banner_stage", banner_stage)
@@ -230,7 +231,7 @@ func save() -> void:
 	config.set_value("interface", "pad_arrow", hud_pad_arrow)
 	config.set_value("interface", "help", hud_help)
 	config.set_value("interface", "hints", hud_hints)
-	config.set_value("interface", "font_smooth", font_smooth)
+	config.set_value("interface", "font", font)
 	config.set_value("interface", "cheats", hud_cheats)
 	config.set_value("interface", "crosshair", hud_crosshair)
 	config.set_value("interface", "banner_stage", banner_stage)

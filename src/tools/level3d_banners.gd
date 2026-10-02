@@ -40,13 +40,11 @@ var _text := ""
 var _time := 0.0                # since the banner came up
 var _ending := -1.0             # when it starts to fade, -1 while it holds
 var _stage_waiting := -1        # a STAGE that came under GAME OVER, -1 none
-var _glyphs := {}               # code point -> Spr
 
 
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_glyphs = Level3DFont.glyphs()
 
 
 func clear() -> void:
@@ -112,7 +110,7 @@ func _draw() -> void:
 	texture_filter = Level3DFont.filter()
 	var s := scale_factor
 	var g := maxf(roundf(GLYPH * s / 8.0), 1.0) * 8.0
-	var width := g * _text.length()
+	var width := Level3DFont.width(_text, g)
 	var plate := Rect2((size - Vector2(width, g)) * 0.5 - Level3DSummary.PADDING * s,
 			Vector2(width, g) + Level3DSummary.PADDING * s * 2.0)
 	plate.position = plate.position.round()
@@ -124,8 +122,4 @@ func _draw() -> void:
 	var tint := WARNING_COLOUR if _kind == WARNING else Color.WHITE
 	var x := roundf(size.x * 0.5 - width * 0.5)
 	var y := roundf(size.y * 0.5 - g * 0.5)
-	for i in _text.length():
-		var sp: Spr = _glyphs.get(_text.unicode_at(i))
-		if sp != null:
-			draw_texture_rect_region(sp.tex, Rect2(x, y, g, g), sp.region, tint)
-		x += g
+	Level3DFont.draw(self, _text, x, y, g, Level3DFont.WHITE, tint)
