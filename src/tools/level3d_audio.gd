@@ -263,6 +263,15 @@ var _listener: AudioListener3D
 var _music: AudioStreamPlayer
 var _song: Array = []       # the parts still to come, file names
 var _part := ""             # the part playing, "" for none
+# The parts _next_part put into one AudioStreamInteractive, each running on
+# into the next with no gap -- `finished` and a play() of the next left one of
+# about 20 ms -- with their lengths, which is playing, since when
+# (Time.get_ticks_usec()), and whether the last loops. Empty for one part alone.
+var _chain: Array = []
+var _chain_lengths := PackedFloat64Array()
+var _chain_index := 0
+var _chain_loops := false
+var _part_from := 0
 var _song_name := ""        # the song play_music last started, "" for none
 var _adaptive := ""         # that song, while it plays as ADAPTIVE has it
 # What music_layers last said is on the field, and whether music_end has been
@@ -348,6 +357,8 @@ func _process(delta: float) -> void:
 		player.volume_db = volume_db(loop[1]) + _gain_db(frame_gain(player.global_position))
 	if not _adaptive.is_empty() and _music.playing:
 		_update_adaptive(delta)
+	if not _chain.is_empty():
+		_update_chain()
 	if not _debug:
 		return
 	_debug_left -= delta
@@ -636,6 +647,7 @@ static func music_end() -> void:
 		if c._held_music == null:
 			c._music.stop()
 			c._song.clear()
+			c._chain = []
 			c._part = ""
 		return
 	var playback := c._music.get_stream_playback() as AudioStreamPlaybackInteractive
@@ -859,13 +871,14 @@ static func audition_music(file: String) -> void:
 	if stream == null:
 		return
 	if c._held_music == null:
-		c._held_music = [c._song.duplicate(), c._part,
-				c._music.get_playback_position() if c._music.playing else -1.0, c._adaptive]
+		var at := c._music_position() if c._music.playing else -1.0
+		c._held_music = [c._parts_to_come(), c._part, at, c._adaptive]
 	# Not the adaptive song's any more: music_layers, music_end and
 	# music_accent leave the part alone, and the song is given back where the
 	# fight has got to.
 	c._adaptive = ""
 	c._song = []
+	c._chain = []
 	c._part = file
 	c._music.stream = stream
 	c._music.volume_db = music_db(file)
@@ -1103,22 +1116,91 @@ func _start_ambience() -> void:
 # ----------------------------------------------------------------------------
 # The music
 
+# The parts still to come, from the next: all of them in one stream when
+# there is more than one, each running on into the next, the last looped if
+# it is the song's. A missing part ends the song where it would have come in.
 func _next_part() -> void:
 	_part = ""
 	_adaptive = ""
 	_clip = -1
+	_chain = []
 	if _song.is_empty():
 		return
-	var file: String = _song.pop_front()
-	var stream := _music_stream(file, _song.is_empty())
-	if stream == null:
-		push_warning("Level3DAudio: no music %s%s" % [MUSIC_DIRS[mode], file])
-		_song.clear()
+	var files: Array = []
+	var clips: Array[AudioStream] = []
+	for i in _song.size():
+		var clip := _music_stream(_song[i], i == _song.size() - 1)
+		if clip == null:
+			push_warning("Level3DAudio: no music %s%s" % [MUSIC_DIRS[mode], _song[i]])
+			break
+		files.append(_song[i])
+		clips.append(clip)
+	_chain_loops = files.size() == _song.size()
+	_song = []
+	if files.is_empty():
 		return
-	_part = file
+	_part = files[0]
+	_music.volume_db = music_db(_part)
+	if files.size() == 1:
+		_music.stream = clips[0]
+		_music.play()
+		return
+	var stream := AudioStreamInteractive.new()
+	stream.clip_count = files.size()
+	_chain_lengths.resize(files.size())
+	for i in files.size():
+		stream.set_clip_name(i, files[i])
+		stream.set_clip_stream(i, clips[i])
+		_chain_lengths[i] = clips[i].get_length()
+		if i < files.size() - 1:
+			stream.set_clip_auto_advance(i, AudioStreamInteractive.AUTO_ADVANCE_ENABLED)
+			stream.set_clip_auto_advance_next_clip(i, i + 1)
+	_chain = files
+	_chain_index = 0
 	_music.stream = stream
-	_music.volume_db = music_db(file)
 	_music.play()
+	_part_from = Time.get_ticks_usec()
+
+
+# The chain, every frame: which of its parts is playing, and the player's gain
+# for it. The parts follow each other end to start, so each one's start is
+# the one before's plus its length.
+func _update_chain() -> void:
+	if not _music.playing:
+		return
+	var playback := _music.get_stream_playback() as AudioStreamPlaybackInteractive
+	if playback == null:
+		return
+	var index := mini(playback.get_current_clip_index(), _chain.size() - 1)
+	if index <= _chain_index:
+		return
+	while _chain_index < index:
+		_part_from += int(_chain_lengths[_chain_index] * 1e6)
+		_chain_index += 1
+	_part = _chain[_chain_index]
+	_music.volume_db = music_db(_part)
+
+
+# How far into the part playing the music is, in seconds. A chain's own
+# position is always 0, as AudioStreamInteractive's is, so it is the clock's
+# from where the part came in, round its loop for the song's last.
+func _music_position() -> float:
+	if _chain.is_empty():
+		return _music.get_playback_position()
+	_update_chain()
+	var at := (Time.get_ticks_usec() - _part_from) / 1e6
+	var length := _chain_lengths[_chain_index]
+	if _chain_loops and _chain_index == _chain.size() - 1 and length > 0.0:
+		at = fmod(at, length)
+	return at
+
+
+# The parts after the one playing, whether still to come or in the chain.
+func _parts_to_come() -> Array:
+	if _chain.is_empty():
+		return _song.duplicate()
+	_update_chain()
+	return _chain.slice(_chain_index + 1)
 
 
 # The mode's folder's `file`, looped if it is the song's last part, or null.
@@ -1152,6 +1234,7 @@ func _play_adaptive(song: String, first: int) -> void:
 	stream.initial_clip = first
 	_adaptive = song
 	_song = []
+	_chain = []
 	_clip = first
 	_music.stream = stream
 	_update_adaptive(0.0)
@@ -1272,10 +1355,14 @@ func _swap_adaptive() -> void:
 func _swap_music() -> void:
 	if _part.is_empty() or not _music.playing:
 		return
+	# Out of the chain: the part from where it had got to, alone, and the
+	# rest as still to come, chained again once it has played out.
+	var at := _music_position()
+	_song = _parts_to_come()
+	_chain = []
 	if ADAPTIVE.has(_song_name) and _held_music == null:
 		_swap_adaptive()
 		return
-	var at := _music.get_playback_position()
 	var stream := _music_stream(_part, _song.is_empty())
 	if stream == null:
 		push_warning("Level3DAudio: no music %s%s" % [MUSIC_DIRS[mode], _part])

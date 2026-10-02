@@ -556,7 +556,15 @@ silence; under them, a 0–200 % slider for each of the modern mode's sounds
 classic-only `enemy_hit` -- the verify script checks).
 The music is chained as `Song` chains it: `intro_song` at the start,
 `stage_song0` after a restart, `boss_song` from the boss's trigger, stopped
-when it is beaten or the last life goes. It is split by mode as the effects
+when it is beaten or the last life goes. A song's parts are not chained
+through `finished` as `Song` chains them, which left about 20 ms of silence
+between two (measured on WASAPI): `_next_part` puts every part still to come
+into one `AudioStreamInteractive`, each auto-advancing into the next and the
+last looped. That runs on with no gap, though Godot switches some 12 ms
+before a clip's end, so the last of each part is not heard -- which is why
+modern `start.ogg` holds its chord to the bar line rather than ringing out.
+A chain's position is the clock's, since the stream's is always 0
+(`_music_position`). It is split by mode as the effects
 are: `assets/music3d/classic/` holds copies of the parts of `MUSIC` from
 `assets/music/`, under their own names, and `assets/music3d/modern/` started
 as a copy of it, a new song going in by replacing its file. A change of mode

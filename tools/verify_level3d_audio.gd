@@ -64,6 +64,7 @@ func _initialize() -> void:
 	await process_frame
 	if not audio._music.playing or audio._part != part:
 		failures += _fail("music: %s not carried over the change of mode (%s)" % [part, audio._part])
+	failures += await _check_chain(audio)
 	failures += await _check_adaptive(audio)
 	Level3DAudio.stop_music()
 	# The menu's per-sound gains: a slider for every sound but enemy_hit, a
@@ -195,6 +196,40 @@ func _check_mix() -> int:
 	if Level3DAudio.serialize_mix(mix) != text:
 		failures += _fail("mix: %s is not laid out as save_mix writes it" % Level3DAudio.MIX_PATH)
 	print("mix: %d sounds and %d music parts a mode" % [wants.sounds.size(), wants.music.size()])
+	return failures
+
+
+# A song of several parts, in both modes: one AudioStreamInteractive of them
+# all, each running on into the next and the last looped, so that no part
+# waits for the one before's `finished`; and through a change of mode, the
+# same part with the same parts to come.
+func _check_chain(audio: Level3DAudio) -> int:
+	var failures := 0
+	for mode in [Level3DAudio.Mode.MODERN, Level3DAudio.Mode.CLASSIC]:
+		Level3DAudio.set_mode(mode)
+		Level3DAudio.play_music("intro")
+		await process_frame
+		var files: Array = Level3DAudio.MUSIC["intro"]
+		var stream := audio._music.stream as AudioStreamInteractive
+		if stream == null or stream.clip_count != files.size():
+			failures += _fail("intro in %s: not one stream of its %d parts" % [mode, files.size()])
+			continue
+		for i in files.size():
+			var last := i == files.size() - 1
+			var ogg := stream.get_clip_stream(i) as AudioStreamOggVorbis
+			if stream.get_clip_name(i) != StringName(files[i]) or ogg == null or ogg.loop != last:
+				failures += _fail("intro in %s: clip %d is not %s%s" % [mode, i, files[i], ", looped" if last else ""])
+			elif not last and (stream.get_clip_auto_advance(i) != AudioStreamInteractive.AUTO_ADVANCE_ENABLED
+					or stream.get_clip_auto_advance_next_clip(i) != i + 1):
+				failures += _fail("intro in %s: %s does not run on into the next part" % [mode, files[i]])
+		if audio._part != files[0] or audio._parts_to_come() != files.slice(1):
+			failures += _fail("intro in %s: at %s, %s to come" % [mode, audio._part, audio._parts_to_come()])
+	# A change of mode in the chain: its part alone, the rest still to come.
+	Level3DAudio.set_mode(Level3DAudio.Mode.MODERN)
+	await process_frame
+	if not audio._music.playing or audio._part != "start.ogg" or audio._song != ["stage0_intro.ogg", "stage0_repeat.ogg"]:
+		failures += _fail("intro: not carried over the change of mode (%s, then %s)" % [audio._part, audio._song])
+	Level3DAudio.stop_music()
 	return failures
 
 
