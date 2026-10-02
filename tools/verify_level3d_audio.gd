@@ -314,13 +314,22 @@ func _check_adaptive(audio: Level3DAudio) -> int:
 		stream = audio._music.stream as AudioStreamInteractive
 		if stream == null or not stream.get_clip_stream(Level3DAudio.CLIP_LOOP) is AudioStreamSynchronized:
 			failures += _fail("%s: not layered again after linear" % song)
+		# Classic: linear whatever the setting, its own folder's.
 		Level3DAudio.set_mode(Level3DAudio.Mode.CLASSIC)
 		await process_frame
+		stream = audio._music.stream as AudioStreamInteractive
+		full = stream.get_clip_stream(Level3DAudio.CLIP_LOOP) as AudioStreamOggVorbis if stream != null else null
+		if full == null or not full.loop or full.beat_count % bar != 0 or audio._sync != null \
+				or not FileAccess.file_exists(Level3DAudio.MUSIC_DIRS[Level3DAudio.Mode.CLASSIC] + spec.full):
+			failures += _fail("%s: in classic, not played linearly from its own %s" % [song, spec.full])
+		# The original: its own song, and the end its stop.
+		Level3DAudio.set_mode(Level3DAudio.Mode.ORIGINAL)
+		await process_frame
 		if not audio._music.playing or not Level3DAudio.MUSIC[song].has(audio._part):
-			failures += _fail("%s: in classic not its own song (%s)" % [song, audio._part])
+			failures += _fail("%s: in the original not its own song (%s)" % [song, audio._part])
 		Level3DAudio.music_end()
 		if audio._music.playing:
-			failures += _fail("%s: in classic the end does not stop it" % song)
+			failures += _fail("%s: in the original the end does not stop it" % song)
 		print("adaptive %s: an intro, a loop of the lead and %d layers of %d bars, an end" % [
 				song, spec.layers.size(), beats / bar])
 	# The checks after this one are the modern mode's, as before it.
@@ -329,12 +338,12 @@ func _check_adaptive(audio: Level3DAudio) -> int:
 
 
 # The mode's music folder: every file the mode plays and nothing else --
-# MUSIC's parts, and in modern ADAPTIVE's clips in place of a song's it has --
-# classic's a copy of the 2D game's.
+# MUSIC's parts, and in modern ADAPTIVE's clips in place of a song's it has,
+# in classic its linear ones -- the original's a copy of the 2D game's.
 func _check_music_files() -> int:
-	var classic := Level3DAudio.mode != Level3DAudio.Mode.MODERN
+	var classic := Level3DAudio.mode == Level3DAudio.Mode.ORIGINAL
 	var dir: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.mode]
-	var classic_dir: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.Mode.CLASSIC]
+	var classic_dir: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.Mode.ORIGINAL]
 	var parts := {}
 	for file in Level3DAudio.mode_music_files():
 		parts[file] = true

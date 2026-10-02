@@ -19,8 +19,8 @@
 #            original's of that name, and the original's own file where
 #            modern's is still a copy of it -- exactly modern's files, so
 #            what modern is silent for is silent here. Played by MODERN's
-#            rules, everything below that says MODERN; only its music is
-#            the original's, as ORIGINAL's is.
+#            rules, everything below that says MODERN. Its music is modern's
+#            songs on the same chip, the boss's played linearly.
 #   MODERN   assets/sfx3d/modern/, positional, looped where "loop" says,
 #            pitched, with the menu's per-sound gains. It started as a copy of
 #            the original's; a new sound goes in by replacing its file, or by
@@ -36,15 +36,18 @@
 # when there is nothing to play, and when there is no Level3DAudio in the tree.
 #
 # The music is split the same way, chained in all as Song chains it: an
-# intro, then a loop (MUSIC); ORIGINAL and CLASSIC play the same folder, the
-# original's songs being the NES already. assets/music3d/classic/ holds copies of the
+# intro, then a loop (MUSIC). assets/music3d/original/ holds copies of the
 # original's songs from assets/music/, under their own names, and does not
 # change; assets/music3d/modern/ started as a copy of it, and a new song goes
-# in by replacing its file. A change of mode swaps the part playing for the
-# other folder's, from where it was. One song is the exception: in MODERN
-# the boss's follows the fight (ADAPTIVE) -- a lead part, a layer over it for
-# each tank on the field, a victory at the end and an accent on the beat when
-# a tank is breached -- and modern/ holds those parts in place of its own.
+# in by replacing its file; assets/music3d/classic/ is modern's songs, their
+# notes, arranged for the 2A03 and Konami's VRC6 and played on a model of
+# them (tools/music_chiptune.py). A change of mode swaps the part playing
+# for the other folder's, from where it was. One song is the exception: in
+# MODERN the boss's follows the fight (ADAPTIVE) -- a lead part, a layer
+# over it for each tank on the field, a victory at the end and an accent on
+# the beat when a tank is breached -- and modern/ holds those parts in place
+# of its own; CLASSIC plays it as MODERN does linearly, its intro, its loop
+# with every layer in it, its victory and its accent.
 #
 # The gains, of the effects and of the music, are not in SOUNDS but in the
 # mix (MIX_PATH), which the menu's Mixer tab sets by ear; the comments below
@@ -90,7 +93,7 @@ const MODE_KEYS := {Mode.CLASSIC: "classic", Mode.MODERN: "modern", Mode.ORIGINA
 const SPEC_KEYS := {Mode.CLASSIC: "modern", Mode.MODERN: "modern", Mode.ORIGINAL: "classic"}
 const ORIGINAL := "res://assets/soundeffects/"
 const MUSIC_DIRS := {Mode.CLASSIC: "res://assets/music3d/classic/", Mode.MODERN: "res://assets/music3d/modern/",
-		Mode.ORIGINAL: "res://assets/music3d/classic/"}
+		Mode.ORIGINAL: "res://assets/music3d/original/"}
 # Where classic's songs are copies from: the 2D game's, Main.MUSIC.
 const ORIGINAL_MUSIC := "res://assets/music/"
 # name_0.ogg, name_1.ogg ... : looked for until the first one missing.
@@ -574,11 +577,13 @@ static func set_mode(new_mode: Mode) -> void:
 
 # ADAPTIVE's songs as they follow the fight, or linearly. An adaptive song
 # playing goes on the other way from the same point: the intro, or the loop.
+# CLASSIC's is linear either way, and plays on.
 static func set_adaptive(on: bool) -> void:
 	if on == adaptive:
 		return
 	adaptive = on
-	if _current == null or _current._adaptive.is_empty() or not _current._music.playing or _current._ended:
+	if _current == null or _current._adaptive.is_empty() or not _current._music.playing or _current._ended \
+			or mode != Mode.MODERN:
 		return
 	var c := _current
 	var first := c._clip
@@ -639,7 +644,7 @@ static func play_music(song: String) -> void:
 	c._layers_on = []
 	c._ended = false
 	c._adaptive = ""
-	if mode == Mode.MODERN and ADAPTIVE.has(song):
+	if mode != Mode.ORIGINAL and ADAPTIVE.has(song):
 		c._play_adaptive(song, CLIP_INTRO)
 		return
 	c._song = MUSIC.get(song, []).duplicate()
@@ -843,20 +848,32 @@ static func mode_music_files(for_mode: int = -1) -> Array[String]:
 	var m: int = mode if for_mode < 0 else for_mode
 	var files: Array[String] = []
 	for song in MUSIC:
-		var parts: Array = adaptive_files(song) if m == Mode.MODERN and ADAPTIVE.has(song) else MUSIC[song]
+		var parts: Array = MUSIC[song]
+		if ADAPTIVE.has(song) and m != Mode.ORIGINAL:
+			parts = adaptive_files(song) if m == Mode.MODERN else linear_files(song)
 		for file in parts:
 			if not files.has(file):
 				files.append(file)
 	return files
 
 
-# Every music file of either mode, once each, in order: the mix's, which
-# holds a gain for each in both, and the Mixer tab's rows.
+# Every music file of any mode, once each, in order: the mix's, which holds
+# a gain for each in each, and the Mixer tab's rows.
 static func music_files() -> Array[String]:
-	var files := mode_music_files(Mode.CLASSIC)
-	for file in mode_music_files(Mode.MODERN):
-		if not files.has(file):
-			files.append(file)
+	var files := mode_music_files(Mode.ORIGINAL)
+	for m in [Mode.CLASSIC, Mode.MODERN]:
+		for file in mode_music_files(m):
+			if not files.has(file):
+				files.append(file)
+	return files
+
+
+# ADAPTIVE's `song` played linearly: what CLASSIC's folder holds of it.
+static func linear_files(song: String) -> Array[String]:
+	var spec: Dictionary = ADAPTIVE[song]
+	var files: Array[String] = [spec.intro, spec.full, spec.end]
+	if spec.has("accent"):
+		files.append(spec.accent)
 	return files
 
 
@@ -1320,7 +1337,7 @@ func _adaptive_stream(song: String) -> AudioStreamInteractive:
 		return null
 	var loop: AudioStream
 	_sync = null
-	if adaptive:
+	if adaptive and mode == Mode.MODERN:
 		var parts: Array = [spec.lead] + spec.layers
 		var sync := AudioStreamSynchronized.new()
 		sync.stream_count = parts.size()
@@ -1377,7 +1394,7 @@ func _swap_adaptive() -> void:
 	_part = ""
 	if _ended:
 		return
-	if mode == Mode.MODERN:
+	if mode != Mode.ORIGINAL:
 		_play_adaptive(_song_name, CLIP_INTRO if in_intro else CLIP_LOOP)
 		return
 	_song = MUSIC[_song_name].duplicate()

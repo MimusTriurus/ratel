@@ -231,7 +231,7 @@ func refresh() -> void:
 	_enemy_fire_volume.set_value_no_signal(settings.enemy_fire_volume * 100.0)
 	# The original has no enemies' fire to switch, and no gains but the game's;
 	# classic is played as modern is. The boss's music follows the fight in
-	# modern alone, classic's music being the original's.
+	# modern alone: classic's is linear.
 	var own := settings.sound_mode != Level3DSettings.SoundMode.ORIGINAL
 	_boss_music.select(settings.boss_music)
 	_boss_music.disabled = settings.sound_mode != Level3DSettings.SoundMode.MODERN
@@ -351,7 +351,7 @@ func _make_sound_tab() -> Control:
 				settings.sound_mode = SOUND_MODES[i]
 				_preview("pickup"))
 	_note(tab, "Оригинал: звуки оригинальной игры, как в ней. "
-			+ "Классический: звуки нового режима в звучании NES, с теми же правилами и оригинальной музыкой. "
+			+ "Классический: звуки и музыка нового режима в звучании NES (с чипом VRC6), по тем же правилам. "
 			+ "Новый: объёмный звук, двигатели, окружение, выстрелы врагов и своя музыка.")
 	var boss := _grid(tab)
 	_boss_music = _choice(boss, "Музыка босса", ["Адаптивная", "Линейная"],

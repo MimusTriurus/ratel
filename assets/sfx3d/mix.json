@@ -39,19 +39,19 @@
       "ambient_jungle": 0.0
     },
     "music": {
-      "start.ogg": 0.0,
+      "start.ogg": -0.5,
       "stage0_intro.ogg": 0.0,
-      "stage0_repeat.ogg": 0.0,
-      "boss_intro.ogg": 0.0,
+      "stage0_repeat.ogg": -0.5,
+      "boss_intro.ogg": -2.0,
       "boss_repeat.ogg": 0.0,
+      "boss_full.ogg": 0.0,
+      "boss_victory.ogg": 0.0,
+      "boss_breach.ogg": 0.0,
       "boss_lead.ogg": 0.0,
       "boss_tank_1.ogg": 0.0,
       "boss_tank_2.ogg": 0.0,
       "boss_tank_3.ogg": 0.0,
-      "boss_tank_4.ogg": 0.0,
-      "boss_full.ogg": 0.0,
-      "boss_victory.ogg": 0.0,
-      "boss_breach.ogg": 0.0
+      "boss_tank_4.ogg": 0.0
     }
   },
   "modern": {
@@ -99,14 +99,14 @@
       "stage0_repeat.ogg": -0.5,
       "boss_intro.ogg": -2.0,
       "boss_repeat.ogg": 0.0,
+      "boss_full.ogg": 0.0,
+      "boss_victory.ogg": 0.0,
+      "boss_breach.ogg": 0.0,
       "boss_lead.ogg": -0.5,
       "boss_tank_1.ogg": 0.0,
       "boss_tank_2.ogg": 0.0,
       "boss_tank_3.ogg": 0.0,
-      "boss_tank_4.ogg": 0.0,
-      "boss_full.ogg": 0.0,
-      "boss_victory.ogg": 0.0,
-      "boss_breach.ogg": 0.0
+      "boss_tank_4.ogg": 0.0
     }
   },
   "original": {
@@ -154,14 +154,14 @@
       "stage0_repeat.ogg": 0.0,
       "boss_intro.ogg": 0.0,
       "boss_repeat.ogg": 0.0,
+      "boss_full.ogg": 0.0,
+      "boss_victory.ogg": 0.0,
+      "boss_breach.ogg": 0.0,
       "boss_lead.ogg": 0.0,
       "boss_tank_1.ogg": 0.0,
       "boss_tank_2.ogg": 0.0,
       "boss_tank_3.ogg": 0.0,
-      "boss_tank_4.ogg": 0.0,
-      "boss_full.ogg": 0.0,
-      "boss_victory.ogg": 0.0,
-      "boss_breach.ogg": 0.0
+      "boss_tank_4.ogg": 0.0
     }
   }
 }

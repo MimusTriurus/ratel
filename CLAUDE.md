@@ -568,12 +568,27 @@ before a clip's end, so the last of each part is not heard -- which is why
 modern `start.ogg` holds its chord to the bar line rather than ringing out.
 A chain's position is the clock's, since the stream's is always 0
 (`_music_position`). It is split by mode as the effects
-are, the original and classic modes sharing a folder, since the original's
-songs are the NES already: `assets/music3d/classic/` holds copies of the parts of `MUSIC` from
+are: `assets/music3d/original/` holds copies of the parts of `MUSIC` from
 `assets/music/`, under their own names, and `assets/music3d/modern/` started
 as a copy of it, a new song going in by replacing its file. A change of mode
 swaps the part playing for the other folder's from the same position (an
 intro that runs out goes on to its loop, a loop wraps round).
+
+`assets/music3d/classic/` is modern's songs as a Famicom game with Konami's
+VRC6 (the Japanese Castlevania III's) could have played them, and
+`tools/music_chiptune.py --install` makes it -- not out of modern's audio but
+out of its notes, the MIDI in `build/music3d_pogonya/` and
+`build/music3d_boss/`. Its `ARRANGEMENT` puts the tracks on eight voices:
+the lead on pulse 1, a second voice (the stage's lead echoed an eighth late,
+the boss's harmony or arpeggio) on pulse 2, the rhythm guitar's power chord
+over the VRC6's two pulses, the strings on its sawtooth (a chord as a
+one-frame arpeggio), the bass on the triangle, the drums on the noise and
+the kick, timpani and taiko as DPCM samples. Everything moves on the frame,
+as an NES driver does; at 180 and 150 BPM a sixteenth is 5 and 6 frames and
+a bar 80 and 96, which are modern's 58800- and 70560-sample bars, so each
+part is cut on modern's bars, a loop out of the middle of three. A song is at
+modern's loop's loudness, through a limiter at -1 dBFS on the whole render
+before the cuts. The boss's is the linear one (below).
 
 The modern boss is the exception: its music follows the fight
 (`Level3DAudio.ADAPTIVE`). It is one `AudioStreamInteractive` of three clips:
@@ -597,9 +612,11 @@ real audio driver and not with `--headless`'s Dummy one, which runs slow;
 mixed linearly, EQ and gain and no compressor, because they are summed in the
 game. `modern/` holds the nine files in place of `boss_repeat.ogg`
 (`mode_music_files`); the mix has every file of both modes, so each layer has
-its own gain in the Mixer, which shows each mode's own. The original and
-classic modes play the intro and loop as before and stop at the end, as the
-game stops its song.
+its own gain in the Mixer, which shows each mode's own. The original mode
+plays the intro and loop as before and stops at the end, as the game stops
+its song; the classic mode plays it as modern does linearly, whatever the
+setting, its folder holding the intro, `boss_full.ogg`, the victory and the
+accent (`linear_files`).
 The Sound tab's "Музыка босса" (`Level3DSettings.boss_music`,
 `Level3DAudio.set_adaptive`) plays it linearly, and does by default: the same stream with
 `boss_full.ogg` -- the lead and every layer mixed into one file -- for its
@@ -633,8 +650,8 @@ and shipped. A sound with no file is silent, in any mode.
   copy of it. Played by modern's rules -- positional, pitched, looped, the
   edge fades and fade-outs, the rescue helicopter idling on its pad, the
   Sound tab's sliders; only the original is played as the game plays it
-  (`Level3DAudio.as_original`) -- and only its music is the original's, so
-  the boss's follows the fight in modern alone. A loop is rendered three
+  (`Level3DAudio.as_original`) -- and its music is modern's on the same
+  chips (above), the boss's linear. A loop is rendered three
   times and the middle cut out, crossfaded at the seam. What modern is
   silent for, classic is too. A new modern sound wants a run of the tool.
 

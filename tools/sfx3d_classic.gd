@@ -10,7 +10,7 @@
 #       has no <name>_0.ogg yet and the original has one. A file already there -- a new
 #       sound -- is never touched, so running this again only fills in a
 #       sound added to SOUNDS.
-#   assets/music3d/classic/<file>      every part of Level3DAudio.MUSIC, a
+#   assets/music3d/original/<file>     every part of Level3DAudio.MUSIC, a
 #       copy of the 2D game's in assets/music/, and modern/<file> a copy of
 #       it where modern has none yet and plays it: the same, song for song,
 #       but for a song modern plays as Level3DAudio.ADAPTIVE has it, whose
@@ -53,7 +53,7 @@ func _initialize() -> void:
 			filled += 1
 	# The music the same way: classic's a copy of the 2D game's, modern's of
 	# classic's where it has none yet.
-	var music_classic: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.Mode.CLASSIC]
+	var music_classic: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.Mode.ORIGINAL]
 	var music_modern: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.Mode.MODERN]
 	for dir in [music_classic, music_modern]:
 		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
@@ -75,7 +75,7 @@ func _initialize() -> void:
 			DirAccess.copy_absolute(ProjectSettings.globalize_path(music_classic + file),
 					ProjectSettings.globalize_path(music_modern + file))
 			songs_filled += 1
-	print("original: %d sounds, %d of them silent (no file); classic music: %d songs; modern: %d sounds and %d songs filled in%s" % [
+	print("original: %d sounds, %d of them silent (no file), %d songs; modern: %d sounds and %d songs filled in%s" % [
 			Level3DAudio.SOUNDS.size(), silent, songs, filled, songs_filled,
 			"" if failures == 0 else "; %d FAILED" % failures])
 	quit(1 if failures > 0 else 0)
