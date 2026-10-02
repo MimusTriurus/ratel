@@ -229,19 +229,20 @@ func refresh() -> void:
 	_effects_volume.set_value_no_signal(settings.effects_volume * 100.0)
 	_enemy_fire.set_pressed_no_signal(settings.enemy_fire)
 	_enemy_fire_volume.set_value_no_signal(settings.enemy_fire_volume * 100.0)
-	# The classic modes have no enemies' fire to switch: the original had none,
-	# and classic's sounds are modern's, which has none yet.
-	var modern := settings.sound_mode == Level3DSettings.SoundMode.MODERN
+	# The original has no enemies' fire to switch, and no gains but the game's;
+	# classic is played as modern is. The boss's music follows the fight in
+	# modern alone, classic's music being the original's.
+	var own := settings.sound_mode != Level3DSettings.SoundMode.ORIGINAL
 	_boss_music.select(settings.boss_music)
-	_boss_music.disabled = not modern
-	_enemy_fire.disabled = not modern
-	_enemy_fire_volume.editable = modern and settings.enemy_fire
+	_boss_music.disabled = settings.sound_mode != Level3DSettings.SoundMode.MODERN
+	_enemy_fire.disabled = not own
+	_enemy_fire_volume.editable = own and settings.enemy_fire
 	for sound in _gain_sliders:
 		var slider: HSlider = _gain_sliders[sound]
 		slider.set_value_no_signal(float(settings.sound_gains.get(sound, 1.0)) * 100.0)
-		slider.editable = modern
+		slider.editable = own
 		_show_percent(slider)
-	_gains_reset.disabled = not modern
+	_gains_reset.disabled = not own
 	for slider in [_master_volume, _music_volume, _effects_volume, _enemy_fire_volume]:
 		_show_percent(slider)
 	_mixer_mode.select(SOUND_MODES.find(settings.sound_mode))
@@ -350,7 +351,7 @@ func _make_sound_tab() -> Control:
 				settings.sound_mode = SOUND_MODES[i]
 				_preview("pickup"))
 	_note(tab, "Оригинал: звуки оригинальной игры, как в ней. "
-			+ "Классический: звуки нового режима в звучании NES, играют как в оригинале. "
+			+ "Классический: звуки нового режима в звучании NES, с теми же правилами и оригинальной музыкой. "
 			+ "Новый: объёмный звук, двигатели, окружение, выстрелы врагов и своя музыка.")
 	var boss := _grid(tab)
 	_boss_music = _choice(boss, "Музыка босса", ["Адаптивная", "Линейная"],

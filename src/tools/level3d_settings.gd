@@ -87,8 +87,8 @@ var hud_corner := HudCorner.TOP
 var hud_scale := 1.0
 var keys := DEFAULT_KEYS.duplicate()
 # The sound (Level3DAudio): original, the original's effects as the game plays
-# them; classic, modern's sounds on an NES's sound chip, played as the
-# original's are; or modern, in 3D, with the engines, the ambience and the
+# them; classic, modern's sounds on an NES's sound chip, played as modern's
+# are, to the original's music; or modern, in 3D, with the engines, the ambience and the
 # enemies' fire the original never had; a folder of sounds each. The values
 # are Level3DAudio.Mode's, and ORIGINAL came last, so a config saved before
 # it still means what it did by its number. The volumes are 0 to 1, onto the
