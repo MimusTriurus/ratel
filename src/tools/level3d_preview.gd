@@ -91,7 +91,7 @@
 #         -- --shot out.png <position 0-1 or x,z> <zoom> <top|tilt> [<seconds> <x,z> ...] \
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
 #            [--at <x,z>] [--free] [--hold <keys>@<from>-<to>[,...]] [--weapon <0-3>]
-#            [--intro] [--pows <n>] [--score <n>] [--strip <frames>,<seconds>[,<px>]] [--die <seconds>]
+#            [--intro] [--pows <n>] [--score <n>] [--summary <seconds>] [--strip <frames>,<seconds>[,<px>]] [--die <seconds>]
 #
 # The bunkers' guns, the enemy soldiers, the two boats on the river, the two
 # brown tanks and the boss's four heavy tanks at the top of the stage fight back
@@ -116,7 +116,8 @@
 # are checked; a span after 2: is the second player's (2:s@0-3). --weapon starts with what the prisoners would have given: 0 the
 # grenade, 1 to 3 the missile and its two upgrades. --pows starts with that
 # many prisoners aboard, every player, for the rescue helicopter, and --score
-# with that score, for the extra life at 20000. --strip takes that many
+# with that score, for the extra life at 20000. --summary shows the mission's
+# summary that many seconds in, as if the boss were beaten. --strip takes that many
 # frames instead of one, that many seconds apart from the first, and lays the
 # middle <px> square of each (512 unless given) out four to a row in the one
 # file: a blast from start to finish, which one frame never catches. --die
@@ -1687,14 +1688,12 @@ static func _gun_bunkers() -> Array:
 const BLAST_PATH := "res://resources/3d/jackal_fx_blast.glb"
 
 var _immortal := false  # --immortal: rounds pass the BTR by, for --shot runs
-var _banner: Label      # GAME OVER
 var _hud: CanvasLayer
 # The spare lives, as Main.extra_lives: the game's four on normal (Crew.lives).
 # The last one lost starts the stage again, as R does -- with two players, the
 # last one lost of both -- and the game's continue screen is not here. The
 # infinite lives cheat spends none.
 const EXTRA_LIVES := 4
-const GAME_OVER_TIME := 3.0
 var _blast_scene: PackedScene
 # --hold: [key, from tick, to tick, player], and the ticks since the preview
 # went live.
@@ -1835,6 +1834,7 @@ func _add_guns(level: Node) -> void:
 	rescue.scored = func(points: int, carrier: Level3DFriends.Carrier):
 		for c in crews:
 			if c.carrier == carrier:
+				_rescued_by.append(c.index)
 				# The points first, and then the 1UP they may bring.
 				if settings.hud:
 					_score_pops.add(rescue.top_position(), points, _crew_colour(c.index))
@@ -2044,21 +2044,14 @@ func _make_hud() -> void:
 	var layer := _hud
 	add_child(layer)
 	# The players' lines are added with them (_add_crew).
-	_banner = Label.new()
-	_banner.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_banner.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_banner.add_theme_font_size_override("font_size", 64)
-	_banner.add_theme_color_override("font_outline_color", Color.BLACK)
-	_banner.add_theme_constant_override("outline_size", 12)
-	_banner.visible = false
-	layer.add_child(_banner)
 	_pad_arrow = Level3DArrow.new()
 	layer.add_child(_pad_arrow)
 	_callouts = Level3DCallouts.new()
 	layer.add_child(_callouts)
 	_score_pops = Level3DScorePops.new()
 	layer.add_child(_score_pops)
+	_summary = Level3DSummary.new()
+	layer.add_child(_summary)
 	_banners = Level3DBanners.new()
 	layer.add_child(_banners)
 	var crosshair := Level3DCrosshair.new()
@@ -2070,6 +2063,8 @@ func _make_hud() -> void:
 # and their icons rendered again for a new size.
 func _layout_hud() -> void:
 	_callouts.scale_factor = settings.hud_scale
+	_banners.scale_factor = settings.hud_scale
+	_summary.scale_factor = settings.hud_scale
 	_score_pops.scale_factor = settings.hud_scale
 	for c in crews:
 		c.hud.bottom = settings.hud_corner == Level3DSettings.HudCorner.BOTTOM
@@ -2102,6 +2097,7 @@ func _render_icons() -> void:
 		for c in crews:
 			c.hud.icons = rendered
 			c.hud.queue_redraw()
+		_summary.icons = rendered
 
 
 const FIRING_NAMES := ["CLASSIC", "CURSOR", "COMBINED"]
@@ -2190,6 +2186,13 @@ var _banners: Level3DBanners
 var _saw_chinook := false
 var _saw_pan := false
 var _saw_defeat := false
+# The mission's summary (Level3DSummary) in place of the game's lines: who
+# brought each prisoner rescued in, in order, and the tick the BTR was handed
+# over on, which its time is from.
+var _summary: Level3DSummary
+var _rescued_by: Array[int] = []
+var _mission_from := 0
+var _summary_tick := -1         # --summary's: the tick to show it on, as if the boss were beaten
 
 func _update_banners() -> void:
 	var on := settings.hud
@@ -2198,6 +2201,7 @@ func _update_banners() -> void:
 		_banners.stage(1)
 	elif not flying and _saw_chinook:
 		_banners.stage_over()
+		_mission_from = _ticks
 	_saw_chinook = flying
 	var panning := boss != null and boss.is_panning()
 	if panning and not _saw_pan and on and settings.banner_warning:
@@ -2206,8 +2210,11 @@ func _update_banners() -> void:
 		_banners.warning_over()
 	_saw_pan = panning
 	var defeated := boss != null and boss.is_defeated()
-	if defeated and not _saw_defeat and on and settings.banner_mission:
-		_banners.mission(rescue.rescued)
+	var forced := _summary_tick >= 0 and _ticks >= _summary_tick and not _summary.shown
+	if forced:
+		_summary_tick = -1
+	if forced or defeated and not _saw_defeat and on and settings.banner_mission:
+		_summary.show_summary(_rescued_by, friends.prisoners_total(), _ticks - _mission_from)
 	_saw_defeat = defeated
 
 
@@ -2661,9 +2668,7 @@ func _game_over() -> bool:
 	if chinook != null or crews.any(func(c: Crew): return not c.out):
 		return false
 	_restart()
-	_banner.text = "GAME OVER"
-	_banner.visible = true
-	get_tree().create_timer(GAME_OVER_TIME, false).timeout.connect(func(): _banner.visible = false)
+	_banners.game_over()
 	return true
 
 
@@ -2798,6 +2803,13 @@ static func _axis(negative: Key, positive: Key) -> float:
 func _unhandled_input(event: InputEvent) -> void:
 	if not _live:
 		return
+	# The summary waits for a press: the gun, Enter or Space, or a click.
+	if _summary.shown and ((event is InputEventKey and event.pressed and not event.echo
+			and event.keycode in [settings.key("gun"), KEY_ENTER, KEY_KP_ENTER, KEY_SPACE])
+			or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT)):
+		_summary.dismiss()
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
 			get_viewport().set_input_as_handled()
@@ -2901,8 +2913,10 @@ func _restart() -> void:
 		c.out = false
 		c.btr.visible = true
 		c.btr.blink(true)
-	_banner.visible = false
 	_banners.clear()
+	_summary.clear()
+	_rescued_by.clear()
+	_mission_from = _ticks
 	_score_pops.clear()
 	_saw_chinook = false
 	_saw_pan = false
@@ -3024,6 +3038,10 @@ func _screenshot_mode() -> void:
 			c.carrier.releaseable_pows = c.carrier.pows
 		args = args.slice(0, aboard) + args.slice(aboard + 2)
 		_show_state()
+	var at_summary := args.find("--summary")
+	if at_summary >= 0:
+		_summary_tick = roundi(float(args[at_summary + 1]) * 100.0)
+		args = args.slice(0, at_summary) + args.slice(at_summary + 2)
 	var start_score := args.find("--score")
 	if start_score >= 0:
 		for c in crews:

@@ -293,6 +293,29 @@ func bind(centres: Dictionary, kinds: Dictionary, roofs := {}) -> void:
 	for name in _bound:
 		if _first == "" or _roofs[name].z > _roofs[_first].z:
 			_first = name
+	_roll_houses()
+
+
+# How many each house holds, rolled as Help rolls it when the house is blown
+# open -- 2 + 0..2 brothers behind the first -- but at the start of the run,
+# so that the level's prisoners are known before every house is open: the
+# mission's summary counts the ones left in it (prisoners_total).
+var _house_counts := {}         # destructible name -> the first one's house_count
+
+func _roll_houses() -> void:
+	_house_counts.clear()
+	for name in _bound:
+		if _bound[name].type != Triggers.HUT:
+			_house_counts[name] = 2 + _rng.randi_range(0, 2)
+
+
+# Every prisoner the level holds: one in each hut, the weapon carrier, and
+# house_count + 1 in each house.
+func prisoners_total() -> int:
+	var total := 0
+	for name in _bound:
+		total += 1 if _bound[name].type == Triggers.HUT else _house_counts.get(name, 2) + 1
+	return total
 
 
 # The destruction group of the map building `name` is bound to, -1 for none.
@@ -317,6 +340,7 @@ func reset() -> void:
 	for c in carriers:
 		c.reset()
 	_furthest_top = INF
+	_roll_houses()
 
 
 # The prisoners aboard every jeep.
@@ -349,7 +373,7 @@ func building_destroyed(name: String) -> void:
 		_serial += 1
 		_helps.append({"x": b.x + 96, "y": b.y + 84, "left": b.type == Triggers.HOUSE_LEFT,
 				"count": HELP_FIRST, "blinks": 0, "on": false, "age": 0, "seed": _serial,
-				"at": _roofs[name]})
+				"at": _roofs[name], "house_count": _house_counts.get(name, 2)})
 		scored.call(HOUSE_POINTS)
 
 
@@ -374,7 +398,7 @@ func _update_help(h: Dictionary) -> bool:
 		return false
 	_spawn(h.x + (-24 if h.left else 24), h.y + 28,
 			FriendlySoldierType.HOUSE_LEFT_WALKING if h.left else FriendlySoldierType.HOUSE_RIGHT_WALKING,
-			2 + _rng.randi_range(0, 2))
+			h.house_count)
 	return true
 
 

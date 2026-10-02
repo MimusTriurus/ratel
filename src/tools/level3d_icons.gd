@@ -90,6 +90,17 @@ func render_all(vehicle: Dictionary, height: int, hues := Vector3.ZERO) -> Dicti
 			player.play(POW_POSE)
 			player.seek(POW_POSE_AT, true)
 			player.pause())
+	# And in the second player's colours, for the mission's summary, which
+	# colours each prisoner by who brought him (Level3DSummary).
+	if hues != Vector3.ZERO:
+		var pow_2: Node3D = pow_scene.instantiate()
+		Level3DBtr.tint_model(pow_2, hues.x, hues.y, hues.z)
+		icons["pow_2"] = await render(_turned(pow_2, POW_FACING), height, 1.0, func():
+			var player := pow_2.find_child("AnimationPlayer", true, false) as AnimationPlayer
+			if player != null and player.has_animation(POW_POSE):
+				player.play(POW_POSE)
+				player.seek(POW_POSE_AT, true)
+				player.pause())
 
 	# Each weapon as its round -- the mortar's bomb, the missile, the heavy
 	# missile, the staged one -- off the mount's pivot.
