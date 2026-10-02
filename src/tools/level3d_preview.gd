@@ -1813,7 +1813,12 @@ func _add_guns(level: Node) -> void:
 	friends.ground = _walker_ground_at
 	friends.player_position = guns.player_position
 	friends.calls = settings.hud and settings.hud_help
-	_callouts.marks = friends.help_marks
+	# The prisoners' HELP and the rescue crewman's HERE! (Level3DRescueCrew).
+	_callouts.marks = func() -> Array[Dictionary]:
+		var marks := friends.help_marks()
+		if rescue != null:
+			marks.append_array(rescue.crew.call_marks())
+		return marks
 	friends.scored = guns.scored
 	add_child(friends)
 	rescue = Level3DRescue.new()
@@ -1836,6 +1841,7 @@ func _add_guns(level: Node) -> void:
 				_add_points(c, points)
 		_show_state()
 	add_child(rescue)
+	rescue.crew.calls = friends.calls
 	if Level3DMap.is_stage_one():
 		rescue.bind_lamps(level)  # the landing port's, which is stage 1's
 	soldiers.more_solids = friends.solid_boxes
@@ -2326,6 +2332,8 @@ func _apply_settings() -> void:
 	_crt.visible = settings.crt
 	if friends != null:
 		friends.calls = settings.hud and settings.hud_help
+		if rescue != null and rescue.crew != null:
+			rescue.crew.calls = friends.calls
 	_layout_hud()
 	_show_state()
 	Level3DAudio.set_mode(Level3DAudio.Mode.CLASSIC if settings.sound_mode == Level3DSettings.SoundMode.CLASSIC

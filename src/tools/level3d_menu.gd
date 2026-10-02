@@ -321,8 +321,9 @@ func _make_interface_tab() -> Control:
 	_hud_cheats = _check(tab, "Активные читы", func(on: bool): settings.hud_cheats = on)
 	_hud_pad_arrow = _check(tab, "Стрелка к вертолёту", func(on: bool): settings.hud_pad_arrow = on)
 	_note(tab, "Пока на борту пленные, а вертолёт, который их заберёт, за краем экрана.")
-	_hud_help = _check(tab, "Крики HELP", func(on: bool): settings.hud_help = on)
-	_note(tab, "Над целыми зданиями, где сидят пленные, и над пленными, которых долго не подбирают.")
+	_hud_help = _check(tab, "Крики HELP и HERE", func(on: bool): settings.hud_help = on)
+	_note(tab, "HELP над первым зданием с пленными и над пленными, которых долго не подбирают; "
+			+ "HERE над пилотом вертолёта, пока есть кого выгрузить.")
 	tab.add_child(HSeparator.new())
 	_heading(tab, "Надписи")
 	_banner_stage = _check(tab, "Номер этапа при высадке", func(on: bool): settings.banner_stage = on)

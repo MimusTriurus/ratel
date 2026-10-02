@@ -305,7 +305,8 @@ func _line(x: float, top: float, g: float, row: float, which := ALL) -> float:
 		var dim := 1.0 if lives != 0 else DIM
 		var hop := _hop(_lives_time, g)
 		x = _icon(icons.get(lives_icon, icons.get("lives")), LIFE_SPRITE, x, top - hop, row, dim) + g * 0.25
-		x = _infinity(x, y, g) if lives < 0 				else _text(str(lives), x, y - hop, g, WHITE if lives > 0 else GRAY, 1.0, _flash(_lives_time))
+		x = _infinity(x, y, g) if lives < 0 \
+				else _text(str(lives), x, y - hop, g, WHITE if lives > 0 else GRAY, 1.0, _flash(_lives_time))
 	if show.pows:
 		x = _gap(x, g, groups)
 		groups += 1

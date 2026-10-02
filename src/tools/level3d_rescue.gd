@@ -111,6 +111,11 @@ var scored: Callable
 # The top view: the model drawn at the original's scale for its height.
 var enlarge := true
 var verbose := false
+# Its crewman, out waving the jeep over while it waits for prisoners to be
+# let off (Level3DRescueCrew); `_to_let_off` whether anyone is bringing some
+# and not letting them off yet, as _update_pick_up last saw it.
+var crew: Level3DRescueCrew
+var _to_let_off := false
 
 var state := NONE
 # FriendlyHelicopter's, verbatim: map px, game degrees (0 is north, clockwise
@@ -165,6 +170,9 @@ func _ready() -> void:
 	_shadow = _instance(scene, GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY)
 	_sound = AudioStreamPlayer.new()
 	add_child(_sound)
+	crew = Level3DRescueCrew.new()
+
+	add_child(crew)
 	_find_port()
 	reset()
 
@@ -236,6 +244,8 @@ func _pulse_lamps() -> void:
 
 func reset() -> void:
 	state = NONE
+	if crew != null:
+		crew.reset()
 	rescued = 0
 	walking_soldiers = 0
 	_trigger_y = map.stage.map_height
@@ -339,6 +349,11 @@ func tick() -> void:
 				_fading = Level3DAudio.fade_out(_sound)
 				visible = false
 				return
+	# Out while there are prisoners to let off and none walking over yet.
+	if crew != null:
+		crew.verbose = verbose
+		crew.tick(pad_position(), -1.0 if left_stop else 1.0,
+				state == PICK_UP and _to_let_off and walking_soldiers == 0)
 	_pose()
 
 
@@ -405,13 +420,16 @@ func _enter(next: int) -> void:
 # other stages, for every player.
 func _update_pick_up() -> void:
 	var leaving := walking_soldiers == 0
+	_to_let_off = false
 	for p in players.call():
 		var player := Level3DMap.to_map(p[0])
 		var c: Level3DFriends.Carrier = p[1]
 		if c.pows > 0:
 			var dx := player.x - x
-			if player.y > y - 66 and player.y < y + 49 \
-					and ((not left_stop and dx > 0 and dx < 320) or (left_stop and dx < 0 and dx > -320)):
+			var stopped := player.y > y - 66 and player.y < y + 49 \
+					and ((not left_stop and dx > 0 and dx < 320) or (left_stop and dx < 0 and dx > -320))
+			_to_let_off = _to_let_off or not stopped
+			if stopped:
 				if c.drop_off_delay > 0:
 					c.drop_off_delay -= 1
 				else:

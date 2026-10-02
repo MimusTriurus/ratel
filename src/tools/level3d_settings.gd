@@ -76,7 +76,8 @@ var hud_modes := false
 var hud_pad_arrow := true   # to the rescue helicopter, prisoners aboard
 var hud_cheats := true      # a line saying which cheats are on
 # HELP over a building with prisoners in it, and over a prisoner long left
-# where he is (Level3DFriends' calls). Not the game's: its HELP is the house's.
+# where he is (Level3DFriends' calls), and the rescue crewman's HERE!
+# (Level3DRescueCrew). Not the game's: its HELP is the house's.
 var hud_help := true
 # The three banners (Level3DBanners): STAGE 1 under the Chinook, WARNING on
 # the boss's pan, the mission's lines when it is beaten. Under `hud`.
