@@ -1,6 +1,6 @@
 # Звуки 3D-превью: описания для генерации
 
-Все 37 звуков из таблицы `SOUNDS` в `src/tools/level3d_audio.gd`. Здесь они
+Все 38 звуков из таблицы `SOUNDS` в `src/tools/level3d_audio.gd`. Здесь они
 разбиты на те же группы, что и ползунки на вкладке «Звук» меню Escape
 (`Level3DMenu.SOUND_GROUPS`). Эффекты 2D-игры описаны в
 [SFX_PROMPTS.md](SFX_PROMPTS.md), и **общий стиль у обоих файлов один**: ставьте
@@ -44,12 +44,12 @@
   нужно заменить сгенерированным.
 - ⬜ **Нет файла** — в новом режиме звук молчит.
 
-Состояние на 2026-10-02: готово 20, копий оригинала 3, заглушек 1, без файла 13.
+Состояние на 2026-10-02: готово 20, копий оригинала 4, заглушек 1, без файла 13.
 
 | Осталось | Звуки |
 |---|---|
 | ⬜ Сгенерировать | `hit_ground`, `hit_water`, `hit_hard`, `hit_armor_blast`, `enemy_mg`, `enemy_cannon`, `btr_idle`, `btr_drive`, `tank_engine`, `boat_engine`, `warning`, `ambient_sea`, `ambient_jungle` |
-| ♻️ Заменить копию | `pickup`, `upgrade`, `pause` |
+| ♻️ Заменить копию | `pickup`, `upgrade`, `extra_life`, `pause` |
 | 🔧 Заменить заглушку | `hit_dull` |
 | ✅ Добавить вариантов | Один файл, а нужно 3–6: `gun`, `grenade_launch`, `blast_small`, `blast_missile`, `blast_water`, `blast`, `breach_blast`, `soldier_death_blast` |
 
@@ -378,6 +378,15 @@ ffmpeg -f lavfi -i "aevalsrc='0.9*sin(2*PI*(F+60*exp(-t*45))*t)*exp(-t*32)+0.55*
 
 > Weapon power-up, rising three-note arpeggio with a metallic reload clack at
 > the end, triumphant and energetic, 0.6 seconds.
+
+### `extra_life` — дополнительная жизнь *(=2D `extra_life`)*
+♻️ **Копия оригинала** — в новом режиме пока звучит звук из 2D-игры.
+
+Жизнь за 20000 очков и потом за каждые 50000. Редкий и самый радостный сигнал
+интерфейса, ярче улучшения оружия.
+
+> Extra life fanfare, bright ascending four-note jingle ending on a held
+> sparkling chord, joyful and rewarding, 1 second.
 
 ### `warning` — предупреждение о боссе
 ⬜ **Нет файла** — в новом режиме молчит, нужно сгенерировать.

@@ -179,6 +179,7 @@ const SOUNDS := {
 	"pickup": {"bus": &"Interface", "original": "pickup.ogg", "flat": true},
 	"rescue_pickup": {"bus": &"Interface", "original": "helicopter_pickup.ogg", "flat": true},
 	"upgrade": {"bus": &"Interface", "original": "weapon_upgrade.ogg", "flat": true},
+	"extra_life": {"bus": &"Interface", "original": "extra_life.ogg", "flat": true},
 	"warning": {"bus": &"Interface", "flat": true},
 	# GameMode's pause key: the Escape menu opening and closing.
 	"pause": {"bus": &"Interface", "original": "pause.ogg", "flat": true},

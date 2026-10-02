@@ -91,7 +91,7 @@
 #         -- --shot out.png <position 0-1 or x,z> <zoom> <top|tilt> [<seconds> <x,z> ...] \
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
 #            [--at <x,z>] [--free] [--hold <keys>@<from>-<to>[,...]] [--weapon <0-3>]
-#            [--intro] [--pows <n>] [--strip <frames>,<seconds>[,<px>]] [--die <seconds>]
+#            [--intro] [--pows <n>] [--score <n>] [--strip <frames>,<seconds>[,<px>]] [--die <seconds>]
 #
 # The bunkers' guns, the enemy soldiers, the two boats on the river, the two
 # brown tanks and the boss's four heavy tanks at the top of the stage fight back
@@ -115,7 +115,8 @@
 # many spans as are given (wd@0-1.5,a@2-3), which is how the classic keys
 # are checked; a span after 2: is the second player's (2:s@0-3). --weapon starts with what the prisoners would have given: 0 the
 # grenade, 1 to 3 the missile and its two upgrades. --pows starts with that
-# many prisoners aboard, every player, for the rescue helicopter. --strip takes that many
+# many prisoners aboard, every player, for the rescue helicopter, and --score
+# with that score, for the extra life at 20000. --strip takes that many
 # frames instead of one, that many seconds apart from the first, and lays the
 # middle <px> square of each (512 unless given) out four to a row in the one
 # file: a blast from start to finish, which one frame never catches. --die
@@ -1698,6 +1699,19 @@ var _held: Array = []
 var _ticks := 0
 
 
+# PlayerState.add_points: the points, and a life at 20000 and every 50000
+# after it, which the preview went without until the HUD showed lives coming.
+func _add_points(c: Crew, points: int) -> void:
+	var before := c.score
+	c.score += points
+	if (before < 20000 and c.score >= 20000) 			or ((before - 20000) / 50000 != (c.score - 20000) / 50000):
+		c.lives += 1
+		Level3DAudio.play("extra_life")
+		if guns.verbose:
+			print("%dP extra life at %d, %d lives" % [c.index + 1, c.score, c.lives])
+	_show_state()
+
+
 func _add_guns(level: Node) -> void:
 	# The game's own map under the level: what walks, walks on it, and what
 	# stops an enemy's round is its solid tiles (Level3DMap).
@@ -1715,8 +1729,7 @@ func _add_guns(level: Node) -> void:
 		return Vector2(c.btr.position.x, c.btr.position.z)
 	guns.blast = _spawn_blast
 	guns.scored = func(points: int):
-		_credited().score += points
-		_show_state()
+		_add_points(_credited(), points)
 	add_child(guns)
 	soldiers = Level3DSoldiers.new()
 	soldiers.map = map
@@ -1803,7 +1816,7 @@ func _add_guns(level: Node) -> void:
 	rescue.scored = func(points: int, carrier: Level3DFriends.Carrier):
 		for c in crews:
 			if c.carrier == carrier:
-				c.score += points
+				_add_points(c, points)
 				if settings.hud:
 					_score_pops.add(rescue.top_position(), points, _crew_colour(c.index))
 		_show_state()
@@ -2982,6 +2995,12 @@ func _screenshot_mode() -> void:
 			c.carrier.pows = int(args[aboard + 1])
 			c.carrier.releaseable_pows = c.carrier.pows
 		args = args.slice(0, aboard) + args.slice(aboard + 2)
+		_show_state()
+	var start_score := args.find("--score")
+	if start_score >= 0:
+		for c in crews:
+			c.score = int(args[start_score + 1])
+		args = args.slice(0, start_score) + args.slice(start_score + 2)
 		_show_state()
 	var start_at := args.find("--at")
 	if start_at >= 0:

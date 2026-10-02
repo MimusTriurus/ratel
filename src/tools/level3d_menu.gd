@@ -45,7 +45,7 @@ const SOUND_GROUPS := [
 	["Двигатели", [["btr_idle", "BTR на холостых"], ["btr_drive", "BTR в движении"], ["tank_engine", "Танки"],
 			["boat_engine", "Лодки"], ["chinook", "Chinook"], ["rescue_rotor", "Спасательный вертолёт"]]],
 	["Интерфейс", [["pickup", "Пленный подобран"], ["rescue_pickup", "Пленный в вертолёте"],
-			["upgrade", "Улучшение оружия"], ["warning", "Предупреждение о боссе"], ["pause", "Пауза"]]],
+			["upgrade", "Улучшение оружия"], ["extra_life", "Дополнительная жизнь"], ["warning", "Предупреждение о боссе"], ["pause", "Пауза"]]],
 	["Окружение", [["ambient_sea", "Море"], ["ambient_jungle", "Джунгли"]]],
 ]
 # The Mixer tab: the game's own gains (Level3DAudio's mix), in dB, for the

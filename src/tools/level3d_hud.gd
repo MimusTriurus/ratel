@@ -25,7 +25,10 @@
 #     cheat, an infinity for the count, drawn: the font has no glyph for it;
 #   * the prisoners aboard as a prisoner and the count, dimmed with none
 #     aboard. Dimmed is the icon faded and the 0 in the font's gray, not
-#     faded: a faded white over stage 1's sand all but went;
+#     faded: a faded white over stage 1's sand all but went. A life or a
+#     prisoner gained flashes its count and hops it and its icon as points
+#     do the score; one lost does not, the jeep's blast or the helicopter
+#     taking him being what is watched then;
 #   * the weapon as its round -- the mortar's bomb, the missile, the heavy
 #     missile, the staged one -- each its own outline, so the level needs
 #     nothing beside it; a change of weapon blinks it for UPGRADE_BLINK_TIME,
@@ -105,6 +108,10 @@ var _shown := 0.0           # the score as it reads now, rolling up to `score`
 var _roll_from := 0.0
 var _rolled_to := 0         # the score the roll is to
 var _roll_time := INF       # seconds since the last points came, while they show
+var _lives_was := -2         # -2 before the first state, which is not a gain
+var _lives_time := INF      # seconds since a life was gained, as _roll_time
+var _pows_was := 0
+var _pows_time := INF       # and a prisoner
 
 
 func _init() -> void:
@@ -139,13 +146,21 @@ func show_state() -> void:
 	if _weapon != "" and weapon != _weapon:
 		_blink_left = UPGRADE_BLINK_TIME
 	_weapon = weapon
-	if score < _rolled_to:
+	var new_run := score < _rolled_to
+	if new_run:
 		_shown = score
 		_roll_time = INF
 	elif score > _rolled_to:
 		_roll_from = _shown
 		_roll_time = 0.0
 	_rolled_to = score
+	# A new run's lives and an infinity let go of are not gains.
+	if lives > _lives_was and _lives_was >= 0 and not new_run:
+		_lives_time = 0.0
+	_lives_was = lives
+	if pows > _pows_was and not new_run:
+		_pows_time = 0.0
+	_pows_was = pows
 	queue_redraw()
 
 
@@ -157,6 +172,10 @@ func _process(delta: float) -> void:
 		_roll_time += delta
 		var t := clampf(_roll_time / ROLL_TIME, 0.0, 1.0)
 		_shown = lerpf(_roll_from, score, 1.0 - (1.0 - t) * (1.0 - t))
+		queue_redraw()
+	if _lives_time < ROLL_TIME + FLASH_FADE or _pows_time < ROLL_TIME + FLASH_FADE:
+		_lives_time += delta
+		_pows_time += delta
 		queue_redraw()
 
 
@@ -189,22 +208,22 @@ func _line(x: float, top: float, g: float, row: float) -> float:
 	var y := top + roundf((row - g) * 0.5)      # the glyphs' top
 	var groups := 0
 	if parts.score:
-		var flash := clampf((ROLL_TIME + FLASH_FADE - _roll_time) / FLASH_FADE, 0.0, 1.0)
-		var hop := roundf(sin(PI * clampf(_roll_time / HOP_TIME, 0.0, 1.0)) * HOP) * g / 32.0
-		x = _text("%06d" % int(_shown), x, y - hop, g, WHITE, 1.0, Color.WHITE.lerp(colour, flash))
+		x = _text("%06d" % int(_shown), x, y - _hop(_roll_time, g), g, WHITE, 1.0, _flash(_roll_time))
 		groups += 1
 	if parts.lives:
 		x = _gap(x, g, groups)
 		groups += 1
 		var dim := 1.0 if lives != 0 else 0.45
-		x = _icon(icons.get(lives_icon, icons.get("lives")), LIFE_SPRITE, x, top, row, dim) + g * 0.25
-		x = _infinity(x, y, g) if lives < 0 else _text(str(lives), x, y, g, WHITE if lives > 0 else GRAY)
+		var hop := _hop(_lives_time, g)
+		x = _icon(icons.get(lives_icon, icons.get("lives")), LIFE_SPRITE, x, top - hop, row, dim) + g * 0.25
+		x = _infinity(x, y, g) if lives < 0 				else _text(str(lives), x, y - hop, g, WHITE if lives > 0 else GRAY, 1.0, _flash(_lives_time))
 	if parts.pows:
 		x = _gap(x, g, groups)
 		groups += 1
 		var dim := 1.0 if pows > 0 else 0.45
-		x = _icon(icons.get("pow"), POW_SPRITE, x, top, row, dim) + g * 0.25
-		x = _text(str(pows), x, y, g, WHITE if pows > 0 else GRAY)
+		var hop := _hop(_pows_time, g)
+		x = _icon(icons.get("pow"), POW_SPRITE, x, top - hop, row, dim) + g * 0.25
+		x = _text(str(pows), x, y - hop, g, WHITE if pows > 0 else GRAY, 1.0, _flash(_pows_time))
 	if parts.weapon:
 		x = _gap(x, g, groups)
 		groups += 1
@@ -215,6 +234,17 @@ func _line(x: float, top: float, g: float, row: float) -> float:
 		x = _icon(rounds[level] if level < rounds.size() else null,
 				MISSILE_SPRITE if has_missiles else GRENADE_SPRITE, x, top, row, alpha)
 	return x
+
+
+# The tint of a number `time` seconds after it went up: the player's colour,
+# back to white over FLASH_FADE once ROLL_TIME is over.
+func _flash(time: float) -> Color:
+	return Color.WHITE.lerp(colour, clampf((ROLL_TIME + FLASH_FADE - time) / FLASH_FADE, 0.0, 1.0))
+
+
+# How far up it is `time` seconds after: HOP font pixels and back over HOP_TIME.
+static func _hop(time: float, g: float) -> float:
+	return roundf(sin(PI * clampf(time / HOP_TIME, 0.0, 1.0)) * HOP) * g / 32.0
 
 
 func _gap(x: float, g: float, groups: int) -> float:
