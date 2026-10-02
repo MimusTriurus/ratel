@@ -1,7 +1,9 @@
 # The 3D preview's Escape menu: continue, a new game for one player or two,
 # settings, quit, over the stage
-# frozen by pausing the tree. The settings are six tabs: five of
-# Level3DSettings -- graphics (the camera and the look), interface (what the
+# frozen by pausing the tree. The settings are seven tabs: six of
+# Level3DSettings -- game (8-bit or modern, a preset of the others: the sound,
+# the font, the look, the driving and firing), graphics (the camera and the
+# look), interface (what the
 # HUD shows, where and how big), sound (original, classic or modern, the volumes, the
 # enemies' fire), controls (the keys, how the BTR drives and how it fires) and
 # cheats -- and the mixer, the game's own gain for every sound and every part
@@ -12,7 +14,9 @@
 #
 # The game's own in-game menu (GameMode._open_menu) is drawn with the game's
 # font through Main; this one is Godot's controls, as the preview's HUD is a
-# Label: the preview has no Main to draw through.
+# Label: the preview has no Main to draw through. Its font follows the HUD's
+# (Level3DSettings.font, _apply_font), from the .ttf files the HUD's sheets
+# were baked from: Press Start 2P sharp or smoothed, or Black Ops One.
 #
 # Escape goes back a step: out of a key prompt, out of the settings, and from
 # the first page back to the stage.
@@ -20,6 +24,11 @@ class_name Level3DMenu
 extends CanvasLayer
 
 const FONT_SIZE := 24
+# Press Start 2P at FONT_SIZE is a letter as wide as it is tall, half as wide
+# again as Godot's font: its sizes are scaled by this, so the panels hold it.
+const PIXEL_FONT := "res://assets/fonts/PressStart2P-Regular.ttf"
+const PIXEL_FONT_SCALE := 2.0 / 3.0
+const MODERN_FONT := "res://assets/fonts/BlackOpsOne-Regular.ttf"
 # The headings' colour, and a ticked box's.
 const ACCENT := Color(1.0, 0.8, 0.3)
 # The boxes' size in pixels of the 2048x1152 layout; drawn at ICON_OVERSAMPLE
@@ -31,35 +40,35 @@ const ICON_OVERSAMPLE := 2
 # it is only the original's layer under explode, which the modern mode's
 # "blast" replaces. tools/verify_level3d_audio.gd checks that nothing else is.
 const SOUND_GROUPS := [
-	["Оружие BTR", [["gun", "Пулемёт"], ["grenade_launch", "Пуск гранаты"], ["rocket_launch", "Пуск ракеты"], ["rocket_flight", "Полёт ракеты"]]],
-	["Попадания", [["hit_ground", "По земле"], ["hit_water", "По воде"], ["hit_hard", "По бетону и стенам"],
-			["hit_dull", "По хижинам и воротам"],
-			["hit_armor", "По броне: пулемёт"], ["hit_armor_blast", "По броне: ракета или мина"]]],
-	["Выстрелы врагов", [["enemy_mg", "Пулемёты солдат"], ["enemy_cannon", "Пушки: бункеры, танки, лодки"]]],
-	["Взрывы", [["blast_small", "Граната"], ["blast_missile", "Ракета"], ["blast_water", "В воде"],
-			["blast", "Уничтожение врага"], ["building", "Разрушение здания"], ["breach_gun", "Пробитие танка босса: пулемёт"],
-			["breach_blast", "Пробитие танка босса: ракета или мина"],
-			["player_explodes", "Гибель BTR"], ["soldier_death_gun", "Гибель солдата от пулемёта"],
-			["soldier_death_blast", "Гибель солдата от ракеты или мины"],
-			["soldier_death_run_over", "Гибель солдата под колёсами"]]],
-	["Двигатели", [["btr_idle", "BTR на холостых"], ["btr_drive", "BTR в движении"], ["tank_engine", "Танки"],
-			["boat_engine", "Лодки"], ["chinook", "Chinook"], ["rescue_rotor", "Спасательный вертолёт"]]],
-	["Интерфейс", [["pickup", "Пленный подобран"], ["rescue_pickup", "Пленный в вертолёте"],
-			["upgrade", "Улучшение оружия"], ["extra_life", "Дополнительная жизнь"], ["warning", "Предупреждение о боссе"], ["pause", "Пауза"]]],
-	["Окружение", [["ambient_sea", "Море"], ["ambient_jungle", "Джунгли"]]],
+	["BTR weapons", [["gun", "Machine gun"], ["grenade_launch", "Grenade launch"], ["rocket_launch", "Rocket launch"], ["rocket_flight", "Rocket flight"]]],
+	["Hits", [["hit_ground", "On the ground"], ["hit_water", "On water"], ["hit_hard", "On concrete and walls"],
+			["hit_dull", "On huts and gates"],
+			["hit_armor", "On armour: machine gun"], ["hit_armor_blast", "On armour: rocket or mine"]]],
+	["Enemy fire", [["enemy_mg", "Soldiers' machine guns"], ["enemy_cannon", "Cannons: bunkers, tanks, boats"]]],
+	["Explosions", [["blast_small", "Grenade"], ["blast_missile", "Rocket"], ["blast_water", "In water"],
+			["blast", "Enemy destroyed"], ["building", "Building destroyed"], ["breach_gun", "Boss tank breached: machine gun"],
+			["breach_blast", "Boss tank breached: rocket or mine"],
+			["player_explodes", "BTR destroyed"], ["soldier_death_gun", "Soldier killed: machine gun"],
+			["soldier_death_blast", "Soldier killed: rocket or mine"],
+			["soldier_death_run_over", "Soldier run over"]]],
+	["Engines", [["btr_idle", "BTR idling"], ["btr_drive", "BTR driving"], ["tank_engine", "Tanks"],
+			["boat_engine", "Boats"], ["chinook", "Chinook"], ["rescue_rotor", "Rescue helicopter"]]],
+	["Interface", [["pickup", "Prisoner picked up"], ["rescue_pickup", "Prisoner aboard the helicopter"],
+			["upgrade", "Weapon upgrade"], ["extra_life", "Extra life"], ["warning", "Boss warning"], ["pause", "Pause"]]],
+	["Ambience", [["ambient_sea", "Sea"], ["ambient_jungle", "Jungle"]]],
 ]
 # The Mixer tab: the game's own gains (Level3DAudio's mix), in dB, for the
 # mode picked on it. SOUND_GROUPS' sounds, with enemy_hit after the blast it
 # is played under in classic, and the music's parts.
-const MIX_EXTRA := {"blast": ["enemy_hit", "Удар под взрывом (enemy_hit)"]}
+const MIX_EXTRA := {"blast": ["enemy_hit", "Hit under the blast (enemy_hit)"]}
 const MUSIC_NAMES := {
-	"start.ogg": "Заставка перед высадкой", "stage0_intro.ogg": "Этап: вступление",
-	"stage0_repeat.ogg": "Этап: петля", "boss_intro.ogg": "Босс: вступление",
-	"boss_repeat.ogg": "Босс: петля",
-	"boss_lead.ogg": "Босс: ведущая партия", "boss_tank_1.ogg": "Босс: танк 1 (гитары)",
-	"boss_tank_2.ogg": "Босс: танк 2 (двойная бочка)", "boss_tank_3.ogg": "Босс: танк 3 (струнные)",
-	"boss_tank_4.ogg": "Босс: танк 4 (арпеджиатор)", "boss_full.ogg": "Босс: петля целиком (линейная)",
-	"boss_victory.ogg": "Босс: победа", "boss_breach.ogg": "Босс: акцент на пробитие",
+	"start.ogg": "Before the landing", "stage0_intro.ogg": "Stage: intro",
+	"stage0_repeat.ogg": "Stage: loop", "boss_intro.ogg": "Boss: intro",
+	"boss_repeat.ogg": "Boss: loop",
+	"boss_lead.ogg": "Boss: lead", "boss_tank_1.ogg": "Boss: tank 1 (guitars)",
+	"boss_tank_2.ogg": "Boss: tank 2 (double kick)", "boss_tank_3.ogg": "Boss: tank 3 (strings)",
+	"boss_tank_4.ogg": "Boss: tank 4 (arpeggiator)", "boss_full.ogg": "Boss: whole loop (linear)",
+	"boss_victory.ogg": "Boss: victory", "boss_breach.ogg": "Boss: breach accent",
 }
 const MIX_MIN_DB := -40.0
 const MIX_MAX_DB := 12.0
@@ -67,8 +76,8 @@ const MIX_STEP_DB := 0.5
 # Level3DSettings.Reach as the menu lists it, shortest first.
 const REACH_ORDER := [Level3DSettings.Reach.CLASSIC, Level3DSettings.Reach.LONG, Level3DSettings.Reach.UNLIMITED]
 const ACTION_NAMES := {
-	"up": "Вперёд / вверх", "down": "Назад / вниз", "left": "Влево", "right": "Вправо",
-	"gun": "Пулемёт", "rocket": "Ракета",
+	"up": "Forward / up", "down": "Back / down", "left": "Left", "right": "Right",
+	"gun": "Machine gun", "rocket": "Rocket",
 }
 
 var settings: Level3DSettings
@@ -84,6 +93,12 @@ var from_editor := false
 var _main_page: Control
 var _settings_page: Control
 var _tabs: TabContainer
+var _theme: Theme
+# What has a font size of its own: [control, FONT_SIZE + this], scaled with
+# the font's (_apply_font).
+var _font_sizes: Array = []
+var _font_style := -1        # the Level3DFont.Style the menu is drawn in
+var _game_mode: OptionButton
 var _camera: OptionButton
 var _look: OptionButton
 var _crt: CheckBox
@@ -119,7 +134,7 @@ var _sound_mode: OptionButton
 # it, and what each is called.
 const SOUND_MODES := [Level3DSettings.SoundMode.ORIGINAL, Level3DSettings.SoundMode.CLASSIC,
 		Level3DSettings.SoundMode.MODERN]
-const SOUND_MODE_NAMES := ["Оригинал", "Классический (8-bit)", "Новый"]
+const SOUND_MODE_NAMES := ["Original", "Classic (8-bit)", "Modern"]
 var _boss_music: OptionButton
 var _master_volume: HSlider
 var _music_volume: HSlider
@@ -143,6 +158,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
 	var theme := Theme.new()
+	_theme = theme
 	theme.default_font_size = FONT_SIZE
 	for state in ["unchecked", "unchecked_disabled"]:
 		theme.set_icon(state, "CheckBox", _box_icon(false))
@@ -191,6 +207,7 @@ func close() -> void:
 
 func _show_main() -> void:
 	_waiting = ""
+	_apply_font()
 	_settings_page.visible = false
 	_main_page.visible = true
 	_continue.grab_focus()
@@ -206,6 +223,8 @@ func _show_settings() -> void:
 # The widgets from `settings`, which the preview's own keys (Tab, V, M) change
 # behind the menu's back.
 func refresh() -> void:
+	_apply_font()
+	_game_mode.select(int(settings.preset()))
 	_camera.select(settings.camera)
 	_look.select(settings.look)
 	_crt.set_pressed_no_signal(settings.crt)
@@ -283,15 +302,15 @@ func _make_main_page() -> Control:
 	var box := _padded_box(panel, 16)
 	box.custom_minimum_size = Vector2(360, 0)
 	var title := Label.new()
-	title.text = "Пауза"
+	title.text = "Paused"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", FONT_SIZE + 8)
+	_font_size(title, 8)
 	box.add_child(title)
-	_continue = _button(box, "Продолжить", close)
-	_button(box, "Новая игра: 1 игрок", func(): new_game.call(1))
-	_button(box, "Новая игра: 2 игрока", func(): new_game.call(2))
-	_button(box, "Настройки", _show_settings)
-	_button(box, "В редактор" if from_editor else "Выход", func(): get_tree().quit())
+	_continue = _button(box, "Continue", close)
+	_button(box, "New game: 1 player", func(): new_game.call(1))
+	_button(box, "New game: 2 players", func(): new_game.call(2))
+	_button(box, "Settings", _show_settings)
+	_button(box, "Back to the editor" if from_editor else "Quit", func(): get_tree().quit())
 	return panel
 
 
@@ -301,112 +320,134 @@ func _make_settings_page() -> Control:
 	box.custom_minimum_size = Vector2(760, 820)
 	_tabs = TabContainer.new()
 	_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# Every tab's name in view, in either font, rather than a narrow tab's page
+	# hiding some behind arrows.
+	_tabs.clip_tabs = false
 	box.add_child(_tabs)
+	_tabs.add_child(_make_game_tab())
 	_tabs.add_child(_make_graphics_tab())
 	_tabs.add_child(_make_interface_tab())
 	_tabs.add_child(_make_sound_tab())
 	_tabs.add_child(_make_mixer_tab())
 	_tabs.add_child(_make_controls_tab())
 	_tabs.add_child(_make_cheats_tab())
-	_button(box, "Назад", _show_main)
+	_button(box, "Back", _show_main)
 	return panel
 
 
-func _make_graphics_tab() -> Control:
-	var tab := _tab("Графика")
+# The mode: a preset of the settings on the other tabs (Level3DSettings.PRESETS),
+# and "own settings" once one of them has been changed from it, which cannot be
+# picked.
+func _make_game_tab() -> Control:
+	var tab := _tab("Game")
 	var grid := _grid(tab)
-	_camera = _choice(grid, "Камера", ["Вид сверху", "Вид сверху под наклоном"],
+	_game_mode = _choice(grid, "Mode", ["8-bit", "Modern", "Custom"],
+			func(i: int): settings.apply_preset(i as Level3DSettings.Preset))
+	_game_mode.set_item_disabled(Level3DSettings.Preset.CUSTOM, true)
+	_note(tab, "8-bit: the sounds and music as an NES plays them (classic sound), classic driving, "
+			+ "firing and reach, the Press Start 2P pixel font, the pixel look and the CRT monitor.")
+	_note(tab, "Modern: the new positional sound and its own music, modern driving (throttle and steering), "
+			+ "firing at the cursor with the long reach, the Black Ops One font, the modern look without the CRT.")
+	_note(tab, "A mode is a set of the settings on the other tabs. Change one of them there and the mode is "
+			+ "custom; the camera, resolution, interface, volumes, keys and cheats do not depend on it.")
+	return tab.get_parent().get_parent()
+
+
+func _make_graphics_tab() -> Control:
+	var tab := _tab("Graphics")
+	var grid := _grid(tab)
+	_camera = _choice(grid, "Camera", ["Top down", "Top down, tilted"],
 			func(i: int): settings.camera = i)
-	_look = _choice(grid, "Визуализация", ["Современный", "Пиксели"],
+	_look = _choice(grid, "Look", ["Modern", "Pixels"],
 			func(i: int): settings.look = i)
-	_resolution = _choice(grid, "Разрешение 3D", ["Как у экрана", "2048×1152 (как в игре)", "1920×1080", "1280×720"],
+	_resolution = _choice(grid, "3D resolution", ["Native", "2048×1152 (as the game)", "1920×1080", "1280×720"],
 			func(i: int): settings.resolution = i)
-	_crt = _check(tab, "ЭЛТ-монитор", func(on: bool): settings.crt = on)
+	_crt = _check(tab, "CRT monitor", func(on: bool): settings.crt = on)
 	return tab.get_parent().get_parent()
 
 
 func _make_interface_tab() -> Control:
-	var tab := _tab("Интерфейс")
-	_hud = _check(tab, "Показывать HUD", func(on: bool): settings.hud = on)
+	var tab := _tab("Interface")
+	_hud = _check(tab, "Show the HUD", func(on: bool): settings.hud = on)
 	tab.add_child(HSeparator.new())
-	_heading(tab, "Что показывать")
-	_hud_score = _check(tab, "Счёт", func(on: bool): settings.hud_score = on)
-	_hud_lives = _check(tab, "Жизни", func(on: bool): settings.hud_lives = on)
-	_hud_pows = _check(tab, "Пленные на борту", func(on: bool): settings.hud_pows = on)
-	_hud_weapon = _check(tab, "Оружие", func(on: bool): settings.hud_weapon = on)
-	_hud_modes = _check(tab, "Режимы езды и стрельбы", func(on: bool): settings.hud_modes = on)
-	_note(tab, "Выключено: режим появляется на пару секунд, когда его меняют клавишами V и M.")
-	_hud_cheats = _check(tab, "Активные читы", func(on: bool): settings.hud_cheats = on)
-	_hud_pad_arrow = _check(tab, "Стрелка к вертолёту", func(on: bool): settings.hud_pad_arrow = on)
-	_note(tab, "Пока на борту пленные, а вертолёт, который их заберёт, за краем экрана.")
-	_hud_help = _check(tab, "Крики HELP и HERE", func(on: bool): settings.hud_help = on)
-	_note(tab, "HELP над первым зданием с пленными и над пленными, которых долго не подбирают; "
-			+ "HERE над пилотом вертолёта, пока есть кого выгрузить.")
-	_hud_hints = _check(tab, "Подсказки управления", func(on: bool): settings.hud_hints = on)
-	_note(tab, "Клавиши над джипом, когда они впервые нужны: ехать, стрелять, ракетой по хижине.")
+	_heading(tab, "What to show")
+	_hud_score = _check(tab, "Score", func(on: bool): settings.hud_score = on)
+	_hud_lives = _check(tab, "Lives", func(on: bool): settings.hud_lives = on)
+	_hud_pows = _check(tab, "Prisoners aboard", func(on: bool): settings.hud_pows = on)
+	_hud_weapon = _check(tab, "Weapon", func(on: bool): settings.hud_weapon = on)
+	_hud_modes = _check(tab, "Driving and firing modes", func(on: bool): settings.hud_modes = on)
+	_note(tab, "Off: a mode is shown for a couple of seconds when V or M changes it.")
+	_hud_cheats = _check(tab, "Active cheats", func(on: bool): settings.hud_cheats = on)
+	_hud_pad_arrow = _check(tab, "Arrow to the helicopter", func(on: bool): settings.hud_pad_arrow = on)
+	_note(tab, "While prisoners are aboard and the helicopter that will take them is off the screen.")
+	_hud_help = _check(tab, "HELP and HERE calls", func(on: bool): settings.hud_help = on)
+	_note(tab, "HELP over the first building with prisoners and over prisoners left waiting too long; "
+			+ "HERE over the helicopter's crewman while there is anyone to drop off.")
+	_hud_hints = _check(tab, "Control hints", func(on: bool): settings.hud_hints = on)
+	_note(tab, "The keys over the jeep when they are first needed: drive, fire, a rocket at a hut.")
 	tab.add_child(HSeparator.new())
-	_heading(tab, "Надписи")
-	_banner_stage = _check(tab, "Номер этапа при высадке", func(on: bool): settings.banner_stage = on)
-	_banner_warning = _check(tab, "Предупреждение о боссе", func(on: bool): settings.banner_warning = on)
-	_banner_mission = _check(tab, "Миссия выполнена и спасённые пленные",
+	_heading(tab, "Banners")
+	_banner_stage = _check(tab, "Stage number at the landing", func(on: bool): settings.banner_stage = on)
+	_banner_warning = _check(tab, "Boss warning", func(on: bool): settings.banner_warning = on)
+	_banner_mission = _check(tab, "Mission complete and prisoners rescued",
 			func(on: bool): settings.banner_mission = on)
 	tab.add_child(HSeparator.new())
-	_hud_crosshair = _check(tab, "Прицел вместо курсора", func(on: bool): settings.hud_crosshair = on)
-	_note(tab, "В современном и комбинированном режимах стрельбы, где целятся мышью. Работает и без HUD.")
+	_hud_crosshair = _check(tab, "Crosshair in place of the cursor", func(on: bool): settings.hud_crosshair = on)
+	_note(tab, "In the modern and combined firing modes, which aim with the mouse. Works without the HUD too.")
 	tab.add_child(HSeparator.new())
 	var layout := _grid(tab)
-	_hud_corner = _choice(layout, "Положение", ["Сверху", "Снизу"],
+	_hud_corner = _choice(layout, "Position", ["Top", "Bottom"],
 			func(i: int): settings.hud_corner = i)
-	_hud_rows = _choice(layout, "Строки", ["Одна", "Две: очки отдельно"],
+	_hud_rows = _choice(layout, "Rows", ["One", "Two: score on its own"],
 			func(i: int): settings.hud_two_rows = i == 1)
-	_font = _choice(layout, "Шрифт", ["Classic: Press Start 2P", "Classic сглаженный", "Modern: Black Ops One"],
+	_font = _choice(layout, "Font", ["Classic: Press Start 2P", "Classic smoothed", "Modern: Black Ops One"],
 			func(i: int): settings.font = i)
-	_hud_scale = _choice(layout, "Размер",
+	_hud_scale = _choice(layout, "Size",
 			Level3DSettings.HUD_SCALES.map(func(s: float): return "%d%%" % roundi(s * 100.0)),
 			func(i: int): settings.hud_scale = Level3DSettings.HUD_SCALES[i])
 	return tab.get_parent().get_parent()
 
 
 func _make_sound_tab() -> Control:
-	var tab := _tab("Звук")
+	var tab := _tab("Sound")
 	var modes := _grid(tab)
-	_sound_mode = _choice(modes, "Звук", SOUND_MODE_NAMES,
+	_sound_mode = _choice(modes, "Sound", SOUND_MODE_NAMES,
 			func(i: int):
 				settings.sound_mode = SOUND_MODES[i]
 				_preview("pickup"))
-	_note(tab, "Оригинал: звуки оригинальной игры, как в ней. "
-			+ "Классический: звуки и музыка нового режима в звучании NES (с чипом VRC6), по тем же правилам. "
-			+ "Новый: объёмный звук, двигатели, окружение, выстрелы врагов и своя музыка.")
+	_note(tab, "Original: the original game's sounds, played as it plays them. "
+			+ "Classic: the modern mode's sounds and music as an NES with the VRC6 chip plays them, by the same rules. "
+			+ "Modern: positional sound, engines, ambience, enemy fire and music of its own.")
 	var boss := _grid(tab)
-	_boss_music = _choice(boss, "Музыка босса", ["Адаптивная", "Линейная"],
+	_boss_music = _choice(boss, "Boss music", ["Adaptive", "Linear"],
 			func(i: int): settings.boss_music = i)
-	_note(tab, "Адаптивная: каждый танк на поле добавляет к музыке свою партию, подбитый уносит её. "
-			+ "Линейная: те же партии одним треком. В обоих после победы — фанфары. Только в новом режиме.")
+	_note(tab, "Adaptive: every tank on the field adds its part to the music, and takes it away when hit. "
+			+ "Linear: the same parts as one track. Either way, a fanfare after the victory. Modern mode only.")
 	tab.add_child(HSeparator.new())
-	_heading(tab, "Громкость")
+	_heading(tab, "Volume")
 	var volumes := _grid(tab)
-	_master_volume = _slider(volumes, "Общая", func(v: float): settings.master_volume = v)
-	_music_volume = _slider(volumes, "Музыка", func(v: float): settings.music_volume = v)
-	_effects_volume = _slider(volumes, "Эффекты",
+	_master_volume = _slider(volumes, "Master", func(v: float): settings.master_volume = v)
+	_music_volume = _slider(volumes, "Music", func(v: float): settings.music_volume = v)
+	_effects_volume = _slider(volumes, "Effects",
 			func(v: float):
 				settings.effects_volume = v
 				_preview("pickup"))
 	tab.add_child(HSeparator.new())
-	_heading(tab, "Выстрелы врагов")
-	_enemy_fire = _check(tab, "Слышны выстрелы врагов",
+	_heading(tab, "Enemy fire")
+	_enemy_fire = _check(tab, "Enemy fire is heard",
 			func(on: bool):
 				settings.enemy_fire = on
 				_preview("enemy_mg"))
 	var enemy := _grid(tab)
-	_enemy_fire_volume = _slider(enemy, "Громкость",
+	_enemy_fire_volume = _slider(enemy, "Volume",
 			func(v: float):
 				settings.enemy_fire_volume = v
 				_preview("enemy_mg"))
-	_note(tab, "В оригинале враги стреляли беззвучно. Только в новом режиме.")
+	_note(tab, "In the original the enemies fired in silence. Not in the original mode.")
 	tab.add_child(HSeparator.new())
-	_heading(tab, "Каждый звук нового режима")
-	_note(tab, "100% — громкость, под которую звук подобран. До 200% — громче. "
-			+ "Звуки без своего файла играют звук оригинала, и ползунок действует и на него.")
+	_heading(tab, "Each sound of the modern mode")
+	_note(tab, "100% is the level the sound was mixed at; up to 200% is louder. "
+			+ "A sound with no file of its own plays the original's, and the slider acts on that too.")
 	for group in SOUND_GROUPS:
 		var title := Label.new()
 		title.text = group[0]
@@ -417,7 +458,7 @@ func _make_sound_tab() -> Control:
 			_gain_sliders[sound] = _slider(grid, "    " + pair[1], _gain_moved(sound),
 					Level3DAudio.MAX_GAIN * 100.0)
 	_gains_reset = Button.new()
-	_gains_reset.text = "Все на 100%"
+	_gains_reset.text = "All to 100%"
 	_gains_reset.size_flags_horizontal = Control.SIZE_SHRINK_END
 	_gains_reset.pressed.connect(func():
 		settings.sound_gains = {}
@@ -440,37 +481,37 @@ func _gain_moved(sound: String) -> Callable:
 # as it is moved and written to Level3DAudio.MIX_PATH by Save. The player's
 # own sliders on the Sound tab still act over it.
 func _make_mixer_tab() -> Control:
-	var tab := _tab("Микшер")
+	var tab := _tab("Mixer")
 	var modes := _grid(tab)
-	_mixer_mode = _choice(modes, "Режим", SOUND_MODE_NAMES,
+	_mixer_mode = _choice(modes, "Mode", SOUND_MODE_NAMES,
 			func(i: int): settings.sound_mode = SOUND_MODES[i])
-	_note(tab, "Громкость каждого звука и музыки в игре, в дБ, отдельно для каждого режима. "
-			+ "▶ — послушать; звук играет и после того, как ползунок отпущен. "
-			+ "Музыка играет по кругу, пока не нажать ■ или «Музыка уровня». "
-			+ "«Сохранить» записывает всё в assets/sfx3d/mix.json. "
-			+ "Ползунки вкладки «Звук» — настройки игрока — действуют поверх.")
+	_note(tab, "The game's level of every sound and of the music, in dB, for each mode separately. "
+			+ "▶ plays it; a sound plays again when its slider is let go. "
+			+ "Music loops until ■ or \"Stage music\" is pressed. "
+			+ "\"Save\" writes it all to assets/sfx3d/mix.json. "
+			+ "The Sound tab's sliders, the player's own settings, act on top of it.")
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 12)
 	tab.add_child(actions)
-	_mix_save = _button(actions, "Сохранить", func():
+	_mix_save = _button(actions, "Save", func():
 		var err := Level3DAudio.save_mix()
 		_refresh_mixer()
 		if err != OK:
-			_mix_status.text = "Не сохранено (%s): в собранной игре файлы проекта только для чтения." % error_string(err)
+			_mix_status.text = "Not saved (%s): an exported build's project files are read-only." % error_string(err)
 		else:
-			_mix_status.text = "Сохранено в %s" % Level3DAudio.MIX_PATH)
-	_button(actions, "Вернуть сохранённое", func():
+			_mix_status.text = "Saved to %s" % Level3DAudio.MIX_PATH)
+	_button(actions, "Revert to saved", func():
 		Level3DAudio.reload_mix()
 		_refresh_mixer())
-	_button(actions, "Музыка уровня", func():
+	_button(actions, "Stage music", func():
 		Level3DAudio.end_music_audition()
 		_refresh_music_buttons())
 	_mix_status = Label.new()
-	_mix_status.add_theme_font_size_override("font_size", FONT_SIZE - 6)
+	_font_size(_mix_status, -6)
 	_mix_status.add_theme_color_override("font_color", ACCENT)
 	tab.add_child(_mix_status)
 	tab.add_child(HSeparator.new())
-	_heading(tab, "Музыка")
+	_heading(tab, "Music")
 	var music := _mix_grid(tab)
 	music.set_meta("music", true)
 	for file in Level3DAudio.music_files():
@@ -541,8 +582,8 @@ func _mix_update_status() -> void:
 	var changed_now := Level3DAudio.is_mix_changed()
 	_mix_save.disabled = not changed_now
 	if changed_now:
-		_mix_status.text = "Есть несохранённые изменения"
-	elif _mix_status.text == "Есть несохранённые изменения":
+		_mix_status.text = "Unsaved changes"
+	elif _mix_status.text == "Unsaved changes":
 		_mix_status.text = ""
 
 
@@ -598,7 +639,7 @@ func _show_db(slider: HSlider, db: float, saved: float) -> void:
 	slider.set_meta("saved", saved)
 	slider.set_value_no_signal(db)
 	var label: Label = slider.get_meta("db")
-	label.text = "%+.1f дБ" % db
+	label.text = "%+.1f dB" % db
 	if is_equal_approx(db, saved):
 		label.remove_theme_color_override("font_color")
 	else:
@@ -606,27 +647,27 @@ func _show_db(slider: HSlider, db: float, saved: float) -> void:
 
 
 func _make_controls_tab() -> Control:
-	var tab := _tab("Управление")
+	var tab := _tab("Controls")
 	# The modes first: they are changed far more often than the keys.
 	var modes := _grid(tab)
-	_driving = _choice(modes, "Режим езды", ["Классический", "Современный"],
+	_driving = _choice(modes, "Driving", ["Classic", "Modern"],
 			func(i: int): settings.driving = i)
-	_note(tab, "Классический: джип едет туда, куда нажато направление, как в игре. "
-			+ "Современный: газ и руль, как у настоящей машины.")
+	_note(tab, "Classic: the jeep drives the way the direction is pressed, as in the game. "
+			+ "Modern: throttle and steering, like a real car.")
 	var firing := _grid(tab)
-	_firing = _choice(firing, "Режим стрельбы", ["Классический", "Современный", "Комбинированный"],
+	_firing = _choice(firing, "Firing", ["Classic", "Modern", "Combined"],
 			func(i: int): settings.firing = i)
-	_note(tab, "Классический: пулемёт вперёд, ракеты по направлению джипа. "
-			+ "Современный: всё по курсору. Комбинированный: пулемёт всегда вверх по экрану, ракеты по курсору.")
+	_note(tab, "Classic: the machine gun forward, rockets the way the jeep faces. "
+			+ "Modern: everything at the cursor. Combined: the machine gun always up the screen, rockets at the cursor.")
 	var reach := _grid(tab)
-	_reach = _choice(reach, "Дальность стрельбы", ["Классическая", "Увеличенная", "Не ограничена"],
+	_reach = _choice(reach, "Reach", ["Classic", "Long", "Unlimited"],
 			func(i: int): settings.reach = REACH_ORDER[i])
-	_note(tab, "При любом режиме езды и стрельбы. Классическая: как в игре, около 5 м. "
-			+ "Увеличенная: пулемёт 12 м, ракеты 16 м. "
-			+ "Не ограничена: летят, пока во что-нибудь не попадут. "
-			+ "Наведённые курсором пули и ракеты останавливаются у курсора, но не дальше дальности.")
+	_note(tab, "In any driving and firing mode. Classic: as in the game, about 5 m. "
+			+ "Long: machine gun 12 m, rockets 16 m. "
+			+ "Unlimited: they fly until they hit something. "
+			+ "Rounds and rockets aimed with the cursor stop at it, but no further than the reach.")
 	tab.add_child(HSeparator.new())
-	_heading(tab, "Настройка управления")
+	_heading(tab, "Keys")
 	var keys := _grid(tab)
 	for action in Level3DSettings.ACTIONS:
 		var label := Label.new()
@@ -639,32 +680,32 @@ func _make_controls_tab() -> Control:
 		keys.add_child(button)
 		_key_buttons[action] = button
 	var defaults := Button.new()
-	defaults.text = "Клавиши по умолчанию"
+	defaults.text = "Default keys"
 	defaults.size_flags_horizontal = Control.SIZE_SHRINK_END
 	defaults.pressed.connect(func():
 		_waiting = ""
 		settings.reset_keys()
 		_changed())
 	tab.add_child(defaults)
-	_note(tab, "Второй игрок: клавиши и геймпад второго игрока из 2D-игры, по умолчанию стрелки, "
-			+ "правый Alt (пулемёт) и правый Ctrl (ракеты). Переназначаются в игре: "
-			+ "Options → 2p input. Стреляет всегда классически.")
+	_note(tab, "Second player: the 2D game's second-player keys and pad, by default the arrows, "
+			+ "right Alt (machine gun) and right Ctrl (rockets). Rebound in the game: "
+			+ "Options → 2p input. Always fires the classic way.")
 	return tab.get_parent().get_parent()
 
 
 func _make_cheats_tab() -> Control:
-	var tab := _tab("Читы")
-	_infinite_lives = _check(tab, "Бесконечные жизни", func(on: bool): settings.infinite_lives = on)
-	_wall_hack = _check(tab, "Wall hack: езда сквозь стены", func(on: bool): settings.wall_hack = on)
-	_bullet_hack = _check(tab, "Bullet hack: неуязвимость к снарядам",
+	var tab := _tab("Cheats")
+	_infinite_lives = _check(tab, "Infinite lives", func(on: bool): settings.infinite_lives = on)
+	_wall_hack = _check(tab, "Wall hack: drive through walls", func(on: bool): settings.wall_hack = on)
+	_bullet_hack = _check(tab, "Bullet hack: immune to shots",
 			func(on: bool): settings.bullet_hack = on)
-	_note(tab, "Таран пушки или танка по-прежнему убивает.")
+	_note(tab, "Ramming a gun or a tank still kills.")
 	tab.add_child(HSeparator.new())
 	var rates := _grid(tab)
-	var names := Level3DSettings.RATES.map(func(r: float): return "×1 (как в игре)" if r == 1.0 else "×%s" % String.num(r).replace(".", ","))
-	_gun_rate = _choice(rates, "Скорострельность пулемёта", names,
+	var names := Level3DSettings.RATES.map(func(r: float): return "×1 (as the game)" if r == 1.0 else "×%s" % String.num(r))
+	_gun_rate = _choice(rates, "Machine gun rate", names,
 			func(i: int): settings.gun_rate = Level3DSettings.RATES[i])
-	_launcher_rate = _choice(rates, "Скорострельность пусковой", names,
+	_launcher_rate = _choice(rates, "Launcher rate", names,
 			func(i: int): settings.launcher_rate = Level3DSettings.RATES[i])
 	return tab.get_parent().get_parent()
 
@@ -766,7 +807,7 @@ func _note(parent: Control, text: String) -> void:
 	label.text = text
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.custom_minimum_size = Vector2(640, 0)
-	label.add_theme_font_size_override("font_size", FONT_SIZE - 6)
+	_font_size(label, -6)
 	label.add_theme_color_override("font_color", Color(0.75, 0.75, 0.75))
 	parent.add_child(label)
 
@@ -785,6 +826,36 @@ func _choice(grid: GridContainer, text: String, items: Array, picked: Callable) 
 		_changed())
 	grid.add_child(option)
 	return option
+
+
+# `control`'s font FONT_SIZE + `delta`, in either font.
+func _font_size(control: Control, delta: int) -> void:
+	_font_sizes.append([control, delta])
+	control.add_theme_font_size_override("font_size", _scaled(FONT_SIZE + delta))
+
+
+func _scaled(size: int) -> int:
+	return roundi(size * PIXEL_FONT_SCALE) if _font_style != Level3DFont.Style.MODERN else size
+
+
+# The menu in settings.font's face, when it has changed: Press Start 2P sharp
+# or smoothed, or Black Ops One.
+func _apply_font() -> void:
+	if settings.font == _font_style:
+		return
+	_font_style = settings.font
+	var modern := _font_style == Level3DFont.Style.MODERN
+	var font := (load(MODERN_FONT if modern else PIXEL_FONT) as FontFile).duplicate() as FontFile
+	if _font_style == Level3DFont.Style.CLASSIC:
+		font.antialiasing = TextServer.FONT_ANTIALIASING_NONE
+		font.hinting = TextServer.HINTING_NONE
+		font.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
+	# The Mixer's ▶ and ■ are in neither.
+	font.fallbacks = [ThemeDB.fallback_font]
+	_theme.default_font = font
+	_theme.default_font_size = _scaled(FONT_SIZE)
+	for entry in _font_sizes:
+		(entry[0] as Control).add_theme_font_size_override("font_size", _scaled(FONT_SIZE + entry[1]))
 
 
 # A volume, 0 to `top` % on the slider and 0 to top / 100 to `moved`, with

@@ -1,6 +1,6 @@
 # What the 3D preview's Escape menu sets (level3d_menu.gd): the camera, the
 # look, what the HUD shows, the sound, how the BTR drives and fires, the keys,
-# and the cheats. Kept in
+# and the cheats, and the Game tab's two presets of them (PRESETS). Kept in
 # user://preview3d.cfg, apart from the game's buttons.cfg and audio.cfg: the
 # preview is not the game, and its keys are not the game's.
 #
@@ -121,6 +121,37 @@ var enemy_fire_volume := 0.8
 # Each of the modern mode's sounds on its own, Level3DAudio.SOUNDS' name ->
 # 0 to Level3DAudio.MAX_GAIN over the level it was set to; one left out is at 1.
 var sound_gains := {}
+
+# The Game tab's mode: a preset of the settings above, PRESETS[mode] the
+# value it gives each, set by name. Not saved: it is read back off the
+# settings (preset()), so that one changed on its own tab makes it CUSTOM,
+# and a config saved before there were modes comes up as whichever it is.
+# 8-bit is the NES game: its sounds on the NES's chips, the jeep's driving
+# and firing and reach, the pixel font sharp, the frame in pixels on a CRT.
+# Modern is the preview's own of each of them.
+enum Preset { EIGHT_BIT, MODERN, CUSTOM }
+const PRESETS := [
+	{"sound_mode": SoundMode.CLASSIC, "driving": Driving.CLASSIC, "firing": Firing.CLASSIC,
+			"reach": Reach.CLASSIC, "font": Level3DFont.Style.CLASSIC, "look": Look.PIXELS, "crt": true},
+	{"sound_mode": SoundMode.MODERN, "driving": Driving.FREE, "firing": Firing.MODERN,
+			"reach": Reach.LONG, "font": Level3DFont.Style.MODERN, "look": Look.MODERN, "crt": false},
+]
+
+
+func preset() -> Preset:
+	for mode in PRESETS.size():
+		var values: Dictionary = PRESETS[mode]
+		if values.keys().all(func(name: String): return get(name) == values[name]):
+			return mode as Preset
+	return Preset.CUSTOM
+
+
+func apply_preset(mode: Preset) -> void:
+	if mode == Preset.CUSTOM:
+		return
+	var values: Dictionary = PRESETS[mode]
+	for name in values:
+		set(name, values[name])
 
 
 func key(action: String) -> Key:

@@ -525,7 +525,7 @@ the Blender builder in the background into `build/level3d/<name>.glb` and
 imports that; Play (F5) saves and builds first when the level is newer
 than its glb, then opens the preview on it in a process of its own --
 `-- --file <level> --level <glb> --editor`, the last making the Escape
-menu's exit "В редактор" -- and waits minimised for that process to end,
+menu's exit "Back to the editor" -- and waits minimised for that process to end,
 however it ends, to come back. The preview is not run inside the editor's
 process because it keeps state in statics (`Level3DMap.file`, the audio
 buses, the tree's pause, the mouse mode). The preview moves the start and the Chinook's landing to the level's
@@ -570,6 +570,14 @@ volume, done, reached from Options and returning there. It is the one menu mode
 that does not leave when an entry is picked, so its labels carry the state and
 `Menu`'s one-shot `selection_made` latch is released after every toggle. The
 same trick drives the in-game menu's options page.
+
+The 3D preview's Escape menu opens its settings on a Game tab: 8-bit or
+modern, each a preset of the sound mode, the driving, the firing, the reach,
+the font, the look and the CRT (`Level3DSettings.PRESETS`). The mode is not
+saved but read back off those settings, so changing one on its own tab shows
+it as "Custom". The menu is in English, drawn in the HUD's font from the
+.ttf files its sheets were baked from: Press Start 2P (scaled by 2/3 to fit
+the panels) for both classic styles, Black Ops One for modern.
 
 The 3D preview has its own sound, `Level3DAudio` (`src/tools/level3d_audio.gd`):
 one table, `SOUNDS`, of every effect it plays, with its bus (sub-buses of
@@ -641,7 +649,7 @@ plays the intro and loop as before and stops at the end, as the game stops
 its song; the classic mode plays it as modern does linearly, whatever the
 setting, its folder holding the intro, `boss_full.ogg`, the victory and the
 accent (`linear_files`).
-The Sound tab's "Музыка босса" (`Level3DSettings.boss_music`,
+The Sound tab's "Boss music" (`Level3DSettings.boss_music`,
 `Level3DAudio.set_adaptive`) plays it linearly, and does by default: the same stream with
 `boss_full.ogg` -- the lead and every layer mixed into one file -- for its
 loop, so the fight changes only the accent and the end. A switch while it
@@ -893,7 +901,7 @@ is past it or empty-handed. Each jeep has its own
 lives, score, weapon, POWs and three-round cap; what a round, grenade, missile or
 their blast destroys is credited to its `shooter`, which sets `acting_player`.
 
-The 3D preview has the same co-op, from the Escape menu's "Новая игра: 2 игрока"
+The 3D preview has the same co-op, from the Escape menu's "New game: 2 players"
 or `--players 2`; it always starts with one. Everything one player's
 is a `Crew` in `level3d_preview.gd` -- vehicle, gun, launcher, HUD line, and a
 `Level3DFriends.Carrier` for the prisoners and the weapon; `btr`, `gun` and
