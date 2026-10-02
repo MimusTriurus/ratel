@@ -2,10 +2,10 @@
 # on which bus. Nothing here is the game's -- Main's Sfx, Song and their 125 ms
 # throttle stay with the 2D game.
 #
-# Two modes, the menu's Sound tab (Level3DSettings.sound_mode), and a folder
+# Three modes, the menu's Sound tab (Level3DSettings.sound_mode), and a folder
 # for each, holding its files under the same names:
 #
-#   CLASSIC  assets/sfx3d/classic/, the original's effects as the game plays
+#   ORIGINAL assets/sfx3d/original/, the original's effects as the game plays
 #            them: flat, at the game's gains (explode at 0.65, enemy_hit at
 #            0.6 under it), not looped, not pitched, inside Main's 125 ms
 #            throttle. Each file is a copy of its "original" in
@@ -13,26 +13,31 @@
 #            engines, the enemies' guns, rounds landing, the sea -- has no
 #            file, and is silent. It is the base, and does not change;
 #            tools/sfx3d_classic.gd made it.
-#   CHIP     assets/sfx3d/chip/, not a mode: CLASSIC's gaps, filled in when
-#            set_chip says (the Sound tab, off by default). An 8-bit sound,
-#            written as an NES game wrote its effects (tools/sfx_nes.py), for
-#            each sound the original had none for, and nothing for one it
-#            had: classic's own file always comes first. Played as classic
-#            plays the rest, but looped where "loop" says, since without a
-#            loop an engine or the sea would stop after a second.
+#   CLASSIC  assets/sfx3d/classic/, MODERN's sounds as the NES could have
+#            made them: each modern file on a model of its sound chip
+#            (tools/sfx_chiptune.py --install), at the loudness of the
+#            original's of that name, and the original's own file where
+#            modern's is still a copy of it -- exactly modern's files, so
+#            what modern is silent for is silent here. Played as ORIGINAL
+#            plays its own, but looped where "loop" says: its loops are
+#            modern's, and would otherwise stop after a few seconds.
 #   MODERN   assets/sfx3d/modern/, positional, looped where "loop" says,
 #            pitched, with the menu's per-sound gains. It started as a copy of
-#            classic; a new sound goes in by replacing its file, or by putting
-#            one where there is none.
+#            the original's; a new sound goes in by replacing its file, or by
+#            putting one where there is none.
+#
+# ORIGINAL and CLASSIC are the classic-like modes (is_classic): everything
+# below that says CLASSIC of how a sound plays means both.
 #
 # A sound is <name>_0.ogg, and <name>_1.ogg ... for variants, one picked at
-# random each play (a loop takes _0 alone). Both folders are imported and
+# random each play (a loop takes _0 alone). All three folders are imported and
 # shipped as any other asset. A file missing is silence, which
 # tools/verify_level3d_audio.gd reports. Every entry point below is a no-op
 # when there is nothing to play, and when there is no Level3DAudio in the tree.
 #
-# The music is split the same way, chained in both as Song chains it: an
-# intro, then a loop (MUSIC). assets/music3d/classic/ holds copies of the
+# The music is split the same way, chained in all as Song chains it: an
+# intro, then a loop (MUSIC); ORIGINAL and CLASSIC play the same folder, the
+# original's songs being the NES already. assets/music3d/classic/ holds copies of the
 # original's songs from assets/music/, under their own names, and does not
 # change; assets/music3d/modern/ started as a copy of it, and a new song goes
 # in by replacing its file. A change of mode swaps the part playing for the
@@ -54,10 +59,10 @@
 #                for none
 #     always     not throttled in CLASSIC, as play_sound_always is not
 #     pitch      random pitch in MODERN, a fraction (0.05 = +-5 %)
-#     loop       looped in MODERN, for attach_loop and stream; no variants, no
-#                pitch. CLASSIC plays the file once, as the original replays
-#                its helicopters when they run out, and the modules do too;
-#                a CHIP file loops, there being no original to replay it
+#     loop       looped in MODERN and CLASSIC, for attach_loop and stream; no
+#                variants, no pitch. ORIGINAL plays the file once, as the
+#                original replays its helicopters when they run out, and the
+#                modules do too
 #     voices     how many can sound at once; the oldest is cut off after that
 #     gap        seconds: a second play inside it is dropped (CLASSIC takes
 #                the longer of it and Main's 125 ms)
@@ -66,18 +71,26 @@
 #                the frame's gain is left to (_process)
 #     classic, modern
 #                any of the above for that mode alone, over the rest: say,
-#                "modern": {"with": ""} for a new blast that has the hit in it
+#                "modern": {"with": ""} for a new blast that has the hit in it.
+#                "classic" is both classic-like modes' (SPEC_KEYS), "original"
+#                being the field above
 #   }
 class_name Level3DAudio
 extends Node3D
 
-enum Mode { CLASSIC, MODERN }
+# The values are the settings' (Level3DSettings.SoundMode) and so a saved
+# config's: ORIGINAL came last.
+enum Mode { CLASSIC, MODERN, ORIGINAL }
 
-const DIRS := {Mode.CLASSIC: "res://assets/sfx3d/classic/", Mode.MODERN: "res://assets/sfx3d/modern/"}
-const CHIP_DIR := "res://assets/sfx3d/chip/"
-const MODE_KEYS := {Mode.CLASSIC: "classic", Mode.MODERN: "modern"}
+const DIRS := {Mode.CLASSIC: "res://assets/sfx3d/classic/", Mode.MODERN: "res://assets/sfx3d/modern/",
+		Mode.ORIGINAL: "res://assets/sfx3d/original/"}
+# The mix's (MIX_PATH) key for each.
+const MODE_KEYS := {Mode.CLASSIC: "classic", Mode.MODERN: "modern", Mode.ORIGINAL: "original"}
+# SOUNDS' sub-dict for each: "original" is a field of its own there.
+const SPEC_KEYS := {Mode.CLASSIC: "classic", Mode.MODERN: "modern", Mode.ORIGINAL: "classic"}
 const ORIGINAL := "res://assets/soundeffects/"
-const MUSIC_DIRS := {Mode.CLASSIC: "res://assets/music3d/classic/", Mode.MODERN: "res://assets/music3d/modern/"}
+const MUSIC_DIRS := {Mode.CLASSIC: "res://assets/music3d/classic/", Mode.MODERN: "res://assets/music3d/modern/",
+		Mode.ORIGINAL: "res://assets/music3d/classic/"}
 # Where classic's songs are copies from: the 2D game's, Main.MUSIC.
 const ORIGINAL_MUSIC := "res://assets/music/"
 # name_0.ogg, name_1.ogg ... : looked for until the first one missing.
@@ -243,18 +256,19 @@ enum { CLIP_INTRO, CLIP_LOOP, CLIP_END }
 # Every sound's gain and every music part's, dB, for each mode: the game's
 # mix, set by ear on the menu's Mixer tab, which writes it back here (save_mix).
 #
-#   {"classic": {"sounds": {name: dB}, "music": {file: dB}}, "modern": {...}}
+#   {"classic": {"sounds": {name: dB}, "music": {file: dB}}, "modern": {...},
+#    "original": {...}}
 #
-# Classic's sounds start at the game's own gains (Main.play_sound's volume,
-# 0.65 is -3.7 dB); a file that replaces one in modern/ starts at a gain from
-# its measured loudness against the classic one (tools/measure_loudness.gd).
+# The original's sounds start at the game's own gains (Main.play_sound's
+# volume, 0.65 is -3.7 dB), and classic's at the same, its files being at the
+# original's loudness; a file that replaces one in modern/ starts at a gain from
+# its measured loudness against the original one (tools/measure_loudness.gd).
 # Missing is 0 dB; tools/verify_level3d_audio.gd holds it to SOUNDS and MUSIC.
 const MIX_PATH := "res://assets/sfx3d/mix.json"
 static var _mix := {}
 static var _mix_saved := {}     # as the file has it, for is_mix_changed
 
 static var mode := Mode.MODERN
-static var chip := false
 # Whether MODERN plays ADAPTIVE's songs as they follow the fight, or linearly.
 static var adaptive := true
 # The menu's gain for each sound, 0 to MAX_GAIN over its "db" (set_gains):
@@ -343,7 +357,7 @@ func _ready() -> void:
 		print("audio: driver %s, %d Hz, output device \"%s\"; sounds from %s; %s; %d of %d sounds have something to play" % [
 				AudioServer.get_driver_name(), AudioServer.get_mix_rate(), AudioServer.output_device,
 				DIRS[mode],
-				"classic" if mode == Mode.CLASSIC else "modern", found, SOUNDS.size()])
+				MODE_KEYS[mode], found, SOUNDS.size()])
 
 
 func _exit_tree() -> void:
@@ -480,7 +494,7 @@ static func stream(name: String) -> AudioStream:
 const EDGE_FADE := 10.0
 
 static func edge_fade(at: Vector2, frame: Rect2) -> float:
-	if mode == Mode.CLASSIC:
+	if is_classic():
 		return 1.0
 	return _outside_gain(at, frame, EDGE_FADE)
 
@@ -493,7 +507,7 @@ static func edge_fade(at: Vector2, frame: Rect2) -> float:
 const FADE_OUT := 1.0
 
 static func fade_out(player: Node, done: Callable = Callable(), seconds := FADE_OUT) -> Tween:
-	if player == null or not player.playing or mode == Mode.CLASSIC:
+	if player == null or not player.playing or is_classic():
 		if player != null:
 			player.stop()
 		if done.is_valid():
@@ -537,26 +551,23 @@ static func bus(name: String) -> StringName:
 	return bus_name if AudioServer.get_bus_index(bus_name) >= 0 else AudioSettings.SFX_BUS
 
 
-# CLASSIC's gaps filled in from CHIP_DIR, or left silent as the original
-# left them. What is sounding is made again from the new set, as a change of
-# mode makes it.
-static func set_chip(on: bool) -> void:
-	if on == chip:
-		return
-	chip = on
-	_resolved.clear()
-	if _current != null and mode == Mode.CLASSIC:
-		_current._remake()
+# ORIGINAL or CLASSIC: played as the original plays its sounds.
+static func is_classic(for_mode: int = -1) -> bool:
+	return (mode if for_mode < 0 else for_mode) != Mode.MODERN
 
 
+# Between ORIGINAL and CLASSIC the music is the same folder, played the same
+# way, and goes on as it was.
 static func set_mode(new_mode: Mode) -> void:
 	if new_mode == mode:
 		return
+	var same_music: bool = is_classic(new_mode) and is_classic() and MUSIC_DIRS[new_mode] == MUSIC_DIRS[mode]
 	mode = new_mode
 	_resolved.clear()
 	if _current != null:
 		_current._remake()
-		_current._swap_music()
+		if not same_music:
+			_current._swap_music()
 
 
 # ADAPTIVE's songs as they follow the fight, or linearly. An adaptive song
@@ -938,20 +949,17 @@ static func end_music_audition() -> void:
 	c._music.play(held[2])
 
 
-# The mode's folder's variants of `name`, or CHIP_DIR's for a gap in
-# CLASSIC's while set_chip has it on, or nothing.
+# The mode's folder's variants of `name`, or nothing.
 static func resolve(name: String) -> Dictionary:
 	if _resolved.has(name):
 		return _resolved[name]
 	var spec := spec_of(name)
-	var dir: String = DIRS[mode]
-	var from_chip := mode == Mode.CLASSIC and chip and not ResourceLoader.exists("%s%s_0.ogg" % [dir, name]) 			and ResourceLoader.exists("%s%s_0.ogg" % [CHIP_DIR, name])
-	if from_chip:
-		dir = CHIP_DIR
-	var loop: bool = spec.get("loop", false) and (mode == Mode.MODERN or from_chip)
+	# The original's files are played once, as the game replays its
+	# helicopters; classic's loops are modern's, and loop.
+	var loop: bool = spec.get("loop", false) and mode != Mode.ORIGINAL
 	var variants: Array[AudioStream] = []
 	for k in (1 if spec.get("loop", false) else MAX_VARIANTS):
-		var path := "%s%s_%d.ogg" % [dir, name, k]
+		var path := "%s%s_%d.ogg" % [DIRS[mode], name, k]
 		if not ResourceLoader.exists(path):
 			break
 		var stream: AudioStream = load(path)
@@ -963,7 +971,7 @@ static func resolve(name: String) -> Dictionary:
 			stream = stream.duplicate()
 			(stream as AudioStreamOggVorbis).loop = loop
 		variants.append(stream)
-	var entry := {"stream": null, "db": mix_db(name), "spec": spec, "chip": from_chip}
+	var entry := {"stream": null, "db": mix_db(name), "spec": spec}
 	if not variants.is_empty():
 		var pitch: float = spec.get("pitch", 0.0) if mode == Mode.MODERN else 0.0
 		entry.stream = variants[0] if spec.get("loop", false) else _randomizer(variants, pitch)
@@ -977,7 +985,7 @@ static func spec_of(name: String, for_mode: int = -1) -> Dictionary:
 	var spec: Dictionary = SOUNDS.get(name, {})
 	if spec.is_empty():
 		push_warning("Level3DAudio: no sound called %s" % name)
-	return spec.merged(spec.get(MODE_KEYS[mode if for_mode < 0 else for_mode], {}), true)
+	return spec.merged(spec.get(SPEC_KEYS[mode if for_mode < 0 else for_mode], {}), true)
 
 
 static func _randomizer(streams: Array, pitch: float) -> AudioStreamRandomizer:
@@ -1000,12 +1008,12 @@ func _play(name: String, at: Variant) -> void:
 	if entry.stream == null or gain(name) <= 0.0:
 		return
 	var gap: float = spec.get("gap", 0.0)
-	if mode == Mode.CLASSIC and not spec.get("always", false):
+	if is_classic() and not spec.get("always", false):
 		gap = maxf(gap, CLASSIC_GAP)
 	var now := Time.get_ticks_msec()
 	if gap > 0.0 and _last.has(name) and now - int(_last[name]) < int(gap * 1000.0):
 		return
-	var flat: bool = typeof(at) != TYPE_VECTOR3 or spec.get("flat", false) or mode == Mode.CLASSIC
+	var flat: bool = typeof(at) != TYPE_VECTOR3 or spec.get("flat", false) or is_classic()
 	var where := 1.0 if flat else frame_gain(at)
 	if where <= 0.0:
 		return

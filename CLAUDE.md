@@ -552,11 +552,11 @@ one table, `SOUNDS`, of every effect it plays, with its bus (sub-buses of
 `Sfx`; the enemies' guns on `EnemyFire` under `Weapons`), gain, variants and
 whether it is positional; engines and rotors are loops on the unit, heard
 through a listener over the frame's centre. The Escape menu's Sound tab picks
-classic or modern, and sets the master, music, effects and enemy-fire volumes,
+original, classic (8-bit) or modern, and sets the master, music, effects and enemy-fire volumes,
 the last with a switch of its own since the original's enemies fired in
 silence; under them, a 0–200 % slider for each of the modern mode's sounds
-(`Level3DMenu.SOUND_GROUPS`, which must list every sound in `SOUNDS` but the
-classic-only `enemy_hit` -- the verify script checks).
+(`Level3DMenu.SOUND_GROUPS`, which must list every sound in `SOUNDS` but
+`enemy_hit`, which only plays under a blast -- the verify script checks).
 The music is chained as `Song` chains it: `intro_song` at the start,
 `stage_song0` after a restart, `boss_song` from the boss's trigger, stopped
 when it is beaten or the last life goes. A song's parts are not chained
@@ -568,7 +568,8 @@ before a clip's end, so the last of each part is not heard -- which is why
 modern `start.ogg` holds its chord to the bar line rather than ringing out.
 A chain's position is the clock's, since the stream's is always 0
 (`_music_position`). It is split by mode as the effects
-are: `assets/music3d/classic/` holds copies of the parts of `MUSIC` from
+are, the original and classic modes sharing a folder, since the original's
+songs are the NES already: `assets/music3d/classic/` holds copies of the parts of `MUSIC` from
 `assets/music/`, under their own names, and `assets/music3d/modern/` started
 as a copy of it, a new song going in by replacing its file. A change of mode
 swaps the part playing for the other folder's from the same position (an
@@ -596,8 +597,9 @@ real audio driver and not with `--headless`'s Dummy one, which runs slow;
 mixed linearly, EQ and gain and no compressor, because they are summed in the
 game. `modern/` holds the nine files in place of `boss_repeat.ogg`
 (`mode_music_files`); the mix has every file of both modes, so each layer has
-its own gain in the Mixer, which shows each mode's own. Classic plays the
-intro and loop as before and stops at the end, as the game stops its song.
+its own gain in the Mixer, which shows each mode's own. The original and
+classic modes play the intro and loop as before and stop at the end, as the
+game stops its song.
 The Sound tab's "Музыка босса" (`Level3DSettings.boss_music`,
 `Level3DAudio.set_adaptive`) plays it linearly, and does by default: the same stream with
 `boss_full.ogg` -- the lead and every layer mixed into one file -- for its
@@ -608,35 +610,37 @@ to carry over. The score and how the files are made are in
 
 Each mode is a folder holding its files under the same names, `<name>_0.ogg`
 and optionally `_1`, `_2`... as variants picked at random:
-`assets/sfx3d/classic/` and `assets/sfx3d/modern/`, both imported, committed
-and shipped. A sound with no file is silent, in either mode. Classic is the
-base and does not change: every file is a copy of the sound's `"original"` in
-`assets/soundeffects/`, and a sound the original had no sound for (engines,
-the enemies' guns, rounds landing, the ambience) has none, played flat,
-unpitched, unlooped and throttled as `Main.play_sound` plays it.
-`tools/sfx3d_classic.gd` wrote it and filled in modern as a copy; run again,
-it rewrites classic and only adds to modern what is missing and classic has,
-never over a file already there. Modern is positional, pitched and looped
-where `SOUNDS` says, and a new sound goes in by replacing its file there, or
-by putting one where there is none. `SOUNDS`' `"classic"` / `"modern"` sub-dicts hold
-what differs for one mode -- a new blast that already has the hit in it
-`"with": ""`.
+`assets/sfx3d/original/`, `classic/` and `modern/`, all imported, committed
+and shipped. A sound with no file is silent, in any mode.
 
-Classic's fourteen gaps can be filled in, not changed: `assets/sfx3d/chip/`
-holds an 8-bit `<name>_0.ogg` for each sound the original had none for and
-nothing else, and the Sound tab's "8-bit звуки там, где в оригинале их нет"
-(`Level3DSettings.classic_chip`, off by default, `Level3DAudio.set_chip`)
-has `resolve` take a classic sound from there when classic has no file of
-its own. Played as classic plays the rest, but looped where `SOUNDS` says,
-or an engine would stop after a second; and with it on the enemies' fire
-switch works in classic too. They are written, not analysed -- thirteen of
-the fourteen have no modern file either -- by `tools/sfx_nes.py`: a table of
-the APU's registers a frame each, as NES effects were, after the classic
-sound nearest to each (its length, its noise periods, how its volume
-moves), through `sfx_chiptune.py`'s model of the 2A03 with a Famicom's
-output filters, since the original's recordings keep the low end the NES's
-440 Hz high-pass takes out. `--install` writes the folder; the verify
-script holds it to the gaps.
+- **Original** is the base and does not change: every file is a copy of the
+  sound's `"original"` in `assets/soundeffects/`, and a sound the original
+  had no sound for (engines, the enemies' guns, rounds landing, the ambience)
+  has none, played flat, unpitched, unlooped and throttled as
+  `Main.play_sound` plays it. `tools/sfx3d_classic.gd` wrote it and filled in
+  modern as a copy; run again, it rewrites original and only adds to modern
+  what is missing and the original has, never over a file already there.
+- **Modern** is positional, pitched and looped where `SOUNDS` says, and a new
+  sound goes in by replacing its file there, or by putting one where there is
+  none.
+- **Classic** is modern's sounds as the NES could have made them, and holds
+  exactly modern's files: `tools/sfx_chiptune.py --install` reads each modern
+  file a frame (1/60 s) at a time into the APU's registers and plays them on
+  a model of the 2A03 with a Famicom's output filters -- the original's
+  recordings keep the low end the NES's 440 Hz high-pass takes out -- at the
+  loudness of the original's file of that name, so the original's gains in
+  the mix hold for it, and copies the original's own where modern's is still a
+  copy of it. Played as the original is (`Level3DAudio.is_classic`), but
+  looped where `SOUNDS` says, its loops being modern's; a loop is rendered
+  three times and the middle cut out, crossfaded at the seam. What modern is
+  silent for, classic is too. A new modern sound wants a run of the tool.
+
+`SOUNDS`' `"classic"` / `"modern"` sub-dicts hold what differs for one mode --
+a new blast that already has the hit in it `"with": ""` -- and `"classic"` is
+both classic-like modes' (`SPEC_KEYS`), `"original"` being a field of its
+own. `Level3DAudio.Mode`'s values are the settings' and so a saved config's:
+`ORIGINAL` came last, so a config that said classic before it now says
+classic, the 8-bit mode.
 
 The gains are not in `SOUNDS`: `assets/sfx3d/mix.json` holds every sound's
 and every music part's, in dB, for each mode, one to a line. The Escape
@@ -645,15 +649,16 @@ by ear -- a slider and a ▶ for each, the mode picked on the tab, the
 changes heard at once -- and Save writes the file through
 `Level3DAudio.save_mix`, which only works where `res://` is the project
 folder, not in an exported build. A replaced file starts from its measured
-loudness against the classic one (`tools/measure_loudness.gd -- <paths>`).
+loudness against the original one (`tools/measure_loudness.gd -- <paths>`).
 The generator leaves an echo and a rumble after the hit however dry it is
 asked for, so the long-tailed ones go through `tools/sfx_tails.py`, which
 reads each as generated out of git (its `TAILS` table names the sounds,
 where their hits end and where they now stop) and writes the shortened file
-in its place; a newly generated file is committed as it came first. The player's own 0–200 % sliders on the Sound tab act over the mix. The
+in its place; a newly generated file is committed as it came first. The
+player's own 0–200 % sliders on the Sound tab act over the mix. The
 2D game reads `assets/soundeffects/` and `assets/music/` and nothing here;
-`tools/sfx3d_classic.gd` writes `music3d/` the same way. Check all four
-folders and the mix (every sound and part in both modes, laid out as a save
+`tools/sfx3d_classic.gd` writes `music3d/` the same way. Check all five
+folders and the mix (every sound and part in every mode, laid out as a save
 writes it):
 
 ```bash

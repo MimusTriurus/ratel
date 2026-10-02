@@ -1,11 +1,13 @@
-# Makes the 3D preview's two sound folders out of Level3DAudio.SOUNDS:
+# Makes the 3D preview's original sound folder out of Level3DAudio.SOUNDS,
+# and fills in modern's from it (classic's, the 8-bit mode's, is
+# tools/sfx_chiptune.py --install's, out of modern's):
 #
-#   assets/sfx3d/classic/<name>_0.ogg  a copy of the sound's "original" in
+#   assets/sfx3d/original/<name>_0.ogg  a copy of the sound's "original" in
 #       assets/soundeffects/, byte for byte, and nothing for a sound that has
 #       none: a file missing is silence. Written every run: it is the base,
 #       and the originals are its source.
-#   assets/sfx3d/modern/<name>_0.ogg   a copy of classic's, where modern has
-#       no <name>_0.ogg yet and classic has one. A file already there -- a new
+#   assets/sfx3d/modern/<name>_0.ogg   a copy of the original's, where modern
+#       has no <name>_0.ogg yet and the original has one. A file already there -- a new
 #       sound -- is never touched, so running this again only fills in a
 #       sound added to SOUNDS.
 #   assets/music3d/classic/<file>      every part of Level3DAudio.MUSIC, a
@@ -21,7 +23,7 @@ extends SceneTree
 
 
 func _initialize() -> void:
-	var classic: String = Level3DAudio.DIRS[Level3DAudio.Mode.CLASSIC]
+	var classic: String = Level3DAudio.DIRS[Level3DAudio.Mode.ORIGINAL]
 	var modern: String = Level3DAudio.DIRS[Level3DAudio.Mode.MODERN]
 	for dir in [classic, modern]:
 		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
@@ -73,7 +75,7 @@ func _initialize() -> void:
 			DirAccess.copy_absolute(ProjectSettings.globalize_path(music_classic + file),
 					ProjectSettings.globalize_path(music_modern + file))
 			songs_filled += 1
-	print("classic: %d sounds, %d of them silent (no file), %d songs; modern: %d sounds and %d songs filled in from classic%s" % [
+	print("original: %d sounds, %d of them silent (no file); classic music: %d songs; modern: %d sounds and %d songs filled in%s" % [
 			Level3DAudio.SOUNDS.size(), silent, songs, filled, songs_filled,
 			"" if failures == 0 else "; %d FAILED" % failures])
 	quit(1 if failures > 0 else 0)

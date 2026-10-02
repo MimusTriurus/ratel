@@ -380,7 +380,7 @@ func tick() -> void:
 			# Chinook.update's fade, which is gone by AWAY_ANGLE, still in the
 			# frame: the original's, in classic. The modern one flies on heard
 			# and dies away at the edge of the frame, as it came in.
-			_play_sound(SOUND_VOLUME + (angle + 90.0) / 76.0 if Level3DAudio.mode == Level3DAudio.Mode.CLASSIC
+			_play_sound(SOUND_VOLUME + (angle + 90.0) / 76.0 if Level3DAudio.is_classic()
 					else SOUND_VOLUME)
 	_pose()
 	if state != FORWARDS and not handed_over:

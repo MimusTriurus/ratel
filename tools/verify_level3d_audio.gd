@@ -1,13 +1,14 @@
-# Checks the 3D preview's sound (src/tools/level3d_audio.gd) in both of its
-# modes, and the 8-bit sounds that fill in the classic one's gaps
-# (assets/sfx3d/chip/). Each mode's folder, assets/sfx3d/classic/ and
-# modern/, holds nothing that is no sound's in Level3DAudio.SOUNDS; classic's must be what
-# tools/sfx3d_classic.gd made, <name>_0.ogg alone, the sound's "original"
-# byte for byte, and nothing for a sound with none. A sound with no file is
+# Checks the 3D preview's sound (src/tools/level3d_audio.gd) in its three
+# modes. Each mode's folder, assets/sfx3d/original/, classic/ and modern/,
+# holds nothing that is no sound's in Level3DAudio.SOUNDS; the original's
+# must be what tools/sfx3d_classic.gd made, <name>_0.ogg alone, the sound's
+# "original" byte for byte, and nothing for a sound with none; classic's
+# exactly modern's files (tools/sfx_chiptune.py --install), the original's
+# own where modern's is a copy of it. A sound with no file is
 # silent, in either mode, and not wrong. Every sound is then resolved,
 # played positional and flat, and, if it loops, hung on a node and taken off
 # again; the table says what each one got -- the original's, new (a modern
-# file that is no longer classic's), or missing, silent. Then the mode
+# file that is no longer the original's), or missing, silent. Then the mode
 # is switched with a loop hung. The music's folders, assets/music3d/classic/
 # and modern/, must hold every file the mode plays and nothing else, classic's
 # the 2D game's byte for byte; every song is started in both modes, and one is
@@ -26,10 +27,9 @@ func _initialize() -> void:
 	root.add_child(audio)
 	await process_frame
 	var failures := 0
-	for mode in [Level3DAudio.Mode.MODERN, Level3DAudio.Mode.CLASSIC]:
+	for mode in [Level3DAudio.Mode.MODERN, Level3DAudio.Mode.CLASSIC, Level3DAudio.Mode.ORIGINAL]:
 		Level3DAudio.set_mode(mode)
 		failures += await _check_mode()
-	failures += await _check_chip()
 	# A loop on a unit through a change of mode: put back on it in the new
 	# mode, if the new mode has something to play.
 	var unit := Node3D.new()
@@ -50,7 +50,7 @@ func _initialize() -> void:
 	Level3DAudio.reload_mix()
 	if Level3DAudio.is_mix_changed() or not is_equal_approx(Level3DAudio.mix_db("gun"), was):
 		failures += _fail("reload_mix did not give the file's mix back")
-	for mode in [Level3DAudio.Mode.MODERN, Level3DAudio.Mode.CLASSIC]:
+	for mode in [Level3DAudio.Mode.MODERN, Level3DAudio.Mode.CLASSIC, Level3DAudio.Mode.ORIGINAL]:
 		Level3DAudio.set_mode(mode)
 		failures += _check_music_files()
 		for song in Level3DAudio.MUSIC:
@@ -110,10 +110,12 @@ func _initialize() -> void:
 
 
 func _check_mode() -> int:
-	var classic := Level3DAudio.mode == Level3DAudio.Mode.CLASSIC
+	var original := Level3DAudio.mode == Level3DAudio.Mode.ORIGINAL
+	var chip := Level3DAudio.mode == Level3DAudio.Mode.CLASSIC
 	var dir: String = Level3DAudio.DIRS[Level3DAudio.mode]
-	var classic_dir: String = Level3DAudio.DIRS[Level3DAudio.Mode.CLASSIC]
-	print("--- %s, %s" % ["classic" if classic else "modern", dir])
+	var original_dir: String = Level3DAudio.DIRS[Level3DAudio.Mode.ORIGINAL]
+	var modern_dir: String = Level3DAudio.DIRS[Level3DAudio.Mode.MODERN]
+	print("--- %s, %s" % [Level3DAudio.MODE_KEYS[Level3DAudio.mode], dir])
 	var counts := {"original": 0, "new": 0, "missing": 0}
 	var failures := 0
 	for file in DirAccess.get_files_at(dir):
@@ -123,22 +125,36 @@ func _check_mode() -> int:
 		var name := base.left(base.rfind("_"))
 		if not Level3DAudio.SOUNDS.has(name) or not base.substr(base.rfind("_") + 1).is_valid_int():
 			failures += _fail("%s%s is no sound's" % [dir, file])
-		elif classic and not base.ends_with("_0"):
-			failures += _fail("%s%s: classic has one of each" % [dir, file])
+		elif original and not base.ends_with("_0"):
+			failures += _fail("%s%s: the original has one of each" % [dir, file])
+		elif chip and not FileAccess.file_exists(modern_dir + file):
+			failures += _fail("%s%s: modern has no %s" % [dir, file, file])
+	if chip:
+		for file in DirAccess.get_files_at(modern_dir):
+			if file.get_extension() != "ogg" or FileAccess.file_exists(dir + file):
+				continue
+			failures += _fail("%s%s is missing: modern has one" % [dir, file])
 	for name in Level3DAudio.SOUNDS:
 		var spec := Level3DAudio.spec_of(name)
 		var path := "%s%s_0.ogg" % [dir, name]
 		var kind := "missing"
 		if FileAccess.file_exists(path):
 			var bytes := FileAccess.get_file_as_bytes(path)
-			var base := FileAccess.get_file_as_bytes("%s%s_0.ogg" % [classic_dir, name])
+			var base := FileAccess.get_file_as_bytes("%s%s_0.ogg" % [original_dir, name])
 			kind = "original" if spec.has("original") and bytes == base else "new"
-			if classic:
+			if original:
 				if not spec.has("original"):
-					failures += _fail("%s: the original had no sound for it, and classic has one" % path)
+					failures += _fail("%s: the original had no sound for it, and has one" % path)
 				elif bytes != FileAccess.get_file_as_bytes(Level3DAudio.ORIGINAL + spec.original):
 					failures += _fail("%s: not a copy of %s" % [name, spec.original])
-		elif classic and spec.has("original"):
+			elif chip:
+				# The original's own where modern's is still a copy of it, and
+				# a rendering of modern's otherwise.
+				var modern := FileAccess.get_file_as_bytes("%s%s_0.ogg" % [modern_dir, name])
+				if (modern == base) != (bytes == base):
+					failures += _fail("%s: %s" % [path, "not the original's, as modern's is"
+							if modern == base else "the original's, and modern has its own"])
+		elif original and spec.has("original"):
 			failures += _fail("%s is missing" % path)
 		var entry := Level3DAudio.resolve(name)
 		var variants := 0
@@ -149,8 +165,8 @@ func _check_mode() -> int:
 				variants = (first as AudioStreamRandomizer).streams_count
 				first = (first as AudioStreamRandomizer).get_stream(0)
 			var looped: bool = first is AudioStreamOggVorbis and (first as AudioStreamOggVorbis).loop
-			if looped != (spec.get("loop", false) and not classic):
-				failures += _fail("%s: looped %s in %s" % [name, looped, "classic" if classic else "modern"])
+			if looped != (spec.get("loop", false) and not original):
+				failures += _fail("%s: looped %s in %s" % [name, looped, Level3DAudio.MODE_KEYS[Level3DAudio.mode]])
 		elif kind != "missing":
 			failures += _fail("%s: a file, and nothing to play" % name)
 		counts[kind] += 1
@@ -170,66 +186,6 @@ func _check_mode() -> int:
 		await process_frame
 	print("original %d, new %d, missing (silent) %d of %d%s" % [counts.original,
 			counts.new, counts.missing, Level3DAudio.SOUNDS.size(), "" if failures == 0 else ", %d FAILED" % failures])
-	return failures
-
-
-# The classic mode's gaps, filled in (Level3DAudio.set_chip): CHIP_DIR holds
-# a <name>_0.ogg for every sound the original had none for, and nothing for
-# one it had. With the switch on, classic plays each of those from it --
-# looped where the sound loops, which classic's own never are -- and its own
-# file for the rest; off, they are silent again; and modern never takes one.
-func _check_chip() -> int:
-	var failures := 0
-	var dir := Level3DAudio.CHIP_DIR
-	print("--- chip, %s" % dir)
-	for file in DirAccess.get_files_at(dir):
-		if file.get_extension() != "ogg":
-			continue
-		var name := file.get_basename().trim_suffix("_0")
-		if not file.ends_with("_0.ogg") or not Level3DAudio.SOUNDS.has(name):
-			failures += _fail("%s%s is no sound's" % [dir, file])
-		elif Level3DAudio.SOUNDS[name].has("original"):
-			failures += _fail("%s%s: the original has a sound for it" % [dir, file])
-	var gaps := 0
-	Level3DAudio.set_mode(Level3DAudio.Mode.CLASSIC)
-	Level3DAudio.set_chip(true)
-	for name in Level3DAudio.SOUNDS:
-		var spec := Level3DAudio.spec_of(name)
-		var gap := not spec.has("original")
-		var entry := Level3DAudio.resolve(name)
-		if gap:
-			gaps += 1
-			if not FileAccess.file_exists("%s%s_0.ogg" % [dir, name]):
-				failures += _fail("%s: a gap in classic, and no %s%s_0.ogg" % [name, dir, name])
-				continue
-		if entry.stream == null or entry.chip != gap:
-			failures += _fail("%s: classic with the 8-bit switch on plays %s" % [name,
-					"nothing" if entry.stream == null else "chip/" if entry.chip else "classic/"])
-			continue
-		var looped: bool = entry.stream is AudioStreamOggVorbis and (entry.stream as AudioStreamOggVorbis).loop
-		if looped != (gap and spec.get("loop", false)):
-			failures += _fail("%s: looped %s with the 8-bit switch on" % [name, looped])
-		Level3DAudio.play(name)
-		if spec.get("loop", false):
-			var holder := Node3D.new()
-			root.add_child(holder)
-			if Level3DAudio.attach_loop(name, holder) == null:
-				failures += _fail("%s: nothing hung on its unit with the 8-bit switch on" % name)
-			Level3DAudio.stop_loop(holder, name)
-			holder.queue_free()
-	Level3DAudio.set_chip(false)
-	for name in Level3DAudio.SOUNDS:
-		if not Level3DAudio.SOUNDS[name].has("original") and Level3DAudio.resolve(name).stream != null:
-			failures += _fail("%s: plays in classic with the 8-bit switch off" % name)
-	Level3DAudio.set_mode(Level3DAudio.Mode.MODERN)
-	Level3DAudio.set_chip(true)
-	for name in Level3DAudio.SOUNDS:
-		if Level3DAudio.resolve(name).chip:
-			failures += _fail("%s: modern plays the 8-bit sound" % name)
-	Level3DAudio.set_chip(false)
-	for i in 10:
-		await process_frame
-	print("an 8-bit sound for each of classic's %d gaps%s" % [gaps, "" if failures == 0 else ", %d FAILED" % failures])
 	return failures
 
 
@@ -373,7 +329,7 @@ func _check_adaptive(audio: Level3DAudio) -> int:
 # MUSIC's parts, and in modern ADAPTIVE's clips in place of a song's it has --
 # classic's a copy of the 2D game's.
 func _check_music_files() -> int:
-	var classic := Level3DAudio.mode == Level3DAudio.Mode.CLASSIC
+	var classic := Level3DAudio.is_classic()
 	var dir: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.mode]
 	var classic_dir: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.Mode.CLASSIC]
 	var parts := {}

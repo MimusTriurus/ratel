@@ -65,15 +65,14 @@ WindowsApps). Blender — Store-сборка, запускается через
 
 | файл | что делает | запуск |
 |---|---|---|
-| `sfx3d_classic.gd` | собирает `assets/sfx3d/classic/` и `assets/music3d/classic/` из оригиналов и дозаполняет modern тем, чего там нет; готовые файлы modern не трогает | `godot --path . --headless --script tools/sfx3d_classic.gd` |
+| `sfx3d_classic.gd` | собирает `assets/sfx3d/original/` и `assets/music3d/classic/` из оригиналов и дозаполняет modern тем, чего там нет; готовые файлы modern не трогает | `godot --path . --headless --script tools/sfx3d_classic.gd` |
 | `measure_loudness.gd` | пик и громкость (самые громкие 50 мс) файла — от этого ставится первый уровень нового звука в миксе | `godot --path . --headless --script tools/measure_loudness.gd -- res://assets/sfx3d/modern/gun_0.ogg` |
 | `sfx_tails.py` | укорачивает хвосты modern-звуков (эхо и раскаты после удара): исходники берёт из git, пишет в `assets/sfx3d/modern/`; таблица `TAILS` в начале файла | `py tools/sfx_tails.py` (`--listen` — до/после в `build/sfx_tails/`, `имя --try t0 t1` — проба без записи в assets) |
-| `sfx_chiptune.py` | modern-эффекты так, как их сделала бы NES (каналы 2A03 и DPCM), для прослушивания в `build/sfx3d_chip/`; нужны librosa и soundfile из venv Basic Pitch | `build/.venv_basic_pitch/Scripts/python tools/sfx_chiptune.py` |
-| `sfx_nes.py` | 8-bit звуки для 14 пропусков классики (двигатели, выстрелы врагов, попадания, окружение): таблица регистров NES по кадрам по образцу ближайшего звука оригинала; `--install` кладёт их в `assets/sfx3d/chip/`, которую классика берёт при включённом «8-bit звуки…» на вкладке «Звук»; нужен venv Basic Pitch | `build/.venv_basic_pitch/Scripts/python tools/sfx_nes.py` (`--install` — в игру, иначе только пары для прослушивания в `build/sfx_nes/listen.ogg`) |
+| `sfx_chiptune.py` | звуки режима «Классический (8-bit)»: каждый modern-файл раскладывается по кадрам на регистры NES и проигрывается на модели 2A03 с фильтрами Famicom, по громкости оригинала; `--install` пишет `assets/sfx3d/classic/` ровно с теми же файлами, что в `modern/` (петли без шва, копии оригинала копируются как есть); без него — только пары для прослушивания в `build/sfx3d_chip/index.html`; нужен venv Basic Pitch и ffmpeg | `build/.venv_basic_pitch/Scripts/python tools/sfx_chiptune.py --install` — после любого нового или изменённого modern-звука |
 | `audio_check.ps1` | что Windows делает со звуком: устройство вывода, громкость, mute каждого приложения; когда превью молчит | `powershell -ExecutionPolicy Bypass -File tools/audio_check.ps1` |
 
-После любого нового или изменённого `.ogg` — `godot --path . --headless --import`,
-потом `verify_level3d_audio.gd`.
+После любого нового или изменённого modern-звука — `sfx_chiptune.py --install`, чтобы
+классика его догнала, затем `godot --path . --headless --import` и `verify_level3d_audio.gd`.
 
 ## Не здесь
 

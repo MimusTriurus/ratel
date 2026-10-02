@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """Turn the 3D preview's modern effects into sounds the NES could have made.
 
-Two renderings of every assets/sfx3d/modern/<name>_<k>.ogg, side by side in
+What the classic sound mode plays: with --install, every
+assets/sfx3d/modern/<name>_<k>.ogg rendered on the APU (below) goes to
+assets/sfx3d/classic/<name>_<k>.ogg, which then holds exactly modern's files,
+the original's own (assets/sfx3d/original/) where modern's is still a copy
+of it. A sound that loops (LOOPS) is rendered three times over and the middle
+cut out, crossfaded over 10 ms at the seam, so that it loops without a click.
+
+Every run also writes two renderings of each, side by side in
 build/sfx3d_chip/, with index.html to hear them against the modern file and
-the original's (classic's):
+the original's:
 
   apu/   analysed a frame (1/60 s) at a time, as NES games ran their sound
          effects, and played by a model of the 2A03's own channels:
@@ -20,42 +27,58 @@ the original's (classic's):
          rates (--dpcm-rate, 15 = 33.1 kHz). A real sample stops at 4081
          bytes; that is reported, not enforced.
 
-Files that are classic's own, byte for byte (modern started as a copy of
-classic, and pause, pickup and upgrade still are), are skipped: they are
-the NES already.
+Files that are the original's own, byte for byte (modern started as a copy
+of it), are not rendered: they are the NES already, and --install copies
+them.
 
-Both go through the APU's mixer and its output filters (90 Hz and 440 Hz
-high-pass, 14 kHz low-pass) at 4x the output rate, and come out 44.1 kHz
-mono, as classic's files are, at the loudness -- the loudest 50 ms, RMS --
-of classic's file of that name, or of the modern one where classic has none,
-so the mix's gains still hold.
+Both go through the APU's mixer and a Famicom's output filters (37 Hz
+high-pass, 14 kHz low-pass) at 4x the output rate -- not the NES
+front-loader's, whose 440 Hz high-pass takes out what the original's
+recordings are made of: most of their energy is under 250 Hz -- and come out
+44.1 kHz mono, as the original's files are, at the loudness -- the loudest
+50 ms, RMS -- of the original's file of that name, so the mix's gains still
+hold; where the original has none, at the modern file's as the modern mix
+plays it, since the classic mix has 0 dB for it.
 
 Nothing here is a port of anything: it is not in the Java original, and no
 NES game's effects were made this way; they were written as these tables by
 hand. This is a first draft of the tables, by ear.
 
-Needs numpy, scipy, librosa and soundfile; the Basic Pitch venv has them.
+Needs numpy, scipy and librosa, which the Basic Pitch venv has, and ffmpeg.
 Run from the repo root:
 
     build/.venv_basic_pitch/Scripts/python tools/sfx_chiptune.py
     build/.venv_basic_pitch/Scripts/python tools/sfx_chiptune.py blast gun_0
+    build/.venv_basic_pitch/Scripts/python tools/sfx_chiptune.py --install
+
+then godot --path . --headless --import. A full --install also deletes
+from classic/ what modern no longer has.
 
 Names pick sounds (all of a sound's variants) or single files; none is all.
 """
 import argparse
 import html
+import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 
 import librosa
 import numpy as np
-import soundfile
 from scipy import signal
 
 MODERN = "assets/sfx3d/modern"
+ORIGINAL = "assets/sfx3d/original"
 CLASSIC = "assets/sfx3d/classic"
+MIX = "assets/sfx3d/mix.json"
 OUT = "build/sfx3d_chip"
+# Level3DAudio.SOUNDS' "loop": true -- verify_level3d_audio.gd checks that
+# classic's loops are looped, not that this list is right, so keep it with
+# the table.
+LOOPS = {"rocket_flight", "btr_idle", "btr_drive", "tank_engine", "boat_engine",
+         "chinook", "rescue_rotor", "ambient_sea", "ambient_jungle"}
 
 RATE = 44100
 OVER = 4
@@ -181,7 +204,9 @@ def mix(pulse=None, tri=None, noise=None, dmc=None, n=0):
         tnd_in = tri / 8227.0 + noise / 12241.0 + dmc / 22638.0
         tnd = np.where(tnd_in > 0, 159.79 / (1.0 / np.maximum(tnd_in, 1e-12) + 100.0), 0.0)
     out = p + tnd
-    for kind, freq in (("highpass", 90.0), ("highpass", 440.0), ("lowpass", 14000.0)):
+    # A Famicom's output: against the original's enemy_hit, gun and chinook,
+    # band by band, the rendering is 1.7-2 dB off, the NES's 4-5.
+    for kind, freq in (("highpass", 37.0), ("lowpass", 14000.0)):
         b, a = signal.butter(1, freq, kind, fs=FAST)
         out = signal.lfilter(b, a, out)
     return signal.resample_poly(out, 1, OVER)
@@ -396,8 +421,8 @@ def write_csv(path, table):
             f.write("%d,%s\n" % (i, ",".join(str(table[c][i]) for c in cols)))
 
 
-def same_as_classic(file):
-    path = os.path.join(CLASSIC, file)
+def same_as_original(file):
+    path = os.path.join(ORIGINAL, file)
     if not os.path.exists(path):
         return False
     with open(path, "rb") as a, open(os.path.join(MODERN, file), "rb") as b:
@@ -418,6 +443,43 @@ def sources(picks):
     return out
 
 
+def write_ogg(path, y):
+    """Through ffmpeg: libsndfile's Vorbis writer dies on a long file."""
+    ff = shutil.which("ffmpeg")
+    if ff is None:
+        sys.path.insert(0, os.path.dirname(__file__))
+        from sfx_tails import find_ffmpeg
+        ff = find_ffmpeg(None)
+    subprocess.run([ff, "-hide_banner", "-v", "error", "-y", "-f", "f32le", "-ar", str(RATE), "-ac", "1",
+                    "-i", "-", "-c:a", "libvorbis", "-q:a", "6", path],
+                   input=np.ascontiguousarray(y, np.float32).tobytes(), check=True)
+
+
+def seamless(table, frames):
+    """A loop of `table`'s `frames`: the table three times over, rendered, and
+    the middle cut out, its first 10 ms faded in over what followed it, so
+    that its end runs into its start as it ran into the third. The noise is
+    no worse for the jump; the pulses' and the triangle's phases would click."""
+    tripled = {k: list(v) * 3 for k, v in table.items()}
+    n = int(round(frames / FRAME * RATE))
+    big = 3 * n * OVER
+    pulse, tri, noise = render_apu(tripled, big)
+    y = mix(pulse, tri, noise, n=big)
+    out = y[n:2 * n].copy()
+    f = int(0.01 * RATE)
+    ramp = np.linspace(0.0, 1.0, f)
+    out[:f] = out[:f] * ramp + y[2 * n:2 * n + f] * (1.0 - ramp)
+    return out
+
+
+def modern_db(base):
+    try:
+        with open(MIX, encoding="utf-8") as f:
+            return float(json.load(f)["modern"]["sounds"].get(base, 0.0))
+    except (OSError, ValueError, KeyError):
+        return 0.0
+
+
 def write_index(rows):
     def audio(path):
         if path is None or not os.path.exists(path):
@@ -428,7 +490,7 @@ def write_index(rows):
     body = []
     for stem, notes in rows:
         base = re.sub(r"_\d+$", "", stem)
-        classic = os.path.join(CLASSIC, base + "_0.ogg") if stem.endswith("_0") else None
+        classic = os.path.join(ORIGINAL, base + "_0.ogg") if stem.endswith("_0") else None
         body.append("<tr><th>%s<div class=note>%s</div></th>%s%s%s%s</tr>" % (
             html.escape(stem), html.escape(notes),
             audio(classic), audio(os.path.join(MODERN, stem + ".ogg")),
@@ -449,9 +511,9 @@ audio { height: 32px; width: 230px; }
 .none { color: var(--mute); text-align: center; }
 </style>
 <h1>SFX chiptune</h1>
-<p>classic — the original NES sound; modern — the source; apu — resynthesised on the 2A03's channels; dpcm — the source through the DPCM channel.</p>
+<p>original — the original NES sound; modern — the source; apu — resynthesised on the 2A03's channels, what --install puts in classic/; dpcm — the source through the DPCM channel.</p>
 <table>
-<thead><tr><th>sound</th><th>classic</th><th>modern</th><th>apu</th><th>dpcm</th></tr></thead>
+<thead><tr><th>sound</th><th>original</th><th>modern</th><th>apu</th><th>dpcm</th></tr></thead>
 <tbody>
 %s
 </tbody>
@@ -465,7 +527,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("names", nargs="*")
     ap.add_argument("--dpcm-rate", type=int, default=15, choices=range(16))
+    ap.add_argument("--install", action="store_true", help=f"also into {CLASSIC}/, what the classic mode plays")
     args = ap.parse_args()
+    if args.install:
+        os.makedirs(CLASSIC, exist_ok=True)
 
     os.makedirs(os.path.join(OUT, "apu"), exist_ok=True)
     os.makedirs(os.path.join(OUT, "dpcm"), exist_ok=True)
@@ -474,8 +539,10 @@ def main():
     for file in sources(args.names):
         stem = file[:-4]
         base = re.sub(r"_\d+$", "", stem)
-        if same_as_classic(file):
-            print("%-28s classic's own file, the original: skipped" % stem)
+        if same_as_original(file):
+            print("%-28s the original's own file: %s" % (stem, "copied" if args.install else "skipped"))
+            if args.install:
+                shutil.copyfile(os.path.join(ORIGINAL, file), os.path.join(CLASSIC, file))
             for kind in ("apu", "dpcm"):
                 for ext in (".ogg", ".csv"):
                     old = os.path.join(OUT, kind, stem + ext)
@@ -486,23 +553,33 @@ def main():
         # What the APU's output filter takes out anyway; left in, a DC
         # offset or a sub-bass hum reads as the triangle's low end.
         y = signal.sosfilt(signal.butter(2, 90.0, "highpass", fs=RATE, output="sos"), y)
-        ref_path = os.path.join(CLASSIC, base + "_0.ogg")
+        ref_path = os.path.join(ORIGINAL, base + "_0.ogg")
         if os.path.exists(ref_path):
             ref, _ = librosa.load(ref_path, sr=RATE, mono=True)
+            target = loudest_rms(ref)
         else:
-            ref = y
-        target = loudest_rms(ref)
+            # As loud as modern plays it: the classic mix has 0 dB for it.
+            target = loudest_rms(y) * 10 ** (modern_db(base) / 20)
         n = len(y) * OVER
 
         table = analyse(y, shapes, keys)
         pulse, tri, noise = render_apu(table, n)
         apu, clip_a = level_to(mix(pulse, tri, noise, n=n)[:len(y)], target)
-        soundfile.write(os.path.join(OUT, "apu", stem + ".ogg"), apu, RATE, format="OGG", subtype="VORBIS")
+        write_ogg(os.path.join(OUT, "apu", stem + ".ogg"), apu)
         write_csv(os.path.join(OUT, "apu", stem + ".csv"), table)
+        if args.install:
+            if base in LOOPS:
+                # Levelled as the one-shot rendering was, so a loop and its
+                # listening copy are as loud as each other.
+                loop = seamless(table, len(table["noise_vol"]))
+                loop, _ = level_to(loop, target)
+                write_ogg(os.path.join(CLASSIC, file), loop)
+            else:
+                write_ogg(os.path.join(CLASSIC, file), apu)
 
         dmc, size, n2 = render_dpcm(y, args.dpcm_rate)
         dpcm, clip_d = level_to(mix(dmc=dmc, n=n2)[:len(y)], target)
-        soundfile.write(os.path.join(OUT, "dpcm", stem + ".ogg"), dpcm, RATE, format="OGG", subtype="VORBIS")
+        write_ogg(os.path.join(OUT, "dpcm", stem + ".ogg"), dpcm)
 
         tonal = sum(1 for v in table["pulse_vol"] if v > 0)
         chord = sum(1 for v in table["pulse2_vol"] if v > 0)
@@ -514,6 +591,15 @@ def main():
             "; dpcm %.1f dB under" % clip_d if clip_d > 0.05 else "")
         print("%-28s %s" % (stem, notes))
         rows.append((stem, notes))
+    if args.install and not args.names:
+        # classic/ holds modern's files and nothing else.
+        keep = set(sources([]))
+        for f in os.listdir(CLASSIC):
+            if f.endswith(".ogg") and f not in keep:
+                os.remove(os.path.join(CLASSIC, f))
+                if os.path.exists(os.path.join(CLASSIC, f + ".import")):
+                    os.remove(os.path.join(CLASSIC, f + ".import"))
+                print("%-28s no longer in modern: removed from classic" % f[:-4])
     if not args.names:
         write_index(rows)
     else:
