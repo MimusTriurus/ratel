@@ -38,6 +38,9 @@ A fresh clone has no `.godot/`, so `class_name` globals are unresolved and any
 `--script` run fails with "Identifier not declared in the current scope". Run
 `godot --path . --headless --import` once first.
 
+`tools/README.md` lists every script in `tools/`, what it is for and how it is
+run.
+
 The closest thing to a test suite is the three map checks in `tools/`, none of
 which need a window:
 
@@ -627,7 +630,11 @@ changes heard at once -- and Save writes the file through
 `Level3DAudio.save_mix`, which only works where `res://` is the project
 folder, not in an exported build. A replaced file starts from its measured
 loudness against the classic one (`tools/measure_loudness.gd -- <paths>`).
-The player's own 0–200 % sliders on the Sound tab act over the mix. The
+The generator leaves an echo and a rumble after the hit however dry it is
+asked for, so the long-tailed ones go through `tools/sfx_tails.py`, which
+reads each as generated out of git (its `TAILS` table names the sounds,
+where their hits end and where they now stop) and writes the shortened file
+in its place; a newly generated file is committed as it came first. The player's own 0–200 % sliders on the Sound tab act over the mix. The
 2D game reads `assets/soundeffects/` and `assets/music/` and nothing here;
 `tools/sfx3d_classic.gd` writes `music3d/` the same way. Check all four
 folders and the mix (every sound and part in both modes, laid out as a save
