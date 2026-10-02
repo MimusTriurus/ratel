@@ -36,6 +36,12 @@
 #     of it over it (TINT_SHADER) at WEAPON_TINT, fading as their tint does.
 #     It used to blink for a second and a half, which read as something wrong
 #     beside the counts' flash; a weapon lost is not marked, as a life is not;
+#   * every icon ringed in white with a thin black line outside it, as the
+#     pops over the stage are (Level3DScorePops): the vehicle and the
+#     prisoner are the forest's green and went into it, and the white alone
+#     went into the beach's surf. Drawn under the line (z_index), as the
+#     icon's silhouette (TINT_SHADER) stamped round it, and a dimmed icon's
+#     faded with it as one (a CanvasGroup), not stamp by stamp;
 #   * on lines of their own, a size smaller, in the font's gray: the driving
 #     and firing modes when shown, and the cheats that are on
 #     (Level3DSettings.hud_cheats).
@@ -77,6 +83,9 @@ enum { WHITE, GRAY }
 # stage 1's sand is the font's orange, near enough.
 const SHADOW := Color(0.2, 0.2, 0.2)
 const WEAPON_TINT := 0.8               # the colour's alpha over the icon, at its height
+const OUTLINE := 3.0                    # the icons' white ring, frame px at 100%
+const OUTLINE_LINE := 1.0               # the black line outside it
+const DIM := 0.45                       # a dimmed icon's alpha
 # An icon as a silhouette in the colour it is drawn with, for the weapon's.
 const TINT_SHADER := """
 shader_type canvas_item;
@@ -114,6 +123,10 @@ var _weapon_was := -1       # the weapon's level last shown, -1 before the first
 var _weapon_time := INF     # seconds since an upgrade, as _roll_time
 var _tint_layer: Control    # over the line, the weapon's colour wash
 var _tints: Array = []      # this frame's [texture, rect, region or null, colour]
+# The icons' rings, under the line: [lit, dimmed], each a CanvasGroup with a
+# Node2D in it drawing this frame's [texture, rect, region or null] of `_rings`.
+var _ring_groups: Array[CanvasGroup] = []
+var _rings: Array = [[], []]
 var _measuring := false     # laying the line out to see how wide it is
 var _shown := 0.0           # the score as it reads now, rolling up to `score`
 var _roll_from := 0.0
@@ -144,6 +157,16 @@ func _init() -> void:
 	(_tint_layer.material as ShaderMaterial).shader = shader
 	_tint_layer.draw.connect(_draw_tints)
 	add_child(_tint_layer)
+	for i in 2:
+		var group := CanvasGroup.new()
+		group.z_index = -1
+		group.self_modulate.a = 1.0 if i == 0 else DIM
+		var stamps := Node2D.new()
+		stamps.material = _tint_layer.material
+		stamps.draw.connect(_draw_rings.bind(stamps, i))
+		group.add_child(stamps)
+		add_child(group)
+		_ring_groups.append(group)
 	var bank := SpriteBank.new(Main.SPRITES)
 	for name in [LIFE_SPRITE, POW_SPRITE, GRENADE_SPRITE, MISSILE_SPRITE]:
 		_sprites[name] = bank.get_sprite(name)
@@ -199,6 +222,7 @@ func _process(delta: float) -> void:
 
 func _draw() -> void:
 	_tints.clear()
+	_rings = [[], []]
 	var g := GLYPH * scale_factor
 	var row := g * ICON_HEIGHT
 	var top := size.y - MARGIN.y - row if bottom else MARGIN.y
@@ -210,6 +234,8 @@ func _draw() -> void:
 		_measuring = false
 	_line(left, top, g, row)
 	_tint_layer.queue_redraw()
+	for group in _ring_groups:
+		group.get_child(0).queue_redraw()
 	# The modes and the cheats on lines of their own, smaller, stacked away
 	# from the corner: they are several words each and would run the main line
 	# off the frame at the bigger sizes.
@@ -233,14 +259,14 @@ func _line(x: float, top: float, g: float, row: float) -> float:
 	if parts.lives:
 		x = _gap(x, g, groups)
 		groups += 1
-		var dim := 1.0 if lives != 0 else 0.45
+		var dim := 1.0 if lives != 0 else DIM
 		var hop := _hop(_lives_time, g)
 		x = _icon(icons.get(lives_icon, icons.get("lives")), LIFE_SPRITE, x, top - hop, row, dim) + g * 0.25
 		x = _infinity(x, y, g) if lives < 0 				else _text(str(lives), x, y - hop, g, WHITE if lives > 0 else GRAY, 1.0, _flash(_lives_time))
 	if parts.pows:
 		x = _gap(x, g, groups)
 		groups += 1
-		var dim := 1.0 if pows > 0 else 0.45
+		var dim := 1.0 if pows > 0 else DIM
 		var hop := _hop(_pows_time, g)
 		x = _icon(icons.get("pow"), POW_SPRITE, x, top - hop, row, dim) + g * 0.25
 		x = _text(str(pows), x, y - hop, g, WHITE if pows > 0 else GRAY, 1.0, _flash(_pows_time))
@@ -269,6 +295,31 @@ static func _flash_amount(time: float) -> float:
 # The grenade 0, the missile 1 and its two upgrades 2 and 3: the icon's index.
 func _weapon_level() -> int:
 	return 1 + missile_power if has_missiles else 0
+
+
+# The ring's white reach and the black line's outside it, frame px.
+func _ring_white() -> float:
+	return maxf(roundf(OUTLINE * scale_factor), 1.0)
+
+
+func _ring_reach() -> float:
+	return _ring_white() + maxf(roundf(OUTLINE_LINE * scale_factor), 1.0)
+
+
+func _draw_rings(on: Node2D, which: int) -> void:
+	var white := _ring_white()
+	var black := _ring_reach()
+	for ring in [[Color.BLACK, black], [Color.WHITE, white]]:
+		for icon in _rings[which]:
+			for r in range(1, int(ring[1]) + 1):
+				for k in 16:
+					var a := TAU * k / 16.0
+					var rect: Rect2 = icon[1]
+					rect.position += (Vector2(cos(a), sin(a)) * r).round()
+					if icon[2] == null:
+						on.draw_texture_rect(icon[0], rect, false, ring[0])
+					else:
+						on.draw_texture_rect_region(icon[0], rect, icon[2], ring[0])
 
 
 func _draw_tints() -> void:
@@ -305,25 +356,32 @@ func _text(text: String, x: float, y: float, g: float, colour: int, alpha := 1.0
 # player's colour washed over it. Returns where it ends.
 func _icon(icon: Texture2D, sprite: String, x: float, top: float, row: float, alpha: float,
 		tint := 0.0) -> float:
+	# Room for the ring on either side, so that it does not run into the count.
+	var ring := _ring_reach()
+	x += ring
 	if icon != null:
 		var factor := row / icon.get_height()
 		var w := roundf(icon.get_width() * factor)
 		if not _measuring:
 			draw_texture_rect(icon, Rect2(x, top, w, row), false, Color(1, 1, 1, alpha))
+			if alpha > 0.0:
+				_rings[0 if alpha >= 1.0 else 1].append([icon, Rect2(x, top, w, row), null])
 			if tint > 0.0:
 				_tints.append([icon, Rect2(x, top, w, row), null, Color(colour, tint)])
-		return x + w
+		return x + w + ring
 	var s: Spr = _sprites.get(sprite)
 	if s == null:
-		return x
+		return x - ring
 	var h := row * 0.8
 	var sw := roundf(s.w * h / s.h)
 	if _measuring:
-		return x + sw
+		return x + sw + ring
 	draw_texture_rect_region(s.tex, Rect2(x, top + (row - h) * 0.5, sw, h), s.region, Color(1, 1, 1, alpha))
+	if alpha > 0.0:
+		_rings[0 if alpha >= 1.0 else 1].append([s.tex, Rect2(x, top + (row - h) * 0.5, sw, h), s.region])
 	if tint > 0.0:
 		_tints.append([s.tex, Rect2(x, top + (row - h) * 0.5, sw, h), s.region, Color(colour, tint)])
-	return x + sw
+	return x + sw + ring
 
 
 # The infinity the font does not have: two rings in the glyphs' white with
