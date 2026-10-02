@@ -14,10 +14,11 @@
 # (Level3DSummary), which took the game's WELL DONE! / YOUR MISSION /
 # ACCOMPLISHED. lines' place.
 #
-# In the game's font on the summary's plate, dark and ringed in white with a
-# thin black line (Level3DSummary.draw_plate), round the line only: they used
-# to be the system font's on a dark band the frame's width, the one place on
-# the screen not in the game's letters. WARNING's letters blink, its plate
+# In the game's font on the summary's plate, a see-through band across the
+# frame ringed in white with a thin black line (Level3DSummary.draw_plate):
+# they used to be the system font's, the one place on the screen not in the
+# game's letters. A plate round the line only was tried, and read as a box
+# stood on the scene. WARNING's letters blink, its plate
 # does not. Frozen with the tree under the Escape menu, so a banner is not
 # missed behind it.
 class_name Level3DBanners

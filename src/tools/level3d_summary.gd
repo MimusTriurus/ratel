@@ -24,8 +24,9 @@
 #     A press while it is still coming shows it all at once.
 #
 # On the HUD's layer and in its font, as the HUD is (Level3DHud), on a plate
-# ringed as its icons are, white with a thin black line (draw_plate, which
-# the banners' plates are as well): the boss's burning wrecks show round it.
+# ringed as its icons are, white with a thin black line, across the frame
+# and see-through (draw_plate, which the banners' plates are as well): the
+# boss's burning wrecks show through it.
 class_name Level3DSummary
 extends Control
 
@@ -39,7 +40,7 @@ const ICON_HEIGHT := 64.0
 const ICONS_PER_ROW := 16
 const GAP := 20.0               # between the lines
 const PADDING := Vector2(56, 40)
-const PLATE := Color(0.0, 0.0, 0.0, 0.93)    # blended in linear light, which reads lighter than it says
+const PLATE := Color(0.0, 0.0, 0.0, 0.75)    # blended in linear light, which reads lighter than it says: the scene shows through
 const RING := 3.0
 const RING_LINE := 1.0
 const LOST := Color(0.42, 0.42, 0.42)     # the ones not rescued, as a silhouette
@@ -229,12 +230,18 @@ func _lines() -> Array:
 	return [count, time]
 
 
-# A plate at `plate`, at the HUD's `s`: dark, ringed in white with a thin
-# black line either side, as the HUD's icons are. The ring as frames, not
+# A plate at `plate`'s height, at the HUD's `s`, the frame's width: dark and
+# see-through, ringed in white with a thin black line either side, as the
+# HUD's icons are. The ring as frames, not
 # fills: a fill under the plate would show through its dark.
 static func draw_plate(on: CanvasItem, plate: Rect2, s: float) -> void:
 	var ring := maxf(roundf(RING * s), 1.0)
 	var line_w := maxf(roundf(RING_LINE * s), 1.0)
+	# Across the whole frame, its ends off it, so that only the top and the
+	# bottom of the ring show: a banner, as the band the banners had, rather
+	# than a box on the scene.
+	var margin := (ring + line_w) * 2.0
+	plate = Rect2(-margin, plate.position.y, (on as Control).size.x + margin * 2.0, plate.size.y)
 	on.draw_rect(plate, PLATE)
 	on.draw_rect(plate.grow(ring + line_w * 0.5), Color.BLACK, false, line_w)
 	on.draw_rect(plate.grow(ring * 0.5), Color.WHITE, false, ring)
