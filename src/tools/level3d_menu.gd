@@ -100,6 +100,7 @@ var _hud_weapon: CheckBox
 var _hud_modes: CheckBox
 var _hud_pad_arrow: CheckBox
 var _hud_help: CheckBox
+var _hud_hints: CheckBox
 var _hud_cheats: CheckBox
 var _hud_crosshair: CheckBox
 var _banner_stage: CheckBox
@@ -214,6 +215,7 @@ func refresh() -> void:
 	_hud_modes.set_pressed_no_signal(settings.hud_modes)
 	_hud_pad_arrow.set_pressed_no_signal(settings.hud_pad_arrow)
 	_hud_help.set_pressed_no_signal(settings.hud_help)
+	_hud_hints.set_pressed_no_signal(settings.hud_hints)
 	_hud_cheats.set_pressed_no_signal(settings.hud_cheats)
 	_hud_crosshair.set_pressed_no_signal(settings.hud_crosshair)
 	_banner_stage.set_pressed_no_signal(settings.banner_stage)
@@ -244,7 +246,7 @@ func refresh() -> void:
 	_refresh_mixer()
 	# Greyed out, not hidden, with the HUD off: what it would show stays set.
 	for widget in [_hud_score, _hud_lives, _hud_pows, _hud_weapon, _hud_modes, _hud_cheats, _hud_pad_arrow,
-			_hud_help, _banner_stage, _banner_warning, _banner_mission, _hud_corner, _hud_rows, _hud_scale]:
+			_hud_help, _hud_hints, _banner_stage, _banner_warning, _banner_mission, _hud_corner, _hud_rows, _hud_scale]:
 		widget.disabled = not settings.hud
 	for action in _key_buttons:
 		var button: Button = _key_buttons[action]
@@ -324,6 +326,8 @@ func _make_interface_tab() -> Control:
 	_hud_help = _check(tab, "Крики HELP и HERE", func(on: bool): settings.hud_help = on)
 	_note(tab, "HELP над первым зданием с пленными и над пленными, которых долго не подбирают; "
 			+ "HERE над пилотом вертолёта, пока есть кого выгрузить.")
+	_hud_hints = _check(tab, "Подсказки управления", func(on: bool): settings.hud_hints = on)
+	_note(tab, "Клавиши над джипом, когда они впервые нужны: ехать, стрелять, ракетой по хижине.")
 	tab.add_child(HSeparator.new())
 	_heading(tab, "Надписи")
 	_banner_stage = _check(tab, "Номер этапа при высадке", func(on: bool): settings.banner_stage = on)

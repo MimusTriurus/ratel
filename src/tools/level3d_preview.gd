@@ -462,6 +462,8 @@ class Crew:
 	var rocket_held := false
 	# Its engine, two loops on it mixed by speed (_update_engine_sound).
 	var engine_level := 0.0
+	# Rockets and grenades it has fired, for the rocket's hint (_hint_done).
+	var rockets := 0
 	# The weapon's level last shown, for the POWER UP over it (_show_state):
 	# -1 before the first.
 	var weapon_shown := -1
@@ -1314,6 +1316,7 @@ func _dull_at(at: Vector3, travel: Vector3) -> bool:
 		if kind != "Gate" and not Level3DFriends.HUT_KINDS.has(kind) and not Level3DFriends.HOUSE_KINDS.has(kind):
 			continue
 		if (entry.footprint as Rect2).grow(DULL_MARGIN).has_point(Vector2(at.x, at.z)):
+			_thud = true
 			return true
 	var flat := Vector3(travel.x, 0.0, travel.z).normalized()
 	for k in 2:
@@ -1321,6 +1324,7 @@ func _dull_at(at: Vector3, travel: Vector3) -> bool:
 		var m := Level3DMap.to_map(Vector2(p.x, p.z))
 		var building = _dull_cells.get(Vector2i(int(m.x) >> 5, int(m.y) >> 5))
 		if building != null and not destructibles[building].destroyed and map.is_missile_target(m.x, m.y):
+			_thud = true
 			return true
 	return false
 
@@ -2052,6 +2056,8 @@ func _make_hud() -> void:
 	layer.add_child(_score_pops)
 	_summary = Level3DSummary.new()
 	layer.add_child(_summary)
+	_hints = Level3DHints.new()
+	layer.add_child(_hints)
 	_banners = Level3DBanners.new()
 	layer.add_child(_banners)
 	var crosshair := Level3DCrosshair.new()
@@ -2063,6 +2069,7 @@ func _make_hud() -> void:
 # and their icons rendered again for a new size.
 func _layout_hud() -> void:
 	_callouts.scale_factor = settings.hud_scale
+	_hints.scale_factor = settings.hud_scale
 	_banners.scale_factor = settings.hud_scale
 	_summary.scale_factor = settings.hud_scale
 	_score_pops.scale_factor = settings.hud_scale
@@ -2176,6 +2183,7 @@ func _update_pad_arrow() -> void:
 	_pad_arrow.queue_redraw()
 	_callouts.camera = camera
 	_score_pops.camera = camera
+	_hints.camera = camera
 
 
 # The three moments (Level3DBanners), each on the edge of what it marks: the
@@ -2186,6 +2194,150 @@ var _banners: Level3DBanners
 var _saw_chinook := false
 var _saw_pan := false
 var _saw_defeat := false
+# The controls taught over each jeep (Level3DHints), in this order, each as
+# it is first wanted and until it is done: once a run of the preview, R or
+# not -- "<player>:<hint>" in `_hints_done`. `_hints_up` is each player's up,
+# {"name", "hint", "from" -- where the jeep was when it came up}.
+const HINTS := ["move", "fire", "rocket"]
+# The fire hint comes with an enemy within HINT_REACH of the gun's reach; the
+# rocket's with a POW building or a gate within the launcher's, and the BTR
+# turned to it to within HINT_FACING -- or a round thudding on one.
+const HINT_REACH := 1.25
+const HINT_FACING := deg_to_rad(35.0)
+var _hints: Level3DHints
+var _hints_done := {}
+var _hints_up := {}
+var _hints_off := false     # past the boss: nothing left to teach
+var _thud := false          # a round has thudded on a POW building or a gate (_dull_at)
+
+func _update_hints() -> void:
+	var on := settings.hud and settings.hud_hints and chinook == null and not _hints_off
+	for c in crews:
+		var up: Dictionary = _hints_up.get(c.index, {})
+		if not on or c.out or c.respawning > 0:
+			if not up.is_empty():
+				_hints.done(up.hint)
+				_hints_up.erase(c.index)
+			continue
+		if not up.is_empty():
+			if _hint_done(c, up):
+				_hints_done["%d:%s" % [c.index, up.name]] = true
+				_hints.done(up.hint)
+				_hints_up.erase(c.index)
+			continue
+		for name in HINTS:
+			if _hints_done.has("%d:%s" % [c.index, name]) or not _hint_wanted(c, name):
+				continue
+			var words := {"move": "MOVE", "fire": "FIRE", "rocket": "ROCKET"}
+			var btr_of := c.btr
+			_hints_up[c.index] = {"name": name, "from": c.btr.position, "rockets": c.rockets,
+					"hint": _hints.show_hint(_hint_keys(c, name), words[name],
+							func() -> Vector3: return btr_of.position + Vector3(0.0, Level3DHints.HEIGHT, 0.0))}
+			break
+
+
+# Whether the hint `name` is wanted now: moving at once; firing when an enemy
+# soldier or tank is within HINT_REACH of the gun's reach; the rocket when a
+# POW building or a gate still standing is within the launcher's and the BTR
+# faces it, or a round has thudded on one.
+func _hint_wanted(c: Crew, name: String) -> bool:
+	var at := Vector2(c.btr.position.x, c.btr.position.z)
+	match name:
+		"move":
+			return true
+		"fire":
+			if not _hints_done.has("%d:move" % c.index):
+				return false
+			var reach := _gun_reach() * HINT_REACH
+			for p in soldiers.soldiers.map(func(s): return Vector2(s.x, s.y)) \
+					+ tanks.tanks.map(func(t): return Vector2(t.x, t.y)):
+				if Level3DMap.to_level(p).distance_to(at) < reach:
+					return true
+			return false
+		"rocket":
+			if _thud:
+				return true
+			var forward := Vector2(c.btr.forward().x, c.btr.forward().z)
+			for building in destructibles:
+				var entry: Dictionary = destructibles[building]
+				var kind: String = entry.kind
+				if entry.destroyed or not entry.has("footprint") or kind != "Gate" \
+						and not Level3DFriends.HUT_KINDS.has(kind) and not Level3DFriends.HOUSE_KINDS.has(kind):
+					continue
+				var to: Vector2 = (entry.footprint as Rect2).get_center() - at
+				if to.length() < _launcher_reach(c) and absf(forward.angle_to(to)) < HINT_FACING:
+					return true
+			return false
+	return false
+
+
+# The gun's and the launcher's reach as the settings have them
+# (Level3DSettings.Reach), level metres.
+func _gun_reach() -> float:
+	match settings.reach:
+		Level3DSettings.Reach.UNLIMITED:
+			return Level3DGun.UNLIMITED_RANGE
+		Level3DSettings.Reach.LONG:
+			return Level3DGun.RANGE
+	return Level3DGun.CLASSIC_RANGE
+
+
+func _launcher_reach(c: Crew) -> float:
+	match settings.reach:
+		Level3DSettings.Reach.UNLIMITED:
+			return Level3DGun.UNLIMITED_RANGE
+		Level3DSettings.Reach.LONG:
+			return Level3DLauncher.RANGE
+	return Level3DLauncher.MISSILE_RANGE if c.carrier.has_missiles else Level3DLauncher.GRENADE_RANGE
+
+
+# Whether the hint up has been done: driven a couple of metres, the gun fired,
+# a rocket or a grenade fired.
+func _hint_done(c: Crew, up: Dictionary) -> bool:
+	match up.name:
+		"move":
+			return c.btr.position.distance_to(up.from) > 2.0
+		"fire":
+			return c.gun.trigger
+		"rocket":
+			return c.rockets > up.rockets
+	return true
+
+
+# The keys a hint shows, as the player has them now: the first player's from
+# the settings, the mouse's buttons when the firing mode aims with it; the
+# second's from Main's second mapping.
+func _hint_keys(c: Crew, name: String) -> Array:
+	if c.input == null:
+		var mouse := settings.firing != Level3DSettings.Firing.CLASSIC
+		match name:
+			"move":
+				return [settings.key("up"), settings.key("left"), settings.key("down"), settings.key("right")] \
+						.map(func(k): return _key_name(k))
+			"fire":
+				return ["LMB"] if mouse else [_key_name(settings.key("gun"))]
+			"rocket":
+				return ["RMB"] if mouse else [_key_name(settings.key("rocket"))]
+	var m := _mapping_2
+	match name:
+		"move":
+			if [m.key_up, m.key_left, m.key_down, m.key_right] == [KEY_UP, KEY_LEFT, KEY_DOWN, KEY_RIGHT]:
+				return ["ARROWS"]
+			return [m.key_up, m.key_left, m.key_down, m.key_right].map(func(k): return _key_name(k))
+		"fire":
+			return [_key_name(m.key_gun, m.key_gun_location)]
+		"rocket":
+			return [_key_name(m.key_grenade, m.key_grenade_location)]
+	return []
+
+
+# A key as the font can write it: its name in capitals, R- for the right one
+# of a pair.
+static func _key_name(key: Key, location := KEY_LOCATION_UNSPECIFIED) -> String:
+	var name := OS.get_keycode_string(key).to_upper()
+	return ("R-" + name) if location == KEY_LOCATION_RIGHT else name
+
+
 # The mission's summary (Level3DSummary) in place of the game's lines: who
 # brought each prisoner rescued in, in order, and the tick the BTR was handed
 # over on, which its time is from.
@@ -2210,6 +2362,7 @@ func _update_banners() -> void:
 		_banners.warning_over()
 	_saw_pan = panning
 	var defeated := boss != null and boss.is_defeated()
+	_hints_off = _hints_off or defeated
 	var forced := _summary_tick >= 0 and _ticks >= _summary_tick and not _summary.shown
 	if forced:
 		_summary_tick = -1
@@ -2590,6 +2743,7 @@ func _physics_process(delta: float) -> void:
 	friends.tick()
 	rescue.tick()
 	_show_state()
+	_update_hints()
 	_sync_markers()
 
 
@@ -2704,6 +2858,7 @@ func _fire(c: Crew, gone: bool, cursor, delta: float) -> void:
 		if rocket:
 			if c.fire_released and not gone and c.launcher.fire():
 				c.fire_released = false
+				c.rockets += 1
 		else:
 			c.fire_released = true
 	elif not first and rocket and not c.rocket_held:
@@ -2716,6 +2871,7 @@ func _fire(c: Crew, gone: bool, cursor, delta: float) -> void:
 		c.rocket_wanted -= delta
 		if not gone and c.launcher.fire():
 			c.rocket_wanted = 0.0
+			c.rockets += 1
 	c.launcher.step(delta)
 
 
@@ -2915,6 +3071,10 @@ func _restart() -> void:
 		c.btr.blink(true)
 	_banners.clear()
 	_summary.clear()
+	_hints.clear()
+	_hints_up.clear()
+	_hints_off = false
+	_thud = false
 	_rescued_by.clear()
 	_mission_from = _ticks
 	_score_pops.clear()
