@@ -802,7 +802,7 @@ lives, score, weapon, POWs and three-round cap; what a round, grenade, missile o
 their blast destroys is credited to its `shooter`, which sets `acting_player`.
 
 The 3D preview has the same co-op, from the Escape menu's "Новая игра: 2 игрока"
-(`Level3DSettings.players`, saved) or `--players 2`. Everything one player's
+or `--players 2`; it always starts with one. Everything one player's
 is a `Crew` in `level3d_preview.gd` -- vehicle, gun, launcher, HUD line, and a
 `Level3DFriends.Carrier` for the prisoners and the weapon; `btr`, `gun` and
 `launcher` are still the first's, which the mouse, the --shot options and the

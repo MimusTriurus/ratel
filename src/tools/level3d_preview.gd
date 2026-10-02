@@ -381,7 +381,8 @@ func _ready() -> void:
 	await get_tree().physics_frame
 	var args := OS.get_cmdline_user_args()
 	var players := args.find("--players")
-	_set_players(int(args[players + 1]) if players >= 0 else settings.players)
+	# One player unless asked for two: the menu's game for two lasts the run.
+	_set_players(int(args[players + 1]) if players >= 0 else 1)
 	_place_crews()
 	focus = _follow_point()
 	_update_camera()
@@ -2111,8 +2112,6 @@ func _make_menu() -> void:
 	_menu.resumed = func(): _gun_locked = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	# A new game, for one player or two: the run started again with them.
 	_menu.new_game = func(count: int):
-		settings.players = count
-		_settings_changed()
 		_set_players(count)
 		_restart()
 		_menu.close()

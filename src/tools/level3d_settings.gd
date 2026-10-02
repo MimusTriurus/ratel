@@ -45,9 +45,6 @@ const DEFAULT_KEYS := {
 	"gun": KEY_L, "rocket": KEY_P, "turret_left": KEY_Q, "turret_right": KEY_E,
 }
 
-# One player or two, co-op (level3d_preview.gd, Crew): the Escape menu's new
-# game picks it, and the next run starts with it.
-var players := 1
 var camera := Camera.TILTED
 var look := Look.MODERN
 # The CRT monitor, over either look.
@@ -135,7 +132,6 @@ func load_saved() -> void:
 	var config := ConfigFile.new()
 	if config.load(SAVE_PATH) != OK:
 		return
-	players = clampi(config.get_value("game", "players", players), 1, 2)
 	camera = clampi(config.get_value("graphics", "camera", camera), 0, Camera.size() - 1)
 	resolution = clampi(config.get_value("graphics", "resolution", resolution), 0, Resolution.size() - 1)
 	if config.has_section_key("graphics", "render"):
@@ -197,7 +193,6 @@ static func _rate(saved) -> float:
 
 func save() -> void:
 	var config := ConfigFile.new()
-	config.set_value("game", "players", players)
 	config.set_value("graphics", "camera", camera)
 	config.set_value("graphics", "render", look)
 	config.set_value("graphics", "resolution", resolution)
