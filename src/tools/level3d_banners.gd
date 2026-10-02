@@ -14,7 +14,7 @@
 # (Level3DSummary), which took the game's WELL DONE! / YOUR MISSION /
 # ACCOMPLISHED. lines' place.
 #
-# In the game's font on the summary's plate, a see-through band across the
+# In the preview's font (Level3DFont) on the summary's plate, a see-through band across the
 # frame ringed in white with a thin black line (Level3DSummary.draw_plate):
 # they used to be the system font's, the one place on the screen not in the
 # game's letters. A plate round the line only was tried, and read as a box
@@ -46,10 +46,7 @@ var _glyphs := {}               # code point -> Spr
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var font := Atlas.new(Main.IMAGES + "font.png", Main.IMAGES + "font.xml")
-	for i in Main.CHARS.length():
-		var c := Main.CHARS.unicode_at(i)
-		_glyphs[c] = font.get_sprite("font-black-%s.png" % Main._character_name(c))
+	_glyphs = Level3DFont.glyphs()
 
 
 func clear() -> void:
@@ -112,6 +109,7 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	if _kind == NONE:
 		return
+	texture_filter = Level3DFont.filter()
 	var s := scale_factor
 	var g := maxf(roundf(GLYPH * s / 8.0), 1.0) * 8.0
 	var width := g * _text.length()

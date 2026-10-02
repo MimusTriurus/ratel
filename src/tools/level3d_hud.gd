@@ -1,4 +1,4 @@
-# The 3D preview's HUD line, drawn with the game's own font and with icons
+# The 3D preview's HUD line, drawn in the preview's font (Level3DFont) and with icons
 # rendered from the preview's own models (level3d_preview.gd, _show_state
 # hands it the run's state, _render_icons the icons):
 #
@@ -85,7 +85,7 @@ const LIFE_SPRITE := "player-green-2.png"
 const POW_SPRITE := "friendly-soldier-green-1.png"
 const GRENADE_SPRITE := "grenade-large.png"
 const MISSILE_SPRITE := "player-missile-1.png"
-const COLOURS := ["black", "gray"]
+const COLOURS := [Level3DFont.WHITE, Level3DFont.GRAY]
 enum { WHITE, GRAY }
 # The glyphs' shadow, under the infinity: white on the font's dark, since
 # stage 1's sand is the font's orange, near enough.
@@ -135,6 +135,8 @@ var _weapon_was := -1       # the weapon's level last shown, -1 before the first
 var _weapon_time := INF     # seconds since an upgrade, as _roll_time
 var _tint_layer: Control    # over the line, the weapon's colour wash
 var _tints: Array = []      # this frame's [texture, rect, region or null, colour]
+var _icon_layer: Control
+var _icon_draws: Array = [] # this frame's icons, as _tints
 # The icons' rings, under the line: [lit, dimmed], each a CanvasGroup with a
 # Node2D in it drawing this frame's [texture, rect, region or null] of `_rings`.
 var _ring_groups: Array[CanvasGroup] = []
@@ -153,14 +155,23 @@ var _pows_time := INF       # and a prisoner
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var font := Atlas.new(Main.IMAGES + "font.png", Main.IMAGES + "font.xml")
 	for colour in COLOURS:
-		var glyphs := {}
-		for i in Main.CHARS.length():
-			var c := Main.CHARS.unicode_at(i)
-			glyphs[c] = font.get_sprite("font-%s-%s.png" % [colour, Main._character_name(c)])
-		_fonts.append(glyphs)
+		_fonts.append(Level3DFont.glyphs(colour))
+	# The icons, nearest however the font is drawn (Level3DFont.filter), under
+	# the weapon's wash.
+	_icon_layer = Control.new()
+	_icon_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_icon_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_icon_layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_icon_layer.draw.connect(func():
+		for d in _icon_draws:
+			if d[2] == null:
+				_icon_layer.draw_texture_rect(d[0], d[1], false, d[3])
+			else:
+				_icon_layer.draw_texture_rect_region(d[0], d[1], d[2], d[3]))
+	add_child(_icon_layer)
 	_tint_layer = Control.new()
+	_tint_layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_tint_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_tint_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var shader := Shader.new()
@@ -174,6 +185,7 @@ func _init() -> void:
 		group.z_index = -1
 		group.self_modulate.a = 1.0 if i == 0 else DIM
 		var stamps := Node2D.new()
+		stamps.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		stamps.material = _tint_layer.material
 		stamps.draw.connect(_draw_rings.bind(stamps, i))
 		group.add_child(stamps)
@@ -234,7 +246,9 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
+	texture_filter = Level3DFont.filter()
 	_tints.clear()
+	_icon_draws.clear()
 	_rings = [[], []]
 	var g := GLYPH * scale_factor
 	var row := g * ICON_HEIGHT
@@ -259,6 +273,7 @@ func _draw() -> void:
 		_line(x, r[0], g, r[1], r[2])
 	var left := MARGIN.x if not right else size.x - MARGIN.x - _measure(rows, g)
 	_tint_layer.queue_redraw()
+	_icon_layer.queue_redraw()
 	for group in _ring_groups:
 		group.get_child(0).queue_redraw()
 	# The modes and the cheats on lines of their own, smaller, stacked away
@@ -407,7 +422,7 @@ func _icon(icon: Texture2D, sprite: String, x: float, top: float, row: float, al
 		var factor := row / icon.get_height()
 		var w := roundf(icon.get_width() * factor)
 		if not _measuring:
-			draw_texture_rect(icon, Rect2(x, top, w, row), false, Color(1, 1, 1, alpha))
+			_icon_draws.append([icon, Rect2(x, top, w, row), null, Color(1, 1, 1, alpha)])
 			if alpha > 0.0:
 				_rings[0 if alpha >= 1.0 else 1].append([icon, Rect2(x, top, w, row), null])
 			if tint > 0.0:
@@ -420,7 +435,7 @@ func _icon(icon: Texture2D, sprite: String, x: float, top: float, row: float, al
 	var sw := roundf(s.w * h / s.h)
 	if _measuring:
 		return x + sw + ring
-	draw_texture_rect_region(s.tex, Rect2(x, top + (row - h) * 0.5, sw, h), s.region, Color(1, 1, 1, alpha))
+	_icon_draws.append([s.tex, Rect2(x, top + (row - h) * 0.5, sw, h), s.region, Color(1, 1, 1, alpha)])
 	if alpha > 0.0:
 		_rings[0 if alpha >= 1.0 else 1].append([s.tex, Rect2(x, top + (row - h) * 0.5, sw, h), s.region])
 	if tint > 0.0:

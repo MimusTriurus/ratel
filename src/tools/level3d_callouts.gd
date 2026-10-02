@@ -1,6 +1,6 @@
 # The prisoners' HELP over the 3D preview, as a comic's shout: a white burst
 # with a black line round it and a tail to where the call comes from, "HELP!"
-# in it in the game's font, red (level3d_preview.gd, _make_hud). Where the calls
+# in it in the preview's font (Level3DFont), red (level3d_preview.gd, _make_hud). Where the calls
 # are and when they show is Level3DFriends' (help_marks); this only draws them.
 # A mark may say other words in another colour: the rescue helicopter's
 # crewman's HERE! (Level3DRescueCrew.call_marks).
@@ -40,10 +40,7 @@ var _glyphs := {}               # code point -> Spr
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var font := Atlas.new(Main.IMAGES + "font.png", Main.IMAGES + "font.xml")
-	for i in Main.CHARS.length():
-		var c := Main.CHARS.unicode_at(i)
-		_glyphs[c] = font.get_sprite("font-black-%s.png" % Main._character_name(c))
+	_glyphs = Level3DFont.glyphs()
 
 
 func _process(_delta: float) -> void:
@@ -51,6 +48,7 @@ func _process(_delta: float) -> void:
 
 
 func _draw() -> void:
+	texture_filter = Level3DFont.filter()
 	if camera == null or not marks.is_valid():
 		return
 	var frame := Rect2(Vector2.ZERO, size)

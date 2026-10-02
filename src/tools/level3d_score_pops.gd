@@ -11,9 +11,8 @@
 # On the HUD's layer, in its 2048x1152 layout, as the HELP calls are
 # (Level3DCallouts): the same size wherever it is in the tilted frame and
 # whatever the zoom, at the HUD's size (Level3DSettings.hud_scale), in the
-# game's font with the canvas' nearest filter. The font is the white one
-# with its dark shadow; it has no "+", which is drawn as its hyphen is, the
-# bar and its shadow, crossed. White and not the player's colour: the
+# preview's font (Level3DFont) with the canvas' nearest filter, the white one
+# with its dark shadow. White and not the player's colour: the
 # vehicle's olive all but went on stage 1's sand, and the ring says whose it
 # is well enough. A white ring round the colour was tried too, and the dark
 # digits read no better for it.
@@ -28,18 +27,12 @@ extends Control
 # HUD's, which over the jeep and the helicopter read out of all proportion
 # to them.
 const GLYPH := 24.0
-const FONT := 32.0              # a glyph's own pixels across, which RING, LINE and BAR are in
+const FONT := 32.0              # a glyph's own pixels across, which RING and LINE are in
 const LIFE := 1.2               # seconds
 const RISE := 2.0               # glyphs it rises over LIFE, steadily: eased, one under would catch it up
 const FADE := 0.4               # the last seconds of LIFE it fades out over
 const SPACING := 1.2            # glyphs from a pop's top to the foot of one stacked over it
 const BIG_LIFE := 1.6
-# The hyphen's bar and the shadow under it, in the glyph's 32 font pixels:
-# the plus is it and the same bar stood upright through its middle.
-const BAR := Rect2(0, 12, 28, 4)
-const SHADOW_OFFSET := Vector2(3, 3)
-const SHADOW_DEPTH := 3.0
-const SHADOW_SAMPLE := Vector2(16, 17)
 const RING := 4.0               # the player's ring, font pixels of the glyph's 32
 const LINE := 2.0               # the black line outside it
 # The glyphs as a silhouette in the colour they are drawn with: the font's
@@ -55,7 +48,6 @@ var camera: Camera3D
 var scale_factor := 1.0
 
 var _glyphs := {}               # code point -> Spr
-var _shadow := Color(0.2, 0.2, 0.2)
 var _material: ShaderMaterial
 var _pops: Array[Pop] = []
 
@@ -87,16 +79,7 @@ func _init() -> void:
 	shader.code = OUTLINE_SHADER
 	_material = ShaderMaterial.new()
 	_material.shader = shader
-	var font := Atlas.new(Main.IMAGES + "font.png", Main.IMAGES + "font.xml")
-	for i in Main.CHARS.length():
-		var c := Main.CHARS.unicode_at(i)
-		_glyphs[c] = font.get_sprite("font-black-%s.png" % Main._character_name(c))
-	# The shadow's colour off the hyphen, under its bar.
-	var hyphen: Spr = font.get_sprite("font-black-hyphen.png")
-	if hyphen != null:
-		var image := hyphen.tex.get_image()
-		var p := hyphen.region.position + SHADOW_SAMPLE * hyphen.region.size.x / FONT
-		_shadow = image.get_pixelv(Vector2i(p))
+	_glyphs = Level3DFont.glyphs()
 
 
 # A pop of `points` at `at`, in `colour`.
@@ -205,6 +188,8 @@ func _process(delta: float) -> void:
 		pop.x = roundf(anchor.x - g * pop.text.length() * 0.5)
 		pop.y = roundf(anchor.y - g - _rise(pop) - pop.lift)
 		pop.self_modulate.a = clampf((pop.life - pop.age) / FADE, 0.0, 1.0)
+		pop.rings.texture_filter = Level3DFont.filter()
+		pop.digits.texture_filter = pop.rings.texture_filter
 		pop.rings.queue_redraw()
 		pop.digits.queue_redraw()
 
@@ -228,27 +213,7 @@ func _draw_digits(pop: Pop) -> void:
 
 func _glyph_line(on: CanvasItem, text: String, x: float, y: float, g: float, tint: Color) -> void:
 	for i in text.length():
-		var c := text.unicode_at(i)
-		if c == 0x2B:
-			_plus(on, x, y, g, tint)
-		else:
-			var s: Spr = _glyphs.get(c)
-			if s != null:
-				on.draw_texture_rect_region(s.tex, Rect2(x, y, g, g), s.region, tint)
+		var sp: Spr = _glyphs.get(text.unicode_at(i))
+		if sp != null:
+			on.draw_texture_rect_region(sp.tex, Rect2(x, y, g, g), sp.region, tint)
 		x += g
-
-
-# The "+" in a glyph's box at `x`, `y`: the hyphen's bar and one upright, the
-# shadows first, each down and right of its bar as the font's are.
-func _plus(on: CanvasItem, x: float, y: float, g: float, tint: Color) -> void:
-	var unit := g / FONT
-	var flat := BAR
-	var upright := Rect2(BAR.position.x + (BAR.size.x - BAR.size.y) * 0.5,
-			BAR.position.y + (BAR.size.y - BAR.size.x) * 0.5, BAR.size.y, BAR.size.x)
-	var shade := Color(_shadow * tint, tint.a)
-	for bar in [flat, upright]:
-		var r := Rect2(Vector2(x, y) + (bar.position + SHADOW_OFFSET) * unit,
-				(bar.size + Vector2.ONE * (SHADOW_DEPTH - SHADOW_OFFSET.x)) * unit)
-		on.draw_rect(r, shade)
-	for bar in [flat, upright]:
-		on.draw_rect(Rect2(Vector2(x, y) + bar.position * unit, bar.size * unit), tint)

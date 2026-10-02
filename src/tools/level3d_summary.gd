@@ -49,7 +49,6 @@ const ICON_TIME := 0.08
 const STEP_TIME := 0.35         # between the row's end and each line under it
 const BLINK := 0.5
 const FADE_TIME := 0.3
-const SHADOW := Color(0.2, 0.2, 0.2)    # the font's, near enough, under the drawn plus
 
 # The HUD's icons, Level3DIcons.render_all's.
 var icons := {}
@@ -60,6 +59,8 @@ var _fonts: Array = []          # [white, gray] -> {code point -> Spr}
 var _sound: AudioStreamPlayer
 var _lost_layer: Node2D
 var _lost: Array[Rect2] = []    # this frame's places for the ones not rescued
+var _icon_layer: Node2D         # the rescued, nearest whatever the font is drawn with
+var _rescued: Array = []        # this frame's [texture, rect]
 var _time := 0.0
 var _closing := -1.0            # seconds since the press that closes it, -1 open
 var _icons_from := 0.0          # when the row starts, the title typed
@@ -74,13 +75,8 @@ var _rescued_played := 0
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var font := Atlas.new(Main.IMAGES + "font.png", Main.IMAGES + "font.xml")
-	for colour in ["black", "gray"]:
-		var glyphs := {}
-		for i in Main.CHARS.length():
-			var c := Main.CHARS.unicode_at(i)
-			glyphs[c] = font.get_sprite("font-%s-%s.png" % [colour, Main._character_name(c)])
-		_fonts.append(glyphs)
+	for colour in [Level3DFont.WHITE, Level3DFont.GRAY]:
+		_fonts.append(Level3DFont.glyphs(colour))
 	# The ones not rescued, over the plate as grey silhouettes of the icon:
 	# dimmed, the icon stayed a dark green, one of the rescued in shadow.
 	var shader := Shader.new()
@@ -93,7 +89,14 @@ func _init() -> void:
 		if icon != null:
 			for at in _lost:
 				_lost_layer.draw_texture_rect(icon, at, false, LOST))
+	_lost_layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	add_child(_lost_layer)
+	_icon_layer = Node2D.new()
+	_icon_layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_icon_layer.draw.connect(func():
+		for r in _rescued:
+			_icon_layer.draw_texture_rect(r[0], r[1], false))
+	add_child(_icon_layer)
 	_sound = AudioStreamPlayer.new()
 	_sound.stream = load(SOUND_PATH)
 	add_child(_sound)
@@ -164,8 +167,11 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
+	texture_filter = Level3DFont.filter()
 	_lost.clear()
+	_rescued.clear()
 	_lost_layer.queue_redraw()
+	_icon_layer.queue_redraw()
 	if not shown:
 		return
 	var s := scale_factor
@@ -206,7 +212,7 @@ func _draw() -> void:
 		if i < _rescued_by.size():
 			var own: Texture2D = icons.get("pow_2" if _rescued_by[i] > 0 else "pow", icon)
 			if own != null:
-				draw_texture_rect(own, at, false)
+				_rescued.append([own, at])
 		elif icon != null:
 			_lost.append(at)
 	y += rows * (icon_h + gap)
@@ -263,28 +269,11 @@ func _segments(line: Array, x: float, y: float, g: float) -> void:
 func _text(text: String, x: float, y: float, g: float, font: int, tint: Color) -> float:
 	var glyphs: Dictionary = _fonts[font]
 	for i in text.length():
-		var c := text.unicode_at(i)
-		if c == 0x2B:
-			_plus(x, y, g, tint)
-		var sp: Spr = glyphs.get(c)
+		var sp: Spr = glyphs.get(text.unicode_at(i))
 		if sp != null:
 			draw_texture_rect_region(sp.tex, Rect2(x, y, g, g), sp.region, tint)
 		x += g
 	return x
-
-
-# The "+" the font has not got, as Level3DScorePops draws it: the hyphen's bar
-# and one upright, their shadows under them.
-func _plus(x: float, y: float, g: float, tint: Color) -> void:
-	var unit := g / Level3DScorePops.FONT
-	var bar := Level3DScorePops.BAR
-	var upright := Rect2(bar.position.x + (bar.size.x - bar.size.y) * 0.5,
-			bar.position.y + (bar.size.y - bar.size.x) * 0.5, bar.size.y, bar.size.x)
-	var offset := Level3DScorePops.SHADOW_OFFSET
-	for r in [bar, upright]:
-		draw_rect(Rect2(Vector2(x, y) + (r.position + offset) * unit, r.size * unit), Color(SHADOW, tint.a))
-	for r in [bar, upright]:
-		draw_rect(Rect2(Vector2(x, y) + r.position * unit, r.size * unit), tint)
 
 
 static func _whole(g: float) -> float:

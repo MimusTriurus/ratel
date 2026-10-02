@@ -1,6 +1,6 @@
 # The controls, taught as they are first wanted, over the jeep that wants
 # them (level3d_preview.gd, _update_hints): small plates with the keys in
-# frames and a word, in the game's font, one at a time a player, gone once the
+# frames and a word, in the preview's font (Level3DFont), one at a time a player, gone once the
 # player has done what they say. Nothing stops or darkens the game for them.
 #
 #     [W][A][S][D] MOVE        the BTR handed over by the Chinook
@@ -47,10 +47,7 @@ var _hints: Array[Dictionary] = []
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var font := Atlas.new(Main.IMAGES + "font.png", Main.IMAGES + "font.xml")
-	for i in Main.CHARS.length():
-		var c := Main.CHARS.unicode_at(i)
-		_glyphs[c] = font.get_sprite("font-black-%s.png" % Main._character_name(c))
+	_glyphs = Level3DFont.glyphs()
 
 
 # A hint, `keys` in frames and `word` after them, over `at.call()`; returns
@@ -82,6 +79,7 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
+	texture_filter = Level3DFont.filter()
 	if camera == null:
 		return
 	var s := scale_factor

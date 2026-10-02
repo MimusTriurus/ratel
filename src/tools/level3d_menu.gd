@@ -108,6 +108,7 @@ var _banner_warning: CheckBox
 var _banner_mission: CheckBox
 var _hud_corner: OptionButton
 var _hud_rows: OptionButton
+var _font: OptionButton
 var _hud_scale: OptionButton
 var _sound_mode: OptionButton
 var _master_volume: HSlider
@@ -223,6 +224,7 @@ func refresh() -> void:
 	_banner_mission.set_pressed_no_signal(settings.banner_mission)
 	_hud_corner.select(settings.hud_corner)
 	_hud_rows.select(1 if settings.hud_two_rows else 0)
+	_font.select(1 if settings.font_smooth else 0)
 	_hud_scale.select(Level3DSettings.HUD_SCALES.find(settings.hud_scale))
 	_sound_mode.select(settings.sound_mode)
 	_master_volume.set_value_no_signal(settings.master_volume * 100.0)
@@ -343,6 +345,8 @@ func _make_interface_tab() -> Control:
 			func(i: int): settings.hud_corner = i)
 	_hud_rows = _choice(layout, "Строки", ["Одна", "Две: очки отдельно"],
 			func(i: int): settings.hud_two_rows = i == 1)
+	_font = _choice(layout, "Шрифт", ["Press Start 2P", "Press Start 2P сглаженный"],
+			func(i: int): settings.font_smooth = i == 1)
 	_hud_scale = _choice(layout, "Размер",
 			Level3DSettings.HUD_SCALES.map(func(s: float): return "%d%%" % roundi(s * 100.0)),
 			func(i: int): settings.hud_scale = Level3DSettings.HUD_SCALES[i])

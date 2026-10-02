@@ -2069,6 +2069,7 @@ func _make_hud() -> void:
 # and their icons rendered again for a new size.
 func _layout_hud() -> void:
 	_callouts.scale_factor = settings.hud_scale
+	Level3DFont.smooth = settings.font_smooth
 	_hints.scale_factor = settings.hud_scale
 	_banners.scale_factor = settings.hud_scale
 	_summary.scale_factor = settings.hud_scale
@@ -2211,7 +2212,7 @@ var _hints_off := false     # past the boss: nothing left to teach
 var _thud := false          # a round has thudded on a POW building or a gate (_dull_at)
 
 func _update_hints() -> void:
-	var on := settings.hud and settings.hud_hints and chinook == null and not _hints_off
+	var on := settings.hud and settings.hud_hints and chinook == null and not _hints_off and not _summary.shown
 	for c in crews:
 		var up: Dictionary = _hints_up.get(c.index, {})
 		if not on or c.out or c.respawning > 0:
