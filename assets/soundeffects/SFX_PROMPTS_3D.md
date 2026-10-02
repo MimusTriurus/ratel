@@ -1,6 +1,6 @@
 # Звуки 3D-превью: описания для генерации
 
-Все 36 звуков из таблицы `SOUNDS` в `src/tools/level3d_audio.gd`. Здесь они
+Все 37 звуков из таблицы `SOUNDS` в `src/tools/level3d_audio.gd`. Здесь они
 разбиты на те же группы, что и ползунки на вкладке «Звук» меню Escape
 (`Level3DMenu.SOUND_GROUPS`). Эффекты 2D-игры описаны в
 [SFX_PROMPTS.md](SFX_PROMPTS.md), и **общий стиль у обоих файлов один**: ставьте
@@ -40,14 +40,17 @@
 
 - ✅ **Готов** — в `modern/` свой файл. Указано, сколько вариантов.
 - ♻️ **Копия оригинала** — в `modern/` лежит файл из 2D-игры, своего пока нет.
+- 🔧 **Заглушка** — в `modern/` синтезированный звук, чтобы было что слышать; его
+  нужно заменить сгенерированным.
 - ⬜ **Нет файла** — в новом режиме звук молчит.
 
-Состояние на 2026-10-01: готово 20, копий оригинала 3, без файла 13.
+Состояние на 2026-10-02: готово 20, копий оригинала 3, заглушек 1, без файла 13.
 
 | Осталось | Звуки |
 |---|---|
 | ⬜ Сгенерировать | `hit_ground`, `hit_water`, `hit_hard`, `hit_armor_blast`, `enemy_mg`, `enemy_cannon`, `btr_idle`, `btr_drive`, `tank_engine`, `boat_engine`, `warning`, `ambient_sea`, `ambient_jungle` |
 | ♻️ Заменить копию | `pickup`, `upgrade`, `pause` |
+| 🔧 Заменить заглушку | `hit_dull` |
 | ✅ Добавить вариантов | Один файл, а нужно 3–6: `gun`, `grenade_launch`, `blast_small`, `blast_missile`, `blast_water`, `blast`, `breach_blast`, `soldier_death_blast` |
 
 Статусы поставлены по содержимому папок на эту дату и сами не обновляются:
@@ -102,7 +105,7 @@
 ## Попадания
 
 Пуля попала, но ничего не разрушила: и пули игрока, и пули врагов. В оригинале
-этих звуков не было. Все три — тихая мелочь под боем, очень короткие, до 4
+этих звуков не было. Первые четыре — тихая мелочь под боем, очень короткие, до 4
 одновременно. По 4–6 вариантов.
 
 ### `hit_ground` — по земле
@@ -122,6 +125,23 @@
 
 > Bullet impact on concrete or stone wall, short hard crack with a tiny chip of
 > debris and a faint whizz of a ricochet, quiet and subtle, 0.2 seconds.
+
+### `hit_dull` — по хижинам и воротам
+🔧 **Заглушка** — синтезирована ffmpeg'ом, вариантов: 4.
+
+Пуля попала в то, что открывает только ракета или мина: хижину или ангар с
+пленными, ворота. Глухой, тупой, без треска `hit_hard` и без звона `hit_armor`:
+игрок должен слышать, что пулемёт здесь не помогает, и не путать это с бронёй.
+
+> Bullet thudding into a thick wooden plank wall or heavy timber door, short
+> dull muffled knock, low and woody, no crack, no ricochet, no metal, quiet
+> and subtle, 0.2 seconds.
+
+Заглушка сделана так (вместо `F` — 85, 100, 72, 92, вместо `N` — 0–3):
+
+```bash
+ffmpeg -f lavfi -i "aevalsrc='0.9*sin(2*PI*(F+60*exp(-t*45))*t)*exp(-t*32)+0.55*(random(N)*2-1)*exp(-t*70)':s=48000:d=0.22:c=mono" -af "lowpass=f=1100,lowpass=f=1100,afade=t=out:st=0.14:d=0.08,loudnorm=I=-16:TP=-1.5" -ar 48000 -c:a libvorbis -q:a 6 assets/sfx3d/modern/hit_dull_N.ogg
+```
 
 ### `hit_armor` — по броне, пулемёт *(=2D `bullet_hit`)*
 ✅ **Готов** — свой файл, вариантов: 12.

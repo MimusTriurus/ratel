@@ -33,6 +33,7 @@ const ICON_OVERSAMPLE := 2
 const SOUND_GROUPS := [
 	["Оружие BTR", [["gun", "Пулемёт"], ["grenade_launch", "Пуск гранаты"], ["rocket_launch", "Пуск ракеты"], ["rocket_flight", "Полёт ракеты"]]],
 	["Попадания", [["hit_ground", "По земле"], ["hit_water", "По воде"], ["hit_hard", "По бетону и стенам"],
+			["hit_dull", "По хижинам и воротам"],
 			["hit_armor", "По броне: пулемёт"], ["hit_armor_blast", "По броне: ракета или мина"]]],
 	["Выстрелы врагов", [["enemy_mg", "Пулемёты солдат"], ["enemy_cannon", "Пушки: бункеры, танки, лодки"]]],
 	["Взрывы", [["blast_small", "Граната"], ["blast_missile", "Ракета"], ["blast_water", "В воде"],

@@ -102,6 +102,10 @@ var surface: Callable
 # `strike.call(at, travel)`: the face a round the grid stopped at `at` is seen
 # to strike, for its pock -- level3d_preview.gd's _strike_at.
 var strike: Callable
+# `dull.call(at, travel)`: whether a round stopped at `at`, flying `travel`,
+# struck what only a rocket breaks open -- a POW hut or house, a gate -- which
+# thuds (hit_dull) rather than cracks: level3d_preview.gd's _dull_at.
+var dull: Callable
 var btr: Level3DBtr
 var trigger := false
 var turbo := true
@@ -341,7 +345,7 @@ func impact(at: Vector3, kind: String, normal: Vector3, travel: Vector3) -> void
 		"water":
 			Level3DAudio.play("hit_water", at)
 		"wall", "building", "hard":
-			Level3DAudio.play("hit_hard", at)
+			Level3DAudio.play("hit_dull" if dull.is_valid() and dull.call(at, travel) else "hit_hard", at)
 		"unit":
 			pass
 		_:

@@ -295,6 +295,11 @@ func bind(centres: Dictionary, kinds: Dictionary, roofs := {}) -> void:
 			_first = name
 
 
+# The destruction group of the map building `name` is bound to, -1 for none.
+func group_of(name: String) -> int:
+	return _bound[name].group if _bound.has(name) else -1
+
+
 static func _centre(b: Dictionary) -> Vector2:
 	return Vector2(b.x + 96, b.y + (80 if b.type == Triggers.HUT else 96))
 

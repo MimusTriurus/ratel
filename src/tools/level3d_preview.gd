@@ -515,6 +515,7 @@ func _add_crew() -> Crew:
 	c.gun.ground = _ground_at
 	c.gun.surface = _surface_at
 	c.gun.strike = _strike_at
+	c.gun.dull = _dull_at
 	c.gun.turbo = (_mapping if c.index == 0 else _mapping_2).turbo
 	add_child(c.gun)
 	c.launcher = Level3DLauncher.new()
@@ -1280,6 +1281,35 @@ func _strike_at(at: Vector3, travel: Vector3) -> Dictionary:
 			"kind": _kinds.get(hit.rid, "ground"), "colour": colour}
 
 
+# Whether a round that stopped at `at`, flying `travel`, struck what only a
+# rocket or a bomb breaks open, still standing: a POW hut or house, or a gate
+# (Level3DGun.dull). Either its model, DULL_MARGIN round its footprint, or a
+# solid cell its group opens: the grid stops a round in front of the gate's
+# leaves, on its frame, which is the wall's. The cell is looked for where the
+# round struck and half a tile on, since it stops on the face, not in it.
+const DULL_MARGIN := 0.3
+var _dull_cells := {}           # Vector2i map cell -> the destructible its group opens
+
+func _dull_at(at: Vector3, travel: Vector3) -> bool:
+	for building in destructibles:
+		var entry: Dictionary = destructibles[building]
+		if entry.destroyed or not entry.has("footprint"):
+			continue
+		var kind: String = entry.kind
+		if kind != "Gate" and not Level3DFriends.HUT_KINDS.has(kind) and not Level3DFriends.HOUSE_KINDS.has(kind):
+			continue
+		if (entry.footprint as Rect2).grow(DULL_MARGIN).has_point(Vector2(at.x, at.z)):
+			return true
+	var flat := Vector3(travel.x, 0.0, travel.z).normalized()
+	for k in 2:
+		var p := at + flat * (k * 16.0 * Level3DMap.PX)
+		var m := Level3DMap.to_map(Vector2(p.x, p.z))
+		var building = _dull_cells.get(Vector2i(int(m.x) >> 5, int(m.y) >> 5))
+		if building != null and not destructibles[building].destroyed and map.is_missile_target(m.x, m.y):
+			return true
+	return false
+
+
 # What the hull sits on: the ground, and the ramps over the bunkers that have
 # lost their guns. Nothing else asks for the ramps -- a round, a crater or a
 # soldier goes by the ground as it is. And the craters the rockets and the
@@ -1777,6 +1807,14 @@ func _add_guns(level: Node) -> void:
 		kinds[building] = destructibles[building].kind
 		roofs[building] = destructibles[building].roof
 	friends.bind(centres, kinds, roofs)
+	# The cells each POW building's and gate's group opens, for _dull_at.
+	_dull_cells.clear()
+	for building in destructibles:
+		var kind: String = destructibles[building].kind
+		var group: int = destructibles[building].group if kind == "Gate" else friends.group_of(building)
+		if group >= 0 and group < map.stage.groups.size():
+			for cell in map.stage.groups[group]:
+				_dull_cells[Vector2i(cell[0], cell[1])] = building
 	friends.carriers.append(crews[0].carrier)
 	# The players' weapons are wired to all of these in _arm.
 	guns.travel_hit = _on_travel_hit
