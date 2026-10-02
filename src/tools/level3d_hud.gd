@@ -31,8 +31,11 @@
 #     taking him being what is watched then;
 #   * the weapon as its round -- the mortar's bomb, the missile, the heavy
 #     missile, the staged one -- each its own outline, so the level needs
-#     nothing beside it; a change of weapon blinks it for UPGRADE_BLINK_TIME,
-#     the only way it is noticed;
+#     nothing beside it. An upgrade -- the only way it is noticed -- hops it
+#     as the counts hop and washes it in the player's colour, a silhouette
+#     of it over it (TINT_SHADER) at WEAPON_TINT, fading as their tint does.
+#     It used to blink for a second and a half, which read as something wrong
+#     beside the counts' flash; a weapon lost is not marked, as a life is not;
 #   * on lines of their own, a size smaller, in the font's gray: the driving
 #     and firing modes when shown, and the cheats that are on
 #     (Level3DSettings.hud_cheats).
@@ -73,8 +76,14 @@ enum { WHITE, GRAY }
 # The glyphs' shadow, under the infinity: white on the font's dark, since
 # stage 1's sand is the font's orange, near enough.
 const SHADOW := Color(0.2, 0.2, 0.2)
-const UPGRADE_BLINK_TIME := 1.5
-const UPGRADE_BLINK := 0.1
+const WEAPON_TINT := 0.8               # the colour's alpha over the icon, at its height
+# An icon as a silhouette in the colour it is drawn with, for the weapon's.
+const TINT_SHADER := """
+shader_type canvas_item;
+varying vec4 tint;
+void vertex() { tint = COLOR; }
+void fragment() { COLOR = vec4(tint.rgb, texture(TEXTURE, UV).a * tint.a); }
+"""
 const ROLL_TIME := 0.45
 const FLASH_FADE := 0.35
 const HOP := 4.0                        # font pixels, of the glyph's 32
@@ -101,8 +110,10 @@ var icons := {}
 
 var _fonts: Array = []      # [colour] -> {code point -> Spr}
 var _sprites := {}          # sprite name -> Spr, until the icons come
-var _weapon := ""           # the weapon last shown, for the blink
-var _blink_left := 0.0
+var _weapon_was := -1       # the weapon's level last shown, -1 before the first
+var _weapon_time := INF     # seconds since an upgrade, as _roll_time
+var _tint_layer: Control    # over the line, the weapon's colour wash
+var _tints: Array = []      # this frame's [texture, rect, region or null, colour]
 var _measuring := false     # laying the line out to see how wide it is
 var _shown := 0.0           # the score as it reads now, rolling up to `score`
 var _roll_from := 0.0
@@ -124,6 +135,15 @@ func _init() -> void:
 			var c := Main.CHARS.unicode_at(i)
 			glyphs[c] = font.get_sprite("font-%s-%s.png" % [colour, Main._character_name(c)])
 		_fonts.append(glyphs)
+	_tint_layer = Control.new()
+	_tint_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_tint_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var shader := Shader.new()
+	shader.code = TINT_SHADER
+	_tint_layer.material = ShaderMaterial.new()
+	(_tint_layer.material as ShaderMaterial).shader = shader
+	_tint_layer.draw.connect(_draw_tints)
+	add_child(_tint_layer)
 	var bank := SpriteBank.new(Main.SPRITES)
 	for name in [LIFE_SPRITE, POW_SPRITE, GRENADE_SPRITE, MISSILE_SPRITE]:
 		_sprites[name] = bank.get_sprite(name)
@@ -142,11 +162,11 @@ func icon_pixels() -> int:
 
 
 func show_state() -> void:
-	var weapon := "%s%d" % [has_missiles, missile_power]
-	if _weapon != "" and weapon != _weapon:
-		_blink_left = UPGRADE_BLINK_TIME
-	_weapon = weapon
 	var new_run := score < _rolled_to
+	var weapon := _weapon_level()
+	if weapon > _weapon_was and _weapon_was >= 0 and not new_run:
+		_weapon_time = 0.0
+	_weapon_was = weapon
 	if new_run:
 		_shown = score
 		_roll_time = INF
@@ -165,21 +185,20 @@ func show_state() -> void:
 
 
 func _process(delta: float) -> void:
-	if _blink_left > 0.0:
-		_blink_left = maxf(_blink_left - delta, 0.0)
-		queue_redraw()
 	if _roll_time < ROLL_TIME + FLASH_FADE:
 		_roll_time += delta
 		var t := clampf(_roll_time / ROLL_TIME, 0.0, 1.0)
 		_shown = lerpf(_roll_from, score, 1.0 - (1.0 - t) * (1.0 - t))
 		queue_redraw()
-	if _lives_time < ROLL_TIME + FLASH_FADE or _pows_time < ROLL_TIME + FLASH_FADE:
+	if _lives_time < ROLL_TIME + FLASH_FADE or _pows_time < ROLL_TIME + FLASH_FADE 			or _weapon_time < ROLL_TIME + FLASH_FADE:
 		_lives_time += delta
 		_pows_time += delta
+		_weapon_time += delta
 		queue_redraw()
 
 
 func _draw() -> void:
+	_tints.clear()
 	var g := GLYPH * scale_factor
 	var row := g * ICON_HEIGHT
 	var top := size.y - MARGIN.y - row if bottom else MARGIN.y
@@ -190,6 +209,7 @@ func _draw() -> void:
 		left = size.x - MARGIN.x - _line(0.0, top, g, row)
 		_measuring = false
 	_line(left, top, g, row)
+	_tint_layer.queue_redraw()
 	# The modes and the cheats on lines of their own, smaller, stacked away
 	# from the corner: they are several words each and would run the main line
 	# off the frame at the bigger sizes.
@@ -227,19 +247,36 @@ func _line(x: float, top: float, g: float, row: float) -> float:
 	if parts.weapon:
 		x = _gap(x, g, groups)
 		groups += 1
-		# Blinking, it is hidden every other beat but keeps its place.
-		var alpha := 1.0 if _blink_left <= 0.0 or int(_blink_left / UPGRADE_BLINK) % 2 == 0 else 0.0
-		var level := 1 + missile_power if has_missiles else 0
+		var level := _weapon_level()
 		var rounds: Array = icons.get("weapons", [])
 		x = _icon(rounds[level] if level < rounds.size() else null,
-				MISSILE_SPRITE if has_missiles else GRENADE_SPRITE, x, top, row, alpha)
+				MISSILE_SPRITE if has_missiles else GRENADE_SPRITE, x, top - _hop(_weapon_time, g), row, 1.0,
+				_flash_amount(_weapon_time) * WEAPON_TINT)
 	return x
 
 
 # The tint of a number `time` seconds after it went up: the player's colour,
 # back to white over FLASH_FADE once ROLL_TIME is over.
 func _flash(time: float) -> Color:
-	return Color.WHITE.lerp(colour, clampf((ROLL_TIME + FLASH_FADE - time) / FLASH_FADE, 0.0, 1.0))
+	return Color.WHITE.lerp(colour, _flash_amount(time))
+
+
+# How much of the player's colour there is `time` seconds after, 1 to 0.
+static func _flash_amount(time: float) -> float:
+	return clampf((ROLL_TIME + FLASH_FADE - time) / FLASH_FADE, 0.0, 1.0)
+
+
+# The grenade 0, the missile 1 and its two upgrades 2 and 3: the icon's index.
+func _weapon_level() -> int:
+	return 1 + missile_power if has_missiles else 0
+
+
+func _draw_tints() -> void:
+	for t in _tints:
+		if t[2] == null:
+			_tint_layer.draw_texture_rect(t[0], t[1], false, t[3])
+		else:
+			_tint_layer.draw_texture_rect_region(t[0], t[1], t[2], t[3])
 
 
 # How far up it is `time` seconds after: HOP font pixels and back over HOP_TIME.
@@ -264,14 +301,17 @@ func _text(text: String, x: float, y: float, g: float, colour: int, alpha := 1.0
 
 
 # A rendered icon at the line's height, its own proportions kept, or the
-# game's sprite at the glyphs' until the icons are there. Returns where it
-# ends.
-func _icon(icon: Texture2D, sprite: String, x: float, top: float, row: float, alpha: float) -> float:
+# game's sprite at the glyphs' until the icons are there, and `tint` of the
+# player's colour washed over it. Returns where it ends.
+func _icon(icon: Texture2D, sprite: String, x: float, top: float, row: float, alpha: float,
+		tint := 0.0) -> float:
 	if icon != null:
 		var factor := row / icon.get_height()
 		var w := roundf(icon.get_width() * factor)
 		if not _measuring:
 			draw_texture_rect(icon, Rect2(x, top, w, row), false, Color(1, 1, 1, alpha))
+			if tint > 0.0:
+				_tints.append([icon, Rect2(x, top, w, row), null, Color(colour, tint)])
 		return x + w
 	var s: Spr = _sprites.get(sprite)
 	if s == null:
@@ -281,6 +321,8 @@ func _icon(icon: Texture2D, sprite: String, x: float, top: float, row: float, al
 	if _measuring:
 		return x + sw
 	draw_texture_rect_region(s.tex, Rect2(x, top + (row - h) * 0.5, sw, h), s.region, Color(1, 1, 1, alpha))
+	if tint > 0.0:
+		_tints.append([s.tex, Rect2(x, top + (row - h) * 0.5, sw, h), s.region, Color(colour, tint)])
 	return x + sw
 
 
