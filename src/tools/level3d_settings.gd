@@ -96,7 +96,7 @@ var sound_mode := SoundMode.MODERN
 # The modern boss music: following the fight, a layer a tank on the field
 # (Level3DAudio.ADAPTIVE), or the same parts as one track.
 enum BossMusic { ADAPTIVE, LINEAR }
-var boss_music := BossMusic.ADAPTIVE
+var boss_music := BossMusic.LINEAR   # the default: adaptive was tried as it and turned down
 var master_volume := 1.0
 var music_volume := 0.8
 var effects_volume := 1.0

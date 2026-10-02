@@ -55,7 +55,7 @@ const MUSIC_NAMES := {
 	"stage0_repeat.ogg": "Этап: петля", "boss_intro.ogg": "Босс: вступление",
 	"boss_repeat.ogg": "Босс: петля",
 	"boss_lead.ogg": "Босс: ведущая партия", "boss_tank_1.ogg": "Босс: танк 1 (гитары)",
-	"boss_tank_2.ogg": "Босс: танк 2 (двойная бочка)", "boss_tank_3.ogg": "Босс: танк 3 (оркестр)",
+	"boss_tank_2.ogg": "Босс: танк 2 (двойная бочка)", "boss_tank_3.ogg": "Босс: танк 3 (струнные)",
 	"boss_tank_4.ogg": "Босс: танк 4 (арпеджиатор)", "boss_full.ogg": "Босс: петля целиком (линейная)",
 	"boss_victory.ogg": "Босс: победа", "boss_breach.ogg": "Босс: акцент на пробитие",
 }

@@ -575,7 +575,7 @@ The modern boss is the exception: its music follows the fight
 (`Level3DAudio.ADAPTIVE`). It is one `AudioStreamInteractive` of three clips:
 the intro over the pan, running on into the loop by itself; the loop, an
 `AudioStreamSynchronized` of the lead part (drums, bass, the theme) and a
-layer for each of the four tanks -- guitars, double kick, orchestra,
+layer for each of the four tanks -- guitars, double kick, strings,
 arpeggio, by the order the tanks come in (`Level3DBoss.alive_layers`) -- all
 16 bars and summed sample for sample; and the victory, which anything goes
 to on the next beat (`music_end`). `Level3DPreview._update_music` says which
@@ -596,7 +596,7 @@ game. `modern/` holds the nine files in place of `boss_repeat.ogg`
 its own gain in the Mixer, which shows each mode's own. Classic plays the
 intro and loop as before and stops at the end, as the game stops its song.
 The Sound tab's "Музыка босса" (`Level3DSettings.boss_music`,
-`Level3DAudio.set_adaptive`) plays it linearly instead: the same stream with
+`Level3DAudio.set_adaptive`) plays it linearly, and does by default: the same stream with
 `boss_full.ogg` -- the lead and every layer mixed into one file -- for its
 loop, so the fight changes only the accent and the end. A switch while it
 plays starts the other loop from its first bar, since there is no position

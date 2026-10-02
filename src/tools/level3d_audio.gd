@@ -218,7 +218,7 @@ const ADAPTIVE := {
 		"intro": "boss_intro.ogg",
 		"lead": "boss_lead.ogg",
 		# The four tanks', by the order they come in (Level3DBoss.alive_layers):
-		# weight, drive, the orchestra, the arpeggio.
+		# weight, drive, the strings, the arpeggio.
 		"layers": ["boss_tank_1.ogg", "boss_tank_2.ogg", "boss_tank_3.ogg", "boss_tank_4.ogg"],
 		"full": "boss_full.ogg",
 		"end": "boss_victory.ogg",
