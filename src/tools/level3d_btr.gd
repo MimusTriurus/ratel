@@ -377,7 +377,12 @@ func blink(shown: bool) -> void:
 # its materials, as Spr.hue_shifted_copy makes the game's blue jeep out of the
 # green one. Grey, black, white and glass are left alone.
 func tint(min_hue: float, max_hue: float, shift: float) -> void:
-	for node in _model.find_children("*", "MeshInstance3D", true, false):
+	tint_model(_model, min_hue, max_hue, shift)
+
+
+# tint's turn on any model: the HUD's icon of the vehicle is tinted as it is.
+static func tint_model(model: Node, min_hue: float, max_hue: float, shift: float) -> void:
+	for node in model.find_children("*", "MeshInstance3D", true, false):
 		var mesh_instance := node as MeshInstance3D
 		for surface in mesh_instance.get_surface_override_material_count():
 			var material := mesh_instance.get_active_material(surface) as StandardMaterial3D

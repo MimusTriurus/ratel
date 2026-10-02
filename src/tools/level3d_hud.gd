@@ -2,18 +2,23 @@
 # rendered from the preview's own models (level3d_preview.gd, _show_state
 # hands it the run's state, _render_icons the icons):
 #
-#     1P 004500   [jeep][jeep][jeep]   [prisoner] 3   [missile]
-#     CLASSIC DRIVE  CURSOR FIRE
 #     CHEATS: LIVES  WALLS  GUN X2
+#     CLASSIC DRIVE  CURSOR FIRE
+#     004500   [jeep] 3   [prisoner] 3   [missile]
 #
-#   * the score as GameMode._draw_score writes it, "1P" and the number, in
-#     the font's white (the sheet calls it black: white glyphs, dark shadow);
-#   * the spare lives as the vehicle the preview drives, one each -- the game
-#     shows a count, "P 4", which a row of them says without a letter to
-#     learn. With the infinite lives cheat, one and an infinity drawn after
-#     it: the font has no glyph for it;
+#   * the score as GameMode._draw_score writes it, the number without its
+#     "1P", in the font's white (the sheet calls it black: white glyphs, dark
+#     shadow): which line is whose is said by its corner and by its jeep's
+#     colour;
+#   * the spare lives as the vehicle the preview drives and the count, as the
+#     game's "P 4" counts them, in the player's colour (`lives_icon`). A row
+#     of them, one each, was tried: it changed the line's width with every
+#     life, shoving what came after it, and read differently from the
+#     prisoners beside it. Dimmed with none left; with the infinite lives
+#     cheat, an infinity for the count, drawn: the font has no glyph for it;
 #   * the prisoners aboard as a prisoner and the count, dimmed with none
-#     aboard;
+#     aboard. Dimmed is the icon faded and the 0 in the font's gray, not
+#     faded: a faded white over stage 1's sand all but went;
 #   * the weapon as its round -- the mortar's bomb, the missile, the heavy
 #     missile, the staged one -- each its own outline, so the level needs
 #     nothing beside it; a change of weapon blinks it for UPGRADE_BLINK_TIME,
@@ -22,9 +27,14 @@
 #     and firing modes when shown, and the cheats that are on
 #     (Level3DSettings.hud_cheats).
 #
-# With two players each has a line of its own, the second's "2P" in the
-# corner across the frame, its groups in the same order, as GameMode's score
-# puts the second player's at the other side of the frame.
+# At the bottom by default (Level3DSettings.hud_corner), not the game's top:
+# everything new comes in at the top of the frame, and the tilted view spreads
+# more of the level over a strip at the top than at the bottom, so a line there
+# hides more of what is coming. The modes and cheats stack up from it.
+#
+# With two players each has a line of its own, the second's in the corner
+# across the frame, its groups in the same order, as GameMode's score puts the
+# second player's at the other side of the frame.
 #
 # Sizes are whole multiples of a pixel. A glyph is 32 px at 100%, as the
 # game's own HUD draws it on the same 2048x1152 frame, 24 to 48 through
@@ -67,7 +77,8 @@ var cheats := ""            # the cheats on, "" for none or not shown
 var parts := {"score": true, "lives": true, "pows": true, "weapon": true}
 var bottom := false         # the bottom left corner rather than the top left
 var right := false          # the right-hand corner, the second player's
-var label := "1P"
+# Which of the icons is this player's vehicle: the second's is blue.
+var lives_icon := "lives"
 var scale_factor := 1.0
 # Level3DIcons.render_all's: {"lives", "pow", "weapons": [4]}, or empty.
 var icons := {}
@@ -92,6 +103,12 @@ func _init() -> void:
 	var bank := SpriteBank.new(Main.SPRITES)
 	for name in [LIFE_SPRITE, POW_SPRITE, GRENADE_SPRITE, MISSILE_SPRITE]:
 		_sprites[name] = bank.get_sprite(name)
+
+
+# How much of the frame's edge the main line takes, margin and all: what the
+# pad's arrow and the co-op frame keep clear of when it is at the bottom.
+func line_height() -> float:
+	return MARGIN.y + GLYPH * scale_factor * ICON_HEIGHT
 
 
 # The icons' height in their own pixels at the current size: ICON_HEIGHT
@@ -143,21 +160,20 @@ func _line(x: float, top: float, g: float, row: float) -> float:
 	var y := top + roundf((row - g) * 0.5)      # the glyphs' top
 	var groups := 0
 	if parts.score:
-		x = _text("%s %06d" % [label, score], x, y, g, WHITE)
+		x = _text("%06d" % score, x, y, g, WHITE)
 		groups += 1
 	if parts.lives:
 		x = _gap(x, g, groups)
 		groups += 1
-		for i in (1 if lives < 0 else lives):
-			x = _icon(icons.get("lives"), LIFE_SPRITE, x, top, row, 1.0) + g * 0.125
-		if lives < 0:
-			x = _infinity(x, y, g)
+		var dim := 1.0 if lives != 0 else 0.45
+		x = _icon(icons.get(lives_icon, icons.get("lives")), LIFE_SPRITE, x, top, row, dim) + g * 0.25
+		x = _infinity(x, y, g) if lives < 0 else _text(str(lives), x, y, g, WHITE if lives > 0 else GRAY)
 	if parts.pows:
 		x = _gap(x, g, groups)
 		groups += 1
 		var dim := 1.0 if pows > 0 else 0.45
 		x = _icon(icons.get("pow"), POW_SPRITE, x, top, row, dim) + g * 0.25
-		x = _text(str(pows), x, y, g, WHITE, dim)
+		x = _text(str(pows), x, y, g, WHITE if pows > 0 else GRAY)
 	if parts.weapon:
 		x = _gap(x, g, groups)
 		groups += 1

@@ -21,6 +21,8 @@ const MARGIN := 56.0      # from the frame's edge to the tip
 var camera: Camera3D
 var target := Vector3.ZERO
 var shown := false
+# Layout px along the bottom edge that are the HUD's line, kept clear as well.
+var bottom_inset := 0.0
 
 
 func _init() -> void:
@@ -33,6 +35,8 @@ func _draw() -> void:
 		return
 	var frame := Rect2(Vector2.ZERO, size)
 	var centre := frame.get_center()
+	var inner := frame.grow(-MARGIN)
+	inner.size.y -= bottom_inset
 	var at := camera.unproject_position(target)
 	# Behind a tilted camera the projection comes out mirrored through the
 	# centre; mirrored back, it points the right way.
@@ -43,13 +47,13 @@ func _draw() -> void:
 	var dir := (at - centre).normalized()
 	if dir == Vector2.ZERO:
 		return
-	# Where the line from the centre leaves the frame, MARGIN in from its edge.
-	var inner := frame.grow(-MARGIN).size * 0.5
+	# Where the line from the centre leaves the frame, MARGIN in from its edge
+	# and the HUD's line.
 	var reach := INF
 	if dir.x != 0.0:
-		reach = minf(reach, inner.x / absf(dir.x))
+		reach = minf(reach, ((inner.end.x - centre.x) if dir.x > 0.0 else (centre.x - inner.position.x)) / absf(dir.x))
 	if dir.y != 0.0:
-		reach = minf(reach, inner.y / absf(dir.y))
+		reach = minf(reach, ((inner.end.y - centre.y) if dir.y > 0.0 else (centre.y - inner.position.y)) / absf(dir.y))
 	var tip := centre + dir * reach
 	var side := dir.orthogonal()
 	draw_colored_polygon(_triangle(tip + dir * OUTLINE * 1.6, dir, side,

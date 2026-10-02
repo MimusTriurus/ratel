@@ -526,7 +526,7 @@ func _add_crew() -> Crew:
 		c.launcher.marks = crews[0].launcher
 	add_child(c.launcher)
 	c.hud = Level3DHud.new()
-	c.hud.label = "%dP" % (c.index + 1)
+	c.hud.lives_icon = "lives_2" if c.index > 0 else "lives"
 	c.hud.right = c.index > 0
 	_hud.add_child(c.hud)
 	crews.append(c)
@@ -657,7 +657,24 @@ func _other_in(c: Crew) -> bool:
 	return false
 
 
-# Where the frame follows: the players in the game, between them.
+# Layout px along the frame's bottom that the HUD's line covers: none with it
+# at the top or off.
+func _hud_bottom_inset() -> float:
+	if crews.is_empty() or not settings.hud or settings.hud_corner != Level3DSettings.HudCorner.BOTTOM:
+		return 0.0
+	return crews[0].hud.line_height()
+
+
+# _hud_bottom_inset in level metres, as the frame from straight above has it:
+# the tilted one's bottom is nearer, so it covers a little less there.
+func _hud_inset_metres() -> float:
+	return _hud_bottom_inset() * _view_frame().size.x / Main.SCREEN_WIDTH
+
+
+# Where the frame follows: the players in the game, between them. With two,
+# half the HUD's line to the south of it, so that the middle of them is the
+# middle of what the line leaves of the frame: with one the frame is not held
+# to its edges, and stays as it was.
 func _follow_point() -> Vector2:
 	var total := Vector2.ZERO
 	var count := 0
@@ -667,14 +684,17 @@ func _follow_point() -> Vector2:
 			count += 1
 	if count == 0:
 		return Vector2(btr.position.x, btr.position.z)
-	return total / count
+	var shift := Vector2(0.0, _hud_inset_metres() * 0.5) if count > 1 else Vector2.ZERO
+	return total / count + shift
 
 
 # Two players: each held where the frame can still have the other, COOP_EDGE
 # in from its top and bottom (Level3DBtr.z_limits) -- the frame follows the
-# middle of them, so that is never further apart than its height less those.
+# middle of them, so that is never further apart than its height less those,
+# and less the HUD's line along the bottom, which _follow_point frames them
+# above.
 func _hold_crews() -> void:
-	var span := maxf(_view_frame().size.y - 2.0 * COOP_EDGE, 0.0)
+	var span := maxf(_view_frame().size.y - 2.0 * COOP_EDGE - _hud_inset_metres(), 0.0)
 	for c in crews:
 		c.btr.z_limits = Vector2(-INF, INF)
 		for other in crews:
@@ -1970,7 +1990,7 @@ func _render_icons() -> void:
 	_icon_pixels = crews[0].hud.icon_pixels()
 	_icon_run += 1
 	var run := _icon_run
-	var rendered: Dictionary = await _icons.render_all(btr.vehicle, _icon_pixels)
+	var rendered: Dictionary = await _icons.render_all(btr.vehicle, _icon_pixels, BLUE_HUES)
 	if run == _icon_run:
 		for c in crews:
 			c.hud.icons = rendered
@@ -2041,6 +2061,7 @@ func _update_pad_arrow() -> void:
 	if _pad_arrow.shown:
 		_pad_arrow.camera = camera
 		_pad_arrow.target = rescue.pad_position()
+		_pad_arrow.bottom_inset = _hud_bottom_inset()
 	_pad_arrow.queue_redraw()
 
 

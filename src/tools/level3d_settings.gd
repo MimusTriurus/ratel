@@ -83,7 +83,8 @@ var banner_mission := true
 # The reticle in place of the cursor while the mouse aims (Level3DCrosshair).
 # Not under `hud`: it is how the mouse is seen, not something the HUD reports.
 var hud_crosshair := true
-var hud_corner := HudCorner.TOP
+# At the bottom: the enemies come in at the top (Level3DHud says why).
+var hud_corner := HudCorner.BOTTOM
 var hud_scale := 1.0
 var keys := DEFAULT_KEYS.duplicate()
 # The sound (Level3DAudio): classic, the original's effects as the game plays

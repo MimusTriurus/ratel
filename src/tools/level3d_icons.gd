@@ -50,8 +50,10 @@ var shade := 0.3
 
 # Every icon at `height` pixels (the widest may be up to `max_aspect` times
 # that across), for `vehicle` -- Level3DBtr.VEHICLES' entry: {"lives": Texture,
-# "pow": Texture, "weapons": [Texture x4]}. Takes a few frames.
-func render_all(vehicle: Dictionary, height: int) -> Dictionary:
+# "pow": Texture, "weapons": [Texture x4]}, and "lives_2" too, the vehicle
+# turned by Level3DBtr.tint's `hues` (min, max, shift), when they are given:
+# the second player's. Takes a few frames.
+func render_all(vehicle: Dictionary, height: int, hues := Vector3.ZERO) -> Dictionary:
 	var scene: PackedScene = load(vehicle.path)
 	var prefix: String = vehicle.prefix
 	var fits: Array[String] = []
@@ -68,6 +70,14 @@ func render_all(vehicle: Dictionary, height: int) -> Dictionary:
 		if node != null:
 			node.visible = false
 	var icons := {"lives": await render(body, height, 1.6)}
+	if hues != Vector3.ZERO:
+		var tinted := _turned(scene.instantiate(), vehicle.facing)
+		for name in fits + spare:
+			var node := tinted.find_child(name, true, false)
+			if node != null:
+				node.visible = false
+		Level3DBtr.tint_model(tinted, hues.x, hues.y, hues.z)
+		icons["lives_2"] = await render(tinted, height, 1.6)
 
 	var pow_scene: PackedScene = load(POW_PATH)
 	# Turned as the vehicle is, to face the way its nose does: the figure

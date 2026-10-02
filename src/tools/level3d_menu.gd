@@ -327,7 +327,7 @@ func _make_interface_tab() -> Control:
 	_note(tab, "В современном и комбинированном режимах стрельбы, где целятся мышью. Работает и без HUD.")
 	tab.add_child(HSeparator.new())
 	var layout := _grid(tab)
-	_hud_corner = _choice(layout, "Положение", ["Сверху слева", "Снизу слева"],
+	_hud_corner = _choice(layout, "Положение", ["Сверху", "Снизу"],
 			func(i: int): settings.hud_corner = i)
 	_hud_scale = _choice(layout, "Размер",
 			Level3DSettings.HUD_SCALES.map(func(s: float): return "%d%%" % roundi(s * 100.0)),
