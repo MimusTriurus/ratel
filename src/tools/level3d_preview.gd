@@ -487,6 +487,15 @@ var _mapping_2: ButtonMapping
 
 # The second player's colours: Main.players_blue's turn of the green.
 const BLUE_HUES := Vector3(80.0, 130.0, 100.0)
+# The vehicle's lit olive (BTR_OliveLight), the colour the score and the points
+# for a prisoner show in; the second's turned as its vehicle is.
+const CREW_COLOUR := Color("5ca83e")
+
+static func _crew_colour(index: int) -> Color:
+	var colour := CREW_COLOUR
+	if index > 0:
+		colour.h = fposmod(colour.h * 360.0 + BLUE_HUES.z, 360.0) / 360.0
+	return colour
 # How near the frame's top and bottom either jeep may come with two of them,
 # level metres: GameMode.COOP_EDGE.
 const COOP_EDGE := GameMode.COOP_EDGE * Level3DMap.PX
@@ -528,6 +537,7 @@ func _add_crew() -> Crew:
 	add_child(c.launcher)
 	c.hud = Level3DHud.new()
 	c.hud.lives_icon = "lives_2" if c.index > 0 else "lives"
+	c.hud.colour = _crew_colour(c.index)
 	c.hud.right = c.index > 0
 	_hud.add_child(c.hud)
 	crews.append(c)
@@ -1794,6 +1804,8 @@ func _add_guns(level: Node) -> void:
 		for c in crews:
 			if c.carrier == carrier:
 				c.score += points
+				if settings.hud:
+					_score_pops.add(rescue.top_position(), points, _crew_colour(c.index))
 		_show_state()
 	add_child(rescue)
 	if Level3DMap.is_stage_one():
@@ -2011,6 +2023,8 @@ func _make_hud() -> void:
 	layer.add_child(_pad_arrow)
 	_callouts = Level3DCallouts.new()
 	layer.add_child(_callouts)
+	_score_pops = Level3DScorePops.new()
+	layer.add_child(_score_pops)
 	_banners = Level3DBanners.new()
 	layer.add_child(_banners)
 	var crosshair := Level3DCrosshair.new()
@@ -2022,6 +2036,7 @@ func _make_hud() -> void:
 # and their icons rendered again for a new size.
 func _layout_hud() -> void:
 	_callouts.scale_factor = settings.hud_scale
+	_score_pops.scale_factor = settings.hud_scale
 	for c in crews:
 		c.hud.bottom = settings.hud_corner == Level3DSettings.HudCorner.BOTTOM
 		c.hud.scale_factor = settings.hud_scale
@@ -2113,6 +2128,8 @@ static func _rate_text(rate: float) -> String:
 var _pad_arrow: Level3DArrow
 # The prisoners' HELP, the game's and the calls (Level3DFriends.help_marks).
 var _callouts: Level3DCallouts
+# The points over the rescue helicopter for each prisoner it takes.
+var _score_pops: Level3DScorePops
 
 func _update_pad_arrow() -> void:
 	_pad_arrow.shown = settings.hud and settings.hud_pad_arrow \
@@ -2123,6 +2140,7 @@ func _update_pad_arrow() -> void:
 		_pad_arrow.bottom_inset = _hud_bottom_inset()
 	_pad_arrow.queue_redraw()
 	_callouts.camera = camera
+	_score_pops.camera = camera
 
 
 # The three moments (Level3DBanners), each on the edge of what it marks: the
@@ -2844,6 +2862,7 @@ func _restart() -> void:
 		c.btr.blink(true)
 	_banner.visible = false
 	_banners.clear()
+	_score_pops.clear()
 	_saw_chinook = false
 	_saw_pan = false
 	_saw_defeat = false

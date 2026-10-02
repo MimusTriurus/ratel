@@ -9,7 +9,14 @@
 #   * the score as GameMode._draw_score writes it, the number without its
 #     "1P", in the font's white (the sheet calls it black: white glyphs, dark
 #     shadow): which line is whose is said by its corner and by its jeep's
-#     colour;
+#     colour. Points added roll up to the new score over ROLL_TIME rather
+#     than land at once, and the number shows in the player's colour while it
+#     does and fades back to white over FLASH_FADE, its digits hopping up
+#     HOP font pixels at the start: the score is the one thing on the line
+#     that changes without the player looking at it, and a number that only
+#     jumps is not seen to. A hop, not a grow, since a bigger score would
+#     shove the rest of the line along, and a glyph scaled by a fraction is a
+#     ragged one. A score that goes down -- a new run -- is put straight;
 #   * the spare lives as the vehicle the preview drives and the count, as the
 #     game's "P 4" counts them, in the player's colour (`lives_icon`). A row
 #     of them, one each, was tried: it changed the line's width with every
@@ -65,6 +72,10 @@ enum { WHITE, GRAY }
 const SHADOW := Color(0.2, 0.2, 0.2)
 const UPGRADE_BLINK_TIME := 1.5
 const UPGRADE_BLINK := 0.1
+const ROLL_TIME := 0.45
+const FLASH_FADE := 0.35
+const HOP := 4.0                        # font pixels, of the glyph's 32
+const HOP_TIME := 0.2
 
 # What the line shows, set whole by `show_state` and drawn by _draw.
 var score := 0
@@ -79,6 +90,8 @@ var bottom := false         # the bottom left corner rather than the top left
 var right := false          # the right-hand corner, the second player's
 # Which of the icons is this player's vehicle: the second's is blue.
 var lives_icon := "lives"
+# The player's, its vehicle's: the score flashes in it (ROLL_TIME).
+var colour := Color.WHITE
 var scale_factor := 1.0
 # Level3DIcons.render_all's: {"lives", "pow", "weapons": [4]}, or empty.
 var icons := {}
@@ -88,6 +101,10 @@ var _sprites := {}          # sprite name -> Spr, until the icons come
 var _weapon := ""           # the weapon last shown, for the blink
 var _blink_left := 0.0
 var _measuring := false     # laying the line out to see how wide it is
+var _shown := 0.0           # the score as it reads now, rolling up to `score`
+var _roll_from := 0.0
+var _rolled_to := 0         # the score the roll is to
+var _roll_time := INF       # seconds since the last points came, while they show
 
 
 func _init() -> void:
@@ -122,12 +139,24 @@ func show_state() -> void:
 	if _weapon != "" and weapon != _weapon:
 		_blink_left = UPGRADE_BLINK_TIME
 	_weapon = weapon
+	if score < _rolled_to:
+		_shown = score
+		_roll_time = INF
+	elif score > _rolled_to:
+		_roll_from = _shown
+		_roll_time = 0.0
+	_rolled_to = score
 	queue_redraw()
 
 
 func _process(delta: float) -> void:
 	if _blink_left > 0.0:
 		_blink_left = maxf(_blink_left - delta, 0.0)
+		queue_redraw()
+	if _roll_time < ROLL_TIME + FLASH_FADE:
+		_roll_time += delta
+		var t := clampf(_roll_time / ROLL_TIME, 0.0, 1.0)
+		_shown = lerpf(_roll_from, score, 1.0 - (1.0 - t) * (1.0 - t))
 		queue_redraw()
 
 
@@ -160,7 +189,9 @@ func _line(x: float, top: float, g: float, row: float) -> float:
 	var y := top + roundf((row - g) * 0.5)      # the glyphs' top
 	var groups := 0
 	if parts.score:
-		x = _text("%06d" % score, x, y, g, WHITE)
+		var flash := clampf((ROLL_TIME + FLASH_FADE - _roll_time) / FLASH_FADE, 0.0, 1.0)
+		var hop := roundf(sin(PI * clampf(_roll_time / HOP_TIME, 0.0, 1.0)) * HOP) * g / 32.0
+		x = _text("%06d" % int(_shown), x, y - hop, g, WHITE, 1.0, Color.WHITE.lerp(colour, flash))
 		groups += 1
 	if parts.lives:
 		x = _gap(x, g, groups)
@@ -191,12 +222,13 @@ func _gap(x: float, g: float, groups: int) -> float:
 
 
 # The game's draw_text: a glyph every GLYPH, missing ones left as spaces.
-func _text(text: String, x: float, y: float, g: float, colour: int, alpha := 1.0) -> float:
+func _text(text: String, x: float, y: float, g: float, colour: int, alpha := 1.0,
+		tint := Color.WHITE) -> float:
 	var glyphs: Dictionary = _fonts[colour]
 	for i in text.length():
 		var s: Spr = glyphs.get(text.to_upper().unicode_at(i))
 		if s != null and not _measuring:
-			draw_texture_rect_region(s.tex, Rect2(x, y, g, g), s.region, Color(1, 1, 1, alpha))
+			draw_texture_rect_region(s.tex, Rect2(x, y, g, g), s.region, Color(tint, alpha))
 		x += g
 	return x
 

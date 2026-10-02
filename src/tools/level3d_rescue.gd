@@ -73,6 +73,7 @@ const MODEL_SCALE := Level3DBtr.MODEL_SCALE
 const PX := Level3DMap.PX
 
 const ALTITUDE := 3.0
+const TOP := 2.0                # metres over its skids to over its rotor
 # Fly turns the rotor twice a second, 12 degrees a frame at 60 fps: the speed
 # that turns it rotor_speed degrees a frame is rotor_speed / 12.
 const ROTOR_DEGREES_PER_CLIP_SPEED := 12.0
@@ -458,6 +459,12 @@ func pad_position() -> Vector3:
 	var at := Level3DMap.to_level(pad)
 	var height: float = _pad_height if not is_nan(_pad_height) else ground.call(at.x, at.y).height
 	return Vector3(at.x, height, at.y)
+
+
+# Over its rotor, in level metres: where the points for a prisoner show
+# (Level3DScorePops).
+func top_position() -> Vector3:
+	return _model.position + Vector3(0.0, TOP, 0.0) if _model != null else pad_position()
 
 
 # Main.play_sound_if_not_playing.
