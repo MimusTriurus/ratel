@@ -30,6 +30,10 @@ environment; substitute the actual editor path.
 godot --path . src/main.tscn
 ```
 
+The project's main scene is the 3D preview (`src/tools/level3d_preview.tscn`),
+so a bare run, F5 and an export open that; the 2D game is run by naming
+`src/main.tscn`, as above.
+
 ```bash
 godot --path . --headless --check-only --script src/core/main.gd
 ```
