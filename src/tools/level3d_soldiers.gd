@@ -41,8 +41,11 @@
 #     third of a metre, some 23 px, out in front of him; and it flashes.
 #   * He is run over when the BTR's body reaches his feet as well as when the
 #     game's box meets his (bump): the BTR is bigger than the jeep. He is
-#     knocked out past its flank to fall, and flattened if it then drives over
-#     him where he lies (KNOCK_*, CRUSH).
+#     knocked out past its flank to fall (KNOCK_*). Driven over where he lies,
+#     nothing happens to him: the hull hides him from the frame's camera. He
+#     used to be flattened to a third of his height, to keep him out of its
+#     belly, and the flattening squashed his baked contour into his rifle and
+#     boots, broken lines, and all but took his shadow: he looked sunk.
 #   * He faces the way he walks or aims, not the nearest of four, and turns
 #     to it over a few frames rather than in a tick (Level3DCrossfade).
 class_name Level3DSoldiers
@@ -98,11 +101,6 @@ const SINK := 0.3
 const KNOCK_CLEAR := 0.1
 const KNOCK_TIME := 0.25
 const KNOCK_SPEED := 2.0
-# A corpse the BTR then drives over, however he died, is flattened to this much
-# of his height over CRUSH_TIME, and stays so: he lies 0.31 m high, and the
-# lowest of the BTR's belly, its differentials, is 0.15 m off the ground. It is run over when the BTR covers any of his bones.
-const CRUSH := 0.35
-const CRUSH_TIME := 0.06
 # The BTR's body reaching this far from where he stands runs him over as well
 # as the game's box does (bump).
 const BODY_REACH := 0.1
@@ -174,12 +172,10 @@ class Soldier:
 	var fading := false
 	var delay := 0
 	# Knocked clear by the BTR: where he fell from, how far, and for how long
-	# yet; then how much of his height he has left, CRUSH once run over.
+	# yet.
 	var fell_at := Vector3.ZERO
 	var knock := Vector3.ZERO
 	var knock_left := 0.0
-	var height := 1.0
-	var crushed := false
 	var root: Node3D
 	var player: AnimationPlayer
 	var fade: Level3DCrossfade
@@ -565,8 +561,7 @@ func _process(delta: float) -> void:
 		_lie(s, delta)
 
 
-# A corpse's frame: knocked clear, if the BTR ran him over, then flattened if
-# it drives over him where he lies.
+# A corpse's frame: knocked clear, if the BTR ran him over.
 func _lie(s: Soldier, delta: float) -> void:
 	if s.knock_left > 0.0:
 		s.knock_left = maxf(s.knock_left - delta, 0.0)
@@ -579,27 +574,6 @@ func _lie(s: Soldier, delta: float) -> void:
 			var p := Level3DMap.to_map(Vector2(at.x, at.z))
 			s.x = p.x
 			s.y = p.y
-		return
-	if not s.crushed and _under_btr(s):
-		s.crushed = true
-	if s.crushed and s.height > CRUSH:
-		s.height = maxf(CRUSH, s.height - (1.0 - CRUSH) / CRUSH_TIME * delta)
-		s.root.scale.y = model.scale * s.height
-
-
-# Whether the BTR is over any of his bones. The elbows' pole targets are not
-# his: they stand out to either side of him.
-func _under_btr(s: Soldier) -> bool:
-	if not run_over.is_valid():
-		return false
-	var skeleton := s.fade.skeleton
-	for bone in skeleton.get_bone_count():
-		if skeleton.get_bone_name(bone).begins_with("Pole"):
-			continue
-		var at := skeleton.global_transform * skeleton.get_bone_global_pose(bone).origin
-		if run_over.call(at, 0.0, false) != Vector3.ZERO:
-			return true
-	return false
 
 
 # The frame's pose: the clip, faded into from whatever was on screen when it
