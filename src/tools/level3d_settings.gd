@@ -75,6 +75,9 @@ var hud_weapon := true
 var hud_modes := false
 var hud_pad_arrow := true   # to the rescue helicopter, prisoners aboard
 var hud_cheats := true      # a line saying which cheats are on
+# HELP over a building with prisoners in it, and over a prisoner long left
+# where he is (Level3DFriends' calls). Not the game's: its HELP is the house's.
+var hud_help := true
 # The three banners (Level3DBanners): STAGE 1 under the Chinook, WARNING on
 # the boss's pan, the mission's lines when it is beaten. Under `hud`.
 var banner_stage := true
@@ -158,6 +161,7 @@ func load_saved() -> void:
 	hud_weapon = config.get_value("interface", "weapon", hud_weapon)
 	hud_modes = config.get_value("interface", "modes", hud_modes)
 	hud_pad_arrow = config.get_value("interface", "pad_arrow", hud_pad_arrow)
+	hud_help = config.get_value("interface", "help", hud_help)
 	hud_cheats = config.get_value("interface", "cheats", hud_cheats)
 	hud_crosshair = config.get_value("interface", "crosshair", hud_crosshair)
 	banner_stage = config.get_value("interface", "banner_stage", banner_stage)
@@ -213,6 +217,7 @@ func save() -> void:
 	config.set_value("interface", "weapon", hud_weapon)
 	config.set_value("interface", "modes", hud_modes)
 	config.set_value("interface", "pad_arrow", hud_pad_arrow)
+	config.set_value("interface", "help", hud_help)
 	config.set_value("interface", "cheats", hud_cheats)
 	config.set_value("interface", "crosshair", hud_crosshair)
 	config.set_value("interface", "banner_stage", banner_stage)

@@ -24,6 +24,30 @@
 #     (level3d_rescue.gd), and each walks straight to it, through anything,
 #     and cannot be picked up again on the way. The last one off flashes.
 #
+# And calls the game does not make, because the 3D buildings look like the
+# rest of the scenery and nothing says there is anyone in them (a gun's round
+# stops on a hut as on any wall):
+#   * the first POW building of the level, the one the BTR comes to first,
+#     calls HELP while it stands -- the same HELP a house's prisoners show
+#     when it is blown open -- from BUILDING_FIRST after it comes into the
+#     frame. The first only: it is there to teach that HELP is where there are
+#     prisoners, and after it the player knows;
+#   * a prisoner left wandering for PRISONER_WAIT calls it over his head.
+# One HELP at a time, never two: each caller in turn, the one who has called
+# least lately first, CALL_ON ticks each and CALL_GAP between; none while a
+# house's own HELP is up. Only in the frame, and not while the Chinook is still
+# bringing the BTR in (`held`): nothing can be done about them until it is
+# down. Off with `calls` (Level3DSettings.hud_help); a house's own HELP is the
+# game's and is not.
+#
+# A building's HELP, the calls and the game's alike, has its tail on the
+# middle of the building's roof: the shout is from inside it. The game's
+# stood by the house's door; the 3D roof hides that.
+#
+# Every HELP, the game's and the calls, is drawn by Level3DCallouts as a
+# comic's shout, from help_marks: where it comes from, and since when it is
+# on.
+#
 # The level's hangars are broken open on the side the game lets their
 # prisoners out of: Hangar_N and Hangar_W, both HOUSE_RIGHT, were turned round
 # in the stage file for it.
@@ -62,6 +86,15 @@ const HELP_FIRST := 60
 const HELP_BLINK := 12
 const HELP_BLINKS := 4
 const HELP_HEIGHT := 2.2
+# The calls (not the game's): each up for CALL_ON ticks, one blink, and the
+# next CALL_GAP after it. The first building may call BUILDING_FIRST after it
+# comes into the frame; a prisoner once he has waited PRISONER_WAIT to be
+# picked up, a size smaller and from PRISONER_HELP_HEIGHT over his feet.
+const CALL_ON := 130
+const CALL_GAP := Vector2i(250, 450)
+const BUILDING_FIRST := 100
+const PRISONER_WAIT := 800
+const PRISONER_HELP_HEIGHT := 1.3
 
 const WALK := "Pow_Walk"
 const WAVE := "Pow_Wave"
@@ -94,16 +127,35 @@ var ground: Callable
 var player_position: Callable
 var scored: Callable
 var verbose := false
+# The calls, on or off (Level3DSettings.hud_help).
+# The calls held off, not counted down: the Chinook is still flying in.
+var held := false
+var calls := true:
+	set(on):
+		calls = on
+		if not on:
+			_call = {}
 # One Carrier a player, the preview's: what each has aboard and fits.
 var carriers: Array[Carrier] = []
 
 var friends: Array[Friend] = []
 var _helps := []
 var _bound := {}                # destructible name -> map building
+var _roofs := {}                # destructible name -> level metres, where its HELP's tail points
 var model := MODEL
 var _scene: PackedScene
 var _rng := RandomNumberGenerator.new()
 var _furthest_top := INF
+# The call up, {} for none: {"t" -- ticks into it, "friend" -- the prisoner it
+# follows, or null for the building's -- "seed", which shapes its burst}.
+var _call := {}
+var _call_next := 0             # ticks before the next call may start
+var _ticks := 0                 # the calls' clock, for who called last
+var _serial := 0                # the calls' and helps' seeds
+var _first := ""                # the first building's name, "" for none
+var _first_opened := false
+var _first_seen := 0            # ticks it has been in the frame, this time
+var _first_called := -1         # _ticks it last called at
 
 
 # What the game keeps per player about the prisoners -- Player's pows and
@@ -160,6 +212,8 @@ class Friend:
 	var direction_x := 0.0
 	var direction_y := 1.0
 	var wandering := 0
+	var waited := 0         # ticks out and not picked up, for his call
+	var called := -1        # Level3DFriends._ticks he last called at
 	var leg_frames := 0
 	# Walk cycles covered and ticks gone, for a model that walks by its stride
 	# and waves by the clock.
@@ -207,12 +261,18 @@ func _ready() -> void:
 
 # Each of the level's barracks and hangars to the nearest HUT or HOUSE of the
 # map. `centres` is name -> level x, z of the building's footprint, `kinds`
-# name -> the kind of destructible it is.
-func bind(centres: Dictionary, kinds: Dictionary) -> void:
+# name -> the kind of destructible it is, `roofs` name -> the height of its
+# top, which its HELP comes from.
+func bind(centres: Dictionary, kinds: Dictionary, roofs := {}) -> void:
 	for name in centres:
 		var hut := HUT_KINDS.has(kinds[name])
 		if not hut and not HOUSE_KINDS.has(kinds[name]):
 			continue
+		var centre: Vector2 = centres[name]
+		# Half its height: the tilted camera sees from the south, so the top's
+		# middle is drawn at the roof's back edge, and half way up at the
+		# middle of the roof it shows.
+		_roofs[name] = Vector3(centre.x, roofs.get(name, HELP_HEIGHT) * 0.5, centre.y)
 		var at := Level3DMap.to_map(centres[name])
 		var best = null
 		var best_d := INF
@@ -228,6 +288,11 @@ func bind(centres: Dictionary, kinds: Dictionary) -> void:
 			if verbose:
 				print("%s is the %s at %d, %d (%.0f px off)" % [name, "hut" if hut else "house",
 						best.x, best.y, best_d])
+	# The first the BTR comes to: the furthest south, the level's start.
+	_first = ""
+	for name in _bound:
+		if _first == "" or _roofs[name].z > _roofs[_first].z:
+			_first = name
 
 
 static func _centre(b: Dictionary) -> Vector2:
@@ -238,9 +303,12 @@ func reset() -> void:
 	for f in friends:
 		f.root.queue_free()
 	friends.clear()
-	for h in _helps:
-		(h.label as Node).queue_free()
 	_helps.clear()
+	_call = {}
+	_call_next = 0
+	_first_opened = false
+	_first_seen = 0
+	_first_called = -1
 	for c in carriers:
 		c.reset()
 	_furthest_top = INF
@@ -262,6 +330,10 @@ func building_destroyed(name: String) -> void:
 	if not _bound.has(name):
 		return
 	var b: Dictionary = _bound[name]
+	if name == _first:
+		_first_opened = true
+		if not _call.is_empty() and _call.friend == null:
+			_call = {}
 	map.trigger_group(b.group)
 	if b.type == Triggers.HUT:
 		guns.explode(_level3(Vector2(b.x + 80, b.y + 96)))
@@ -269,19 +341,10 @@ func building_destroyed(name: String) -> void:
 		scored.call(HUT_POINTS)
 	else:
 		guns.explode(_level3(Vector2(b.x + 96, b.y + 96)))
-		var label := Label3D.new()
-		label.text = "HELP"
-		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		label.font_size = 96
-		label.outline_size = 24
-		label.modulate = Color(1, 1, 1)
-		label.no_depth_test = true
-		label.visible = false
-		add_child(label)
-		var at := Level3DMap.to_level(Vector2(b.x + 96, b.y + 84))
-		label.position = Vector3(at.x, HELP_HEIGHT, at.y)
+		_serial += 1
 		_helps.append({"x": b.x + 96, "y": b.y + 84, "left": b.type == Triggers.HOUSE_LEFT,
-				"count": HELP_FIRST, "blinks": 0, "label": label})
+				"count": HELP_FIRST, "blinks": 0, "on": false, "age": 0, "seed": _serial,
+				"at": _roofs[name]})
 		scored.call(HOUSE_POINTS)
 
 
@@ -292,22 +355,79 @@ func _level3(p: Vector2) -> Vector3:
 
 # Help.update.
 func _update_help(h: Dictionary) -> bool:
+	h.age += 1
 	h.count -= 1
 	if h.count != 0:
 		return false
 	h.count = HELP_BLINK
-	var label: Label3D = h.label
-	label.visible = not label.visible
-	if label.visible:
+	h.on = not h.on
+	h.age = 0
+	if h.on:
 		return false
 	h.blinks += 1
 	if h.blinks < HELP_BLINKS:
 		return false
-	label.queue_free()
 	_spawn(h.x + (-24 if h.left else 24), h.y + 28,
 			FriendlySoldierType.HOUSE_LEFT_WALKING if h.left else FriendlySoldierType.HOUSE_RIGHT_WALKING,
 			2 + _rng.randi_range(0, 2))
 	return true
+
+
+# The calls: the one up run out, and when the gap after it is over, the next
+# of those who may call -- the one who called least lately.
+func _update_calls(view: Rect2) -> void:
+	if not calls or held:
+		return
+	_ticks += 1
+	var first_in := _first != "" and not _first_opened \
+			and view.has_point(Vector2(_roofs[_first].x, _roofs[_first].z))
+	_first_seen = _first_seen + 1 if first_in else 0
+	if not _call.is_empty():
+		var f: Friend = _call.friend
+		_call.t += 1
+		if (f != null and not friends.has(f)) or _call.t >= CALL_ON:
+			_call = {}
+			_call_next = _rng.randi_range(CALL_GAP.x, CALL_GAP.y)
+		return
+	_call_next -= 1
+	if _call_next > 0 or not _helps.is_empty():
+		return
+	var best: Friend = null
+	var best_called := INF
+	var building := first_in and _first_seen >= BUILDING_FIRST
+	if building:
+		best_called = _first_called
+	for f in friends:
+		if f.waited >= PRISONER_WAIT and f.called < best_called \
+				and view.has_point(Vector2(f.root.position.x, f.root.position.z)):
+			best = f
+			best_called = f.called
+			building = false
+	if best == null and not building:
+		return
+	_serial += 1
+	_call = {"t": 0, "friend": best, "seed": _serial}
+	if best != null:
+		best.called = _ticks
+	else:
+		_first_called = _ticks
+	if verbose:
+		print("HELP from %s" % (_first if best == null else "the prisoner at %.0f, %.0f" % [best.x, best.y]))
+
+
+# Every HELP showing now, for Level3DCallouts: {"at" -- level metres, where
+# its tail points -- "small" -- a prisoner's -- "age" -- ticks it has been on
+# -- "seed"}.
+func help_marks() -> Array[Dictionary]:
+	var marks: Array[Dictionary] = []
+	for h in _helps:
+		if h.on:
+			marks.append({"at": h.at, "small": false, "age": h.age, "seed": h.seed})
+	if not _call.is_empty() and marks.is_empty():
+		var f: Friend = _call.friend
+		var at: Vector3 = _roofs[_first] if f == null else f.root.position + Vector3(0.0, PRISONER_HELP_HEIGHT, 0.0)
+		marks.append({"at": at, "small": f != null, "age": _call.t, "seed": _call.seed})
+	return marks
 
 
 # ----------------------------------------------------------------------------
@@ -424,12 +544,15 @@ func tick() -> void:
 	for i in range(_helps.size() - 1, -1, -1):
 		if _update_help(_helps[i]):
 			_helps.remove_at(i)
+	_update_calls(view)
 	for i in range(friends.size() - 1, -1, -1):
 		var f := friends[i]
 		_update(f)
 		if not friends.has(f):
 			continue    # at the helicopter
 		_place(f)
+		if f.state == FriendlySoldier.STATE_WANDERING or f.state == FriendlySoldier.STATE_WAVING:
+			f.waited += 1
 		# Enemy.check_bounds
 		if f.y + SOLID.position.y > _furthest_top + Level3DSoldiers.CAMERA_BOUND + Level3DSoldiers.REMOVE_BOUND:
 			_remove(f)

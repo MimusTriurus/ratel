@@ -1411,6 +1411,7 @@ func _add_destructibles() -> void:
 		}
 		_set_destroyed(building, false)
 		destructibles[building].footprint = _footprint(root)
+		destructibles[building].roof = _roof(root)
 
 
 const FLASH_NAMES: Array[String] = ["Blast_Flash", "Gate_Flash", "FX_Blast_Flash"]
@@ -1599,6 +1600,17 @@ func _footprint(root: Node) -> Rect2:
 	return box
 
 
+# The top of what is standing under `root`, as _footprint has it: where a
+# building's HELP comes from (Level3DFriends.bind).
+func _roof(root: Node) -> float:
+	var top := 0.0
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		if mesh_instance.scale.x > HIDDEN_SCALE:
+			top = maxf(top, (mesh_instance.global_transform * mesh_instance.get_aabb()).end.y)
+	return top
+
+
 # ----------------------------------------------------------------------------
 # The bunkers' guns, and the BTR's dying to them: level3d_guns.gd has the rules.
 #
@@ -1733,6 +1745,8 @@ func _add_guns(level: Node) -> void:
 	friends.frame = _view_frame
 	friends.ground = _walker_ground_at
 	friends.player_position = guns.player_position
+	friends.calls = settings.hud and settings.hud_help
+	_callouts.marks = friends.help_marks
 	friends.scored = guns.scored
 	add_child(friends)
 	rescue = Level3DRescue.new()
@@ -1757,10 +1771,12 @@ func _add_guns(level: Node) -> void:
 	soldiers.more_solids = friends.solid_boxes
 	var centres := {}
 	var kinds := {}
+	var roofs := {}
 	for building in destructibles:
 		centres[building] = destructibles[building].footprint.get_center()
 		kinds[building] = destructibles[building].kind
-	friends.bind(centres, kinds)
+		roofs[building] = destructibles[building].roof
+	friends.bind(centres, kinds, roofs)
 	friends.carriers.append(crews[0].carrier)
 	# The players' weapons are wired to all of these in _arm.
 	guns.travel_hit = _on_travel_hit
@@ -1955,6 +1971,8 @@ func _make_hud() -> void:
 	layer.add_child(_banner)
 	_pad_arrow = Level3DArrow.new()
 	layer.add_child(_pad_arrow)
+	_callouts = Level3DCallouts.new()
+	layer.add_child(_callouts)
 	_banners = Level3DBanners.new()
 	layer.add_child(_banners)
 	var crosshair := Level3DCrosshair.new()
@@ -1965,6 +1983,7 @@ func _make_hud() -> void:
 # The lines' corner and size, from Level3DSettings (Level3DHud draws them),
 # and their icons rendered again for a new size.
 func _layout_hud() -> void:
+	_callouts.scale_factor = settings.hud_scale
 	for c in crews:
 		c.hud.bottom = settings.hud_corner == Level3DSettings.HudCorner.BOTTOM
 		c.hud.scale_factor = settings.hud_scale
@@ -2054,6 +2073,8 @@ static func _rate_text(rate: float) -> String:
 # and it is there, or on its way, to take them. Every frame, after the camera
 # has moved; the arrow itself hides while the pad is in the frame.
 var _pad_arrow: Level3DArrow
+# The prisoners' HELP, the game's and the calls (Level3DFriends.help_marks).
+var _callouts: Level3DCallouts
 
 func _update_pad_arrow() -> void:
 	_pad_arrow.shown = settings.hud and settings.hud_pad_arrow \
@@ -2063,6 +2084,7 @@ func _update_pad_arrow() -> void:
 		_pad_arrow.target = rescue.pad_position()
 		_pad_arrow.bottom_inset = _hud_bottom_inset()
 	_pad_arrow.queue_redraw()
+	_callouts.camera = camera
 
 
 # The three moments (Level3DBanners), each on the edge of what it marks: the
@@ -2213,6 +2235,8 @@ func _apply_settings() -> void:
 	_apply_resolution()
 	_pixels.visible = settings.look == Level3DSettings.Look.PIXELS
 	_crt.visible = settings.crt
+	if friends != null:
+		friends.calls = settings.hud and settings.hud_help
 	_layout_hud()
 	_show_state()
 	Level3DAudio.set_mode(Level3DAudio.Mode.CLASSIC if settings.sound_mode == Level3DSettings.SoundMode.CLASSIC
@@ -2450,6 +2474,8 @@ func _physics_process(delta: float) -> void:
 			_explode_btr(c, "ran into a tank")
 		elif boss.bump(box, c.invincible > 0):
 			_explode_btr(c, "ran into a boss tank")
+	# No calls before the BTR is down off the Chinook and can go to them.
+	friends.held = chinook != null
 	guns.tick()
 	soldiers.tick()
 	boats.tick()
