@@ -3,7 +3,10 @@
 # thin black line outside that, rising and fading
 # (level3d_preview.gd, rescue.scored). Not the game's: its points only ever
 # went to the score, and in the 3D frame, at the far end of the screen from
-# the HUD, that went unseen.
+# the HUD, that went unseen. And, a size bigger and longer, "1UP" and
+# "POWER UP" over the jeep that got the life or the upgrade, going along with
+# it (`add_text`): those come in the thick of things, anywhere on the stage,
+# and the HUD's flash alone, at the frame's edge, goes by unseen there.
 #
 # On the HUD's layer, in its 2048x1152 layout, as the HELP calls are
 # (Level3DCallouts): the same size wherever it is in the tilted frame and
@@ -23,9 +26,11 @@ extends Control
 
 const GLYPH := 32.0             # at 100%
 const LIFE := 1.2               # seconds
-const RISE := 2.0               # glyphs it rises over LIFE, steadily: eased, the one after would catch it up
+const RISE := 2.0               # glyphs it rises over LIFE, steadily: eased, one under would catch it up
 const FADE := 0.4               # the last seconds of LIFE it fades out over
-const SPACING := 1.2            # glyphs a pop rises before the next shows
+const SPACING := 1.2            # glyphs from a pop's top to the foot of one stacked over it
+const BIG := 1.25               # a jeep's pop's glyphs, of GLYPH
+const BIG_LIFE := 1.6
 # The hyphen's bar and the shadow under it, in the glyph's 32 font pixels:
 # the plus is it and the same bar stood upright through its middle.
 const BAR := Rect2(0, 12, 28, 4)
@@ -58,9 +63,13 @@ class Pop:
 	extends CanvasGroup
 
 	var at: Vector3
+	var follow: Callable        # `follow.call()`, where it is now, for a jeep's; or `at`
+	var big := false
+	var life := LIFE
 	var text: String
 	var colour: Color
-	var age := 0.0              # seconds; < 0 waiting for the one before it
+	var age := 0.0              # seconds
+	var lift := 0.0             # px over where it would be, clear of those up before it (_push)
 	var x := 0.0
 	var y := 0.0
 	var g := 32.0
@@ -76,8 +85,9 @@ func _init() -> void:
 	_material = ShaderMaterial.new()
 	_material.shader = shader
 	var font := Atlas.new(Main.IMAGES + "font.png", Main.IMAGES + "font.xml")
-	for c in "0123456789":
-		_glyphs[c.unicode_at(0)] = font.get_sprite("font-black-%s.png" % c)
+	for i in Main.CHARS.length():
+		var c := Main.CHARS.unicode_at(i)
+		_glyphs[c] = font.get_sprite("font-black-%s.png" % Main._character_name(c))
 	# The shadow's colour off the hyphen, under its bar.
 	var hyphen: Spr = font.get_sprite("font-black-hyphen.png")
 	if hyphen != null:
@@ -86,17 +96,57 @@ func _init() -> void:
 		_shadow = image.get_pixelv(Vector2i(p))
 
 
-# A pop of `points` at `at`, in `colour`. With two players two prisoners can
-# board on the same tick: a pop waits, unseen, until the one before it has
-# risen SPACING glyphs, so that they read as two lines and not one smudge.
+# A pop of `points` at `at`, in `colour`.
 func add(at: Vector3, points: int, colour: Color) -> void:
 	var pop := Pop.new()
 	pop.at = at
 	pop.text = "+%d" % points
 	pop.colour = colour
-	if not _pops.is_empty():
-		var clear_at := LIFE * SPACING / RISE
-		pop.age = minf(_pops.back().age - clear_at, 0.0)
+	_push(pop)
+
+
+# A jeep's pop, `text` over `follow.call()` wherever that goes, a size bigger,
+# in `colour`.
+func add_text(follow: Callable, text: String, colour: Color) -> void:
+	var pop := Pop.new()
+	pop.follow = follow
+	pop.at = follow.call()
+	pop.text = text
+	pop.colour = colour
+	pop.big = true
+	pop.life = BIG_LIFE
+	_push(pop)
+
+
+# With two players two prisoners can board on the same tick, and a jeep can
+# get a life and an upgrade on one: a pop that would cross one of its own
+# kind already up starts over it instead, lifted clear of its top by SPACING
+# of its glyphs, so that they read as lines and not one smudge. Lifted, not
+# held back: each comes with its sound (the 1UP with extra_life, the POWER UP
+# with upgrade), and one held back came half a second after it. A jeep's pop
+# and the points are left to cross: the jeep's is over the jeep, where it was
+# got, and drawn over the points (z_index); lifted clear of them, it was
+# away up the frame from it. They all rise at the one speed, so a stack stays
+# a stack.
+func _push(pop: Pop) -> void:
+	pop.g = _glyph(pop)
+	var anchor := _anchor(pop)
+	var width := pop.g * pop.text.length()
+	var moved := true
+	while moved:
+		moved = false
+		for before in _pops:
+			if before.big != pop.big:
+				continue
+			var g := _glyph(before)
+			if absf(anchor.x - _anchor(before).x) >= (width + g * before.text.length()) * 0.5:
+				continue
+			var b_foot := _anchor(before).y - _rise(before) - before.lift
+			var b_top := b_foot - g
+			var foot := anchor.y - pop.lift
+			if foot > b_top - g * (SPACING - 1.0) and foot - pop.g < b_foot:
+				pop.lift = anchor.y - b_top + g * (SPACING - 1.0)
+				moved = true
 	pop.rings = Node2D.new()
 	pop.rings.material = _material
 	pop.rings.draw.connect(_draw_rings.bind(pop))
@@ -105,8 +155,27 @@ func add(at: Vector3, points: int, colour: Color) -> void:
 	pop.digits.draw.connect(_draw_digits.bind(pop))
 	pop.add_child(pop.digits)
 	pop.visible = false
+	pop.z_index = 1 if pop.big else 0
 	add_child(pop)
 	_pops.append(pop)
+
+
+# How far it has risen: RISE of the points' glyphs over LIFE, whatever its
+# own size and life.
+func _rise(pop: Pop) -> float:
+	return RISE * GLYPH * scale_factor * maxf(pop.age, 0.0) / LIFE
+
+
+# Its glyphs' size: whole font pixels.
+func _glyph(pop: Pop) -> float:
+	return maxf(roundf(GLYPH * scale_factor * (BIG if pop.big else 1.0) / 8.0), 1.0) * 8.0
+
+
+# Where it starts from on the screen, its foot's middle.
+func _anchor(pop: Pop) -> Vector2:
+	if camera == null or camera.is_position_behind(pop.at):
+		return Vector2.ZERO
+	return camera.unproject_position(pop.at)
 
 
 func clear() -> void:
@@ -116,23 +185,23 @@ func clear() -> void:
 
 
 func _process(delta: float) -> void:
-	var g := maxf(roundf(GLYPH * scale_factor / 8.0), 1.0) * 8.0     # whole font pixels
 	for pop: Pop in _pops.duplicate():
 		pop.age += delta
-		if pop.age >= LIFE:
+		if pop.age >= pop.life:
 			_pops.erase(pop)
 			pop.queue_free()
 			continue
+		if pop.follow.is_valid():
+			pop.at = pop.follow.call()
 		pop.visible = pop.age >= 0.0 and camera != null and not camera.is_position_behind(pop.at)
 		if not pop.visible:
 			continue
-		var t := pop.age / LIFE
-		var rise := RISE * g * t
+		var g := _glyph(pop)
 		var anchor := camera.unproject_position(pop.at)
 		pop.g = g
 		pop.x = roundf(anchor.x - g * pop.text.length() * 0.5)
-		pop.y = roundf(anchor.y - g - rise)
-		pop.self_modulate.a = clampf((LIFE - pop.age) / FADE, 0.0, 1.0)
+		pop.y = roundf(anchor.y - g - _rise(pop) - pop.lift)
+		pop.self_modulate.a = clampf((pop.life - pop.age) / FADE, 0.0, 1.0)
 		pop.rings.queue_redraw()
 		pop.digits.queue_redraw()
 

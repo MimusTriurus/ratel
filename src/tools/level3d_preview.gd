@@ -461,6 +461,9 @@ class Crew:
 	var rocket_held := false
 	# Its engine, two loops on it mixed by speed (_update_engine_sound).
 	var engine_level := 0.0
+	# The weapon's level last shown, for the POWER UP over it (_show_state):
+	# -1 before the first.
+	var weapon_shown := -1
 
 
 # Every key event to HumanInput.key_event, the Escape menu or not (it pauses
@@ -1699,6 +1702,16 @@ var _held: Array = []
 var _ticks := 0
 
 
+# Over the player's jeep, as it goes: "1UP", "POWER UP" (Level3DScorePops).
+# CREW_POP_HEIGHT is over the turret.
+const CREW_POP_HEIGHT := 2.2
+
+func _crew_pop(c: Crew, text: String) -> void:
+	if settings.hud:
+		_score_pops.add_text(func() -> Vector3: return c.btr.position + Vector3(0.0, CREW_POP_HEIGHT, 0.0),
+				text, _crew_colour(c.index))
+
+
 # PlayerState.add_points: the points, and a life at 20000 and every 50000
 # after it, which the preview went without until the HUD showed lives coming.
 func _add_points(c: Crew, points: int) -> void:
@@ -1707,6 +1720,7 @@ func _add_points(c: Crew, points: int) -> void:
 	if (before < 20000 and c.score >= 20000) 			or ((before - 20000) / 50000 != (c.score - 20000) / 50000):
 		c.lives += 1
 		Level3DAudio.play("extra_life")
+		_crew_pop(c, "1UP")
 		if guns.verbose:
 			print("%dP extra life at %d, %d lives" % [c.index + 1, c.score, c.lives])
 	_show_state()
@@ -1816,9 +1830,10 @@ func _add_guns(level: Node) -> void:
 	rescue.scored = func(points: int, carrier: Level3DFriends.Carrier):
 		for c in crews:
 			if c.carrier == carrier:
-				_add_points(c, points)
+				# The points first, and then the 1UP they may bring.
 				if settings.hud:
 					_score_pops.add(rescue.top_position(), points, _crew_colour(c.index))
+				_add_points(c, points)
 		_show_state()
 	add_child(rescue)
 	if Level3DMap.is_stage_one():
@@ -2101,6 +2116,10 @@ func _show_state() -> void:
 		line.pows = c.carrier.pows
 		line.has_missiles = c.carrier.has_missiles
 		line.missile_power = c.carrier.missile_power
+		var weapon := 1 + c.carrier.missile_power if c.carrier.has_missiles else 0
+		if weapon > c.weapon_shown and c.weapon_shown >= 0:
+			_crew_pop(c, "POWER UP")
+		c.weapon_shown = weapon
 		line.modes = ""
 		line.cheats = ""
 		if c.index == 0:
