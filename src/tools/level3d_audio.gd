@@ -13,6 +13,13 @@
 #            engines, the enemies' guns, rounds landing, the sea -- has no
 #            file, and is silent. It is the base, and does not change;
 #            tools/sfx3d_classic.gd made it.
+#   CHIP     assets/sfx3d/chip/, not a mode: CLASSIC's gaps, filled in when
+#            set_chip says (the Sound tab, off by default). An 8-bit sound,
+#            written as an NES game wrote its effects (tools/sfx_nes.py), for
+#            each sound the original had none for, and nothing for one it
+#            had: classic's own file always comes first. Played as classic
+#            plays the rest, but looped where "loop" says, since without a
+#            loop an engine or the sea would stop after a second.
 #   MODERN   assets/sfx3d/modern/, positional, looped where "loop" says,
 #            pitched, with the menu's per-sound gains. It started as a copy of
 #            classic; a new sound goes in by replacing its file, or by putting
@@ -49,7 +56,8 @@
 #     pitch      random pitch in MODERN, a fraction (0.05 = +-5 %)
 #     loop       looped in MODERN, for attach_loop and stream; no variants, no
 #                pitch. CLASSIC plays the file once, as the original replays
-#                its helicopters when they run out, and the modules do too
+#                its helicopters when they run out, and the modules do too;
+#                a CHIP file loops, there being no original to replay it
 #     voices     how many can sound at once; the oldest is cut off after that
 #     gap        seconds: a second play inside it is dropped (CLASSIC takes
 #                the longer of it and Main's 125 ms)
@@ -66,6 +74,7 @@ extends Node3D
 enum Mode { CLASSIC, MODERN }
 
 const DIRS := {Mode.CLASSIC: "res://assets/sfx3d/classic/", Mode.MODERN: "res://assets/sfx3d/modern/"}
+const CHIP_DIR := "res://assets/sfx3d/chip/"
 const MODE_KEYS := {Mode.CLASSIC: "classic", Mode.MODERN: "modern"}
 const ORIGINAL := "res://assets/soundeffects/"
 const MUSIC_DIRS := {Mode.CLASSIC: "res://assets/music3d/classic/", Mode.MODERN: "res://assets/music3d/modern/"}
@@ -245,6 +254,7 @@ static var _mix := {}
 static var _mix_saved := {}     # as the file has it, for is_mix_changed
 
 static var mode := Mode.MODERN
+static var chip := false
 # Whether MODERN plays ADAPTIVE's songs as they follow the fight, or linearly.
 static var adaptive := true
 # The menu's gain for each sound, 0 to MAX_GAIN over its "db" (set_gains):
@@ -525,6 +535,18 @@ static func set_gains(gains: Dictionary) -> void:
 static func bus(name: String) -> StringName:
 	var bus_name: StringName = resolve(name).spec.get("bus", AudioSettings.SFX_BUS)
 	return bus_name if AudioServer.get_bus_index(bus_name) >= 0 else AudioSettings.SFX_BUS
+
+
+# CLASSIC's gaps filled in from CHIP_DIR, or left silent as the original
+# left them. What is sounding is made again from the new set, as a change of
+# mode makes it.
+static func set_chip(on: bool) -> void:
+	if on == chip:
+		return
+	chip = on
+	_resolved.clear()
+	if _current != null and mode == Mode.CLASSIC:
+		_current._remake()
 
 
 static func set_mode(new_mode: Mode) -> void:
@@ -916,15 +938,20 @@ static func end_music_audition() -> void:
 	c._music.play(held[2])
 
 
-# The mode's folder's variants of `name`, or nothing.
+# The mode's folder's variants of `name`, or CHIP_DIR's for a gap in
+# CLASSIC's while set_chip has it on, or nothing.
 static func resolve(name: String) -> Dictionary:
 	if _resolved.has(name):
 		return _resolved[name]
 	var spec := spec_of(name)
-	var loop: bool = spec.get("loop", false) and mode == Mode.MODERN
+	var dir: String = DIRS[mode]
+	var from_chip := mode == Mode.CLASSIC and chip and not ResourceLoader.exists("%s%s_0.ogg" % [dir, name]) 			and ResourceLoader.exists("%s%s_0.ogg" % [CHIP_DIR, name])
+	if from_chip:
+		dir = CHIP_DIR
+	var loop: bool = spec.get("loop", false) and (mode == Mode.MODERN or from_chip)
 	var variants: Array[AudioStream] = []
 	for k in (1 if spec.get("loop", false) else MAX_VARIANTS):
-		var path := "%s%s_%d.ogg" % [DIRS[mode], name, k]
+		var path := "%s%s_%d.ogg" % [dir, name, k]
 		if not ResourceLoader.exists(path):
 			break
 		var stream: AudioStream = load(path)
@@ -936,7 +963,7 @@ static func resolve(name: String) -> Dictionary:
 			stream = stream.duplicate()
 			(stream as AudioStreamOggVorbis).loop = loop
 		variants.append(stream)
-	var entry := {"stream": null, "db": mix_db(name), "spec": spec}
+	var entry := {"stream": null, "db": mix_db(name), "spec": spec, "chip": from_chip}
 	if not variants.is_empty():
 		var pitch: float = spec.get("pitch", 0.0) if mode == Mode.MODERN else 0.0
 		entry.stream = variants[0] if spec.get("loop", false) else _randomizer(variants, pitch)

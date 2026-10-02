@@ -69,6 +69,7 @@ WindowsApps). Blender — Store-сборка, запускается через
 | `measure_loudness.gd` | пик и громкость (самые громкие 50 мс) файла — от этого ставится первый уровень нового звука в миксе | `godot --path . --headless --script tools/measure_loudness.gd -- res://assets/sfx3d/modern/gun_0.ogg` |
 | `sfx_tails.py` | укорачивает хвосты modern-звуков (эхо и раскаты после удара): исходники берёт из git, пишет в `assets/sfx3d/modern/`; таблица `TAILS` в начале файла | `py tools/sfx_tails.py` (`--listen` — до/после в `build/sfx_tails/`, `имя --try t0 t1` — проба без записи в assets) |
 | `sfx_chiptune.py` | modern-эффекты так, как их сделала бы NES (каналы 2A03 и DPCM), для прослушивания в `build/sfx3d_chip/`; нужны librosa и soundfile из venv Basic Pitch | `build/.venv_basic_pitch/Scripts/python tools/sfx_chiptune.py` |
+| `sfx_nes.py` | 8-bit звуки для 14 пропусков классики (двигатели, выстрелы врагов, попадания, окружение): таблица регистров NES по кадрам по образцу ближайшего звука оригинала; `--install` кладёт их в `assets/sfx3d/chip/`, которую классика берёт при включённом «8-bit звуки…» на вкладке «Звук»; нужен venv Basic Pitch | `build/.venv_basic_pitch/Scripts/python tools/sfx_nes.py` (`--install` — в игру, иначе только пары для прослушивания в `build/sfx_nes/listen.ogg`) |
 | `audio_check.ps1` | что Windows делает со звуком: устройство вывода, громкость, mute каждого приложения; когда превью молчит | `powershell -ExecutionPolicy Bypass -File tools/audio_check.ps1` |
 
 После любого нового или изменённого `.ogg` — `godot --path . --headless --import`,

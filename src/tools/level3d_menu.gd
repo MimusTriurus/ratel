@@ -111,6 +111,7 @@ var _master_volume: HSlider
 var _music_volume: HSlider
 var _effects_volume: HSlider
 var _enemy_fire: CheckBox
+var _classic_chip: CheckBox
 var _enemy_fire_volume: HSlider
 var _gain_sliders := {}      # sound -> HSlider
 var _gains_reset: Button
@@ -224,12 +225,16 @@ func refresh() -> void:
 	_effects_volume.set_value_no_signal(settings.effects_volume * 100.0)
 	_enemy_fire.set_pressed_no_signal(settings.enemy_fire)
 	_enemy_fire_volume.set_value_no_signal(settings.enemy_fire_volume * 100.0)
-	# The classic mode has no enemies' fire to switch: the original had none.
+	# The classic mode has no enemies' fire to switch: the original had none,
+	# unless its gaps are filled in with 8-bit sounds.
 	var modern := settings.sound_mode == Level3DSettings.SoundMode.MODERN
+	var fire := modern or settings.classic_chip
 	_boss_music.select(settings.boss_music)
 	_boss_music.disabled = not modern
-	_enemy_fire.disabled = not modern
-	_enemy_fire_volume.editable = modern and settings.enemy_fire
+	_classic_chip.set_pressed_no_signal(settings.classic_chip)
+	_classic_chip.disabled = modern
+	_enemy_fire.disabled = not fire
+	_enemy_fire_volume.editable = fire and settings.enemy_fire
 	for sound in _gain_sliders:
 		var slider: HSlider = _gain_sliders[sound]
 		slider.set_value_no_signal(float(settings.sound_gains.get(sound, 1.0)) * 100.0)
@@ -345,6 +350,12 @@ func _make_sound_tab() -> Control:
 				_preview("pickup"))
 	_note(tab, "Классический: звуки оригинальной игры, как в ней. "
 			+ "Новый: объёмный звук, двигатели, окружение, выстрелы врагов и своя музыка.")
+	_classic_chip = _check(tab, "8-bit звуки там, где в оригинале их нет",
+			func(on: bool):
+				settings.classic_chip = on
+				_preview("enemy_cannon"))
+	_note(tab, "Только в классическом режиме: двигатели, выстрелы врагов, попадания, море и джунгли "
+			+ "в звучании NES. Выключено — молчат, как в оригинале.")
 	var boss := _grid(tab)
 	_boss_music = _choice(boss, "Музыка босса", ["Адаптивная", "Линейная"],
 			func(i: int): settings.boss_music = i)

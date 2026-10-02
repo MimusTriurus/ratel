@@ -1940,6 +1940,7 @@ func _apply_settings() -> void:
 	Level3DAudio.set_mode(Level3DAudio.Mode.CLASSIC if settings.sound_mode == Level3DSettings.SoundMode.CLASSIC
 			else Level3DAudio.Mode.MODERN)
 	Level3DAudio.set_adaptive(settings.boss_music == Level3DSettings.BossMusic.ADAPTIVE)
+	Level3DAudio.set_chip(settings.classic_chip)
 	Level3DAudio.set_volumes(settings.master_volume, settings.music_volume, settings.effects_volume,
 			settings.enemy_fire_volume, settings.enemy_fire)
 	Level3DAudio.set_gains(settings.sound_gains)

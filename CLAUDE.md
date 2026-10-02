@@ -622,6 +622,22 @@ by putting one where there is none. `SOUNDS`' `"classic"` / `"modern"` sub-dicts
 what differs for one mode -- a new blast that already has the hit in it
 `"with": ""`.
 
+Classic's fourteen gaps can be filled in, not changed: `assets/sfx3d/chip/`
+holds an 8-bit `<name>_0.ogg` for each sound the original had none for and
+nothing else, and the Sound tab's "8-bit звуки там, где в оригинале их нет"
+(`Level3DSettings.classic_chip`, off by default, `Level3DAudio.set_chip`)
+has `resolve` take a classic sound from there when classic has no file of
+its own. Played as classic plays the rest, but looped where `SOUNDS` says,
+or an engine would stop after a second; and with it on the enemies' fire
+switch works in classic too. They are written, not analysed -- thirteen of
+the fourteen have no modern file either -- by `tools/sfx_nes.py`: a table of
+the APU's registers a frame each, as NES effects were, after the classic
+sound nearest to each (its length, its noise periods, how its volume
+moves), through `sfx_chiptune.py`'s model of the 2A03 with a Famicom's
+output filters, since the original's recordings keep the low end the NES's
+440 Hz high-pass takes out. `--install` writes the folder; the verify
+script holds it to the gaps.
+
 The gains are not in `SOUNDS`: `assets/sfx3d/mix.json` holds every sound's
 and every music part's, in dB, for each mode, one to a line. The Escape
 menu's Mixer tab (always there, as the other tabs are) is where they are set

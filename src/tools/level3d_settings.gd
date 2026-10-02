@@ -97,6 +97,10 @@ var sound_mode := SoundMode.MODERN
 # (Level3DAudio.ADAPTIVE), or the same parts as one track.
 enum BossMusic { ADAPTIVE, LINEAR }
 var boss_music := BossMusic.LINEAR   # the default: adaptive was tried as it and turned down
+# The classic mode's gaps -- the engines, the enemies' fire, rounds landing,
+# the sea -- filled in with 8-bit sounds (Level3DAudio.set_chip), or silent
+# as the original was.
+var classic_chip := false
 var master_volume := 1.0
 var music_volume := 0.8
 var effects_volume := 1.0
@@ -171,6 +175,7 @@ func load_saved() -> void:
 	hud_scale = float(scale) if (scale is int or scale is float) and HUD_SCALES.has(float(scale)) else 1.0
 	sound_mode = clampi(config.get_value("sound", "mode", sound_mode), 0, SoundMode.size() - 1)
 	boss_music = clampi(config.get_value("sound", "boss_music", boss_music), 0, BossMusic.size() - 1)
+	classic_chip = bool(config.get_value("sound", "classic_chip", classic_chip))
 	master_volume = _volume(config.get_value("sound", "master", master_volume))
 	music_volume = _volume(config.get_value("sound", "music", music_volume))
 	effects_volume = _volume(config.get_value("sound", "effects", effects_volume))
@@ -226,6 +231,7 @@ func save() -> void:
 	config.set_value("interface", "scale", hud_scale)
 	config.set_value("sound", "mode", sound_mode)
 	config.set_value("sound", "boss_music", boss_music)
+	config.set_value("sound", "classic_chip", classic_chip)
 	config.set_value("sound", "master", master_volume)
 	config.set_value("sound", "music", music_volume)
 	config.set_value("sound", "effects", effects_volume)

@@ -1,6 +1,7 @@
 # Checks the 3D preview's sound (src/tools/level3d_audio.gd) in both of its
-# modes. Each mode's folder, assets/sfx3d/classic/ and modern/, holds
-# nothing that is no sound's in Level3DAudio.SOUNDS; classic's must be what
+# modes, and the 8-bit sounds that fill in the classic one's gaps
+# (assets/sfx3d/chip/). Each mode's folder, assets/sfx3d/classic/ and
+# modern/, holds nothing that is no sound's in Level3DAudio.SOUNDS; classic's must be what
 # tools/sfx3d_classic.gd made, <name>_0.ogg alone, the sound's "original"
 # byte for byte, and nothing for a sound with none. A sound with no file is
 # silent, in either mode, and not wrong. Every sound is then resolved,
@@ -28,6 +29,7 @@ func _initialize() -> void:
 	for mode in [Level3DAudio.Mode.MODERN, Level3DAudio.Mode.CLASSIC]:
 		Level3DAudio.set_mode(mode)
 		failures += await _check_mode()
+	failures += await _check_chip()
 	# A loop on a unit through a change of mode: put back on it in the new
 	# mode, if the new mode has something to play.
 	var unit := Node3D.new()
@@ -168,6 +170,66 @@ func _check_mode() -> int:
 		await process_frame
 	print("original %d, new %d, missing (silent) %d of %d%s" % [counts.original,
 			counts.new, counts.missing, Level3DAudio.SOUNDS.size(), "" if failures == 0 else ", %d FAILED" % failures])
+	return failures
+
+
+# The classic mode's gaps, filled in (Level3DAudio.set_chip): CHIP_DIR holds
+# a <name>_0.ogg for every sound the original had none for, and nothing for
+# one it had. With the switch on, classic plays each of those from it --
+# looped where the sound loops, which classic's own never are -- and its own
+# file for the rest; off, they are silent again; and modern never takes one.
+func _check_chip() -> int:
+	var failures := 0
+	var dir := Level3DAudio.CHIP_DIR
+	print("--- chip, %s" % dir)
+	for file in DirAccess.get_files_at(dir):
+		if file.get_extension() != "ogg":
+			continue
+		var name := file.get_basename().trim_suffix("_0")
+		if not file.ends_with("_0.ogg") or not Level3DAudio.SOUNDS.has(name):
+			failures += _fail("%s%s is no sound's" % [dir, file])
+		elif Level3DAudio.SOUNDS[name].has("original"):
+			failures += _fail("%s%s: the original has a sound for it" % [dir, file])
+	var gaps := 0
+	Level3DAudio.set_mode(Level3DAudio.Mode.CLASSIC)
+	Level3DAudio.set_chip(true)
+	for name in Level3DAudio.SOUNDS:
+		var spec := Level3DAudio.spec_of(name)
+		var gap := not spec.has("original")
+		var entry := Level3DAudio.resolve(name)
+		if gap:
+			gaps += 1
+			if not FileAccess.file_exists("%s%s_0.ogg" % [dir, name]):
+				failures += _fail("%s: a gap in classic, and no %s%s_0.ogg" % [name, dir, name])
+				continue
+		if entry.stream == null or entry.chip != gap:
+			failures += _fail("%s: classic with the 8-bit switch on plays %s" % [name,
+					"nothing" if entry.stream == null else "chip/" if entry.chip else "classic/"])
+			continue
+		var looped: bool = entry.stream is AudioStreamOggVorbis and (entry.stream as AudioStreamOggVorbis).loop
+		if looped != (gap and spec.get("loop", false)):
+			failures += _fail("%s: looped %s with the 8-bit switch on" % [name, looped])
+		Level3DAudio.play(name)
+		if spec.get("loop", false):
+			var holder := Node3D.new()
+			root.add_child(holder)
+			if Level3DAudio.attach_loop(name, holder) == null:
+				failures += _fail("%s: nothing hung on its unit with the 8-bit switch on" % name)
+			Level3DAudio.stop_loop(holder, name)
+			holder.queue_free()
+	Level3DAudio.set_chip(false)
+	for name in Level3DAudio.SOUNDS:
+		if not Level3DAudio.SOUNDS[name].has("original") and Level3DAudio.resolve(name).stream != null:
+			failures += _fail("%s: plays in classic with the 8-bit switch off" % name)
+	Level3DAudio.set_mode(Level3DAudio.Mode.MODERN)
+	Level3DAudio.set_chip(true)
+	for name in Level3DAudio.SOUNDS:
+		if Level3DAudio.resolve(name).chip:
+			failures += _fail("%s: modern plays the 8-bit sound" % name)
+	Level3DAudio.set_chip(false)
+	for i in 10:
+		await process_frame
+	print("an 8-bit sound for each of classic's %d gaps%s" % [gaps, "" if failures == 0 else ", %d FAILED" % failures])
 	return failures
 
 
