@@ -2067,6 +2067,7 @@ func _layout_hud() -> void:
 	_score_pops.scale_factor = settings.hud_scale
 	for c in crews:
 		c.hud.bottom = settings.hud_corner == Level3DSettings.HudCorner.BOTTOM
+		c.hud.two_rows = settings.hud_two_rows
 		c.hud.scale_factor = settings.hud_scale
 		c.hud.icons = crews[0].hud.icons
 		c.hud.queue_redraw()

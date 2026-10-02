@@ -88,6 +88,9 @@ var banner_mission := true
 var hud_crosshair := true
 # At the bottom: the enemies come in at the top (Level3DHud says why).
 var hud_corner := HudCorner.BOTTOM
+# The score on a row of its own over the rest, rather than leading one line:
+# a player's corner half as wide, and a little taller (Level3DHud.two_rows).
+var hud_two_rows := true
 var hud_scale := 1.0
 var keys := DEFAULT_KEYS.duplicate()
 # The sound (Level3DAudio): classic, the original's effects as the game plays
@@ -168,6 +171,7 @@ func load_saved() -> void:
 	banner_warning = config.get_value("interface", "banner_warning", banner_warning)
 	banner_mission = config.get_value("interface", "banner_mission", banner_mission)
 	hud_corner = clampi(config.get_value("interface", "corner", hud_corner), 0, HudCorner.size() - 1)
+	hud_two_rows = config.get_value("interface", "two_rows", hud_two_rows)
 	var scale = config.get_value("interface", "scale", hud_scale)
 	hud_scale = float(scale) if (scale is int or scale is float) and HUD_SCALES.has(float(scale)) else 1.0
 	sound_mode = clampi(config.get_value("sound", "mode", sound_mode), 0, SoundMode.size() - 1)
@@ -224,6 +228,7 @@ func save() -> void:
 	config.set_value("interface", "banner_warning", banner_warning)
 	config.set_value("interface", "banner_mission", banner_mission)
 	config.set_value("interface", "corner", hud_corner)
+	config.set_value("interface", "two_rows", hud_two_rows)
 	config.set_value("interface", "scale", hud_scale)
 	config.set_value("sound", "mode", sound_mode)
 	config.set_value("sound", "master", master_volume)

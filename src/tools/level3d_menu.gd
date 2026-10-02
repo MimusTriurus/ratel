@@ -106,6 +106,7 @@ var _banner_stage: CheckBox
 var _banner_warning: CheckBox
 var _banner_mission: CheckBox
 var _hud_corner: OptionButton
+var _hud_rows: OptionButton
 var _hud_scale: OptionButton
 var _sound_mode: OptionButton
 var _master_volume: HSlider
@@ -219,6 +220,7 @@ func refresh() -> void:
 	_banner_warning.set_pressed_no_signal(settings.banner_warning)
 	_banner_mission.set_pressed_no_signal(settings.banner_mission)
 	_hud_corner.select(settings.hud_corner)
+	_hud_rows.select(1 if settings.hud_two_rows else 0)
 	_hud_scale.select(Level3DSettings.HUD_SCALES.find(settings.hud_scale))
 	_sound_mode.select(settings.sound_mode)
 	_master_volume.set_value_no_signal(settings.master_volume * 100.0)
@@ -242,7 +244,7 @@ func refresh() -> void:
 	_refresh_mixer()
 	# Greyed out, not hidden, with the HUD off: what it would show stays set.
 	for widget in [_hud_score, _hud_lives, _hud_pows, _hud_weapon, _hud_modes, _hud_cheats, _hud_pad_arrow,
-			_hud_help, _banner_stage, _banner_warning, _banner_mission, _hud_corner, _hud_scale]:
+			_hud_help, _banner_stage, _banner_warning, _banner_mission, _hud_corner, _hud_rows, _hud_scale]:
 		widget.disabled = not settings.hud
 	for action in _key_buttons:
 		var button: Button = _key_buttons[action]
@@ -334,6 +336,8 @@ func _make_interface_tab() -> Control:
 	var layout := _grid(tab)
 	_hud_corner = _choice(layout, "Положение", ["Сверху", "Снизу"],
 			func(i: int): settings.hud_corner = i)
+	_hud_rows = _choice(layout, "Строки", ["Одна", "Две: очки отдельно"],
+			func(i: int): settings.hud_two_rows = i == 1)
 	_hud_scale = _choice(layout, "Размер",
 			Level3DSettings.HUD_SCALES.map(func(s: float): return "%d%%" % roundi(s * 100.0)),
 			func(i: int): settings.hud_scale = Level3DSettings.HUD_SCALES[i])

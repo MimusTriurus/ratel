@@ -4,7 +4,8 @@
 #
 #     CHEATS: LIVES  WALLS  GUN X2
 #     CLASSIC DRIVE  CURSOR FIRE
-#     004500   [jeep] 3   [prisoner] 3   [missile]
+#     004500
+#     [jeep] 3   [prisoner] 3   [missile]
 #
 #   * the score as GameMode._draw_score writes it, the number without its
 #     "1P", in the font's white (the sheet calls it black: white glyphs, dark
@@ -51,6 +52,13 @@
 # more of the level over a strip at the top than at the bottom, so a line there
 # hides more of what is coming. The modes and cheats stack up from it.
 #
+# On two rows by default, the score over the rest (`two_rows`): one line
+# stretched a player's corner a quarter of the way across the frame, and two
+# a player read as two blocks, one each side, rather than as two rows of
+# stuff meeting in the middle. Taller by a glyph, which the pad's arrow and
+# the co-op frame keep clear of (line_height). One line is the setting's
+# other choice.
+#
 # With two players each has a line of its own, the second's in the corner
 # across the frame, its groups in the same order, as GameMode's score puts the
 # second player's at the other side of the frame.
@@ -86,6 +94,7 @@ const WEAPON_TINT := 0.8               # the colour's alpha over the icon, at it
 const OUTLINE := 3.0                    # the icons' white ring, frame px at 100%
 const OUTLINE_LINE := 1.0               # the black line outside it
 const DIM := 0.45                       # a dimmed icon's alpha
+const ROW_GAP := 0.25                   # glyphs between the score's row and the rest's
 # An icon as a silhouette in the colour it is drawn with, for the weapon's.
 const TINT_SHADER := """
 shader_type canvas_item;
@@ -111,6 +120,9 @@ var bottom := false         # the bottom left corner rather than the top left
 var right := false          # the right-hand corner, the second player's
 # Which of the icons is this player's vehicle: the second's is blue.
 var lives_icon := "lives"
+# The score on a row of its own, over the rest, rather than leading the line
+# (Level3DSettings.hud_two_rows).
+var two_rows := true
 # The player's, its vehicle's: the score flashes in it (ROLL_TIME).
 var colour := Color.WHITE
 var scale_factor := 1.0
@@ -175,7 +187,8 @@ func _init() -> void:
 # How much of the frame's edge the main line takes, margin and all: what the
 # pad's arrow and the co-op frame keep clear of when it is at the bottom.
 func line_height() -> float:
-	return MARGIN.y + GLYPH * scale_factor * ICON_HEIGHT
+	var g := GLYPH * scale_factor
+	return MARGIN.y + g * ICON_HEIGHT + (roundf(g * ROW_GAP) + g if two_rows else 0.0)
 
 
 # The icons' height in their own pixels at the current size: ICON_HEIGHT
@@ -226,13 +239,25 @@ func _draw() -> void:
 	var g := GLYPH * scale_factor
 	var row := g * ICON_HEIGHT
 	var top := size.y - MARGIN.y - row if bottom else MARGIN.y
-	var left := MARGIN.x
-	if right:
-		# Laid out once without drawing, to end at the margin.
-		_measuring = true
-		left = size.x - MARGIN.x - _line(0.0, top, g, row)
-		_measuring = false
-	_line(left, top, g, row)
+	# [top, height, which parts] a row: the line, or the score over the rest.
+	var rows := [[top, row, ALL]]
+	if two_rows:
+		var gap := roundf(g * ROW_GAP)
+		if bottom:
+			rows = [[top - gap - g, g, SCORE], [top, row, REST]]
+		else:
+			rows = [[top, g, SCORE], [top + g + gap, row, REST]]
+		top = rows[0][0]
+	var row_bottom: float = rows[-1][0] + rows[-1][1]
+	for r in rows:
+		var x := MARGIN.x
+		if right:
+			# Laid out once without drawing, to end at the margin.
+			_measuring = true
+			x = size.x - MARGIN.x - _line(0.0, r[0], g, r[1], r[2])
+			_measuring = false
+		_line(x, r[0], g, r[1], r[2])
+	var left := MARGIN.x if not right else size.x - MARGIN.x - _measure(rows, g)
 	_tint_layer.queue_redraw()
 	for group in _ring_groups:
 		group.get_child(0).queue_redraw()
@@ -241,7 +266,7 @@ func _draw() -> void:
 	# off the frame at the bigger sizes.
 	var small := roundf(g * 0.75 / 8.0) * 8.0 if g >= 32.0 else g
 	var gap := roundf(g * 0.25)
-	var at := top - gap - small if bottom else top + row + gap
+	var at := top - gap - small if bottom else row_bottom + gap
 	for line in [modes, cheats]:
 		if line == "":
 			continue
@@ -249,28 +274,46 @@ func _draw() -> void:
 		at += -(small + gap) if bottom else small + gap
 
 
-# The main line from `x`; returns where it ends.
-func _line(x: float, top: float, g: float, row: float) -> float:
+# The widest of the rows, for the modes' and cheats' lines to start where
+# it does on the right.
+func _measure(rows: Array, g: float) -> float:
+	_measuring = true
+	var widest := 0.0
+	for r in rows:
+		widest = maxf(widest, _line(0.0, r[0], g, r[1], r[2]))
+	_measuring = false
+	return widest
+
+
+# The main line from `x`, or the part of it `which` says; returns where it ends.
+enum { ALL, SCORE, REST }
+
+func _line(x: float, top: float, g: float, row: float, which := ALL) -> float:
 	var y := top + roundf((row - g) * 0.5)      # the glyphs' top
 	var groups := 0
-	if parts.score:
+	var show := parts.duplicate()
+	if which == SCORE:
+		show = {"score": parts.score, "lives": false, "pows": false, "weapon": false}
+	elif which == REST:
+		show.score = false
+	if show.score:
 		x = _text("%06d" % int(_shown), x, y - _hop(_roll_time, g), g, WHITE, 1.0, _flash(_roll_time))
 		groups += 1
-	if parts.lives:
+	if show.lives:
 		x = _gap(x, g, groups)
 		groups += 1
 		var dim := 1.0 if lives != 0 else DIM
 		var hop := _hop(_lives_time, g)
 		x = _icon(icons.get(lives_icon, icons.get("lives")), LIFE_SPRITE, x, top - hop, row, dim) + g * 0.25
 		x = _infinity(x, y, g) if lives < 0 				else _text(str(lives), x, y - hop, g, WHITE if lives > 0 else GRAY, 1.0, _flash(_lives_time))
-	if parts.pows:
+	if show.pows:
 		x = _gap(x, g, groups)
 		groups += 1
 		var dim := 1.0 if pows > 0 else DIM
 		var hop := _hop(_pows_time, g)
 		x = _icon(icons.get("pow"), POW_SPRITE, x, top - hop, row, dim) + g * 0.25
 		x = _text(str(pows), x, y - hop, g, WHITE if pows > 0 else GRAY, 1.0, _flash(_pows_time))
-	if parts.weapon:
+	if show.weapon:
 		x = _gap(x, g, groups)
 		groups += 1
 		var level := _weapon_level()
