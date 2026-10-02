@@ -42,7 +42,6 @@ const INV_EXPLODING_TIME := 1.0 / float(EXPLODING_TIME)
 # Distance covered while accelerating from rest to MAX_SPEED.
 static var ACCELERATION_DISTANCE: float = 0.0
 
-var player: Player
 var color_index: int
 var wheel_angle: float
 var tread_offset: float
@@ -71,10 +70,10 @@ func _init(p_x: float, p_y: float) -> void:
 	super()
 	x = p_x
 	y = p_y
-	player = game_mode.player
 
-	# The player's weapons reach further for this fight.
-	player.long_range = true
+	# The players' weapons reach further for this fight.
+	for p in game_mode.players:
+		p.long_range = true
 
 	BossSuperTankGun.new(self)
 
@@ -195,7 +194,8 @@ func _kaboom() -> void:
 	state = STATE_EXPLODING
 	main.stop_song()
 	main.play_sound_always(main.headquarters_explodes_sound)
-	main.add_points(points + 2000 * main.friendly_soldiers_picked_up)
+	main.add_points(points
+		+ 2000 * game_mode.acting_player.state.friendly_soldiers_picked_up)
 	game_mode.destroy_all_except(self)
 	delay = 1
 	if super_fire != null:

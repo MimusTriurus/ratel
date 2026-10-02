@@ -44,7 +44,6 @@ var sensor_y: float
 var last_dx: float
 var last_dy: float
 var solids: Array[Enemy]
-var player: Player
 var handling_loop: int
 var loop_target_x: float
 var loop_target_y: float
@@ -63,7 +62,6 @@ func init() -> void:
 	super.init()
 
 	solids = game_mode.solids
-	player = game_mode.player
 
 	layer = 3
 

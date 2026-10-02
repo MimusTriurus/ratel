@@ -87,8 +87,10 @@ func init(p_main: Main) -> void:
 
 	p_main.start_fade(false, self)
 
+	# The original's "start" is two entries, as the NES title screen's was: the
+	# game is for one player or two (Main.set_player_count).
 	menu = Menu.new(416, 608, p_main, 0, Menu.ICON_JEEP, self,
-		["start", "options"])
+		["1 player", "2 players", "options"])
 	menu.enable_konami_code_test()
 
 
@@ -247,11 +249,12 @@ func update() -> void:
 		_start_title()
 
 	if state == STATE_TITLE and selection_made:
-		if selected_index == 0:
+		if selected_index == 0 or selected_index == 1:
+			main.set_player_count(selected_index + 1)
 			state = STATE_EXPLOSION
 			delay = EXPLOSION_DELAY
 			main.play_sound(main.explode_sound)
-		elif selected_index == 1:
+		elif selected_index == 2:
 			state = STATE_OPTIONS
 			main.start_fade(true, self)
 			main.play_sound(main.explode_sound3)

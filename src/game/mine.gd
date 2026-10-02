@@ -7,14 +7,12 @@ const VISIBLE_DISTANCE2 := VISIBLE_DISTANCE * VISIBLE_DISTANCE
 
 var sprite_index: int
 var visible: bool
-var player: Player
 
 
 func _init(p_x: float, p_y: float) -> void:
 	super()
 	x = p_x
 	y = p_y
-	player = game_mode.player
 	explosion_x = 16
 	explosion_y = 16
 

@@ -15,6 +15,9 @@ var angle: float
 var t: int
 var power: int
 var enemies: Array[Enemy]
+# The jeep that fired it: Player.update fires, so that is the acting player.
+# Its weapon is what the blast re-arms, and its range is what this flies.
+var shooter: Player
 
 
 func _init(p_x: float, p_y: float, p_angle: float, p_power: int) -> void:
@@ -25,7 +28,8 @@ func _init(p_x: float, p_y: float, p_angle: float, p_power: int) -> void:
 	power = p_power
 
 	var unit := main.create_unit_vector_deg(p_angle)
-	var v := VELOCITY2 if game_mode.player.long_range else VELOCITY
+	shooter = game_mode.acting_player
+	var v := VELOCITY2 if shooter.long_range else VELOCITY
 	vx = unit[0] * v
 	vy = unit[1] * v
 
@@ -38,6 +42,8 @@ func init() -> void:
 
 
 func update() -> void:
+	# Points for what this destroys go to the jeep that fired it.
+	game_mode.acting_player = shooter
 	x += vx
 	y += vy
 
@@ -60,16 +66,17 @@ func update() -> void:
 		if not did_hit:
 			main.play_explode_sound3()
 		var explosion := Explosion.new(x, y)
+		explosion.shooter = shooter
 		# An unupgraded missile just explodes; upgrades throw the blast
 		# sideways, and the second upgrade throws it vertically too.
 		if power == 0:
 			explosion.set_grenade_explosion(true)
 		else:
-			TravelingExplosion.new(x, y, -1, 0, true)
-			TravelingExplosion.new(x, y, 1, 0, false)
+			TravelingExplosion.new(x, y, -1, 0, true).shooter = shooter
+			TravelingExplosion.new(x, y, 1, 0, false).shooter = shooter
 			if power == 2:
-				TravelingExplosion.new(x, y, 0, -1, false)
-				TravelingExplosion.new(x, y, 0, 1, false)
+				TravelingExplosion.new(x, y, 0, -1, false).shooter = shooter
+				TravelingExplosion.new(x, y, 0, 1, false).shooter = shooter
 
 
 func render() -> void:

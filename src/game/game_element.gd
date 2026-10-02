@@ -17,6 +17,16 @@ var y: float
 var layer: int
 var change_layer_to: int = -1
 
+# The jeep this element goes for. Not in the original, where every enemy kept
+# its own reference to the one Player from init(); with two jeeps the nearest is
+# picked again on every read, so an enemy turns to whichever has come closer.
+# Jeeps move after every element has updated, so the reads within one update
+# agree. Read it only once x and y are set -- not from init(). A shot at the
+# jeeps goes through GameMode.attack_players instead, which tries them all.
+var player: Player:
+	get:
+		return game_mode.target_player(x, y)
+
 
 func _init() -> void:
 	main = Main.main

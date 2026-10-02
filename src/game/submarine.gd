@@ -19,7 +19,6 @@ const SHOOT_DELAY := 91 + 68
 const MOVE_SPEED := 0.775
 const MOVES := 3
 
-var player: Player
 var state: int = STATE_SUBMERGED
 var delay: int = 91
 var height: int = 0
@@ -36,8 +35,6 @@ func _init(p_x: float, p_y: float) -> void:
 
 func init() -> void:
 	super.init()
-
-	player = game_mode.player
 
 	layer = 3
 

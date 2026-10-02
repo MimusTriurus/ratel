@@ -19,10 +19,12 @@ func init(p_main: Main) -> void:
 	main = p_main
 	input = p_main.input
 
-	# "sound" is not in the original's list -- see SoundMode. Six entries at
-	# 64 px apart from y = 512 end at 832, still inside the 960 frame.
+	# "sound" is not in the original's list -- see SoundMode -- and nor is a
+	# second player's input. Seven entries at 64 px apart from y = 512 end at
+	# 896, still inside the 960 frame.
 	menu = Menu.new(448, 512, p_main, 0, Menu.ICON_TANK, self,
-		["input", "controls", "sound", "difficulty", "defaults", "done"])
+		["1p input", "2p input", "controls", "sound", "difficulty", "defaults",
+			"done"])
 
 	p_main.start_fade(false, self)
 
@@ -36,18 +38,23 @@ func fade_completed() -> void:
 			0:
 				main.request_mode(Modes.INPUT)
 			1:
-				main.request_mode(Modes.CONTROLS)
+				main.request_mode(Modes.INPUT_2)
 			2:
-				main.request_mode(Modes.SOUND)
+				main.request_mode(Modes.CONTROLS)
 			3:
-				main.request_mode(Modes.DIFFICULTY)
+				main.request_mode(Modes.SOUND)
 			4:
-				# Not in the original: a way back to WASD, X, Z and mouse
-				# aiming, for when a remap has left the jeep unusable.
+				main.request_mode(Modes.DIFFICULTY)
+			5:
+				# Not in the original: a way back to both players' default keys
+				# and mouse aiming, for when a remap has left a jeep unusable.
 				main.button_mapping.reset_to_defaults()
 				main.button_mapping.save()
+				main.button_mapping_2.copy_from(
+					ButtonMapping.second_player(main.button_mapping))
+				main.button_mapping_2.save()
 				main.request_mode(Modes.INTRO)
-			5:
+			6:
 				main.request_mode(Modes.INTRO)
 
 

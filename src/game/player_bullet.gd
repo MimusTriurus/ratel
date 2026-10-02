@@ -17,6 +17,9 @@ var vx: float
 var vy: float
 var t: int
 var enemies: Array[Enemy]
+# The jeep that fired it, set by Player.update: its own cap counts it
+# (Player.live_bullets), and what it destroys is credited to it.
+var shooter: Player
 
 
 func _init(p_x: float, p_y: float, p_angle: float = 270.0) -> void:
@@ -37,6 +40,8 @@ func init() -> void:
 
 
 func update() -> void:
+	# Points for what this destroys go to the jeep that fired it.
+	game_mode.acting_player = shooter
 	x += vx
 	y += vy
 

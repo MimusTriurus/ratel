@@ -163,7 +163,7 @@ func init(p_main: Main) -> void:
 	main = p_main
 	input = p_main.input
 
-	final_score = "final score: " + p_main.score_str
+	final_score = "final score: " + p_main.player_states[0].score_str
 	final_score_x = float((Main.DISPLAY_WIDTH - (final_score.length() << 5)) >> 1)
 
 

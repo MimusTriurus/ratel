@@ -26,7 +26,6 @@ var hits: int
 var explode_delay: int
 var explode_time: int = EXPLODE_TIME
 var boss_headquarters_manager = null
-var player: Player
 
 
 func _init(p_manager) -> void:
@@ -38,8 +37,6 @@ func _init(p_manager) -> void:
 
 func init() -> void:
 	super.init()
-
-	player = game_mode.player
 
 	layer = 0
 
@@ -63,7 +60,7 @@ func _start_exploding() -> void:
 func _start_debris() -> void:
 	state = STATE_DEBRIS
 	main.request_song(main.super_tank_song)
-	BossSuperTank.new(game_mode.player.x - 210, 32)
+	BossSuperTank.new(player.x - 210, 32)
 	var group: Array = game_mode.groups[0]
 	for i in range(group.size() - 1, -1, -1):
 		var g: Array = group[i]
@@ -88,8 +85,9 @@ func update() -> void:
 			_start_debris()
 			do_remove()
 	else:
-		# Without missiles the player cannot reach as far, so extend the box.
-		hit_y2 = 152 if main.has_missiles else 192
+		# Without missiles the player cannot reach as far, so extend the box --
+		# for as long as any jeep is without them.
+		hit_y2 = 152 if game_mode.all_have_missiles() else 192
 
 
 func attack(x1: float, y1: float, x2: float, y2: float,

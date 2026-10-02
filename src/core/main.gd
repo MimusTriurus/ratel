@@ -62,6 +62,8 @@ static var FADES: Array[Color] = []
 
 var random := RandomNumberGenerator.new()
 var button_mapping := ButtonMapping.new()
+# The second player's, set up and loaded in _ready.
+var button_mapping_2: ButtonMapping
 var mode = null                    # IMode
 var input: HumanInput
 var current_song: Song
@@ -73,14 +75,10 @@ var fading: bool
 var fade_index: int
 var fade_out: bool
 
-var extra_lives: int
-var extra_lives_str: String
-var score: int
-var score_str: String
+# Lives, score, weapon and POWs delivered, one set per player: the original's
+# fields of the same names, moved out so that there can be two. See PlayerState.
+var player_states: Array[PlayerState] = []
 var stage_index: int
-var has_missiles: bool
-var missile_power: int
-var friendly_soldiers_picked_up: int
 var hard_mode: bool
 var continued: bool
 var close_requested: bool
@@ -92,6 +90,9 @@ var stages: Array = [null, null, null, null, null, null]  # Array[Stage]
 var sprite_bank: SpriteBank
 
 var players: Array = []            # [4][5]
+# The second player's jeep: players[0] with the green turned blue. Its
+# invincibility flash is the first player's, players[1..3].
+var players_blue: Array[Spr] = []
 var explosions: Array[Spr] = []
 var grenade: Spr
 var player_missile: Spr
@@ -263,12 +264,15 @@ func _ready() -> void:
 	audio.apply()
 
 	button_mapping.load_saved()
+	button_mapping_2 = ButtonMapping.second_player(button_mapping)
+	button_mapping_2.load_saved()
 	input = HumanInput.new(button_mapping)
 
 	sprite_bank = SpriteBank.new(SPRITES)
 	load_font()
 
 	konami_code = KonamiCode.new(self)
+	set_player_count(1)
 	start_player()
 	# Everything, here, before the first frame is presented: the window opens on
 	# the title screen. See load_all.
@@ -281,6 +285,9 @@ func _physics_process(_delta: float) -> void:
 		return
 	full_screen_toggle_check()
 	input.snap()
+	for ps in player_states:
+		if ps.input != input:
+			ps.input.snap()
 	mode.update()
 
 
@@ -370,6 +377,8 @@ func _update_cursor_visibility() -> void:
 
 # InputMode needs raw key/pad events for its remapping screen.
 func _input(event: InputEvent) -> void:
+	if event is InputEventKey:
+		HumanInput.key_event(event)
 	if mode != null and mode.has_method("input_event"):
 		mode.input_event(event)
 
@@ -378,33 +387,49 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		close_requested = true
 		stop_all_sound()
+	elif what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		HumanInput.release_all()
 
 
 # --- Progression -------------------------------------------------------------
 
 func advance_player_to_hard_mode() -> void:
 	hard_mode = true
-	friendly_soldiers_picked_up = 0
+	for ps in player_states:
+		ps.friendly_soldiers_picked_up = 0
 	FriendlySoldier.reset_count()
 	continued = true
 	stage_index = 0
 
 
+# One player or two, chosen on the title screen. With one, the jeep plays off
+# the menus' own input, arrows and all, exactly as before there were two. With
+# two, each jeep has an input of its own: the first player's keys and mouse
+# without the arrows, and the second player's arrows, right Alt and Ctrl and
+# pad (ButtonMapping.second_player). The menus keep reading `input`.
+# Whether a key is one of the controls of a player in the game, so that it is
+# that rather than the pause (HumanInput).
+func key_claimed(key: Key) -> bool:
+	for ps in player_states:
+		if ps.input.button_mapping.claims(key):
+			return true
+	return false
+
+
+func set_player_count(n: int) -> void:
+	if n == 1:
+		player_states = [PlayerState.new(self, 0, input)]
+		return
+	var first := HumanInput.new(button_mapping)
+	first.arrows = false
+	var second := HumanInput.new(button_mapping_2)
+	second.arrows = false
+	player_states = [PlayerState.new(self, 0, first), PlayerState.new(self, 1, second)]
+
+
 func continue_player() -> void:
-	if konami_code != null and konami_code.enabled:
-		extra_lives = 30
-		extra_lives_str = "30"
-	else:
-		extra_lives = 4
-		extra_lives_str = "4"
-
-	has_missiles = false
-	missile_power = 0
-
-	score = 0
-	score_str = "000000"
-
-	friendly_soldiers_picked_up = 0
+	for ps in player_states:
+		ps.continue_player()
 	FriendlySoldier.reset_count()
 
 	continued = true
@@ -416,63 +441,14 @@ func start_player() -> void:
 	stage_index = 0
 
 
-func upgrade_weapon(always_play_sound: bool) -> bool:
-	var sound_played := false
-	if always_play_sound:
-		play_sound(weapon_upgrade_sound)
-		sound_played = true
-	if konami_code.enabled:
-		if not (has_missiles and missile_power == 2):
-			has_missiles = true
-			missile_power = 2
-			if not always_play_sound:
-				play_sound(weapon_upgrade_sound)
-				sound_played = true
-	elif has_missiles:
-		if missile_power < 2:
-			missile_power += 1
-			if not always_play_sound:
-				play_sound(weapon_upgrade_sound)
-				sound_played = true
-	else:
-		has_missiles = true
-		if not always_play_sound:
-			play_sound(weapon_upgrade_sound)
-			sound_played = true
-	return sound_played
-
-
 func advance_stage_index() -> void:
 	stage_index += 1
 
 
+# Every call site is an enemy dying or a POW delivered, so the points go to
+# whoever GameMode says is acting; see GameMode.acting_player.
 func add_points(points: int) -> void:
-	var before := score
-	score += points
-	if (before < 20000 and score >= 20000) \
-			or ((before - 20000) / 50000 != (score - 20000) / 50000):
-		gain_extra_life()
-	score_str = "%06d" % score
-
-
-func lose_life() -> void:
-	extra_lives -= 1
-	extra_lives_str = str(extra_lives)
-
-
-func gain_extra_life() -> void:
-	extra_lives += 1
-	extra_lives_str = str(extra_lives)
-	play_sound_always(extra_life_sound)
-
-
-func friendly_soldier_picked_up() -> bool:
-	add_points(500)
-	friendly_soldiers_picked_up += 1
-	if friendly_soldiers_picked_up == 3 or friendly_soldiers_picked_up == 8 \
-			or friendly_soldiers_picked_up == 13 or friendly_soldiers_picked_up == 18:
-		return upgrade_weapon(false)
-	return false
+	game_mode.acting_player.state.add_points(points)
 
 
 # --- Modes -------------------------------------------------------------------
@@ -506,6 +482,8 @@ func request_mode(m: int) -> void:
 			set_mode(OptionsMode.new())
 		Modes.INPUT:
 			set_mode(InputMode.new())
+		Modes.INPUT_2:
+			set_mode(InputMode.new(1))
 		Modes.INTRO_MAP:
 			set_mode(IntroMapMode.new())
 		Modes.CONTROLS:
@@ -1168,6 +1146,9 @@ func load_sprites() -> void:
 			row[j] = sprite_bank.get_sprite("player-%s-%d.png" % [PLAYER_COLORS[i], j])
 		row[3] = row[0].flipped_copy(true, false)
 		row[4] = row[1].flipped_copy(true, false)
+	players_blue = []
+	for spr in players[0]:
+		players_blue.append((spr as Spr).hue_shifted_copy(60.0, 180.0, 100.0))
 
 	explosions = _spr_array(4)
 	for i in 4:

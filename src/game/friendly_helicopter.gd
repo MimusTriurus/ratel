@@ -44,8 +44,9 @@ var z: float
 var left_stop: bool
 var state: int
 var walking_soldiers: int
-var player: Player
-var drop_off_delay: int = 45
+# A drop-off delay per jeep, by player index, so that each unloads at its own
+# pace. The original's single field started at 45 too.
+var drop_off_delays: Array[int] = [45, 45]
 var preparing_to_take_off: int = TAKE_OFF_DELAY
 var revving_up: int
 var lifting_off: int
@@ -99,7 +100,6 @@ func _init(p_x: float, p_y: float, landing: bool, p_left_stop: bool) -> void:
 	super()
 	x = p_x
 	y = p_y
-	player = game_mode.player
 	left_stop = p_left_stop
 
 	if landing:
@@ -175,39 +175,51 @@ func update() -> void:
 				do_remove()
 
 
+# Both jeeps unload at once, each at its own pace, as on the NES: one at the
+# pad does not hold the other up.
 func _update_pick_up() -> void:
-	if player.pows > 0:
-		var dx := player.x - x
+	var loitering := false
+	for i in game_mode.players.size():
+		var p: Player = game_mode.players[i]
+		if p.state.out or p.pows == 0:
+			continue
+		var dx := p.x - x
 
-		# While the player is loitering by the pad, the stage sends air cover.
-		if absf(player.y - y) <= 128:
+		# While a player is loitering by the pad, the stage sends air cover --
+		# once a tick, however many are.
+		if not loitering and absf(p.y - y) <= 128:
+			loitering = true
 			plane_spawn_delay -= 1
 			if plane_spawn_delay == 0:
 				plane_spawn_delay = PLANE_SPAWN_DELAY
 				if game_mode.stage_index == 5:
 					EnemyHelicopter.new(true)
 				elif game_mode.stage_index == 4:
-					Airplane.from_landing_port(left_stop)
+					Airplane.from_landing_port(left_stop, p.x)
 				elif game_mode.stage_index == 1:
 					if not created_plane:
 						created_plane = true
-						Airplane.from_landing_port(left_stop)
+						Airplane.from_landing_port(left_stop, p.x)
 
-		if player.y > y - 66 and player.y < y + 49 \
-				and ((not left_stop and dx > 0 and dx < 320)
+		if p.y > y - 66 and p.y < y + 49 				and ((not left_stop and dx > 0 and dx < 320)
 					or (left_stop and dx < 0 and dx > -320)):
-			if drop_off_delay > 0:
-				drop_off_delay -= 1
+			if drop_off_delays[i] > 0:
+				drop_off_delays[i] -= 1
 			else:
-				drop_off_delay = DROP_OFF_DELAY
-				FriendlySoldier.to_helicopter(player.x, player.y + 28, self,
-					player.pows == 1)
-				player.drop_off_pow()
+				drop_off_delays[i] = DROP_OFF_DELAY
+				FriendlySoldier.to_helicopter(p.x, p.y + 28, self,
+					p.pows == 1).deliverer = p
+				p.drop_off_pow()
 				walking_soldiers += 1
 
-	if walking_soldiers == 0 and player.y < y + 80 \
-			and ((FriendlySoldier.count == 0 and player.pows == 0)
-				or player.y < y - 512):
+	# It leaves once every jeep still in the game is past it, or has nothing
+	# left to bring.
+	var leaving := walking_soldiers == 0
+	for p in game_mode.players:
+		if not p.state.out and not (p.y < y + 80
+				and ((FriendlySoldier.count == 0 and p.pows == 0) or p.y < y - 512)):
+			leaving = false
+	if leaving:
 		if preparing_to_take_off > 0:
 			preparing_to_take_off -= 1
 		else:
@@ -216,9 +228,10 @@ func _update_pick_up() -> void:
 		preparing_to_take_off = TAKE_OFF_DELAY
 
 
-func friendly_soldier_picked_up() -> void:
+# A soldier p brought has reached the door: the points and the count are p's.
+func friendly_soldier_picked_up(p: Player) -> void:
 	walking_soldiers -= 1
-	if not main.friendly_soldier_picked_up():
+	if not p.state.friendly_soldier_picked_up():
 		main.play_sound(main.helicopter_pickup_sound)
 
 

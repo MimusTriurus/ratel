@@ -17,7 +17,6 @@ var statue_x: float
 var statue_y: float
 var clip_x: float
 var explode_delay: int
-var player: Player
 var entry_delay: int = ENTRY_DELAY
 
 
@@ -25,8 +24,6 @@ func _init(p_statue_x: float, p_statue_y: float) -> void:
 	super()
 	statue_x = p_statue_x
 	statue_y = p_statue_y
-
-	player = game_mode.player
 
 	x = p_statue_x + 48
 	y = p_statue_y + 86

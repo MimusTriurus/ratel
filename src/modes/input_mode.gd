@@ -8,6 +8,12 @@
 # The binding each prompt is about to replace is shown too, so it is clear what
 # is being changed. Without these it is easy to walk in, try to back out with
 # Escape, and leave with the jeep bound to nonsense.
+#
+# Nor did the original have a second player: InputMode.new(1) remaps the
+# second's mapping (Modes.INPUT_2). A key the other player has bound is
+# ignored, as one already in use by this player always was, and the side a
+# key was pressed on is kept for the weapons -- the second player's defaults
+# are the right Alt and Ctrl, which only HumanInput.key_event tells apart.
 class_name InputMode
 extends RefCounted
 
@@ -32,7 +38,10 @@ const NAMES: Array[String] = [
 static var NAME_XS: PackedFloat32Array = PackedFloat32Array()
 
 var main: Main
+var player_index: int
 var button_mapping: ButtonMapping
+# The other player's mapping, whose keys cannot be bound here.
+var other_mapping: ButtonMapping
 var state: int = STATE_FADE_IN
 var name_index: int
 var delay: int
@@ -48,9 +57,14 @@ static func _static_init() -> void:
 		NAME_XS[i] = (Main.DISPLAY_WIDTH - (NAMES[i].length() << 5)) / 2.0
 
 
+func _init(p_player_index: int = 0) -> void:
+	player_index = p_player_index
+
+
 func init(p_main: Main) -> void:
 	main = p_main
-	button_mapping = p_main.button_mapping
+	button_mapping = p_main.button_mapping_2 if player_index == 1 else p_main.button_mapping
+	other_mapping = p_main.button_mapping if player_index == 1 else p_main.button_mapping_2
 	entry_mapping = button_mapping.duplicate_mapping()
 	p_main.start_fade(false, self)
 
@@ -78,7 +92,9 @@ func input_event(event: InputEvent) -> void:
 		if event.keycode == KEY_ESCAPE:
 			_cancel()
 			return
-		_key_pressed(event.keycode)
+		if other_mapping.claims_at(event.keycode, event.location):
+			return
+		_key_pressed(event.keycode, event.location)
 	elif event is InputEventJoypadButton and event.pressed:
 		_button_pressed(event.device, event.button_index)
 
@@ -102,16 +118,18 @@ func _button_pressed(device: int, button_index: int) -> void:
 				_advance()
 
 
-func _key_pressed(keycode: int) -> void:
+func _key_pressed(keycode: int, location: KeyLocation) -> void:
 	var bm := button_mapping
 	match name_index:
 		0:
 			bm.key_grenade = keycode
+			bm.key_grenade_location = location
 			_advance()
 		1:
 			if bm.key_grenade != keycode:
 				bm.gun_key_mapped = true
 				bm.key_gun = keycode
+				bm.key_gun_location = location
 				_advance()
 		2:
 			if bm.key_grenade != keycode and bm.key_gun != keycode:
@@ -147,13 +165,19 @@ func _cancel() -> void:
 func _current_binding() -> String:
 	var bm := button_mapping
 	var code: Key = bm.key_grenade
+	var location := bm.key_grenade_location
 	match name_index:
-		1: code = bm.key_gun
-		2: code = bm.key_up
-		3: code = bm.key_down
-		4: code = bm.key_left
-		5: code = bm.key_right
-	return OS.get_keycode_string(code)
+		1:
+			code = bm.key_gun
+			location = bm.key_gun_location
+		2, 3, 4, 5:
+			code = [bm.key_up, bm.key_down, bm.key_left, bm.key_right][name_index - 2]
+			location = KEY_LOCATION_UNSPECIFIED
+	var side := ""
+	match location:
+		KEY_LOCATION_LEFT: side = "left "
+		KEY_LOCATION_RIGHT: side = "right "
+	return side + OS.get_keycode_string(code)
 
 
 static func _centered_x(text: String) -> float:
@@ -183,6 +207,8 @@ func render() -> void:
 	main.draw_rect(Rect2(0, 0, Main.DISPLAY_WIDTH, Main.DISPLAY_HEIGHT),
 		Color.BLACK, true)
 
+	var who := "player %d" % (player_index + 1)
+	main.draw_text(who, _centered_x(who), 208, Main.FONT_GRAY)
 	main.draw_text("On either your keyboard", 144, 304, Main.FONT_GRAY)
 	main.draw_text("or gamepad, press:", 224, 368, Main.FONT_GRAY)
 

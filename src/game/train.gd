@@ -9,7 +9,6 @@ const BULLET_SPEED := 1.5
 const BULLET_TRAVEL_TIME := 4 * 91
 
 var mines: Array[Enemy]
-var player: Player
 var car_index: int
 var shoot_delay: int
 var shoot_x: float
@@ -30,7 +29,6 @@ func init() -> void:
 	super.init()
 
 	mines = game_mode.mines
-	player = game_mode.player
 
 	layer = 3
 

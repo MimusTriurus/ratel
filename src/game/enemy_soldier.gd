@@ -31,7 +31,6 @@ static var WOBBLES: PackedFloat32Array = PackedFloat32Array()
 var type: int
 var state: int = STATE_SEEKING
 var solids: Array[Enemy]
-var player: Player
 var target_vx: float
 var target_vy: float
 var direction_x: float
@@ -96,7 +95,6 @@ func init() -> void:
 	super.init()
 
 	solids = game_mode.solids
-	player = game_mode.player
 
 	layer = 3
 	bullet_hits = 1

@@ -34,8 +34,8 @@ func _init(p_x: float, p_y: float, p_airplane: bool, p_vx: float = 0.0,
 	y = p_y
 	airplane = p_airplane
 
-	vx = (game_mode.player.x + main.random.randf() * ERROR - ERROR) - p_x
-	vy = (game_mode.player.y + main.random.randf() * ERROR - ERROR) - p_y
+	vx = (player.x + main.random.randf() * ERROR - ERROR) - p_x
+	vy = (player.y + main.random.randf() * ERROR - ERROR) - p_y
 	var imag := (VELOCITY if p_airplane else 0.75 * VELOCITY) \
 		/ sqrt(vx * vx + vy * vy)
 	vx *= imag

@@ -122,7 +122,7 @@ func init(p_main: Main) -> void:
 	credits = []
 	for page in CREDITS:
 		credits.append((page as Array).duplicate())
-	credits[credits.size() - 1][0] += p_main.score_str
+	credits[credits.size() - 1][0] += p_main.player_states[0].score_str
 
 	p_main.start_fade(false, self)
 

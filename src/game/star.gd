@@ -55,9 +55,9 @@ func bump(x1: float, y1: float, x2: float, y2: float, _invincible: bool) -> bool
 				main.play_hit_explode_sound()
 				game_mode.destroy_all_within_frame()
 			TYPE_FLASHING:
-				game_mode.player.collect_flashing_star()
+				game_mode.acting_player.collect_flashing_star()
 			TYPE_GREEN:
-				main.gain_extra_life()
+				game_mode.acting_player.state.gain_extra_life()
 	return false
 
 

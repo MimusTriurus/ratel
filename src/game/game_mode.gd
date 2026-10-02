@@ -17,6 +17,13 @@ const CAMERA_MARGIN_SOUTH := 192.0
 # with a taller frame does not drag the spawn sideways.
 const PLAYER_SPAWN_CAMERA_OFFSET := 432.0
 const CAMERA_MARGIN_SIDES := 256.0
+# Two players: how near the top and the bottom of the frame a jeep may drive.
+# The frame is what holds them together, as on the NES; see
+# _camera_track_players.
+const COOP_EDGE := 64.0
+# Two players: how far right of the first the second jeep starts, if there is
+# ground there; left if not, on top of it if neither.
+const COOP_SPAWN_SPREAD := 96.0
 # How far the camera may scroll back from its furthest-north point. The
 # original's 224 made a level a one-way trip; a full frame lets the player back
 # off from trouble or return for a missed pickup. The ratchet itself stays, so
@@ -34,6 +41,8 @@ const STAGE_COMPLETED_DELAY := 228
 # because a mode change destroys the GameMode, and with it the run.
 const MENU_MAIN := 0
 const MENU_OPTIONS := 1
+# The options page's last entry, "back": _menu_labels' count less one.
+const MENU_OPTIONS_BACK := 6
 
 const MENU_X := 384.0
 const MENU_Y := 384.0
@@ -123,7 +132,14 @@ var conveyor_offset: float
 var conveyor_last_index: int
 var conveyor_delta: float
 
-var player: Player
+# One jeep per PlayerState, in player order. Nothing outside GameMode should
+# pick one by index: an enemy aims at target_player(), a shot at the jeeps goes
+# through attack_players(), and points and pickups go to acting_player.
+var players: Array[Player] = []
+# The player whose jeep is being updated, credited by Main.add_points with
+# whatever its update destroys or collects. With one player it is always
+# players[0].
+var acting_player: Player
 var camera_x: float
 var camera_y: float
 var max_camera_x: float
@@ -167,7 +183,8 @@ func init(p_main: Main) -> void:
 	main = p_main
 	input = p_main.input
 
-	p_main.friendly_soldiers_picked_up = 0
+	for ps in p_main.player_states:
+		ps.friendly_soldiers_picked_up = 0
 	FriendlySoldier.reset_count()
 
 	elements = []
@@ -183,8 +200,16 @@ func init(p_main: Main) -> void:
 	camera_x = 0.0
 	camera_y = max_camera_y
 
-	player = Player.new()
-	player.y = camera_y + 2 * Main.SCREEN_HEIGHT
+	players = []
+	for ps in p_main.player_states:
+		var p := Player.new(ps)
+		p.y = camera_y + 2 * Main.SCREEN_HEIGHT
+		players.append(p)
+	acting_player = players[0]
+	for p in players:
+		if not p.state.out:
+			acting_player = p
+			break
 
 
 func set_stage(p_stage_index: int, p_stage: Stage, hard: bool) -> void:
@@ -405,7 +430,83 @@ func _lookup_direction(x1: float, y1: float, x2: float, y2: float) -> int:
 	return int((directions[index] >> shift) & 7)
 
 
+# The jeep an enemy at (px, py) goes for: the nearest one that is on the map.
+# A jeep that is waiting to respawn is only a target when no other is, so with
+# one player this is always players[0], exploded or not, as the original's
+# single field was.
+func target_player(px: float, py: float) -> Player:
+	var best: Player = players[0]
+	var best_d := INF
+	var best_live := false
+	for p in players:
+		if p.state.out:
+			continue
+		var live := p.respawning == 0
+		var d := Vector2(p.x - px, p.y - py).length_squared()
+		if (live and not best_live) or (live == best_live and d < best_d):
+			best = p
+			best_d = d
+			best_live = live
+	return best
+
+
+# Player.attack against every jeep: true for the first one it destroys, so one
+# round never takes out two.
+func attack_players(px: float, py: float) -> bool:
+	for p in players:
+		if not p.state.out and p.attack(px, py):
+			return true
+	return false
+
+
+func attack_players_rect(x1: float, y1: float, x2: float, y2: float) -> bool:
+	for p in players:
+		if not p.state.out and p.attack_rect(x1, y1, x2, y2):
+			return true
+	return false
+
+
+# Whether a jeep other than p is still in the game, with a life left or one in
+# play. When none is, p's last life is the game's.
+func other_player_in(p: Player) -> bool:
+	for q in players:
+		if q != p and not q.state.out:
+			return true
+	return false
+
+
+# Puts the jeeps down at a start, the first at (x, y) and the second beside it.
+func place_players(x: float, y: float) -> void:
+	for i in players.size():
+		var p := players[i]
+		p.x = second_spawn_x(x, y) if i == 1 else x
+		p.y = y
+		p.make_invincible()
+
+
+# Where the second jeep starts beside a first at (x, y): to the right if there
+# is ground there, to the left if not, on top of it if neither.
+func second_spawn_x(x: float, y: float) -> float:
+	for dx in [COOP_SPAWN_SPREAD, -COOP_SPAWN_SPREAD]:
+		if is_driveable_box(x + dx - 32, y - 32, x + dx + 32, y + 32):
+			return x + dx
+	return x
+
+
+# The two bosses that widen their hit box for a jeep without missiles keep it
+# wide until every jeep has them.
+func all_have_missiles() -> bool:
+	for p in players:
+		if not p.state.has_missiles:
+			return false
+	return true
+
+
 func _camera_track_player() -> void:
+	if players.size() > 1:
+		_camera_track_players()
+		return
+	var player: Player = players[0]
 	if player.x - camera_x < CAMERA_MARGIN_SIDES:
 		camera_x = player.x - CAMERA_MARGIN_SIDES
 		if camera_x < 0:
@@ -425,6 +526,41 @@ func _camera_track_player() -> void:
 			camera_y = max_camera_y
 
 	# The camera never scrolls back down: max_camera_y only ever shrinks.
+	var max_y := camera_y + CAMERA_BOUND
+	if max_y < max_camera_y:
+		max_camera_y = max_y
+
+
+# Two jeeps. The frame is as wide as the map, so only y needs deciding. It
+# follows the leading jeep north and the trailing one south, as it follows one
+# jeep, but never so far that either is less than COOP_EDGE from an edge --
+# Player.update holds them inside that, so the trailing jeep stops the camera
+# and the leading one waits at the top of the frame. A jeep that is exploding
+# still holds the camera, so that it does not come back off the screen; one
+# that is out of the game does not.
+func _camera_track_players() -> void:
+	var lead: Player = null
+	var trail: Player = null
+	for p in players:
+		if p.state.out:
+			continue
+		if lead == null or p.y < lead.y:
+			lead = p
+		if trail == null or p.y > trail.y:
+			trail = p
+	if lead == null:
+		return
+
+	camera_x = clampf(camera_x, 0.0, max_camera_x)
+
+	if lead.y - camera_y < CAMERA_MARGIN_NORTH:
+		camera_y = lead.y - CAMERA_MARGIN_NORTH
+	elif camera_y - trail.y < CAMERA_MARGIN_SOUTH - Main.SCREEN_HEIGHT:
+		camera_y = trail.y + CAMERA_MARGIN_SOUTH - Main.SCREEN_HEIGHT
+	camera_y = clampf(camera_y, trail.y + COOP_EDGE - Main.SCREEN_HEIGHT,
+		lead.y - COOP_EDGE)
+	camera_y = clampf(camera_y, 0.0, max_camera_y)
+
 	var max_y := camera_y + CAMERA_BOUND
 	if max_y < max_camera_y:
 		max_camera_y = max_y
@@ -592,9 +728,7 @@ func _create_player(x: float, y: float) -> void:
 	# max_camera_x is 0, and any positive camera_x runs the background loop off
 	# the end of a row.
 	camera_x = clampf(x - PLAYER_SPAWN_CAMERA_OFFSET, 0.0, max_camera_x)
-	player.x = x
-	player.y = y
-	player.make_invincible()
+	place_players(x, y)
 
 
 func is_missile_target(x: float, y: float) -> bool:
@@ -772,6 +906,7 @@ func _menu_labels(page: int) -> Array:
 		"volume %d" % audio.volume,
 		"controls %s" % ("mouse" if main.button_mapping.mouse_aim else "classic"),
 		"turbo %s" % ("on" if main.button_mapping.turbo else "off"),
+		"god mode %s" % ("on" if main.button_mapping.god_mode else "off"),
 		"back",
 	]
 
@@ -830,7 +965,7 @@ func option_selected(index: int) -> void:
 				_quit_game()
 		return
 
-	if index == 5:
+	if index == MENU_OPTIONS_BACK:
 		_open_menu(MENU_MAIN)
 		return
 
@@ -852,6 +987,9 @@ func option_selected(index: int) -> void:
 			main.button_mapping.save()
 		4:
 			main.button_mapping.turbo = not main.button_mapping.turbo
+			main.button_mapping.save()
+		5:
+			main.button_mapping.god_mode = not main.button_mapping.god_mode
 			main.button_mapping.save()
 	audio.save()
 
@@ -963,7 +1101,10 @@ func update() -> void:
 						mines.erase(e)
 
 	if playing:
-		player.update()
+		for p in players:
+			if not p.state.out:
+				acting_player = p
+				p.update()
 		_camera_track_player()
 
 	if stage_completed:
@@ -1142,7 +1283,9 @@ func _draw_sprites() -> void:
 			if not element.remove:
 				element.render()
 
-	player.render()
+	for p in players:
+		if not p.state.out:
+			p.render()
 
 	for i in range(4, 8):
 		var list: Array = elements[i]
@@ -1159,10 +1302,13 @@ func _draw_score() -> void:
 	# distance from the bottom edge instead of leaving the HUD mid-screen.
 	var score_y := Main.SCREEN_HEIGHT - 156
 	var lives_y := Main.SCREEN_HEIGHT - 92
-	main.draw_text("1P", 64, score_y, Main.FONT_WHITE)
-	main.draw_text(main.score_str, 160, score_y, Main.FONT_WHITE)
-	main.draw_text("P", 176, lives_y, Main.FONT_WHITE)
-	main.draw_text(main.extra_lives_str, 216, lives_y, Main.FONT_WHITE)
+	# The second player's is the first's, mirrored to the right-hand corner.
+	for ps in main.player_states:
+		var x0 := 0.0 if ps.index == 0 else Main.SCREEN_WIDTH - 416.0
+		main.draw_text("%dP" % (ps.index + 1), x0 + 64, score_y, Main.FONT_WHITE)
+		main.draw_text(ps.score_str, x0 + 160, score_y, Main.FONT_WHITE)
+		main.draw_text("P", x0 + 176, lives_y, Main.FONT_WHITE)
+		main.draw_text(ps.extra_lives_str, x0 + 216, lives_y, Main.FONT_WHITE)
 
 
 func render() -> void:

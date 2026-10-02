@@ -47,7 +47,6 @@ static var ENTERINGS: PackedFloat32Array = PackedFloat32Array()
 static var SHUTTERS: PackedFloat32Array = PackedFloat32Array()
 static var ENTER_ACCELERATION: float = 0.0
 
-var player: Player
 var angle: float
 var rotor_angle: float
 var tail_index_counter: bool
@@ -114,8 +113,6 @@ static func _static_init() -> void:
 
 func init() -> void:
 	super.init()
-
-	player = game_mode.player
 
 	layer = 6
 

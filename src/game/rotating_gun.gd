@@ -129,7 +129,6 @@ func update() -> void:
 		STATE_TRACKING:
 			if pause > 0:
 				pause -= 1
-			var player := game_mode.player
 			var target_angle := rad_to_deg(atan2(player.y - y, player.x - x))
 			var delta_angle := fmod(target_angle - angle + 180, 360.0)
 			if delta_angle < 0:

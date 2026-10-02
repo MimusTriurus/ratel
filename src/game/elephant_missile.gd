@@ -13,7 +13,6 @@ var max_y: float
 var explosion_offset: float
 var tip_x: float
 var tip_y: float
-var player: Player
 
 
 func _init(p_x: float, p_y: float, p_angle: int, left: bool) -> void:
@@ -52,7 +51,6 @@ func _init(p_x: float, p_y: float, p_angle: int, left: bool) -> void:
 
 func init() -> void:
 	layer = 4
-	player = game_mode.player
 
 
 func update() -> void:
@@ -65,7 +63,7 @@ func update() -> void:
 		game_mode.trigger_group(game_mode.groups_map[Y][X])
 		var e := Explosion.new((X << 5) + explosion_offset, (Y << 5) + 32)
 		e.set_damages_enemies(false)
-	elif player.attack(x + tip_x, y + tip_y):
+	elif game_mode.attack_players(x + tip_x, y + tip_y):
 		do_remove()
 		Explosion.new(x + tip_x, y + tip_y)
 

@@ -36,7 +36,6 @@ static var count: int = 0
 var type: int
 var state: int
 var solids: Array[Enemy]
-var player: Player
 var vx: float
 var vy: float
 var direction_x: float
@@ -58,6 +57,9 @@ var house_count: int
 var brother: FriendlySoldier
 var left: bool
 var helicopter = null
+# Walking to the helicopter: the jeep that dropped it off, which is credited
+# when it gets there.
+var deliverer: Player
 
 
 static func _static_init() -> void:
@@ -170,7 +172,6 @@ func init() -> void:
 	count += 1
 
 	solids = game_mode.solids
-	player = game_mode.player
 
 	layer = 2
 	bullet_hits = 1
@@ -329,7 +330,7 @@ func _walk_to_helicopter() -> void:
 
 	if (vx < 0 and x <= helicopter.x) or (vx > 0 and x >= helicopter.x):
 		do_remove()
-		helicopter.friendly_soldier_picked_up()
+		helicopter.friendly_soldier_picked_up(deliverer)
 
 
 func _convey() -> void:
@@ -387,9 +388,9 @@ func bump(x1: float, y1: float, x2: float, y2: float, _invincible: bool) -> bool
 		do_remove()
 		if type == FriendlySoldierType.WEAPON_CARRIER \
 				or type == FriendlySoldierType.WEAPON_CARRIER_WANDERER:
-			game_mode.player.pick_up_flashing_soldier()
+			game_mode.acting_player.pick_up_flashing_soldier()
 		else:
-			game_mode.player.collect_pow()
+			game_mode.acting_player.collect_pow()
 		if brother != null:
 			brother.promote()
 	return false

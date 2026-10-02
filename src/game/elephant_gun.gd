@@ -39,7 +39,6 @@ var fireball_y: float
 var fireball_vx: float
 var left: bool
 var hits: int
-var player: Player
 
 
 func _init(p_x: float, p_y: float, p_left: bool) -> void:
@@ -53,8 +52,6 @@ func _init(p_x: float, p_y: float, p_left: bool) -> void:
 
 func init() -> void:
 	super.init()
-
-	player = game_mode.player
 
 	layer = 2
 
@@ -104,8 +101,9 @@ func _fire() -> void:
 
 func update() -> void:
 	# Without missiles the player has to drive much closer, so the hit box is
-	# extended to make the fight winnable.
-	hit_y2 = 88 if main.has_missiles else 128
+	# extended to make the fight winnable -- for as long as any jeep is without
+	# them.
+	hit_y2 = 88 if game_mode.all_have_missiles() else 128
 
 	match state:
 		STATE_AIMING:

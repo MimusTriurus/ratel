@@ -18,7 +18,6 @@ var launcher_x: float
 var launcher_y: float
 var clip_x: float
 var explode_delay: int
-var player: Player
 var entry_delay: int = ENTRY_DELAY
 
 
@@ -26,8 +25,6 @@ func _init(p_launcher_x: float, p_launcher_y: float) -> void:
 	super()
 	launcher_x = p_launcher_x
 	launcher_y = p_launcher_y
-
-	player = game_mode.player
 
 	x = p_launcher_x
 	y = p_launcher_y + 32

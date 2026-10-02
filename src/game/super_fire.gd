@@ -22,7 +22,6 @@ const SPEED := 11.0
 static var ASTERS_XYS: Array = []              # [ASTER_DELAY][ASTER_SPINES]
 static var ASTER_SCALES: PackedFloat32Array = PackedFloat32Array()
 
-var player: Player
 var state: int = STATE_ASTER
 var length: float
 var flicker_counter: float
@@ -56,7 +55,6 @@ func _init(p_x: float, p_y: float, p_boss_super_tank) -> void:
 
 func init() -> void:
 	layer = 5
-	player = game_mode.player
 
 
 func update() -> void:
@@ -81,7 +79,7 @@ func update() -> void:
 				do_remove()
 
 	if state != STATE_ASTER:
-		player.attack_rect(x - 40, y + 32, x + 40, y + length - 32)
+		game_mode.attack_players_rect(x - 40, y + 32, x + 40, y + length - 32)
 
 	if boss_super_tank.remove:
 		do_remove()

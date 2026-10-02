@@ -30,7 +30,6 @@ const ROLL_ACCELERATION := 2.0 * (ROLL_DISTANCE - ROLL_VY * ROLL_STEPS) \
 var rotation_offset: float = 27.933975
 var left: bool
 var state: int = STATE_HIDDEN
-var player: Player
 var group_index: int
 var angle: float = -90
 var vx: float
@@ -46,8 +45,6 @@ func _init(p_x: float, p_y: float) -> void:
 	super()
 	x = p_x
 	y = p_y
-
-	player = game_mode.player
 
 	var X := int(p_x) >> 5
 	var Y := int(p_y) >> 5

@@ -11,22 +11,24 @@ var up: bool
 var orientation_index: int
 
 
-# Enters on a random side of the player, nudged inwards if that would put it
-# off-screen.
-func _init(_p_x: float, p_y: float) -> void:
+# Enters on a random side of the player nearest its trigger, nudged inwards if
+# that would put it off-screen.
+func _init(p_x: float, p_y: float) -> void:
 	super()
-	x = game_mode.player.x \
+	var target_x := game_mode.target_player(p_x, p_y).x
+	x = target_x \
 		+ (-APPEAR_DISTANCE if main.random.randi_range(0, 1) == 0 else APPEAR_DISTANCE)
 	if x - 96 < game_mode.camera_x:
-		x = game_mode.player.x + APPEAR_DISTANCE
+		x = target_x + APPEAR_DISTANCE
 	elif x + 96 > game_mode.camera_x + Main.SCREEN_WIDTH:
-		x = game_mode.player.x - APPEAR_DISTANCE
+		x = target_x - APPEAR_DISTANCE
 	y = p_y
 
 
-static func from_landing_port(left_landing_port: bool) -> Airplane:
+# Air cover over a landing port, sent at the jeep waiting by it.
+static func from_landing_port(left_landing_port: bool, target_x: float) -> Airplane:
 	var a := Airplane.new(0, 0)
-	a.x = Main.game_mode.player.x \
+	a.x = target_x \
 		+ (-APPEAR_DISTANCE if left_landing_port else APPEAR_DISTANCE)
 	a.y = Main.game_mode.camera_y - 124
 	return a

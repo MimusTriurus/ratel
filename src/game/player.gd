@@ -61,6 +61,8 @@ static func _static_init() -> void:
 
 var main: Main
 var game_mode: GameMode
+# This jeep's lives, score and weapon, which were Main's in the original.
+var state: PlayerState
 var input: HumanInput
 var mines: Array[Enemy]
 
@@ -94,10 +96,11 @@ var releaseable_pows: int
 var in_swamp: bool
 
 
-func _init() -> void:
+func _init(p_state: PlayerState) -> void:
 	main = Main.main
 	game_mode = Main.game_mode
-	input = main.input
+	state = p_state
+	input = p_state.input
 	mines = game_mode.mines
 
 
@@ -107,7 +110,7 @@ func set_weapon_armed(p_weapon_armed: bool) -> void:
 
 func pick_up_flashing_soldier() -> void:
 	pows += 1
-	main.upgrade_weapon(true)
+	state.upgrade_weapon(true)
 
 
 func collect_pow() -> void:
@@ -127,13 +130,14 @@ func explode() -> void:
 		return
 
 	main.play_sound(main.player_explode_sound)
-	if main.extra_lives == 0:
+	# The last life of the last jeep in the game.
+	if state.extra_lives == 0 and not game_mode.other_player_in(self):
 		main.stop_song()
 	Explosion.new(x, y, true)
 
 	# Carried POWs scatter, and occasionally one of them carries the weapon.
 	if releaseable_pows > 1:
-		var weapon_carrier: bool = main.has_missiles and main.random.randi_range(0, 4) == 3
+		var weapon_carrier: bool = state.has_missiles and main.random.randi_range(0, 4) == 3
 		if weapon_carrier:
 			releaseable_pows += 1
 		var release := releaseable_pows - 2
@@ -146,13 +150,20 @@ func explode() -> void:
 
 	pows = 0
 	releaseable_pows = 0
-	main.missile_power = 0
-	main.has_missiles = false
+	state.missile_power = 0
+	state.has_missiles = false
 	respawning = RESPAWN_DELAY
 
 
+# Whether anything can kill the jeep now: not while it is respawning, nor
+# while it flashes after (invincible), nor ever under ButtonMapping.god_mode.
+# What cannot kill it passes through it, as a round does during the flash.
+func is_untouchable() -> bool:
+	return respawning > 0 or invincible > 0 or main.button_mapping.god_mode
+
+
 func attack_rect(x1: float, y1: float, x2: float, y2: float) -> bool:
-	if respawning == 0 and invincible == 0 \
+	if not is_untouchable() \
 			and x1 <= x + 32 and x2 >= x - 32 and y1 <= y + 32 and y2 >= y - 32:
 		explode()
 		return true
@@ -160,7 +171,7 @@ func attack_rect(x1: float, y1: float, x2: float, y2: float) -> bool:
 
 
 func attack(px: float, py: float) -> bool:
-	if respawning == 0 and invincible == 0 \
+	if not is_untouchable() \
 			and px >= x - 32 and px <= x + 32 and py >= y - 32 and py <= y + 32:
 		explode()
 		return true
@@ -169,8 +180,8 @@ func attack(px: float, py: float) -> bool:
 
 func collect_flashing_star() -> void:
 	main.play_sound(main.weapon_upgrade_sound)
-	main.has_missiles = true
-	main.missile_power = 2
+	state.has_missiles = true
+	state.missile_power = 2
 
 
 func get_speed() -> float:
@@ -189,9 +200,14 @@ func update() -> void:
 	if respawning > 0:
 		respawning -= 1
 		if respawning == 0:
-			if main.extra_lives > 0:
-				main.lose_life()
+			if state.extra_lives > 0:
+				state.lose_life()
 				invincible = INVINCIBLE_DELAY
+			elif game_mode.other_player_in(self):
+				# Out of lives with a partner still playing: out of the game
+				# until the continue screen, which only comes when both are.
+				state.out = true
+				return
 			elif not game_mode.stage_completed:
 				main.konami_code.enabled = false
 				main.request_mode(Modes.CONTINUE)
@@ -307,6 +323,12 @@ func update() -> void:
 	var floor_y := game_mode.max_camera_y + Main.SCREEN_HEIGHT - 32
 	if y > floor_y:
 		y = floor_y
+	# With two jeeps the camera cannot follow both everywhere, so the frame is
+	# the leash: neither can drive off the top or the bottom of it.
+	# GameMode._camera_track_players keeps the camera where both are inside.
+	if game_mode.players.size() > 1:
+		y = clampf(y, game_mode.camera_y + GameMode.COOP_EDGE,
+			game_mode.camera_y + Main.SCREEN_HEIGHT - GameMode.COOP_EDGE)
 
 	if angle_steps > 0:
 		angle_steps -= 1
@@ -379,8 +401,8 @@ func update() -> void:
 				fire_angle = aim_angle
 			elif target_angle == -1 and angle_steps == 0:
 				fire_angle = angle
-			if main.has_missiles:
-				PlayerMissile.new(x, y, fire_angle, main.missile_power)
+			if state.has_missiles:
+				PlayerMissile.new(x, y, fire_angle, state.missile_power)
 			else:
 				Grenade.new(x, y, fire_angle)
 	else:
@@ -390,14 +412,14 @@ func update() -> void:
 		gun_armed -= 1
 	if input.is_gun():
 		if (shoot_released or gun_armed == 0) and live_bullets() < MAX_BULLETS:
-			PlayerBullet.new(x, y, aim_angle if aiming else 270.0)
+			PlayerBullet.new(x, y, aim_angle if aiming else 270.0).shooter = self
 			gun_armed = TURBO_DELAY if main.button_mapping.turbo else GUN_ARMED_DELAY
 		shoot_released = false
 	else:
 		shoot_released = true
 		gun_armed = 0
 
-	var is_invincible := invincible > 0
+	var is_invincible := invincible > 0 or main.button_mapping.god_mode
 	var x_margin := 32.0
 	var y_margin := 32.0
 	if angle == 0 or angle == 180:
@@ -416,11 +438,11 @@ func update() -> void:
 # as in the original's render().
 # The player's rounds still flying: PlayerBullet's layer, read off GameMode
 # rather than kept here, so nothing that takes a round away can leave a count
-# behind.
+# behind. Only this jeep's: each has a cap of its own.
 func live_bullets() -> int:
 	var n := 0
 	for e in game_mode.elements[PlayerBullet.LAYER]:
-		if e is PlayerBullet and not e.remove:
+		if e is PlayerBullet and not e.remove and e.shooter == self:
 			n += 1
 	return n
 
@@ -462,4 +484,7 @@ func render() -> void:
 			315:
 				main.draw(main.player_wakes[4], x - 49, y - 36, a)
 
-	main.draw_vehicle(main.players[invincible_color], x, y + RUMBLE[rumble], display_angle)
+	# The second player's jeep is blue; both flash the same colours.
+	var sprites: Array = main.players_blue if state.index == 1 and invincible_color == 0 \
+		else main.players[invincible_color]
+	main.draw_vehicle(sprites, x, y + RUMBLE[rumble], display_angle)

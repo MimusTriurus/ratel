@@ -28,7 +28,6 @@ var state: int = STATE_HIDDEN
 var sprite_index: int
 var delay: int = HIDDEN_TIME
 var shots: int
-var player: Player
 
 
 static func _static_init() -> void:
@@ -46,8 +45,6 @@ func _init(p_x: float, p_y: float) -> void:
 
 func init() -> void:
 	super.init()
-
-	player = game_mode.player
 
 	layer = 3
 

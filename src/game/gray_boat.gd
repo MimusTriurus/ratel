@@ -11,7 +11,6 @@ const SPEED := 1.75
 const MOVEMENT_TIME := 227
 const TO_DEGREES := 180.0 / PI
 
-var player: Player
 var sprite_index: int
 var sprite_index_counter: int
 var bullet_delay: int
@@ -28,8 +27,6 @@ func _init(p_x: float, p_y: float) -> void:
 
 func init() -> void:
 	super.init()
-
-	player = game_mode.player
 
 	layer = 3
 

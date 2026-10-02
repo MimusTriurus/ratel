@@ -25,7 +25,6 @@ const OPEN_SPEED := 32.0 / OPEN_DELAY
 const BULLET_SPEED := 1.625
 const BULLET_TRAVEL_TIME := 2 * 91
 
-var player: Player
 var state: int = STATE_CLOSED
 var delay: int
 var open_y: float
@@ -49,8 +48,6 @@ func _init(p_x: float, p_y: float, p_manager) -> void:
 
 func init() -> void:
 	super.init()
-
-	player = game_mode.player
 
 	layer = 3
 

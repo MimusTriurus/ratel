@@ -2,7 +2,9 @@
 #
 # The transport that flies the jeep in at the start of a continued stage. It
 # swings in along a quarter-circle arc, unloads, then swings back out; height
-# is faked with a scale factor and a separately scaled shadow.
+# is faked with a scale factor and a separately scaled shadow. With two
+# players it unloads both jeeps, the second SECOND_UNLOAD_DELAY ticks after
+# the first, and leaves when the last is down.
 class_name Chinook
 extends GameElement
 
@@ -23,6 +25,8 @@ const VT0 := AT * FORWARD_TIME
 const Z1 := 1.0
 const SCALE_1 := 10.0
 const Z0 := SCALE_1 * Z1 / (SCALE_1 - 1.0)
+# Long enough for the first jeep to be clear of the ramp.
+const SECOND_UNLOAD_DELAY := 30
 
 var angle: float
 var rotor_angle: float = 90.0 + TO_DEGREES * DT
@@ -31,7 +35,9 @@ var state: int = STATE_FORWARDS
 var vt: float = VT0
 var t: float = DT
 var diagonal_steps: int
-var intro_player: IntroPlayer
+var intro_players: Array[IntroPlayer] = []
+var unloading_ticks: int
+var unloads_pending: int
 var X: float
 var Y: float
 
@@ -59,9 +65,13 @@ func update() -> void:
 				y = 10780.0 + 1024.0 * sin(t)
 			else:
 				state = STATE_UNLOADING
-				intro_player = IntroPlayer.new(x, y + 102, self)
+				intro_players.append(IntroPlayer.new(x, y + 102, self))
+				unloads_pending = 2 if _second_aboard() else 1
 			main.play_sound_if_not_playing(main.helicopter_sound, 0.5)
 		STATE_UNLOADING:
+			unloading_ticks += 1
+			if unloading_ticks == SECOND_UNLOAD_DELAY and _second_aboard():
+				intro_players.append(IntroPlayer.new(x, y + 102, self, true))
 			main.play_sound_if_not_playing(main.helicopter_sound, 0.5)
 		STATE_AWAY:
 			vt += AT
@@ -79,15 +89,21 @@ func update() -> void:
 
 
 func _create_player() -> void:
-	game_mode.player.x = IntroPlayer.FINAL_X
-	game_mode.player.y = IntroPlayer.FINAL_Y
-	game_mode.player.make_invincible()
-	if intro_player != null:
-		intro_player.do_remove()
+	game_mode.place_players(IntroPlayer.FINAL_X, IntroPlayer.FINAL_Y)
+	for p in intro_players:
+		p.do_remove()
 	game_mode.playing = true
 
 
+# Whether there is a second jeep to unload: two players, the second still in.
+func _second_aboard() -> bool:
+	return game_mode.players.size() > 1 and not game_mode.players[1].state.out
+
+
 func unload_completed() -> void:
+	unloads_pending -= 1
+	if unloads_pending > 0:
+		return
 	state = STATE_AWAY
 	X = x - 1024.0
 	Y = y

@@ -17,7 +17,6 @@ var travel_time: int
 var vx: float
 var vy: float
 var sprite: Spr
-var player: Player
 
 
 func _init(p_x: float, p_y: float, dx: float, dy: float, p_travel_time: int,
@@ -45,7 +44,6 @@ func _init(p_x: float, p_y: float, dx: float, dy: float, p_travel_time: int,
 
 func init() -> void:
 	layer = 4
-	player = game_mode.player
 
 
 func update() -> void:
@@ -58,7 +56,7 @@ func update() -> void:
 		return
 
 	travel_time -= 1
-	if travel_time < 0 or game_mode.is_solid(x, y) or player.attack(x, y):
+	if travel_time < 0 or game_mode.is_solid(x, y) or game_mode.attack_players(x, y):
 		do_remove()
 		BulletHit.new(x, y)
 

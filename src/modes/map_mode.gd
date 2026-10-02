@@ -24,10 +24,13 @@ var delay: int = PAUSE_DELAY
 var jeep_y: float = 868
 var soldier_delay: int = SOLDIER_DELAY
 var target_jeep_y: float
+# The tally is one player's, as the original's was.
+var player_state: PlayerState
 
 
 func init(p_main: Main) -> void:
 	main = p_main
+	player_state = p_main.player_states[0]
 	target_jeep_y = JEEP_YS[p_main.stage_index]
 	p_main.start_fade(false, self)
 
@@ -48,16 +51,16 @@ func update() -> void:
 			if delay == 0:
 				state = STATE_MOVING
 		STATE_MOVING:
-			if main.friendly_soldiers_picked_up > 0:
+			if player_state.friendly_soldiers_picked_up > 0:
 				soldier_delay -= 1
 				if soldier_delay == 0:
 					soldier_delay = SOLDIER_DELAY
-					main.friendly_soldiers_picked_up -= 1
-					main.add_points(2000)
+					player_state.friendly_soldiers_picked_up -= 1
+					player_state.add_points(2000)
 			jeep_y -= JEEP_SPEED
 			if jeep_y <= target_jeep_y:
 				jeep_y = target_jeep_y
-				if main.friendly_soldiers_picked_up == 0:
+				if player_state.friendly_soldiers_picked_up == 0:
 					state = STATE_PAUSED_2
 					delay = PAUSE_DELAY_2
 		STATE_PAUSED_2:
@@ -85,5 +88,5 @@ func render() -> void:
 	main.draw(main.friendly_soldiers[0][8], 552, 344)
 
 	main.draw_text("1P SCORE", 416, 256, Main.FONT_GRAY)
-	main.draw_text(main.score_str, 704, 256, Main.FONT_GRAY)
-	main.draw_number(main.friendly_soldiers_picked_up, 2, 608, 352, Main.FONT_GRAY)
+	main.draw_text(player_state.score_str, 704, 256, Main.FONT_GRAY)
+	main.draw_number(player_state.friendly_soldiers_picked_up, 2, 608, 352, Main.FONT_GRAY)

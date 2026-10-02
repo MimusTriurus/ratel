@@ -8,6 +8,9 @@ var size: float = 32
 var sprite_index: int
 var scale: float
 var grenade_explosion: bool
+# The jeep whose weapon made it, if one did: credited with what it destroys,
+# and re-armed by it when it is a grenade explosion.
+var shooter: Player
 var damages_enemies: bool = true
 var enemies: Array[Enemy]
 var type: int
@@ -73,6 +76,9 @@ func init() -> void:
 
 
 func update() -> void:
+	# Points for what this destroys go to the jeep that fired it.
+	if shooter != null:
+		game_mode.acting_player = shooter
 	if delay > 0:
 		delay -= 1
 		if delay == 0:
@@ -108,7 +114,7 @@ func update() -> void:
 	if (tiny and size > 68) or size > 128:
 		remove = true
 		if grenade_explosion:
-			game_mode.player.set_weapon_armed(true)
+			shooter.set_weapon_armed(true)
 
 
 func render() -> void:

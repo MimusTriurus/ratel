@@ -24,6 +24,9 @@ var scale: float
 var angle: float
 var t: int
 var enemies: Array[Enemy]
+# The jeep that fired it: Player.update fires, so that is the acting player.
+# Its weapon is what the blast re-arms, and its range is what this flies.
+var shooter: Player
 
 
 func _init(p_x: float, p_y: float, p_angle: float) -> void:
@@ -32,7 +35,8 @@ func _init(p_x: float, p_y: float, p_angle: float) -> void:
 	y = p_y
 
 	var unit := main.create_unit_vector_deg(p_angle)
-	var v := VELOCITY2 if game_mode.player.long_range else VELOCITY
+	shooter = game_mode.acting_player
+	var v := VELOCITY2 if shooter.long_range else VELOCITY
 	vx = unit[0] * v
 	vy = unit[1] * v
 
@@ -45,6 +49,8 @@ func init() -> void:
 
 
 func update() -> void:
+	# Points for what this destroys go to the jeep that fired it.
+	game_mode.acting_player = shooter
 	x += vx
 	y += vy
 	scale = MIN_SCALE + t * (V0 + HALF_GRAVITY * t)
@@ -70,6 +76,7 @@ func update() -> void:
 			main.play_explode_sound2()
 		var e := Explosion.new(x, y)
 		e.set_grenade_explosion(true)
+		e.shooter = shooter
 
 
 func render() -> void:

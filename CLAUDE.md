@@ -163,6 +163,26 @@ Two invariants that are easy to break:
 Collision is the original's hand-written AABB tests (`HitElement.overlap` and the
 `hit_*` / `is_solid_*` / `is_mine_*` box families), not Godot collision.
 
+The jeeps are `GameMode.players`, one per `Main.player_states` — the
+`PlayerState` that holds what the original kept on `Main` (lives, score,
+weapon, POWs delivered) and outlives the stage. This is the groundwork for
+two-player co-op; with one player it plays exactly as before, tick for tick.
+`tools/play_trace.gd` is how that is checked: a seeded, scripted run of every
+stage that writes the state of every tick, run on two revisions and compared
+with `cmp`. `ghost` carries an invincible jeep through every trigger and boss.
+
+```bash
+godot --path . --headless --script tools/play_trace.gd -- build/play_trace/a.txt ghost
+```
+
+Nothing picks a jeep
+by index: an element reads `player`, a `GameElement` property that returns
+`GameMode.target_player(x, y)` — the nearest, re-picked on every read, so not
+from `init()` — a shot at the jeeps calls `attack_players` / `attack_players_rect`,
+and points and pickups go to `GameMode.acting_player`, the jeep whose update
+is running (`Main.add_points` credits it). Grenades and missiles remember their
+`shooter`, whose weapon their blast re-arms.
+
 ### Rendering
 
 `Main` owns the whole draw path. `Spr` stands in for Slick's `Image` — including
@@ -714,8 +734,11 @@ see `README.md`.
 ### Controls: WASD + mouse aim
 
 The one deliberate gameplay departure from the Java original. Movement defaults
-to WASD (arrows always work as a second set), the cursor sets the weapon angle,
-LMB fires the machine gun and RMB throws the grenade/missile.
+to WASD (arrows always work as a second set), O fires the machine gun and P
+throws the grenade/missile, the cursor sets the weapon angle, LMB fires the
+machine gun and RMB throws the grenade/missile. P was the pause key, and still
+is when it is not bound to a control (`ButtonMapping.claims`); Enter always
+pauses.
 
 `ButtonMapping.mouse_aim` gates the aiming half and is switched from Options →
 Controls (`ControlsMode`, `Modes.CONTROLS` — a mode with no counterpart in the
@@ -743,7 +766,40 @@ touching this:
   `reset_to_defaults()` for when a mapping is already unusable.
 - **Direction keys shadow the fallback gun keys.** `GUN_FALLBACK` is the
   original's `Z / Y / W / K`, and `W` is now "up", so `snap()` skips any
-  fallback key a direction or the grenade claims.
+  fallback key a direction or the grenade claims. The fallback only applies
+  while `gun_key_mapped` is false, which is no longer the default.
+
+### Two players
+
+"2 players" on the title screen (`Main.set_player_count`) puts a second, blue
+jeep in the stage, as the NES game could; the Java original could not. The
+menus keep reading `Main.input`. Each jeep reads its `PlayerState.input`: with
+one player that is `Main.input` itself, arrows and all, so a one-player game is
+unchanged tick for tick (`tools/play_trace.gd`); with two, the first player has
+WASD, O, P and the mouse without the arrows, and the second the arrows, right
+Alt for the gun, right Ctrl for the grenade and a pad (`ButtonMapping.second_player`,
+the defaults of `Main.button_mapping_2`, saved to `user://buttons2.cfg`).
+Options -> "2p input" is `InputMode.new(1)` (`Modes.INPUT_2`); either player's
+remap ignores a key the other has bound (`ButtonMapping.claims_at`, which knows
+left Ctrl from right) and keeps the side a weapon key was pressed on.
+`Input.is_key_pressed` cannot tell right Alt from left, and neither can an
+`InputMap` action with a location (tried: both sides match), so
+`HumanInput.key_event`, fed from `Main._input`, keeps which side each key is
+held at, cleared on focus loss.
+
+The frame holds the two together: `GameMode._camera_track_players` follows the
+leading jeep north and the trailing one south, never so far that either is
+nearer than `COOP_EDGE` to the top or bottom, and `Player.update` clamps them
+inside that. A jeep that runs out of lives while the other plays on is
+`PlayerState.out` -- not updated, drawn, targeted or followed, through later
+stages too -- and the continue screen comes when both are. The Chinook unloads
+both jeeps, the second down the ramp after the first and then straight back to
+beside it (`IntroPlayer.second`), and the rescue helicopter takes both at once:
+each jeep has its own drop-off delay, a soldier is credited to the jeep that
+brought it (`FriendlySoldier.deliverer`), and it leaves when every jeep still in
+is past it or empty-handed. Each jeep has its own
+lives, score, weapon, POWs and three-round cap; what a round, grenade, missile or
+their blast destroys is credited to its `shooter`, which sets `acting_player`.
 
 Aim is resolved once per logic tick in `Player.update` (cursor position plus the
 camera offset), so a shot uses the angle the cursor had on its tick. The jeep
@@ -796,7 +852,9 @@ intro drop only incidentally — the real gate there is `GameMode.playing`, whic
 
 Deliberate. Not bugs, and not to be "fixed" back without saying why:
 
-- Controls: WASD movement and mouse aim, gated on `ButtonMapping.mouse_aim`.
+- Controls: WASD movement, O and P for the weapons, and mouse aim, gated on
+  `ButtonMapping.mouse_aim`.
+- Two players, from the title screen's "2 players".
 - No loading screen: `Main.load_all` runs from `_ready`, so the game opens on
   the title screen. `jackal.LoadingMode` has no counterpart here any more.
 - Sound options — music, effects and a master volume, on three buses where the

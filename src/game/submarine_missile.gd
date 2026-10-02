@@ -18,8 +18,8 @@ func _init(p_x: float, p_y: float) -> void:
 	super()
 	var sy := p_y - 20
 
-	var player := game_mode.player
-	var ang := 180 + TO_DEGREES * atan2(sy - player.y, p_x - player.x)
+	var target := game_mode.target_player(p_x, sy)
+	var ang := 180 + TO_DEGREES * atan2(sy - target.y, p_x - target.x)
 	angle = 45 * roundi(ang / 45.0)
 	var v := main.create_unit_vector(angle)
 	vx = SPEED * v[0]

@@ -24,6 +24,16 @@ const ARROWS: Array[Key] = [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]
 const AIM_DEADZONE := 24.0
 
 var button_mapping: ButtonMapping
+# The always-live arrows. Off for the first player's jeep in a two-player
+# game, whose arrows are the second player's; the menus' input keeps them.
+var arrows := true
+
+# Keys held, by keycode, as a bitmask of the locations (1 << KeyLocation) they
+# are held at. Input.is_key_pressed cannot tell right Alt from left, and the
+# second player's weapons are the right-hand ones, so Main feeds every key
+# event here. Cleared when the window loses focus, which is when releases go
+# missing.
+static var _held_at := {}
 
 var _up: bool
 var _down: bool
@@ -52,19 +62,39 @@ func _init(p_button_mapping: ButtonMapping) -> void:
 	button_mapping = p_button_mapping
 
 
+static func key_event(e: InputEventKey) -> void:
+	if e.echo:
+		return
+	var bit := 1 << e.location
+	var held: int = _held_at.get(e.keycode, 0)
+	_held_at[e.keycode] = (held | bit) if e.pressed else (held & ~bit)
+
+
+static func release_all() -> void:
+	_held_at.clear()
+
+
+static func _key(key: Key, location: KeyLocation) -> bool:
+	if not Input.is_key_pressed(key):
+		return false
+	if location == KEY_LOCATION_UNSPECIFIED:
+		return true
+	return (int(_held_at.get(key, 0)) & (1 << location)) != 0
+
+
 func snap() -> void:
 	var bm := button_mapping
 
-	_up = Input.is_key_pressed(bm.key_up) or Input.is_key_pressed(ARROWS[0])
-	_down = Input.is_key_pressed(bm.key_down) or Input.is_key_pressed(ARROWS[1])
-	_left = Input.is_key_pressed(bm.key_left) or Input.is_key_pressed(ARROWS[2])
-	_right = Input.is_key_pressed(bm.key_right) or Input.is_key_pressed(ARROWS[3])
-	_fire = Input.is_key_pressed(bm.key_grenade)
+	_up = Input.is_key_pressed(bm.key_up) or (arrows and Input.is_key_pressed(ARROWS[0]))
+	_down = Input.is_key_pressed(bm.key_down) or (arrows and Input.is_key_pressed(ARROWS[1]))
+	_left = Input.is_key_pressed(bm.key_left) or (arrows and Input.is_key_pressed(ARROWS[2]))
+	_right = Input.is_key_pressed(bm.key_right) or (arrows and Input.is_key_pressed(ARROWS[3]))
+	_fire = _key(bm.key_grenade, bm.key_grenade_location)
 
 	_snap_mouse()
 
 	if bm.gun_key_mapped:
-		_shoot = Input.is_key_pressed(bm.key_gun)
+		_shoot = _key(bm.key_gun, bm.key_gun_location)
 	else:
 		_shoot = false
 		for k in GUN_FALLBACK:
@@ -98,7 +128,10 @@ func snap() -> void:
 	_enter = Input.is_key_pressed(KEY_ENTER) or Input.is_key_pressed(KEY_KP_ENTER)
 	_f12 = Input.is_key_pressed(KEY_F12)
 	_escape = Input.is_key_pressed(KEY_ESCAPE)
-	_pause_key = Input.is_key_pressed(KEY_P) or _enter
+	# P was the original's pause, and is a weapon in the default mapping now: a
+	# bound key is the control it is bound to.
+	var claimed := bm.claims(KEY_P) if Main.main == null else Main.main.key_claimed(KEY_P)
+	_pause_key = (Input.is_key_pressed(KEY_P) and not claimed) or _enter
 
 
 # Sampled once per logic tick like everything else, so the aim angle a shot

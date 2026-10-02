@@ -22,7 +22,6 @@ var delay: int
 var flicker_counter: int
 var flicker_index: int
 var alpha: float = 1.0
-var player: Player
 var source_enemy: Enemy
 
 
@@ -43,13 +42,12 @@ func _init(p_x: float, p_y: float, p_vx: float, p_vy: float, p_angle: float,
 
 func init() -> void:
 	layer = 4
-	player = game_mode.player
 
 
 func _attack_along(sign: float) -> void:
 	for i in 6:
 		var mag := sign * 0.2 * i * length
-		player.attack(x + mag * dx, y + mag * dy)
+		game_mode.attack_players(x + mag * dx, y + mag * dy)
 
 
 func update() -> void:

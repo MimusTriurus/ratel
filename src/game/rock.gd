@@ -27,7 +27,6 @@ const SCALE_ACCELERATION := -0.5 / float(FALL_TIME * FALL_TIME)
 const SQRT2 := 1.4142135623730951
 const ISQRT2 := 0.7071067811865476
 
-var player: Player
 var angle: float
 var scale: float = 1
 var v_scale: float
@@ -50,7 +49,6 @@ func init() -> void:
 	super.init()
 
 	mines = game_mode.mines
-	player = game_mode.player
 
 	layer = 3
 

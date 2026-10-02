@@ -70,10 +70,10 @@ func update() -> void:
 		RotatingGun.STATE_TRACKING:
 			if pause > 0:
 				pause -= 1
-			var player := game_mode.player
-			var target_angle := rad_to_deg(atan2(
-				player.y - (boss_super_tank.y + Y_OFFSET),
-				player.x - (boss_super_tank.x + X_OFFSET)))
+			var gun_x: float = boss_super_tank.x + X_OFFSET
+			var gun_y: float = boss_super_tank.y + Y_OFFSET
+			var target := game_mode.target_player(gun_x, gun_y)
+			var target_angle := rad_to_deg(atan2(target.y - gun_y, target.x - gun_x))
 			var delta_angle := fmod(target_angle - angle + 180, 360.0)
 			if delta_angle < 0:
 				delta_angle += 180

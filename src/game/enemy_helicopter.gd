@@ -31,7 +31,6 @@ var entering_acceleration: float
 var vy: float
 var delay: int
 var down: bool
-var player: Player
 var target_angle: float
 var target_half_angle: float
 var positive_angle: bool
@@ -42,12 +41,17 @@ var shoot_delay: int = SHOOT_DELAY
 
 func _init(p_down: bool) -> void:
 	super()
-	x = game_mode.player.x \
+	# Beside the jeep nearest the middle of the frame: there is no trigger
+	# position to measure from.
+	var target_x := game_mode.target_player(
+		game_mode.camera_x + Main.SCREEN_WIDTH / 2.0,
+		game_mode.camera_y + Main.SCREEN_HEIGHT / 2.0).x
+	x = target_x \
 		+ (-APPEAR_DISTANCE if main.random.randi_range(0, 1) == 0 else APPEAR_DISTANCE)
 	if x - 96 < game_mode.camera_x:
-		x = game_mode.player.x + APPEAR_DISTANCE
+		x = target_x + APPEAR_DISTANCE
 	elif x + 96 > game_mode.camera_x + Main.SCREEN_WIDTH:
-		x = game_mode.player.x - APPEAR_DISTANCE
+		x = target_x - APPEAR_DISTANCE
 
 	if p_down:
 		angle = 90
@@ -62,7 +66,6 @@ func _init(p_down: bool) -> void:
 	vy = -entering_acceleration * ENTERING_TIME
 
 	down = p_down
-	player = game_mode.player
 
 
 func init() -> void:

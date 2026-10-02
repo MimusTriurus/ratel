@@ -16,6 +16,9 @@ const K2 := 0.333 / float(TRAVEL_TIME - PERIOD1)
 var vx: float
 var vy: float
 var notifier: bool
+# The jeep whose missile threw it: credited with what it destroys, and
+# re-armed by the notifier.
+var shooter: Player
 var t: int
 var scale: float
 var enemies: Array[Enemy]
@@ -37,6 +40,9 @@ func init() -> void:
 
 
 func update() -> void:
+	# Points for what this destroys go to the jeep that fired it.
+	if shooter != null:
+		game_mode.acting_player = shooter
 	x += vx
 	y += vy
 
@@ -45,7 +51,7 @@ func update() -> void:
 		remove = true
 		# Exactly one of the four blasts re-arms the weapon.
 		if notifier:
-			game_mode.player.set_weapon_armed(true)
+			shooter.set_weapon_armed(true)
 		return
 
 	var margin := 0.0

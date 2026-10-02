@@ -14,7 +14,6 @@ const TROOPS := 12
 const TROOPS_DELAY := 2 * 91
 
 var state: int = STATE_PAUSED
-var player: Player
 var traveling: int = TRAVEL_TIME
 var troops: int = TROOPS
 var troops_delay: int
@@ -28,8 +27,6 @@ func _init(p_x: float, p_y: float) -> void:
 
 func init() -> void:
 	super.init()
-
-	player = game_mode.player
 
 	layer = 4
 

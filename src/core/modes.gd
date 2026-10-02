@@ -22,3 +22,5 @@ const INTRO_MAP := 12
 const CONTROLS := 14
 # Not in the original either: music, effects and volume, under options.
 const SOUND := 15
+# Not in the original, which had one player: InputMode for the second.
+const INPUT_2 := 16

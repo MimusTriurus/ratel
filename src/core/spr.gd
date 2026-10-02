@@ -36,3 +36,23 @@ func flipped_copy(fh: bool, fv: bool) -> Spr:
 	if fv:
 		img.flip_y()
 	return Spr.new(ImageTexture.create_from_image(img), Rect2(0, 0, w, h))
+
+
+# Not in Slick: a baked copy with every coloured pixel whose hue is within
+# [min_hue, max_hue] degrees turned by shift degrees, black, white and grey left
+# alone. How the second player's jeep is made out of the first's, there being
+# no second jeep in the sheets.
+func hue_shifted_copy(min_hue: float, max_hue: float, shift: float) -> Spr:
+	var src: Image = tex.get_image()
+	if src.is_compressed():
+		src.decompress()
+	var img := Image.create_empty(int(w), int(h), false, Image.FORMAT_RGBA8)
+	img.blit_rect(src, region, Vector2i.ZERO)
+	for py in img.get_height():
+		for px in img.get_width():
+			var c := img.get_pixel(px, py)
+			var hue := c.h * 360.0
+			if c.a > 0.0 and c.s > 0.2 and hue >= min_hue and hue <= max_hue:
+				c.h = fposmod(hue + shift, 360.0) / 360.0
+				img.set_pixel(px, py, c)
+	return Spr.new(ImageTexture.create_from_image(img), Rect2(0, 0, w, h))
