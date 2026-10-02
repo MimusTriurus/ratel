@@ -630,15 +630,18 @@ and shipped. A sound with no file is silent, in any mode.
   recordings keep the low end the NES's 440 Hz high-pass takes out -- at the
   loudness of the original's file of that name, so the original's gains in
   the mix hold for it, and copies the original's own where modern's is still a
-  copy of it. Played as the original is (`Level3DAudio.is_classic`), but
-  looped where `SOUNDS` says, its loops being modern's; a loop is rendered
-  three times and the middle cut out, crossfaded at the seam. What modern is
+  copy of it. Played by modern's rules -- positional, pitched, looped, the
+  edge fades and fade-outs, the rescue helicopter idling on its pad, the
+  Sound tab's sliders; only the original is played as the game plays it
+  (`Level3DAudio.as_original`) -- and only its music is the original's, so
+  the boss's follows the fight in modern alone. A loop is rendered three
+  times and the middle cut out, crossfaded at the seam. What modern is
   silent for, classic is too. A new modern sound wants a run of the tool.
 
 `SOUNDS`' `"classic"` / `"modern"` sub-dicts hold what differs for one mode --
-a new blast that already has the hit in it `"with": ""` -- and `"classic"` is
-both classic-like modes' (`SPEC_KEYS`), `"original"` being a field of its
-own. `Level3DAudio.Mode`'s values are the settings' and so a saved config's:
+a new blast that already has the hit in it `"with": ""` -- `"classic"` the
+original mode's and `"modern"` the classic mode's too (`SPEC_KEYS`),
+`"original"` being a field of its own. `Level3DAudio.Mode`'s values are the settings' and so a saved config's:
 `ORIGINAL` came last, so a config that said classic before it now says
 classic, the 8-bit mode.
 
