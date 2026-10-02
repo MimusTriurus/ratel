@@ -81,7 +81,10 @@ const MINE := Rect2(0, -10, 0, 20)
 const SOLID := Rect2(-16, -60, 32, 66)
 const HUT_POINTS := 300
 const HOUSE_POINTS := 800
-# Help: 60 ticks, then on and off every 12, four times.
+# Help: 60 ticks, then on and off every 12, four times. Drawn as one HELP up
+# from the first blink to the last, not four: each blink of the game's sprite
+# is a comic burst here, which pops as it comes on (Level3DCallouts), and four
+# pops in a second read as a twitch. When the prisoners come out is the game's.
 const HELP_FIRST := 60
 const HELP_BLINK := 12
 const HELP_BLINKS := 4
@@ -372,7 +375,7 @@ func building_destroyed(name: String) -> void:
 		guns.explode(_level3(Vector2(b.x + 96, b.y + 96)))
 		_serial += 1
 		_helps.append({"x": b.x + 96, "y": b.y + 84, "left": b.type == Triggers.HOUSE_LEFT,
-				"count": HELP_FIRST, "blinks": 0, "on": false, "age": 0, "seed": _serial,
+				"count": HELP_FIRST, "blinks": 0, "on": false, "age": 0, "ticks": 0, "seed": _serial,
 				"at": _roofs[name], "house_count": _house_counts.get(name, 2)})
 		scored.call(HOUSE_POINTS)
 
@@ -385,6 +388,7 @@ func _level3(p: Vector2) -> Vector3:
 # Help.update.
 func _update_help(h: Dictionary) -> bool:
 	h.age += 1
+	h.ticks += 1
 	h.count -= 1
 	if h.count != 0:
 		return false
@@ -450,8 +454,8 @@ func _update_calls(view: Rect2) -> void:
 func help_marks() -> Array[Dictionary]:
 	var marks: Array[Dictionary] = []
 	for h in _helps:
-		if h.on:
-			marks.append({"at": h.at, "small": false, "age": h.age, "seed": h.seed})
+		if h.ticks >= HELP_FIRST:
+			marks.append({"at": h.at, "small": false, "age": h.ticks - HELP_FIRST, "seed": h.seed})
 	if not _call.is_empty() and marks.is_empty():
 		var f: Friend = _call.friend
 		var at: Vector3 = _roofs[_first] if f == null else f.root.position + Vector3(0.0, PRISONER_HELP_HEIGHT, 0.0)
