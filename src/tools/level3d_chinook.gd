@@ -49,7 +49,7 @@ class_name Level3DChinook
 extends Node3D
 
 const MODEL_PATH := "res://resources/3d/jackal_chinook.glb"
-# Level3DAudio's: helicopter.ogg, the original's, in classic.
+# Level3DAudio's: helicopter.ogg, the original's, in the original mode.
 const SOUND := "chinook"
 const MODEL_SCALE := Level3DBtr.MODEL_SCALE
 const PX := Level3DMap.PX
@@ -378,9 +378,10 @@ func tick() -> void:
 				_leave()
 				return
 			# Chinook.update's fade, which is gone by AWAY_ANGLE, still in the
-			# frame: the original's, in classic. The modern one flies on heard
-			# and dies away at the edge of the frame, as it came in.
-			_play_sound(SOUND_VOLUME + (angle + 90.0) / 76.0 if Level3DAudio.is_classic()
+			# frame: the original's, in the original mode. The modern and the
+			# classic one fly on heard and die away at the edge of the frame,
+			# as they came in.
+			_play_sound(SOUND_VOLUME + (angle + 90.0) / 76.0 if Level3DAudio.as_original()
 					else SOUND_VOLUME)
 	_pose()
 	if state != FORWARDS and not handed_over:

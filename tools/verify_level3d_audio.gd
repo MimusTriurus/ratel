@@ -90,9 +90,12 @@ func _initialize() -> void:
 	Level3DAudio.play("hit_armor")
 	if audio.get_child_count() != voices and audio._pools.get("hit_armor/flat", []).any(func(p): return p.playing):
 		failures += _fail("hit_armor at 0 % still plays")
-	Level3DAudio.set_mode(Level3DAudio.Mode.CLASSIC)
+	Level3DAudio.set_mode(Level3DAudio.Mode.ORIGINAL)
 	if not is_equal_approx(Level3DAudio.gain("gun"), 1.0):
-		failures += _fail("a gain applied in the classic mode")
+		failures += _fail("a gain applied in the original mode")
+	Level3DAudio.set_mode(Level3DAudio.Mode.CLASSIC)
+	if not is_equal_approx(Level3DAudio.volume_db("gun"), Level3DAudio.mix_db("gun") + linear_to_db(0.5)):
+		failures += _fail("the Sound tab's gain not applied in the classic mode, which plays as modern")
 	Level3DAudio.set_mode(Level3DAudio.Mode.MODERN)
 	Level3DAudio.set_gains({})
 	Level3DAudio.set_volumes(1.0, 0.5, 1.0, 0.3, false)
@@ -329,7 +332,7 @@ func _check_adaptive(audio: Level3DAudio) -> int:
 # MUSIC's parts, and in modern ADAPTIVE's clips in place of a song's it has --
 # classic's a copy of the 2D game's.
 func _check_music_files() -> int:
-	var classic := Level3DAudio.is_classic()
+	var classic := Level3DAudio.mode != Level3DAudio.Mode.MODERN
 	var dir: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.mode]
 	var classic_dir: String = Level3DAudio.MUSIC_DIRS[Level3DAudio.Mode.CLASSIC]
 	var parts := {}
