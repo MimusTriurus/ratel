@@ -801,6 +801,25 @@ is past it or empty-handed. Each jeep has its own
 lives, score, weapon, POWs and three-round cap; what a round, grenade, missile or
 their blast destroys is credited to its `shooter`, which sets `acting_player`.
 
+The 3D preview has the same co-op, from the Escape menu's "Новая игра: 2 игрока"
+(`Level3DSettings.players`, saved) or `--players 2`. Everything one player's
+is a `Crew` in `level3d_preview.gd` -- vehicle, gun, launcher, HUD line, and a
+`Level3DFriends.Carrier` for the prisoners and the weapon; `btr`, `gun` and
+`launcher` are still the first's, which the mouse, the --shot options and the
+ground's craters (`Level3DLauncher.marks`) go by. The second is blue
+(`Level3DBtr.tint`), reads `Main`'s second mapping from `user://buttons2.cfg`
+through a `HumanInput` of its own, fires the classic way, and takes the arrows
+from the camera. The modules get the nearest jeep from
+`player_position.call(from)`, points go to `Level3DGuns.acting` (explosions
+keep theirs as `by`), the frame follows the middle of the two and
+`Level3DBtr.z_limits` keeps them in it, the Chinook carries both
+(`Level3DChinook.Cargo`) and backs them out to either side of its ramp, and the rescue helicopter takes both at once. `--hold`
+drives the second with `2:` spans, which is how it was checked:
+
+```bash
+godot --path . --windowed --resolution 1280x720 src/tools/level3d_preview.tscn -- --shot out.png 0 1 top 8 --players 2 --immortal --hold w@0-8,2:l@0-8
+```
+
 Aim is resolved once per logic tick in `Player.update` (cursor position plus the
 camera offset), so a shot uses the angle the cursor had on its tick. The jeep
 body still faces its movement direction — the original's gun never pointed
@@ -854,7 +873,7 @@ Deliberate. Not bugs, and not to be "fixed" back without saying why:
 
 - Controls: WASD movement, O and P for the weapons, and mouse aim, gated on
   `ButtonMapping.mouse_aim`.
-- Two players, from the title screen's "2 players".
+- Two players, from the title screen's "2 players", and in the 3D preview.
 - No loading screen: `Main.load_all` runs from `_ready`, so the game opens on
   the title screen. `jackal.LoadingMode` has no counterpart here any more.
 - Sound options — music, effects and a master volume, on three buses where the

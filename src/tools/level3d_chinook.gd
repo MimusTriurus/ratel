@@ -45,6 +45,14 @@
 #     sprite, which is drawn over them, and here the rounds are drawn over
 #     everything, so they flew through it. They strike sparks off it and do
 #     nothing else; the jeep in it is not the player's yet.
+#   * Two players, two vehicles (the preview's co-op). They ride one behind
+#     the other, the first player's by the ramp and out first, down its
+#     diagonal to the west; the second's backs down after it and takes the
+#     same diagonal mirrored, to the east, so that they end on either side of
+#     the ramp (second_side). Where the east has no room for it, it cuts the
+#     west diagonal short and backs straight down for the rest of the way, to
+#     end beside the first rather than on it, as the game's second jeep does
+#     (IntroPlayer, second_spawn_x). Both are the players' when both are out.
 class_name Level3DChinook
 extends Node3D
 
@@ -90,12 +98,37 @@ const AWAY_ANGLE := -128.0
 # The height it has climbed to there: z = -t * IPI2 at angle = t in degrees - 90.
 const Z_AWAY := -(AWAY_ANGLE + 90.0) / Chinook.TO_DEGREES * Chinook.IPI2
 const SOUND_VOLUME := 0.5
+# Between the two vehicles in the cabin, level metres, bumper to bumper.
+const CARGO_GAP := 0.25
 
-enum { FORWARDS, OPENING, OUT, DIAGONAL, REVERSE, AWAY, DONE }
+enum { FORWARDS, OPENING, OUT, AWAY, DONE }
+# A vehicle's own way out, from OUT on: down the ramp, the diagonal, the second
+# one's straight run down, the turn back to north, out.
+enum { BACKING, DIAGONAL, DOWN, REVERSE, UNLOADED }
+
+# IntroPlayer, one a vehicle aboard.
+class Cargo:
+	var btr: Level3DBtr
+	var state := BACKING
+	# Its position in map px, its heading in game degrees, its countdown, and
+	# how far behind the Chinook's origin it is, px.
+	var unit := Vector2.ZERO
+	var unit_angle := -90.0
+	var delay := 0
+	var backed := 0.0
+	var aboard := 0.0       # `backed` where it rides
+	var final_x := IntroPlayer.FINAL_X
+	var diagonal := IntroPlayer.DIAGONAL_TIME
+	var down_time := 0
+	# Which way its diagonal goes across: -1 west, as IntroPlayer's, 1 east.
+	var side := -1.0
 
 # Asked of the scene, as the BTR is: `ground.call(x, z)` -> {"height", ...}.
 var ground: Callable
-var btr: Level3DBtr
+# The vehicles it brings, the first player's first; and the map, for where
+# the second can end up.
+var btrs: Array[Level3DBtr] = []
+var map: Level3DMap
 # `dust.call(at, across, out, size, count)`: a cloud of dust off a line on the
 # ground (Level3DPuffs.cloud), which the ramp raises coming down on it.
 var dust: Callable
@@ -122,12 +155,7 @@ var X := 0.0
 var Y := 0.0
 var x := 0.0
 var y := 0.0
-# IntroPlayer's: its position in map px, its heading in game degrees, its
-# countdown, and how far it has backed down the ramp.
-var unit := Vector2.ZERO
-var unit_angle := -90.0
-var delay := 0
-var backed := 0.0
+var cargo: Array[Cargo] = []
 
 var _model: Node3D
 var _shadow: Node3D
@@ -151,7 +179,7 @@ func landing_shift() -> float:
 # is clear of the lowered ramp's lip.
 func clear_back() -> float:
 	var lip := (HINGE_BACK + RAMP_LEN * cos(_ramp_down())) * MODEL_SCALE
-	return (lip + btr.body_front() + 0.1) / PX
+	return (lip + btrs[0].body_front() + 0.1) / PX
 
 
 # The ramp's angle when it is down, the underside of its lip on the ground.
@@ -179,7 +207,7 @@ func _ready() -> void:
 	_landed_height = ground.call(landing.x, landing.y).height
 	_sound = AudioStreamPlayer.new()
 	add_child(_sound)
-	btr.visible = false
+	_load()
 	# Chinook.update's first tick has not run: where it starts from.
 	x = ARC_CENTRE.x + RADIUS * cos(t)
 	y = ARC_CENTRE.y + _shift + RADIUS * sin(t)
@@ -224,6 +252,48 @@ func _instance(scene: PackedScene, shadows: int) -> Node3D:
 	_players.append(imported)
 	_ramps.append(ramp_player)
 	return root
+
+
+# The vehicles aboard, hidden till the ramp is down: the first at CARGO_BACK,
+# the second as far again ahead of it as the vehicle is long.
+func _load() -> void:
+	var aboard := CARGO_BACK * MODEL_SCALE / PX
+	for i in btrs.size():
+		var c := Cargo.new()
+		c.btr = btrs[i]
+		c.btr.visible = false
+		c.aboard = aboard
+		if i > 0 and second_side():
+			c.side = 1.0
+			c.final_x = 2.0 * ARC_LANDING.x - IntroPlayer.FINAL_X
+		elif i > 0:
+			c.final_x = second_spawn_x()
+			var shift := roundi((c.final_x - IntroPlayer.FINAL_X) / Player.SPEED)
+			if shift > 0 and shift < IntroPlayer.DIAGONAL_TIME:
+				c.diagonal = IntroPlayer.DIAGONAL_TIME - shift
+				c.down_time = shift
+		cargo.append(c)
+		var body: Array = c.btr.vehicle.body
+		aboard -= ((body[1] - body[0]) * c.btr.model_scale + CARGO_GAP) / PX
+
+
+# Whether the second vehicle can end east of the ramp, where IntroPlayer's
+# diagonal mirrored about the landing ends.
+func second_side() -> bool:
+	var at := 2.0 * ARC_LANDING.x - IntroPlayer.FINAL_X
+	var y0 := IntroPlayer.FINAL_Y + Level3DMap.extra_px()
+	return map == null or map.is_driveable_box(at - 32, y0 - 32, at + 32, y0 + 32)
+
+
+# GameMode.second_spawn_x at IntroPlayer's spot: COOP_SPAWN_SPREAD to the east
+# if the jeep fits there, to the west if not, or the first one's spot.
+func second_spawn_x() -> float:
+	var y0 := IntroPlayer.FINAL_Y + Level3DMap.extra_px()
+	for dx in [GameMode.COOP_SPAWN_SPREAD, -GameMode.COOP_SPAWN_SPREAD]:
+		var at: float = IntroPlayer.FINAL_X + dx
+		if map == null or map.is_driveable_box(at - 32, y0 - 32, at + 32, y0 + 32):
+			return at
+	return IntroPlayer.FINAL_X
 
 
 func done() -> bool:
@@ -316,9 +386,10 @@ func tick() -> void:
 			else:
 				state = OPENING
 				_play_ramp("Ramp_Open")
-				backed = CARGO_BACK * MODEL_SCALE / PX
-				unit = Vector2(x, y + backed)
-				btr.visible = true
+				for c in cargo:
+					c.backed = c.aboard
+					c.unit = Vector2(x, y + c.backed)
+					c.btr.visible = true
 			_play_sound(SOUND_VOLUME)
 		OPENING:
 			var over := _advance_ramp()
@@ -329,28 +400,11 @@ func tick() -> void:
 				state = OUT
 			_play_sound(SOUND_VOLUME)
 		OUT:
-			backed = minf(backed + Player.SPEED, clear_back())
-			unit = Vector2(x, y + backed)
-			if backed >= clear_back():
-				state = DIAGONAL
-				delay = IntroPlayer.DIAGONAL_TIME
-			_play_sound(SOUND_VOLUME)
-		DIAGONAL:
-			unit += Vector2(-Player.SPEED, Player.SPEED)
-			unit_angle = move_toward(unit_angle, -45.0, Player.ANGLE_VELOCITY)
-			delay -= 1
-			if delay == 0:
-				state = REVERSE
-				delay = IntroPlayer.REVERSE_TIME
-			_play_sound(SOUND_VOLUME)
-		REVERSE:
-			if unit_angle > -90:
-				unit_angle -= Player.ANGLE_VELOCITY
-			else:
-				unit_angle = -90
-			delay -= 1
-			if delay == 0:
-				unit = Vector2(IntroPlayer.FINAL_X, IntroPlayer.FINAL_Y + Level3DMap.extra_px())
+			var all_out := true
+			for c in cargo:
+				_unload(c)
+				all_out = all_out and c.state == UNLOADED
+			if all_out:
 				_unload_completed()
 				_hand_over()
 			_play_sound(SOUND_VOLUME)
@@ -384,7 +438,40 @@ func tick() -> void:
 					else SOUND_VOLUME)
 	_pose()
 	if state != FORWARDS and not handed_over:
-		_pose_unit()
+		for c in cargo:
+			_pose_unit(c)
+
+
+# One vehicle's tick of IntroPlayer.update, once the ramp is down.
+func _unload(c: Cargo) -> void:
+	match c.state:
+		BACKING:
+			c.backed = minf(c.backed + Player.SPEED, clear_back())
+			c.unit = Vector2(x, y + c.backed)
+			if c.backed >= clear_back():
+				c.state = DIAGONAL
+				c.delay = c.diagonal
+		DIAGONAL:
+			c.unit += Vector2(c.side * Player.SPEED, Player.SPEED)
+			# Backing out, the nose points away from the way it goes.
+			c.unit_angle = move_toward(c.unit_angle, -90.0 - 45.0 * c.side, Player.ANGLE_VELOCITY)
+			c.delay -= 1
+			if c.delay == 0:
+				c.state = DOWN if c.down_time > 0 else REVERSE
+				c.delay = c.down_time if c.down_time > 0 else IntroPlayer.REVERSE_TIME
+		DOWN:
+			c.unit.y += Player.SPEED
+			c.unit_angle = move_toward(c.unit_angle, -90.0, Player.ANGLE_VELOCITY)
+			c.delay -= 1
+			if c.delay == 0:
+				c.state = REVERSE
+				c.delay = IntroPlayer.REVERSE_TIME
+		REVERSE:
+			c.unit_angle = move_toward(c.unit_angle, -90.0, Player.ANGLE_VELOCITY)
+			c.delay -= 1
+			if c.delay == 0:
+				c.unit = Vector2(c.final_x, IntroPlayer.FINAL_Y + Level3DMap.extra_px())
+				c.state = UNLOADED
 
 
 func _unload_completed() -> void:
@@ -404,9 +491,10 @@ func _hand_over() -> void:
 	if handed_over:
 		return
 	handed_over = true
-	btr.visible = true
-	var at := hand_over_at()
-	btr.place(Vector3(at.x, 0.0, at.y), PI / 2.0)
+	for c in cargo:
+		c.btr.visible = true
+		var at := hand_over_at(c.final_x)
+		c.btr.place(Vector3(at.x, 0.0, at.y), PI / 2.0)
 	finished.call()
 
 
@@ -458,15 +546,17 @@ func _cast(p: Vector3, down: Vector3) -> Vector3:
 
 
 # Where the BTR is the player's, level x, z: IntroPlayer's FINAL_X, FINAL_Y,
-# as far from the level's south end as from stage 1's.
-static func hand_over_at() -> Vector2:
-	return Level3DMap.to_level(Vector2(IntroPlayer.FINAL_X, IntroPlayer.FINAL_Y + Level3DMap.extra_px()))
+# as far from the level's south end as from stage 1's -- or at `final_x`, the
+# second one's.
+static func hand_over_at(final_x := IntroPlayer.FINAL_X) -> Vector2:
+	return Level3DMap.to_level(Vector2(final_x, IntroPlayer.FINAL_Y + Level3DMap.extra_px()))
 
 
 # Where the preview's frame stands for the whole run, `half_height` metres
 # either side (Level3DPreview's _process), as the game's stands still until
-# the player is updated: over hand_over_at(), so that it need not move when
-# the BTR is handed over, unless the frame is too short for the landing, 6.6 m
+# the player is updated: over hand_over_at() -- with two vehicles, over the
+# middle of their two -- so that it need not move when the BTR is handed
+# over, unless the frame is too short for the landing, 6.6 m
 # north of it, to be in it as well -- zoomed in past 2 or so; then as far
 # north as keeps the landing FRAME_MARGIN inside the top edge, and the frame
 # catches up with the BTR once it has it.
@@ -474,6 +564,8 @@ const FRAME_MARGIN := 2.0
 
 func frame_centre(half_height: float) -> Vector2:
 	var at := hand_over_at()
+	if not cargo.is_empty():
+		at.x = (hand_over_at(cargo[0].final_x).x + hand_over_at(cargo[-1].final_x).x) * 0.5
 	var landing := Level3DMap.to_level(ARC_LANDING + Vector2(0.0, _shift))
 	at.y = minf(at.y, landing.y + half_height - FRAME_MARGIN)
 	return at
@@ -561,9 +653,10 @@ func _pose() -> void:
 
 # The BTR where IntroPlayer is, riding on whatever is under its axles: the
 # cabin floor, the ramp or the ground.
-func _pose_unit() -> void:
-	var at := Level3DMap.to_level(unit)
-	var heading := deg_to_rad(-unit_angle)
+func _pose_unit(c: Cargo) -> void:
+	var btr := c.btr
+	var at := Level3DMap.to_level(c.unit)
+	var heading := deg_to_rad(-c.unit_angle)
 	var ahead := Vector3(cos(heading), 0.0, -sin(heading))
 	var centre := Vector3(at.x, 0.0, at.y)
 	var front := centre + ahead * btr.front_axle()

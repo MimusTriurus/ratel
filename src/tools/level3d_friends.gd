@@ -89,15 +89,13 @@ var guns: Level3DGuns
 var soldiers: Level3DSoldiers
 var frame: Callable
 var ground: Callable
+# `player_position.call(from)`: the level x, z of the player nearest `from`
+# (Level3DGuns.player_position), whom a prisoner waves at.
 var player_position: Callable
 var scored: Callable
 var verbose := false
-
-# Player: pows and releaseable_pows; Main: has_missiles and missile_power.
-var pows := 0
-var releaseable_pows := 0
-var has_missiles := false
-var missile_power := 0
+# One Carrier a player, the preview's: what each has aboard and fits.
+var carriers: Array[Carrier] = []
 
 var friends: Array[Friend] = []
 var _helps := []
@@ -106,6 +104,50 @@ var model := MODEL
 var _scene: PackedScene
 var _rng := RandomNumberGenerator.new()
 var _furthest_top := INF
+
+
+# What the game keeps per player about the prisoners -- Player's pows and
+# releaseable_pows, Main's (PlayerState's) has_missiles, missile_power and
+# friendly_soldiers_picked_up, `rescued` -- and the rescue helicopter's
+# drop-off delay for him, which in two-player co-op each jeep has its own of
+# (level3d_rescue.gd).
+class Carrier:
+	var pows := 0
+	var releaseable_pows := 0
+	var has_missiles := false
+	var missile_power := 0
+	var rescued := 0
+	var drop_off_delay := 45
+
+	func reset() -> void:
+		pows = 0
+		releaseable_pows = 0
+		has_missiles = false
+		missile_power = 0
+		rescued = 0
+		drop_off_delay = 45
+
+	# Main.upgrade_weapon, without the Konami code: whether there was anything
+	# to upgrade, which is when the game plays its sound.
+	func upgrade_weapon() -> bool:
+		if not has_missiles:
+			has_missiles = true
+			return true
+		if missile_power < 2:
+			missile_power += 1
+			return true
+		return false
+
+	func weapon_name() -> String:
+		if not has_missiles:
+			return "grenade"
+		return ["missile", "missile+", "missile++"][missile_power]
+
+	# Player.drop_off_pow.
+	func drop_off_pow() -> void:
+		pows -= 1
+		if pows < releaseable_pows:
+			releaseable_pows = pows
 
 
 class Friend:
@@ -199,11 +241,17 @@ func reset() -> void:
 	for h in _helps:
 		(h.label as Node).queue_free()
 	_helps.clear()
-	pows = 0
-	releaseable_pows = 0
-	has_missiles = false
-	missile_power = 0
+	for c in carriers:
+		c.reset()
 	_furthest_top = INF
+
+
+# The prisoners aboard every jeep.
+func pows_aboard() -> int:
+	var total := 0
+	for c in carriers:
+		total += c.pows
+	return total
 
 
 # ----------------------------------------------------------------------------
@@ -318,13 +366,6 @@ func deliver(x: float, y: float, helicopter_x: float, flashing: bool, arrived: C
 	var f := _spawn(x, y, FriendlySoldierType.WALKING_TO_HELICOPTER, -1, helicopter_x)
 	f.colour_changing = flashing
 	f.arrived = arrived
-
-
-# Player.drop_off_pow.
-func drop_off_pow() -> void:
-	pows -= 1
-	if pows < releaseable_pows:
-		releaseable_pows = pows
 
 
 func _own_materials(f: Friend) -> void:
@@ -493,7 +534,7 @@ func _place(f: Friend) -> void:
 	f.clip = WAVE if f.state == FriendlySoldier.STATE_WAVING else WALK
 	var facing := Vector2(f.direction_x, f.direction_y)
 	if f.clip == WAVE:
-		var player: Vector2 = player_position.call()
+		var player: Vector2 = player_position.call(at)
 		facing = player - at
 	if facing.length_squared() > 1e-6:
 		f.yaw = atan2(facing.x, facing.y)
@@ -527,9 +568,10 @@ func _remove(f: Friend) -> void:
 	f.root.queue_free()
 
 
-# FriendlySoldier.bump from Player.update: driven over, he is aboard. Not while
-# the player is gone (respawning), which the preview sees to.
-func bump(player_box: Rect2) -> void:
+# FriendlySoldier.bump from Player.update: driven over, he is aboard `c`, the
+# carrier of the player whose box it is. Not while the player is gone
+# (respawning), which the preview sees to.
+func bump(player_box: Rect2, c: Carrier) -> void:
 	for f in friends.duplicate():
 		if f.type == FriendlySoldierType.WALKING_TO_HELICOPTER:
 			continue
@@ -541,52 +583,35 @@ func bump(player_box: Rect2) -> void:
 		if f.type == FriendlySoldierType.WEAPON_CARRIER or f.type == FriendlySoldierType.WEAPON_CARRIER_WANDERER:
 			# Player.pick_up_flashing_soldier, whose upgrade_weapon(true)
 			# plays the sound whether or not there was anything to upgrade.
-			pows += 1
-			upgrade_weapon()
+			c.pows += 1
+			c.upgrade_weapon()
 			Level3DAudio.play("upgrade")
 		else:
 			# Player.collect_pow
-			pows += 1
-			releaseable_pows += 1
+			c.pows += 1
+			c.releaseable_pows += 1
 			Level3DAudio.play("pickup")
 		if f.brother != null:
 			_promote(f.brother)
 		if verbose:
-			print("prisoner picked up: %d aboard, weapon %s" % [pows, weapon_name()])
-
-
-# Main.upgrade_weapon, without the Konami code: whether there was anything to
-# upgrade, which is when the game plays its sound.
-func upgrade_weapon() -> bool:
-	if not has_missiles:
-		has_missiles = true
-		return true
-	if missile_power < 2:
-		missile_power += 1
-		return true
-	return false
-
-
-func weapon_name() -> String:
-	if not has_missiles:
-		return "grenade"
-	return ["missile", "missile+", "missile++"][missile_power]
+			print("prisoner picked up: %d aboard, weapon %s" % [c.pows, c.weapon_name()])
 
 
 # Player.explode's half about the prisoners: with more than one aboard, some
 # scatter where he blew up -- one of them carrying the weapon, sometimes --
-# and he loses the lot, and the weapon.
-func player_died(at: Vector3) -> void:
-	if releaseable_pows > 1:
-		var weapon_carrier := has_missiles and _rng.randi_range(0, 4) == 3
+# and he loses the lot, and the weapon. `c` is the carrier of the player who
+# blew up.
+func player_died(at: Vector3, c: Carrier) -> void:
+	if c.releaseable_pows > 1:
+		var weapon_carrier := c.has_missiles and _rng.randi_range(0, 4) == 3
 		if weapon_carrier:
-			releaseable_pows += 1
-		var release := mini(releaseable_pows - 2, 3)
+			c.releaseable_pows += 1
+		var release := mini(c.releaseable_pows - 2, 3)
 		var p := Level3DMap.to_map(Vector2(at.x, at.z))
 		for i in range(release, -1, -1):
 			_spawn(p.x, p.y, FriendlySoldierType.WEAPON_CARRIER_WANDERER if (weapon_carrier and i == 0)
 					else FriendlySoldierType.WANDERER)
-	pows = 0
-	releaseable_pows = 0
-	missile_power = 0
-	has_missiles = false
+	c.pows = 0
+	c.releaseable_pows = 0
+	c.missile_power = 0
+	c.has_missiles = false

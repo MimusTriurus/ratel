@@ -109,14 +109,15 @@ const STATE_TRACKING := 2
 var frame: Callable
 # `solid.call(x, z)`: whether a shot stops there (GameMode.is_solid).
 var solid: Callable
-# `player_attack.call(x, z)`: whether a shot at x, z kills the player
-# (Player.attack), who is then the preview's to blow up.
+# `player_attack.call(x, z)`: whether a shot at x, z kills a player
+# (GameMode.attack_players), who is then the preview's to blow up.
 var player_attack: Callable
 # `hull.call(at)`: where a shot at `at` strikes what the grid does not have
 # and a round is still stopped by -- the Chinook bringing the jeep in
 # (Level3DChinook.strike) -- as {"point", "normal"}, or empty.
 var hull: Callable
-# `player_position.call()`: the player's x, z.
+# `player_position.call(from)`: the x, z of the player nearest `from`, an x, z
+# too (GameMode.target_player) -- one player or two.
 var player_position: Callable
 # `blast.call(at, scale)`: an explosion to be seen at `at`.
 # `explosion_hit.call(box)`: an explosion's box this tick, as a Rect2 in x, z,
@@ -127,8 +128,14 @@ var explosion_hit: Callable
 # and hangars, which are Hut and House (both fall to one).
 var travel_hit: Callable
 var blast: Callable
-# `scored.call(points)`.
+# `scored.call(points)`, for `acting`.
 var scored: Callable
+# Whose the points are: the player whose weapon is doing it
+# (GameMode.acting_player), opaque here -- the preview sets it before each
+# player's weapons and bumps. An explosion keeps the one it went off for and
+# gives it back when it hits, as the game's Explosion keeps its shooter, so
+# that what it kills later in the tick is that player's too.
+var acting = null
 # What is seen where a shot ends, as the jeep's rounds have it (Level3DGun):
 # `landed.call(at)` where one that flew its whole way comes down,
 # `stopped.call(at, direction)` where one the grid stopped strikes, and
@@ -283,7 +290,7 @@ func _update(gun: Gun) -> void:
 		STATE_TRACKING:
 			if gun.pause > 0:
 				gun.pause -= 1
-			var player: Vector2 = player_position.call()
+			var player: Vector2 = player_position.call(gun.at)
 			var target_angle := rad_to_deg(atan2(player.y - gun.at.y, player.x - gun.at.x))
 			var delta_angle := fmod(target_angle - gun.angle + 180, 360.0)
 			if delta_angle < 0:
@@ -491,6 +498,7 @@ func _update_explosions(view: Rect2) -> void:
 		var margin: float = e.size * EXPLOSION_MARGIN * PX
 		var box := Rect2(e.at - Vector2(margin, margin), Vector2(margin, margin) * 2.0)
 		if e.damages and view.intersects(box):
+			acting = e.by
 			# Enemy.attack spares everything from the player's own explosion;
 			# EnemySoldier.attack does not look at where it came from.
 			if not e.player:
@@ -519,6 +527,7 @@ func _update_travels(view: Rect2) -> void:
 		var box := Rect2(e.at - Vector2(margin, margin), Vector2(margin, margin) * 2.0)
 		if not view.intersects(box):
 			continue
+		acting = e.by
 		for gun in guns:
 			if gun.spawned and not gun.dead and box.intersects(_box(gun, HIT)):
 				_destroy(gun, "traveling explosion")
@@ -596,14 +605,15 @@ func attack(i: int) -> void:
 # which kills what it grows over, or with `player` the player's own, which only
 # a soldier dies in.
 func explode(at: Vector3, player := false) -> void:
-	_explosions.append({"at": Vector2(at.x, at.z), "size": EXPLOSION_START, "damages": true, "player": player})
+	_explosions.append({"at": Vector2(at.x, at.z), "size": EXPLOSION_START, "damages": true, "player": player,
+			"by": acting})
 
 
 # A TravelingExplosion from `at` along `direction`, one of the screen's axes
 # as a map direction: (+-1, 0) across, (0, +-1) down or up.
 func travel(at: Vector3, direction: Vector2) -> void:
 	_travels.append({"at": Vector2(at.x, at.z), "t": 0,
-			"velocity": direction * TravelingExplosion.VELOCITY * PX})
+			"velocity": direction * TravelingExplosion.VELOCITY * PX, "by": acting})
 
 
 # RotatingGun's solid box, 64 px either side: what the soldiers walk round.
@@ -640,7 +650,8 @@ func _destroy(gun: Gun, by: String) -> void:
 	_pose(gun)
 	gun.player.play(ANIMATION)
 	gun.player.seek(Level3DGuns.blast_start(), true)
-	_explosions.append({"at": gun.at, "size": EXPLOSION_START, "damages": true, "player": false})
+	_explosions.append({"at": gun.at, "size": EXPLOSION_START, "damages": true, "player": false,
+			"by": acting})
 	blast.call(Vector3(gun.at.x, BLAST_HEIGHT, gun.at.y), BLAST_SCALE)
 	scored.call(POINTS)
 	if verbose:

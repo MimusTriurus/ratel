@@ -156,7 +156,8 @@ var guns: Level3DGuns
 var frame: Callable
 # `ground.call(x, z)`: {"height": ...} as the preview's.
 var ground: Callable
-# `player_position.call()`: the player's level x, z.
+# `player_position.call(from)`: the level x, z of the player nearest `from`,
+# a level x, z too (Level3DGuns.player_position).
 var player_position: Callable
 var scored: Callable
 var verbose := false
@@ -400,6 +401,11 @@ func is_defeated() -> bool:
 # ----------------------------------------------------------------------------
 # The tick: BossBlueTanksManager, then each tank.
 
+# The player nearest map x, y, in map px.
+func _player_near(x: float, y: float) -> Vector2:
+	return Level3DMap.to_map(player_position.call(Level3DMap.to_level(Vector2(x, y))))
+
+
 func tick() -> void:
 	var view: Rect2 = frame.call()
 	var top := Level3DMap.to_map(view.position).y
@@ -429,9 +435,8 @@ func tick() -> void:
 			var from_top := _rng.randi_range(0, 1) == 0
 			var bottom := Level3DMap.to_map(view.end).y
 			_spawn(sx, -SPAWN_OUTSIDE if from_top else bottom + SPAWN_OUTSIDE, from_top)
-	var player := Level3DMap.to_map(player_position.call())
 	for t in tanks:
-		_update(t, player)
+		_update(t, _player_near(t.x, t.y))
 
 
 func _spawn(x: float, y: float, from_top: bool) -> void:

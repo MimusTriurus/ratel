@@ -18,6 +18,11 @@
 #     the player has gone on 512 px north, it waits 182 ticks, revs up for 91,
 #     lifts off over 114, speeds up north for 45, banks right through 45
 #     degrees and on round another 225 on a 192 px circle, and flies off south.
+#   * With two players (the preview's co-op, which the NES game had and the
+#     Java original has not) both jeeps are let off at once, each on its own
+#     delay; a prisoner, his 500 points and the rescues that are an upgrade
+#     are the jeep's that brought him, and it waits until every jeep still in
+#     the game is past it or has nobody left to bring, as GameMode's does.
 #   * The port's lamps pulse, red and blue half a period apart: LandingPort's
 #     ALPHAS, 0.5 + sin(pi i / 91) / 2 over 182 ticks, the glow sprite over the
 #     dim lamp at that alpha. Here that alpha takes the lamps' emission from
@@ -97,8 +102,10 @@ var friends: Level3DFriends
 var frame: Callable
 # `ground.call(x, z)` -> {"height", ...}.
 var ground: Callable
-# `player_position.call()`: the player's level x, z.
-var player_position: Callable
+# `players.call()`: the players still in the game, each as [level x, z,
+# Level3DFriends.Carrier].
+var players: Callable
+# `scored.call(points, carrier)`: to the player with that carrier.
 var scored: Callable
 # The top view: the model drawn at the original's scale for its height.
 var enlarge := true
@@ -113,12 +120,11 @@ var angle := 0.0
 var z := 1.0
 var rotor_speed := SLOW_ROTOR
 var walking_soldiers := 0
-var drop_off_delay := 45
 var preparing_to_take_off := FriendlyHelicopter.TAKE_OFF_DELAY
 var count := 0          # the ticks the state it is in has run
 var turn_x := 0.0
 var turn_y := 0.0
-var rescued := 0        # Main.friendly_soldiers_picked_up
+var rescued := 0        # all the players' Main.friendly_soldiers_picked_up
 
 # The port: where on it the helicopter stands, and whether it lets prisoners
 # off to its west (TYPE_LEFT) rather than its east.
@@ -266,7 +272,6 @@ func tick() -> void:
 		# Switched to classic on the pad: the modern loop would play on.
 		_sound.stop()
 		_sound.stream = null
-	var player := Level3DMap.to_map(player_position.call())
 	match state:
 		INCOMING:
 			y -= FriendlyHelicopter.FLIGHT_SPEED
@@ -296,7 +301,7 @@ func tick() -> void:
 			if count == REV_TIME:
 				_land()
 		PICK_UP:
-			_update_pick_up(player)
+			_update_pick_up()
 		REVVING_UP:
 			rotor_speed = SLOW_ROTOR + (FAST_ROTOR - SLOW_ROTOR) * count / 90.0
 			count += 1
@@ -384,7 +389,8 @@ func _land() -> void:
 	angle = 0.0
 	z = 1.0
 	rotor_speed = SLOW_ROTOR
-	drop_off_delay = 45
+	for p in players.call():
+		(p[1] as Level3DFriends.Carrier).drop_off_delay = 45
 	preparing_to_take_off = FriendlyHelicopter.TAKE_OFF_DELAY
 	_enter(PICK_UP)
 
@@ -395,22 +401,27 @@ func _enter(next: int) -> void:
 
 
 # FriendlyHelicopter._update_pick_up, without the air cover it sends on the
-# other stages.
-func _update_pick_up(player: Vector2) -> void:
-	if friends.pows > 0:
-		var dx := player.x - x
-		if player.y > y - 66 and player.y < y + 49 \
-				and ((not left_stop and dx > 0 and dx < 320) or (left_stop and dx < 0 and dx > -320)):
-			if drop_off_delay > 0:
-				drop_off_delay -= 1
-			else:
-				drop_off_delay = FriendlyHelicopter.DROP_OFF_DELAY
-				friends.deliver(player.x, player.y + 28, x, friends.pows == 1,
-						_friendly_soldier_picked_up)
-				friends.drop_off_pow()
-				walking_soldiers += 1
-	if walking_soldiers == 0 and player.y < y + 80 \
-			and ((friends.friends.is_empty() and friends.pows == 0) or player.y < y - 512):
+# other stages, for every player.
+func _update_pick_up() -> void:
+	var leaving := walking_soldiers == 0
+	for p in players.call():
+		var player := Level3DMap.to_map(p[0])
+		var c: Level3DFriends.Carrier = p[1]
+		if c.pows > 0:
+			var dx := player.x - x
+			if player.y > y - 66 and player.y < y + 49 \
+					and ((not left_stop and dx > 0 and dx < 320) or (left_stop and dx < 0 and dx > -320)):
+				if c.drop_off_delay > 0:
+					c.drop_off_delay -= 1
+				else:
+					c.drop_off_delay = FriendlyHelicopter.DROP_OFF_DELAY
+					friends.deliver(player.x, player.y + 28, x, c.pows == 1,
+							_friendly_soldier_picked_up.bind(c))
+					c.drop_off_pow()
+					walking_soldiers += 1
+		leaving = leaving and player.y < y + 80 \
+				and ((friends.friends.is_empty() and c.pows == 0) or player.y < y - 512)
+	if leaving:
 		if preparing_to_take_off > 0:
 			preparing_to_take_off -= 1
 		else:
@@ -421,17 +432,19 @@ func _update_pick_up(player: Vector2) -> void:
 		preparing_to_take_off = FriendlyHelicopter.TAKE_OFF_DELAY
 
 
-# FriendlyHelicopter.friendly_soldier_picked_up and Main's.
-func _friendly_soldier_picked_up() -> void:
+# FriendlyHelicopter.friendly_soldier_picked_up and Main's, for the player
+# with carrier `c`, who brought him.
+func _friendly_soldier_picked_up(c: Level3DFriends.Carrier) -> void:
 	walking_soldiers -= 1
-	scored.call(POINTS)
+	scored.call(POINTS, c)
 	rescued += 1
-	if rescued in UPGRADES and friends.upgrade_weapon():
+	c.rescued += 1
+	if c.rescued in UPGRADES and c.upgrade_weapon():
 		Level3DAudio.play(UPGRADE_SOUND)
 	else:
 		Level3DAudio.play(PICKUP_SOUND)
 	if verbose:
-		print("prisoner rescued: %d so far, weapon %s" % [rescued, friends.weapon_name()])
+		print("prisoner rescued: %d so far, weapon %s" % [rescued, c.weapon_name()])
 
 
 # Whether prisoners brought now would be taken: from the moment it is on its

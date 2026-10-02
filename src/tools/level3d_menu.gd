@@ -1,4 +1,5 @@
-# The 3D preview's Escape menu: continue, settings, quit, over the stage
+# The 3D preview's Escape menu: continue, a new game for one player or two,
+# settings, quit, over the stage
 # frozen by pausing the tree. The settings are six tabs: five of
 # Level3DSettings -- graphics (the camera and the look), interface (what the
 # HUD shows, where and how big), sound (classic or modern, the volumes, the
@@ -68,6 +69,9 @@ const ACTION_NAMES := {
 var settings: Level3DSettings
 var changed: Callable        # after every change, with the menu still open
 var resumed: Callable        # once the menu has closed
+# `new_game.call(players)`: the run started again for one player or two (the
+# preview's co-op); the preview closes the menu.
+var new_game: Callable
 # Started by the level editor's Play (--editor): leaving is going back to it,
 # which is waiting for this process to end.
 var from_editor := false
@@ -261,6 +265,8 @@ func _make_main_page() -> Control:
 	title.add_theme_font_size_override("font_size", FONT_SIZE + 8)
 	box.add_child(title)
 	_continue = _button(box, "Продолжить", close)
+	_button(box, "Новая игра: 1 игрок", func(): new_game.call(1))
+	_button(box, "Новая игра: 2 игрока", func(): new_game.call(2))
 	_button(box, "Настройки", _show_settings)
 	_button(box, "В редактор" if from_editor else "Выход", func(): get_tree().quit())
 	return panel
@@ -597,6 +603,9 @@ func _make_controls_tab() -> Control:
 		settings.reset_keys()
 		_changed())
 	tab.add_child(defaults)
+	_note(tab, "Второй игрок: клавиши и геймпад второго игрока из 2D-игры, по умолчанию стрелки, "
+			+ "правый Alt (пулемёт) и правый Ctrl (ракеты). Переназначаются в игре: "
+			+ "Options → 2p input. Стреляет всегда классически.")
 	return tab.get_parent().get_parent()
 
 

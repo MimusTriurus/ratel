@@ -113,9 +113,9 @@
 # --at puts the BTR at x,z to begin with instead of at START. --free drives
 # the free way; --hold holds WASD, L or P down from one second to another, as
 # many spans as are given (wd@0-1.5,a@2-3), which is how the classic keys
-# are checked. --weapon starts with what the prisoners would have given: 0 the
+# are checked; a span after 2: is the second player's (2:s@0-3). --weapon starts with what the prisoners would have given: 0 the
 # grenade, 1 to 3 the missile and its two upgrades. --pows starts with that
-# many prisoners aboard, for the rescue helicopter. --strip takes that many
+# many prisoners aboard, every player, for the rescue helicopter. --strip takes that many
 # frames instead of one, that many seconds apart from the first, and lays the
 # middle <px> square of each (512 unless given) out four to a row in the one
 # file: a blast from start to finish, which one frame never catches. --die
@@ -156,6 +156,19 @@
 #
 # The dead lie where they fell; --fade-corpses
 # sinks them away as the game fades them (level3d_soldiers.gd, fade_corpses).
+#
+# --players 2, or the Escape menu's game for two, is two-player co-op, as the
+# NES game had and the 2D game's title screen offers: a second jeep, blue
+# (Crew, Level3DBtr.tint), on the 2D game's second player's keys and pad
+# (ButtonMapping.second_player, saved in user://buttons2.cfg, which the game's
+# Options -> "2p input" rebinds): the arrows, right Alt for the gun, right Ctrl
+# for the rocket. It fires the classic way, the mouse being the first
+# player's, and the arrows do not scroll the camera then. Each has its own
+# lives, score, prisoners and weapon, on a HUD line of its own; the enemies go
+# for the nearer one, the frame holds both (COOP_EDGE), the Chinook brings both
+# in, the rescue helicopter takes both players' prisoners at once, and one out
+# of lives is out until both are, when the stage starts again. What a round, a
+# rocket or a blast of theirs destroys is the shooter's (Level3DGuns.acting).
 extends Node3D
 
 const LEVEL_PATH := "res://resources/3d/jackal_stage1.glb"
@@ -223,6 +236,10 @@ const ZOOM_STEP := 1.15
 
 var camera: Camera3D
 var sun: DirectionalLight3D
+# The players, one or two (Crew). `btr`, `gun` and `launcher` are the first's:
+# the mouse's and the --shot options', and the launcher whose craters the
+# ground shows (Level3DLauncher.marks).
+var crews: Array[Crew] = []
 var btr: Level3DBtr
 var gun: Level3DGun
 var launcher: Level3DLauncher
@@ -259,16 +276,14 @@ var _crt: ColorRect
 var _gun_locked := false
 
 var _live := false
-# The BTR's engine, two loops on it mixed by speed (_update_engine_sound).
-var _engine_level := 0.0
 # The music's edges (_update_music): the boss armed, the boss beaten.
 var _saw_boss := false
 var _saw_beaten := false
 const ENGINE_RISE := 2.5         # the mix's travel a second, 0 to 1
 var _forced_aim = null  # --fire's or --rocket's target
 var _hold_fire := false # --fire: the gun's trigger held throughout
-# How much longer a right click waits to be a rocket; see _physics_process.
-var _rocket_wanted := 0.0
+# How much longer a right click waits to be a rocket (Crew.rocket_wanted); see
+# _physics_process.
 const ROCKET_WAIT := 0.8
 var _strip := []        # --strip: frames, seconds apart, px square
 var _kinds := {}        # body RID -> ground kind, see _add_collision
@@ -340,35 +355,20 @@ func _ready() -> void:
 	_add_environment()
 	_add_lights()
 
-	btr = Btr.new()
-	btr.ground = _hull_ground_at
-	add_child(btr)
-	Level3DAudio.attach_loop("btr_idle", btr)
-	Level3DAudio.attach_loop("btr_drive", btr)
-	gun = Level3DGun.new()
-	gun.btr = btr
-	gun.ground = _ground_at
-	gun.surface = _surface_at
-	gun.strike = _strike_at
-	# The game's own switch, as the game last saved it.
-	var mapping := ButtonMapping.new()
-	mapping.load_saved()
-	gun.turbo = mapping.turbo
-	add_child(gun)
-	launcher = Level3DLauncher.new()
-	launcher.btr = btr
-	launcher.ground = _ground_at
-	launcher.surface = _surface_at
-	launcher.strike = _strike_at
-	launcher.exploded = _on_exploded
-	add_child(launcher)
+	# The game's own mappings, as the game last saved them: the gun's turbo
+	# switch, and the second player's keys and pad.
+	_mapping.load_saved()
+	_mapping_2 = ButtonMapping.second_player(_mapping)
+	_mapping_2.load_saved()
+	_make_hud()
+	_add_crew()
 	_add_guns(level)
+	_arm(crews[0])
 	launcher.ground_materials = _ground_materials
 	launcher.ground_materials.append(tracks.material())
-	btr.map = map
 	_make_markers()
-	_make_hud()
 	_make_menu()
+	add_child(KeySides.new())
 
 	camera = Camera3D.new()
 	add_child(camera)
@@ -379,12 +379,14 @@ func _ready() -> void:
 	# placed after it, or it would sit on nothing.
 	await get_tree().physics_frame
 	await get_tree().physics_frame
-	btr.place(start(), START_HEADING)
-	focus = Vector2(btr.position.x, btr.position.z)
+	var args := OS.get_cmdline_user_args()
+	var players := args.find("--players")
+	_set_players(int(args[players + 1]) if players >= 0 else settings.players)
+	_place_crews()
+	focus = _follow_point()
 	_update_camera()
 	_live = true
 
-	var args := OS.get_cmdline_user_args()
 	# intro_song, IntroMapMode's: the start jingle running on into stage 1.
 	Level3DAudio.play_music("intro")
 	if args.has("--intro") or not (args.has("--shot") or args.has("--obstacle-map")):
@@ -403,19 +405,280 @@ func _start_intro() -> void:
 	chinook.frame = _view_frame
 	chinook.sun = sun
 	chinook.ground = _ground_at
-	chinook.btr = btr
+	chinook.map = map
+	for c in crews:
+		if not c.out:
+			chinook.btrs.append(c.btr)
 	chinook.dust = func(at: Vector3, across: Vector3, out: Vector3, size: float, count: int):
 		puffs.cloud(at, across, out, size, count)
 	chinook.enlarge = not tilted
 	chinook.finished = func():
 		chinook = null
-		_catch_up = focus - Vector2(btr.position.x, btr.position.z)
+		_catch_up = focus - _follow_point()
 		following = true
 		# Player.make_invincible.
-		_invincible = Player.INVINCIBLE_DELAY
-		_blink = 0
+		for c in crews:
+			c.invincible = Player.INVINCIBLE_DELAY
+			c.blink = 0
 	add_child(chinook)
 	following = true
+
+
+# ----------------------------------------------------------------------------
+# The players
+
+# One player: the vehicle, its two weapons and what the game keeps for him --
+# Player's counters, PlayerState's lives and score, and the prisoners and the
+# weapon (`carrier`, Level3DFriends'). The first is driven by the settings'
+# keys and the mouse; the second by the 2D game's second player (`input`).
+class Crew:
+	var index := 0
+	var btr: Level3DBtr
+	var gun: Level3DGun
+	var launcher: Level3DLauncher
+	var carrier := Level3DFriends.Carrier.new()
+	var hud: Level3DHud
+	var input: HumanInput       # the second player's; null for the first
+	# Player.update's two counters, in ticks: while `respawning` the vehicle is
+	# gone and nothing it does happens; while `invincible` rounds and mines
+	# pass it by.
+	var respawning := 0
+	var invincible := 0
+	var blink := 0
+	# The spare lives, as Main.extra_lives.
+	var lives := 0
+	var score := 0
+	# Out of lives while the other plays on (PlayerState.out): not driven,
+	# drawn, aimed at or followed, until the stage starts again.
+	var out := false
+	# Player's fire_released, for the classic rocket button; how much longer a
+	# press waits to be a rocket, driving free; the second player's rocket
+	# button on the last tick, for its press.
+	var fire_released := true
+	var rocket_wanted := 0.0
+	var rocket_held := false
+	# Its engine, two loops on it mixed by speed (_update_engine_sound).
+	var engine_level := 0.0
+
+
+# Every key event to HumanInput.key_event, the Escape menu or not (it pauses
+# the tree, and this goes on): the second player's weapons are right Alt and
+# right Ctrl, which only the events tell from the left ones (Main._input). All
+# let go of when the window loses the focus, which is when releases go missing.
+class KeySides:
+	extends Node
+
+	func _ready() -> void:
+		process_mode = Node.PROCESS_MODE_ALWAYS
+
+	func _input(event: InputEvent) -> void:
+		if event is InputEventKey:
+			HumanInput.key_event(event)
+
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+			HumanInput.release_all()
+
+
+# Main.button_mapping and button_mapping_2, as the game last saved them.
+var _mapping := ButtonMapping.new()
+var _mapping_2: ButtonMapping
+
+# The second player's colours: Main.players_blue's turn of the green.
+const BLUE_HUES := Vector3(80.0, 130.0, 100.0)
+# How near the frame's top and bottom either jeep may come with two of them,
+# level metres: GameMode.COOP_EDGE.
+const COOP_EDGE := GameMode.COOP_EDGE * Level3DMap.PX
+# The second jeep's start beside the first, level metres: GameMode's
+# COOP_SPAWN_SPREAD, to the east.
+const COOP_SPREAD := GameMode.COOP_SPAWN_SPREAD * Level3DMap.PX
+
+
+# A player, the next one: its vehicle, gun and launcher, wired to the stage
+# once there is one (_arm), and its HUD line.
+func _add_crew() -> Crew:
+	var c := Crew.new()
+	c.index = crews.size()
+	c.lives = EXTRA_LIVES
+	c.btr = Btr.new()
+	c.btr.ground = _hull_ground_at
+	add_child(c.btr)
+	if c.index > 0:
+		c.btr.tint(BLUE_HUES.x, BLUE_HUES.y, BLUE_HUES.z)
+		c.input = HumanInput.new(_mapping_2)
+		c.input.arrows = false
+	Level3DAudio.attach_loop("btr_idle", c.btr)
+	Level3DAudio.attach_loop("btr_drive", c.btr)
+	c.gun = Level3DGun.new()
+	c.gun.btr = c.btr
+	c.gun.ground = _ground_at
+	c.gun.surface = _surface_at
+	c.gun.strike = _strike_at
+	c.gun.turbo = (_mapping if c.index == 0 else _mapping_2).turbo
+	add_child(c.gun)
+	c.launcher = Level3DLauncher.new()
+	c.launcher.btr = c.btr
+	c.launcher.ground = _ground_at
+	c.launcher.surface = _surface_at
+	c.launcher.strike = _strike_at
+	if c.index > 0:
+		c.launcher.marks = crews[0].launcher
+	add_child(c.launcher)
+	c.hud = Level3DHud.new()
+	c.hud.label = "%dP" % (c.index + 1)
+	c.hud.right = c.index > 0
+	_hud.add_child(c.hud)
+	crews.append(c)
+	if c.index == 0:
+		btr = c.btr
+		gun = c.gun
+		launcher = c.launcher
+	return c
+
+
+# One player or two: the second added, or taken away, for the next run.
+func _set_players(count: int) -> void:
+	count = clampi(count, 1, 2)
+	while crews.size() < count:
+		_arm(_add_crew())
+	while crews.size() > count:
+		var c: Crew = crews.pop_back()
+		Level3DAudio.stop_loop(c.btr, "btr_idle")
+		Level3DAudio.stop_loop(c.btr, "btr_drive")
+		for node: Node in [c.btr, c.gun, c.launcher, c.hud]:
+			node.queue_free()
+	friends.carriers.clear()
+	for c in crews:
+		friends.carriers.append(c.carrier)
+	tracks.sources = [tanks.track_contacts, boss.track_contacts]
+	puffs.sources = [tanks.puffs, boss.puffs, boats.puffs]
+	for c in crews:
+		tracks.sources.append(c.btr.wheel_tracks)
+		puffs.sources.append(c.btr.puffs)
+	_apply_settings()
+	_layout_hud()
+	_show_state()
+
+
+# Where the run starts: the first at start(), the second beside it.
+func _place_crews() -> void:
+	for c in crews:
+		c.btr.place(start() + Vector3(COOP_SPREAD * c.index, 0.0, 0.0), START_HEADING)
+
+
+# A player's weapons and vehicle wired to the stage's enemies, as _add_guns
+# wires the enemies to each other. Every way its weapons kill says first that
+# it is this player's doing (Level3DGuns.acting), for the points.
+func _arm(c: Crew) -> void:
+	c.btr.map = map
+	var gun_of := c.gun
+	var launcher_of := c.launcher
+	# A round stops at the first enemy on its way, gun, soldier, boat or tank;
+	# a missile kills the soldiers it passes and stops at a gun, a boat or a
+	# tank.
+	gun_of.intercept = func(from: Vector3, to: Vector3):
+		return _nearest([guns.intercept(from, to, PlayerBullet.MARGIN),
+				soldiers.intercept(from, to, PlayerBullet.MARGIN),
+				boats.intercept(from, to, PlayerBullet.MARGIN),
+				tanks.intercept(from, to, PlayerBullet.MARGIN),
+				boss.intercept(from, to, PlayerBullet.MARGIN)])
+	gun_of.struck = func(found: Dictionary):
+		guns.acting = c
+		if found.has("gun"):
+			guns.bullet_attack(found.gun)
+		elif found.has("boat"):
+			boats.bullet_attack(found)
+		elif found.has("tank"):
+			tanks.bullet_attack(found)
+		elif found.has("boss"):
+			boss.bullet_attack(found)
+		else:
+			soldiers.bullet_attack(found)
+	# Where the enemies' rounds end, the first jeep's gun's say what is seen.
+	if c.index == 0:
+		guns.landed = gun_of.landed
+		guns.stopped = gun_of.stopped
+		guns.impact = gun_of.impact
+	launcher_of.intercept = func(from: Vector3, to: Vector3):
+		guns.acting = c
+		soldiers.sweep(from, to, PlayerMissile.MARGIN)
+		return _nearest([guns.intercept(from, to, PlayerMissile.MARGIN, true),
+				boats.intercept(from, to, PlayerMissile.MARGIN, true),
+				tanks.intercept(from, to, PlayerMissile.MARGIN, true),
+				boss.intercept(from, to, PlayerMissile.MARGIN, true)])
+	launcher_of.struck = func(found: Dictionary):
+		guns.acting = c
+		if found.has("boat"):
+			boats.attack(found)
+		elif found.has("tank"):
+			tanks.attack(found)
+		elif found.has("boss"):
+			boss.attack(found)
+		else:
+			guns.attack(found.gun)
+	launcher_of.exploded = func(at: Vector3) -> bool:
+		guns.acting = c
+		return _on_exploded(at)
+	launcher_of.traveled = func(at: Vector3, direction: Vector2):
+		guns.acting = c
+		guns.travel(at, direction)
+
+
+# GameMode.target_player: the player nearest `from`, level x, z, of those in
+# the game, one that is not respawning before one that is; the first when
+# there is none.
+func _target(from: Vector2) -> Crew:
+	var best: Crew = null
+	var best_d := INF
+	for back in [false, true]:
+		for c in crews:
+			if c.out or (c.respawning > 0) != back:
+				continue
+			var d := from.distance_squared_to(Vector2(c.btr.position.x, c.btr.position.z))
+			if d < best_d:
+				best_d = d
+				best = c
+		if best != null:
+			return best
+	return crews[0]
+
+
+# Who a kill's points go to: the player whose weapon did it, or the first.
+func _credited() -> Crew:
+	return guns.acting if guns.acting is Crew else crews[0]
+
+
+# Another player still in the game than `c`.
+func _other_in(c: Crew) -> bool:
+	for other in crews:
+		if other != c and not other.out:
+			return true
+	return false
+
+
+# Where the frame follows: the players in the game, between them.
+func _follow_point() -> Vector2:
+	var total := Vector2.ZERO
+	var count := 0
+	for c in crews:
+		if not c.out:
+			total += Vector2(c.btr.position.x, c.btr.position.z)
+			count += 1
+	if count == 0:
+		return Vector2(btr.position.x, btr.position.z)
+	return total / count
+
+
+# Two players: each held where the frame can still have the other, COOP_EDGE
+# in from its top and bottom (Level3DBtr.z_limits) -- the frame follows the
+# middle of them, so that is never further apart than its height less those.
+func _hold_crews() -> void:
+	var span := maxf(_view_frame().size.y - 2.0 * COOP_EDGE, 0.0)
+	for c in crews:
+		c.btr.z_limits = Vector2(-INF, INF)
+		for other in crews:
+			if other != c and not other.out and not c.out:
+				c.btr.z_limits = Vector2(other.btr.position.z - span, other.btr.position.z + span)
 
 
 static func _is_compatibility() -> bool:
@@ -1346,28 +1609,20 @@ static func _gun_bunkers() -> Array:
 	return out
 const BLAST_PATH := "res://resources/3d/jackal_fx_blast.glb"
 
-# Player.update's two counters, in ticks: while `_respawning` the BTR is gone
-# and nothing it does happens; while `_invincible` rounds and mines pass it by.
-var _respawning := 0
-var _invincible := 0
 var _immortal := false  # --immortal: rounds pass the BTR by, for --shot runs
-var _blink := 0
-var _score := 0
-var _hud_line: Level3DHud
 var _banner: Label      # GAME OVER
 var _hud: CanvasLayer
-# The spare lives, as Main.extra_lives: the game's four on normal. The last
-# one lost starts the stage again, as R does; the game's continue screen is
-# not here. The infinite lives cheat spends none.
+# The spare lives, as Main.extra_lives: the game's four on normal (Crew.lives).
+# The last one lost starts the stage again, as R does -- with two players, the
+# last one lost of both -- and the game's continue screen is not here. The
+# infinite lives cheat spends none.
 const EXTRA_LIVES := 4
 const GAME_OVER_TIME := 3.0
-var _lives := EXTRA_LIVES
 var _blast_scene: PackedScene
-# --hold: [key, from tick, to tick], and the ticks since the preview went live.
+# --hold: [key, from tick, to tick, player], and the ticks since the preview
+# went live.
 var _held: Array = []
 var _ticks := 0
-# Player's fire_released, for the classic rocket button.
-var _fire_released := true
 
 
 func _add_guns(level: Node) -> void:
@@ -1382,13 +1637,13 @@ func _add_guns(level: Node) -> void:
 	guns.player_attack = _attack_player
 	guns.hull = func(at: Vector3) -> Dictionary:
 		return helicopter.strike(at) if helicopter != null else {}
-	guns.player_position = func(): return Vector2(btr.position.x, btr.position.z)
+	guns.player_position = func(from: Vector2) -> Vector2:
+		var c := _target(from)
+		return Vector2(c.btr.position.x, c.btr.position.z)
 	guns.blast = _spawn_blast
-	guns.scored = func(points: int): _set_score(_score + points)
-	# Where the enemies' rounds end, the jeep's gun's say what is seen.
-	guns.landed = gun.landed
-	guns.stopped = gun.stopped
-	guns.impact = gun.impact
+	guns.scored = func(points: int):
+		_credited().score += points
+		_show_state()
 	add_child(guns)
 	soldiers = Level3DSoldiers.new()
 	soldiers.map = map
@@ -1397,10 +1652,18 @@ func _add_guns(level: Node) -> void:
 	soldiers.ground = _walker_ground_at
 	soldiers.player_position = guns.player_position
 	soldiers.scored = guns.scored
+	# Under whichever player's vehicle he is, and the kill that player's.
 	soldiers.run_over = func(p: Vector3, margin: float, sideways: bool) -> Vector3:
-		if _respawning > 0 or chinook != null:
+		if chinook != null:
 			return Vector3.ZERO
-		return btr.push_out(p, margin, sideways)
+		for c in crews:
+			if c.out or c.respawning > 0:
+				continue
+			var out := c.btr.push_out(p, margin, sideways)
+			if out != Vector3.ZERO:
+				guns.acting = c
+				return out
+		return Vector3.ZERO
 	add_child(soldiers)
 	boats = Level3DBoats.new()
 	boats.map = map
@@ -1456,8 +1719,17 @@ func _add_guns(level: Node) -> void:
 	rescue.friends = friends
 	rescue.frame = _view_frame
 	rescue.ground = _ground_at
-	rescue.player_position = guns.player_position
-	rescue.scored = guns.scored
+	rescue.players = func() -> Array:
+		var out := []
+		for c in crews:
+			if not c.out:
+				out.append([Vector2(c.btr.position.x, c.btr.position.z), c.carrier])
+		return out
+	rescue.scored = func(points: int, carrier: Level3DFriends.Carrier):
+		for c in crews:
+			if c.carrier == carrier:
+				c.score += points
+		_show_state()
 	add_child(rescue)
 	if Level3DMap.is_stage_one():
 		rescue.bind_lamps(level)  # the landing port's, which is stage 1's
@@ -1468,42 +1740,8 @@ func _add_guns(level: Node) -> void:
 		centres[building] = destructibles[building].footprint.get_center()
 		kinds[building] = destructibles[building].kind
 	friends.bind(centres, kinds)
-	# A round stops at the first enemy on its way, gun, soldier, boat or tank;
-	# a missile kills the soldiers it passes and stops at a gun, a boat or a
-	# tank.
-	gun.intercept = func(from: Vector3, to: Vector3):
-		return _nearest([guns.intercept(from, to, PlayerBullet.MARGIN),
-				soldiers.intercept(from, to, PlayerBullet.MARGIN),
-				boats.intercept(from, to, PlayerBullet.MARGIN),
-				tanks.intercept(from, to, PlayerBullet.MARGIN),
-				boss.intercept(from, to, PlayerBullet.MARGIN)])
-	gun.struck = func(found: Dictionary):
-		if found.has("gun"):
-			guns.bullet_attack(found.gun)
-		elif found.has("boat"):
-			boats.bullet_attack(found)
-		elif found.has("tank"):
-			tanks.bullet_attack(found)
-		elif found.has("boss"):
-			boss.bullet_attack(found)
-		else:
-			soldiers.bullet_attack(found)
-	launcher.intercept = func(from: Vector3, to: Vector3):
-		soldiers.sweep(from, to, PlayerMissile.MARGIN)
-		return _nearest([guns.intercept(from, to, PlayerMissile.MARGIN, true),
-				boats.intercept(from, to, PlayerMissile.MARGIN, true),
-				tanks.intercept(from, to, PlayerMissile.MARGIN, true),
-				boss.intercept(from, to, PlayerMissile.MARGIN, true)])
-	launcher.struck = func(found: Dictionary):
-		if found.has("boat"):
-			boats.attack(found)
-		elif found.has("tank"):
-			tanks.attack(found)
-		elif found.has("boss"):
-			boss.attack(found)
-		else:
-			guns.attack(found.gun)
-	launcher.traveled = guns.travel
+	friends.carriers.append(crews[0].carrier)
+	# The players' weapons are wired to all of these in _arm.
 	guns.travel_hit = _on_travel_hit
 	_blast_scene = load(BLAST_PATH)
 	var scene: PackedScene = load(Level3DGuns.GUN_PATH)
@@ -1622,53 +1860,61 @@ func _view_frame() -> Rect2:
 	return Rect2(focus.x - width * 0.5, focus.y - half_height, width, half_height * 2.0)
 
 
-# Player.attack: 32 px either side of the player.
+# GameMode.attack_players: Player.attack, 32 px either side, on each player in
+# the game until one is hit.
 func _attack_player(x: float, z: float) -> bool:
-	if _respawning > 0 or _invincible > 0 or _immortal or settings.bullet_hack or chinook != null:
+	if _immortal or settings.bullet_hack or chinook != null:
 		return false
 	var half := 32.0 * Level3DGuns.PX
-	if absf(x - btr.position.x) > half or absf(z - btr.position.z) > half:
-		return false
-	_explode_btr("shot")
-	return true
+	for c in crews:
+		if c.out or c.respawning > 0 or c.invincible > 0:
+			continue
+		if absf(x - c.btr.position.x) > half or absf(z - c.btr.position.z) > half:
+			continue
+		_explode_btr(c, "shot")
+		return true
+	return false
 
 
 # Player.update's box for its mines: 32 px either side, 48 along x when facing
 # east or west and 46 along y when facing north or south. The BTR's heading is
 # not held to eight directions, so the nearest of them decides.
-func _player_box() -> Rect2:
-	var octant := wrapi(int(roundf(btr.heading / (PI / 4.0))), 0, 8)
+func _player_box(c: Crew) -> Rect2:
+	var octant := wrapi(int(roundf(c.btr.heading / (PI / 4.0))), 0, 8)
 	var half := Vector2(32.0, 32.0)
 	if octant == 0 or octant == 4:
 		half.x = 48.0
 	elif octant == 2 or octant == 6:
 		half.y = 46.0
 	half *= Level3DGuns.PX
-	return Rect2(Vector2(btr.position.x, btr.position.z) - half, half * 2.0)
+	return Rect2(Vector2(c.btr.position.x, c.btr.position.z) - half, half * 2.0)
 
 
 # Player.explode: the blast, the BTR gone, and back after RESPAWN_DELAY where
 # it went, invincible, for one of its lives (_physics_process). Under the blast a copy of it comes apart and burns until it is back
 # (Level3DWreck); the game's jeep is simply gone.
-func _explode_btr(by: String) -> void:
-	_spawn_blast(btr.position + Vector3.UP * 0.6, 1.0, 0.0, "player_explodes")
-	# Player.explode: the last life going takes the music with it.
-	if _lives == 0 and not settings.infinite_lives:
+func _explode_btr(c: Crew, by: String) -> void:
+	var vehicle := c.btr
+	_spawn_blast(vehicle.position + Vector3.UP * 0.6, 1.0, 0.0, "player_explodes")
+	# Player.explode: the last life going takes the music with it -- the last
+	# of both players'.
+	if c.lives == 0 and not settings.infinite_lives and not _other_in(c):
 		Level3DAudio.stop_music()
 	var wreck := Level3DWreck.new()
 	wreck.ground = launcher.ground
 	wreck.launcher = launcher
 	add_child(wreck)
-	wreck.build(btr)
+	wreck.build(vehicle)
 	# Its own Explosion, which spares the guns and not the soldiers.
-	guns.explode(btr.position, true)
-	friends.player_died(btr.position)
+	guns.acting = c
+	guns.explode(vehicle.position, true)
+	friends.player_died(vehicle.position, c.carrier)
 	_shake(SHAKE_PIXELS)
-	btr.stop()
-	btr.visible = false
-	_respawning = Player.RESPAWN_DELAY
+	vehicle.stop()
+	vehicle.visible = false
+	c.respawning = Player.RESPAWN_DELAY
 	if guns.verbose:
-		print("BTR destroyed (%s) at %.1f, %.1f" % [by, btr.position.x, btr.position.z])
+		print("%dP destroyed (%s) at %.1f, %.1f" % [c.index + 1, by, vehicle.position.x, vehicle.position.z])
 
 
 func _make_hud() -> void:
@@ -1676,8 +1922,7 @@ func _make_hud() -> void:
 	_hud.layer = HUD_LAYER
 	var layer := _hud
 	add_child(layer)
-	_hud_line = Level3DHud.new()
-	layer.add_child(_hud_line)
+	# The players' lines are added with them (_add_crew).
 	_banner = Label.new()
 	_banner.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1694,17 +1939,17 @@ func _make_hud() -> void:
 	var crosshair := Level3DCrosshair.new()
 	crosshair.wanted = _crosshair_wanted
 	layer.add_child(crosshair)
-	_layout_hud()
-	_set_score(0)
 
 
-# The line's corner and size, from Level3DSettings (Level3DHud draws it), and
-# its icons rendered again for a new size.
+# The lines' corner and size, from Level3DSettings (Level3DHud draws them),
+# and their icons rendered again for a new size.
 func _layout_hud() -> void:
-	_hud_line.bottom = settings.hud_corner == Level3DSettings.HudCorner.BOTTOM
-	_hud_line.scale_factor = settings.hud_scale
-	_hud_line.queue_redraw()
-	if btr != null and sun != null and _hud_line.icon_pixels() != _icon_pixels:
+	for c in crews:
+		c.hud.bottom = settings.hud_corner == Level3DSettings.HudCorner.BOTTOM
+		c.hud.scale_factor = settings.hud_scale
+		c.hud.icons = crews[0].hud.icons
+		c.hud.queue_redraw()
+	if not crews.is_empty() and sun != null and crews[0].hud.icon_pixels() != _icon_pixels:
 		_render_icons()
 
 
@@ -1721,13 +1966,14 @@ func _render_icons() -> void:
 		add_child(_icons)
 	_icons.sun_energy = sun.light_energy
 	_icons.shade = SHADE
-	_icon_pixels = _hud_line.icon_pixels()
+	_icon_pixels = crews[0].hud.icon_pixels()
 	_icon_run += 1
 	var run := _icon_run
 	var rendered: Dictionary = await _icons.render_all(btr.vehicle, _icon_pixels)
 	if run == _icon_run:
-		_hud_line.icons = rendered
-		_hud_line.queue_redraw()
+		for c in crews:
+			c.hud.icons = rendered
+			c.hud.queue_redraw()
 
 
 const FIRING_NAMES := ["CLASSIC", "CURSOR", "COMBINED"]
@@ -1735,27 +1981,30 @@ const FIRING_NAMES := ["CLASSIC", "CURSOR", "COMBINED"]
 const MODES_FLASH_TIME := 2.0
 var _modes_flash := 0   # the flashes still running; the modes show while > 0
 
-func _set_score(score: int) -> void:
-	_score = score
-	var line := _hud_line
+# Every player's line from the run's state. A player out of the game keeps
+# his score on it and nothing else.
+func _show_state() -> void:
 	var on := settings.hud
-	line.parts = {"score": on and settings.hud_score, "lives": on and settings.hud_lives,
-			"pows": on and settings.hud_pows and friends != null,
-			"weapon": on and settings.hud_weapon and friends != null}
-	line.score = score
-	line.lives = -1 if settings.infinite_lives else _lives
-	if friends != null:
-		line.pows = friends.pows
-		line.has_missiles = friends.has_missiles
-		line.missile_power = friends.missile_power
-	# The flash shows with the HUD off as well: a key that changes the driving
-	# has to say what it changed it to.
-	line.modes = ""
-	if btr != null and (on and settings.hud_modes or _modes_flash > 0):
-		line.modes = "%s DRIVE  %s FIRE" % ["CLASSIC" if btr.classic else "FREE",
-				FIRING_NAMES[settings.firing]]
-	line.cheats = _cheats_text() if on and settings.hud_cheats else ""
-	line.show_state()
+	for c in crews:
+		var line := c.hud
+		line.parts = {"score": on and settings.hud_score, "lives": on and settings.hud_lives and not c.out,
+				"pows": on and settings.hud_pows and friends != null and not c.out,
+				"weapon": on and settings.hud_weapon and friends != null and not c.out}
+		line.score = c.score
+		line.lives = -1 if settings.infinite_lives else c.lives
+		line.pows = c.carrier.pows
+		line.has_missiles = c.carrier.has_missiles
+		line.missile_power = c.carrier.missile_power
+		line.modes = ""
+		line.cheats = ""
+		if c.index == 0:
+			# The flash shows with the HUD off as well: a key that changes the
+			# driving has to say what it changed it to.
+			if on and settings.hud_modes or _modes_flash > 0:
+				line.modes = "%s DRIVE  %s FIRE" % ["CLASSIC" if btr.classic else "FREE",
+						FIRING_NAMES[settings.firing]]
+			line.cheats = _cheats_text() if on and settings.hud_cheats else ""
+		line.show_state()
 
 
 # The cheats that are on, in words the font has and short enough for the
@@ -1787,7 +2036,7 @@ var _pad_arrow: Level3DArrow
 
 func _update_pad_arrow() -> void:
 	_pad_arrow.shown = settings.hud and settings.hud_pad_arrow \
-			and friends.pows > 0 and rescue.is_waiting()
+			and friends.pows_aboard() > 0 and rescue.is_waiting()
 	if _pad_arrow.shown:
 		_pad_arrow.camera = camera
 		_pad_arrow.target = rescue.pad_position()
@@ -1829,7 +2078,7 @@ func _update_banners() -> void:
 func _crosshair_wanted() -> bool:
 	return _live and settings.hud_crosshair \
 			and settings.firing != Level3DSettings.Firing.CLASSIC \
-			and not _menu.is_open() and chinook == null and _respawning == 0
+			and not _menu.is_open() and chinook == null and crews[0].respawning == 0 and not crews[0].out
 
 
 # V and M: the modes on the HUD line for MODES_FLASH_TIME after the last press
@@ -1837,10 +2086,10 @@ func _crosshair_wanted() -> bool:
 # the last one runs out.
 func _flash_modes() -> void:
 	_modes_flash += 1
-	_set_score(_score)
+	_show_state()
 	get_tree().create_timer(MODES_FLASH_TIME, false).timeout.connect(func():
 		_modes_flash -= 1
-		_set_score(_score))
+		_show_state())
 
 
 # The Escape menu, and under it the look it picks: two rects over the whole
@@ -1860,6 +2109,13 @@ func _make_menu() -> void:
 	_menu.from_editor = OS.get_cmdline_user_args().has("--editor")
 	_menu.changed = _settings_changed
 	_menu.resumed = func(): _gun_locked = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	# A new game, for one player or two: the run started again with them.
+	_menu.new_game = func(count: int):
+		settings.players = count
+		_settings_changed()
+		_set_players(count)
+		_restart()
+		_menu.close()
 	add_child(_menu)
 
 
@@ -1925,19 +2181,20 @@ func _settings_changed() -> void:
 
 func _apply_settings() -> void:
 	tilted = settings.camera == Level3DSettings.Camera.TILTED
-	btr.classic = settings.driving == Level3DSettings.Driving.CLASSIC
-	btr.ghost = settings.wall_hack
-	gun.unlimited = settings.reach == Level3DSettings.Reach.UNLIMITED
-	launcher.unlimited = gun.unlimited
-	gun.long_reach = settings.reach == Level3DSettings.Reach.LONG
-	launcher.long_reach = gun.long_reach
-	gun.rate = settings.gun_rate
-	launcher.rate = settings.launcher_rate
+	for c in crews:
+		c.btr.classic = settings.driving == Level3DSettings.Driving.CLASSIC
+		c.btr.ghost = settings.wall_hack
+		c.gun.unlimited = settings.reach == Level3DSettings.Reach.UNLIMITED
+		c.launcher.unlimited = c.gun.unlimited
+		c.gun.long_reach = settings.reach == Level3DSettings.Reach.LONG
+		c.launcher.long_reach = c.gun.long_reach
+		c.gun.rate = settings.gun_rate
+		c.launcher.rate = settings.launcher_rate
 	_apply_resolution()
 	_pixels.visible = settings.look == Level3DSettings.Look.PIXELS
 	_crt.visible = settings.crt
 	_layout_hud()
-	_set_score(_score)
+	_show_state()
 	Level3DAudio.set_mode(Level3DAudio.Mode.CLASSIC if settings.sound_mode == Level3DSettings.SoundMode.CLASSIC
 			else Level3DAudio.Mode.MODERN)
 	Level3DAudio.set_volumes(settings.master_volume, settings.music_volume, settings.effects_volume,
@@ -2054,20 +2311,21 @@ func _update_music() -> void:
 # Looked up every frame, not kept: a change of the sound's mode replaces them,
 # and with no file in the mode's folder there are none.
 func _update_engine_sound(delta: float) -> void:
-	var idle := Level3DAudio.loop_on(btr, "btr_idle")
-	var drive := Level3DAudio.loop_on(btr, "btr_drive")
-	if idle == null and drive == null:
-		return
-	var running := btr.visible and _respawning == 0 and chinook == null
-	var ratio := clampf(absf(btr.speed) / btr.top_speed(), 0.0, 1.0) if running else 0.0
-	_engine_level = move_toward(_engine_level, ratio, ENGINE_RISE * delta)
-	if idle != null:
-		idle.stream_paused = not running
-		idle.volume_db = Level3DAudio.volume_db("btr_idle") + linear_to_db(1.0 - 0.7 * _engine_level)
-	if drive != null:
-		drive.stream_paused = not running
-		drive.volume_db = Level3DAudio.volume_db("btr_drive") + linear_to_db(maxf(_engine_level, 0.001))
-		drive.pitch_scale = 0.85 + 0.35 * _engine_level
+	for c in crews:
+		var idle := Level3DAudio.loop_on(c.btr, "btr_idle")
+		var drive := Level3DAudio.loop_on(c.btr, "btr_drive")
+		if idle == null and drive == null:
+			continue
+		var running := c.btr.visible and c.respawning == 0 and not c.out and chinook == null
+		var ratio := clampf(absf(c.btr.speed) / c.btr.top_speed(), 0.0, 1.0) if running else 0.0
+		c.engine_level = move_toward(c.engine_level, ratio, ENGINE_RISE * delta)
+		if idle != null:
+			idle.stream_paused = not running
+			idle.volume_db = Level3DAudio.volume_db("btr_idle") + linear_to_db(1.0 - 0.7 * c.engine_level)
+		if drive != null:
+			drive.stream_paused = not running
+			drive.volume_db = Level3DAudio.volume_db("btr_drive") + linear_to_db(maxf(c.engine_level, 0.001))
+			drive.pitch_scale = 0.85 + 0.35 * c.engine_level
 
 
 # The tank bench's CameraShake.Blast: two sines per axis so it does not read as
@@ -2115,122 +2373,63 @@ func _physics_process(delta: float) -> void:
 	# reads it as held instead, below.
 	if not btr.classic:
 		for h in _held:
-			if h[0] == "rocket" and maxi(h[1], 1) == _ticks:
-				_rocket_wanted = ROCKET_WAIT
-	if btr.classic:
-		btr.key_up = _key("up")
-		btr.key_down = _key("down")
-		btr.key_left = _key("left")
-		btr.key_right = _key("right")
-		btr.throttle = 0.0
-		btr.steer = 0.0
-	else:
-		btr.key_up = false
-		btr.key_down = false
-		btr.key_left = false
-		btr.key_right = false
-		btr.throttle = float(_key("up")) - float(_key("down"))
-		btr.steer = float(_key("left")) - float(_key("right"))
-	# By hand while held; let go, the aim below has the turret again, except
-	# driving free with the classic firing, which leaves it where it is.
-	btr.turret_input = float(_turret_key("turret_left")) - float(_turret_key("turret_right"))
+			if h[0] == "rocket" and h[3] == 0 and maxi(h[1], 1) == _ticks:
+				crews[0].rocket_wanted = ROCKET_WAIT
+	if crews.size() > 1:
+		crews[1].input.snap()
+	for c in crews:
+		_drive(c)
 	# The firing (Level3DSettings.Firing). Classic is the game's: driving
 	# classic, the gun up the screen whatever the jeep does and the grenade
 	# the way it drives or faces; driving free, both along the hull. Modern
 	# has both at the cursor. Combined has the launcher at the cursor and the
-	# turret up the screen, however the BTR drives.
-	var firing := settings.firing
+	# turret up the screen, however the BTR drives. The second player has no
+	# cursor and fires the classic way whatever the setting.
 	var cursor = null
-	if _forced_aim == null and firing != Level3DSettings.Firing.CLASSIC:
+	if _forced_aim == null and settings.firing != Level3DSettings.Firing.CLASSIC:
 		cursor = _cursor_on_ground()
-	if _forced_aim != null:
-		btr.aim_point = _forced_aim
-	elif firing == Level3DSettings.Firing.MODERN:
-		btr.aim_point = cursor
-	elif btr.classic or firing == Level3DSettings.Firing.COMBINED:
-		btr.aim_point = btr.position + _game_direction(270.0) * Level3DGun.RANGE
-	else:
-		btr.aim_point = null
+	for c in crews:
+		_aim(c, cursor)
 	for building in destructibles:
 		var entry: Dictionary = destructibles[building]
 		if entry.player.is_playing():
 			_sync_bodies(entry)
-	# Player.update: while respawning the player does nothing at all; the tick
-	# the count runs out it comes back, invincible, and carries on.
-	var gone := false
-	# The Chinook's run: Chinook sets GameMode.playing false, and the player
-	# is not updated until it is over.
+	# The Chinook's run: Chinook sets GameMode.playing false, and the players
+	# are not updated until it is over.
 	if helicopter != null:
 		helicopter.tick()
-	if chinook != null:
-		gone = true
-	elif _respawning > 0:
-		_respawning -= 1
-		if _respawning > 0:
-			gone = true
-		elif _lives > 0 or settings.infinite_lives:
-			# Main.lose_life, as Player.update spends it: on the way back.
-			if not settings.infinite_lives:
-				_lives -= 1
-			btr.visible = true
-			_invincible = Player.INVINCIBLE_DELAY
-			if guns.verbose:
-				print("BTR back, invincible for %d ticks, %d lives left" % [_invincible, _lives])
-		else:
-			gone = true
-			_restart()
-			_banner.text = "GAME OVER"
-			_banner.visible = true
-			get_tree().create_timer(GAME_OVER_TIME, false).timeout.connect(func(): _banner.visible = false)
-	if not gone:
-		btr.step(delta)
+	var gone := {}
+	for c in crews:
+		gone[c] = _gone(c)
+	if gone.values().all(func(g: bool): return g) and _game_over():
+		return
+	_hold_crews()
+	for c in crews:
+		if not gone[c]:
+			c.btr.step(delta)
 	var left_button := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	if not left_button:
 		_gun_locked = false
-	gun.trigger = not gone and (_hold_fire or left_button and not _gun_locked or _key("gun"))
-	gun.aim_point = btr.aim_point
-	gun.at_cursor = _forced_aim != null or firing == Level3DSettings.Firing.MODERN and cursor != null
-	gun.step(delta)
-	launcher.aim_point = btr.aim_point
-	launcher.at_cursor = gun.at_cursor
-	if _forced_aim == null:
-		if firing == Level3DSettings.Firing.COMBINED:
-			launcher.aim_point = cursor
-			launcher.at_cursor = cursor != null
-		elif firing == Level3DSettings.Firing.CLASSIC and btr.classic:
-			launcher.aim_point = btr.position \
-					+ _game_direction(btr.classic_fire_angle()) * Level3DLauncher.RANGE
-	launcher.has_missiles = friends.has_missiles
-	launcher.missile_power = friends.missile_power
-	# Player.update's grenade: held, it goes the tick it can, and it has to be
-	# let go of between two. A press while the last one is still in the air is
-	# not lost if the button is still down when it is over.
-	if btr.classic:
-		if _key("rocket") or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
-			if _fire_released and not gone and launcher.fire():
-				_fire_released = false
-		else:
-			_fire_released = true
-	# A click waits for the mount to come round and the rails to be loaded,
-	# rather than being lost while they are not.
-	if _rocket_wanted > 0.0:
-		_rocket_wanted -= delta
-		if not gone and launcher.fire():
-			_rocket_wanted = 0.0
-	launcher.step(delta)
-	if not gone:
-		if _invincible > 0:
-			_invincible -= 1
+	for c in crews:
+		guns.acting = c
+		_fire(c, gone[c], cursor, delta)
+	for c in crews:
+		if gone[c]:
+			continue
+		guns.acting = c
+		if c.invincible > 0:
+			c.invincible -= 1
 		# Soldiers are run over and prisoners picked up whether or not the BTR is
 		# invincible.
-		soldiers.bump(_player_box())
-		friends.bump(_player_box())
-		if guns.bump(_player_box(), _invincible > 0):
-			_explode_btr("ran into a gun")
-		elif tanks.bump(_player_box(), _invincible > 0):
-			_explode_btr("ran into a tank")
-		elif boss.bump(_player_box(), _invincible > 0):
-			_explode_btr("ran into a boss tank")
+		var box := _player_box(c)
+		soldiers.bump(box)
+		friends.bump(box, c.carrier)
+		if guns.bump(box, c.invincible > 0):
+			_explode_btr(c, "ran into a gun")
+		elif tanks.bump(box, c.invincible > 0):
+			_explode_btr(c, "ran into a tank")
+		elif boss.bump(box, c.invincible > 0):
+			_explode_btr(c, "ran into a boss tank")
 	guns.tick()
 	soldiers.tick()
 	boats.tick()
@@ -2240,15 +2439,144 @@ func _physics_process(delta: float) -> void:
 	puffs.tick()
 	friends.tick()
 	rescue.tick()
-	_set_score(_score)
+	_show_state()
 	_sync_markers()
+
+
+# A player's keys onto its vehicle: the first's from the settings (and
+# --hold), the second's from the 2D game's second player's mapping.
+func _drive(c: Crew) -> void:
+	var up := _key("up") if c.input == null else c.input.is_up() or _held_key("up", c.index)
+	var down := _key("down") if c.input == null else c.input.is_down() or _held_key("down", c.index)
+	var left := _key("left") if c.input == null else c.input.is_left() or _held_key("left", c.index)
+	var right := _key("right") if c.input == null else c.input.is_right() or _held_key("right", c.index)
+	var vehicle := c.btr
+	if vehicle.classic:
+		vehicle.key_up = up
+		vehicle.key_down = down
+		vehicle.key_left = left
+		vehicle.key_right = right
+		vehicle.throttle = 0.0
+		vehicle.steer = 0.0
+	else:
+		vehicle.key_up = false
+		vehicle.key_down = false
+		vehicle.key_left = false
+		vehicle.key_right = false
+		vehicle.throttle = float(up) - float(down)
+		vehicle.steer = float(left) - float(right)
+	# By hand while held; let go, the aim below has the turret again, except
+	# driving free with the classic firing, which leaves it where it is.
+	if c.input == null:
+		vehicle.turret_input = float(_turret_key("turret_left")) - float(_turret_key("turret_right"))
+
+
+# Where a player's turret points (Level3DBtr.aim_point), by the firing; the
+# second player's always the classic way.
+func _aim(c: Crew, cursor) -> void:
+	var firing := settings.firing if c.input == null else Level3DSettings.Firing.CLASSIC
+	var vehicle := c.btr
+	if _forced_aim != null and c.input == null:
+		vehicle.aim_point = _forced_aim
+	elif firing == Level3DSettings.Firing.MODERN:
+		vehicle.aim_point = cursor
+	elif vehicle.classic or firing == Level3DSettings.Firing.COMBINED:
+		vehicle.aim_point = vehicle.position + _game_direction(270.0) * Level3DGun.RANGE
+	else:
+		vehicle.aim_point = null
+
+
+# Player.update: while respawning the player does nothing at all; the tick
+# the count runs out it comes back, invincible, and carries on -- or, with no
+# life left, is out if the other player is still in (PlayerState.out). Whether
+# it is gone this tick.
+func _gone(c: Crew) -> bool:
+	if chinook != null or c.out:
+		return true
+	if c.respawning == 0:
+		return false
+	c.respawning -= 1
+	if c.respawning > 0:
+		return true
+	if c.lives > 0 or settings.infinite_lives:
+		# Main.lose_life, as Player.update spends it: on the way back.
+		if not settings.infinite_lives:
+			c.lives -= 1
+		c.btr.visible = true
+		c.invincible = Player.INVINCIBLE_DELAY
+		if guns.verbose:
+			print("%dP back, invincible for %d ticks, %d lives left" % [c.index + 1, c.invincible, c.lives])
+		return false
+	c.out = true
+	if guns.verbose:
+		print("%dP out" % (c.index + 1))
+	return true
+
+
+# Every player out: the stage again, with GAME OVER over it. Whether it was.
+func _game_over() -> bool:
+	if chinook != null or crews.any(func(c: Crew): return not c.out):
+		return false
+	_restart()
+	_banner.text = "GAME OVER"
+	_banner.visible = true
+	get_tree().create_timer(GAME_OVER_TIME, false).timeout.connect(func(): _banner.visible = false)
+	return true
+
+
+# A player's gun and launcher this tick: the triggers, the aim, the weapon the
+# prisoners have given.
+func _fire(c: Crew, gone: bool, cursor, delta: float) -> void:
+	var first := c.input == null
+	var firing := settings.firing if first else Level3DSettings.Firing.CLASSIC
+	var vehicle := c.btr
+	var trigger := c.input.is_gun() or _held_key("gun", c.index) if not first else \
+			(_hold_fire or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _gun_locked or _key("gun"))
+	c.gun.trigger = not gone and trigger
+	c.gun.aim_point = vehicle.aim_point
+	c.gun.at_cursor = first and (_forced_aim != null or firing == Level3DSettings.Firing.MODERN and cursor != null)
+	c.gun.step(delta)
+	c.launcher.aim_point = vehicle.aim_point
+	c.launcher.at_cursor = c.gun.at_cursor
+	if not first or _forced_aim == null:
+		if firing == Level3DSettings.Firing.COMBINED:
+			c.launcher.aim_point = cursor
+			c.launcher.at_cursor = cursor != null
+		elif firing == Level3DSettings.Firing.CLASSIC and vehicle.classic:
+			c.launcher.aim_point = vehicle.position \
+					+ _game_direction(vehicle.classic_fire_angle()) * Level3DLauncher.RANGE
+	c.launcher.has_missiles = c.carrier.has_missiles
+	c.launcher.missile_power = c.carrier.missile_power
+	var rocket := c.input.is_grenade() or _held_key("rocket", c.index) if not first else \
+			(_key("rocket") or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT))
+	# Player.update's grenade: held, it goes the tick it can, and it has to be
+	# let go of between two. A press while the last one is still in the air is
+	# not lost if the button is still down when it is over.
+	if vehicle.classic:
+		if rocket:
+			if c.fire_released and not gone and c.launcher.fire():
+				c.fire_released = false
+		else:
+			c.fire_released = true
+	elif not first and rocket and not c.rocket_held:
+		# The first player's press is an event (_unhandled_input).
+		c.rocket_wanted = ROCKET_WAIT
+	c.rocket_held = rocket
+	# A click waits for the mount to come round and the rails to be loaded,
+	# rather than being lost while they are not.
+	if c.rocket_wanted > 0.0:
+		c.rocket_wanted -= delta
+		if not gone and c.launcher.fire():
+			c.rocket_wanted = 0.0
+	c.launcher.step(delta)
 
 
 func _process(delta: float) -> void:
 	Level3DWind.tick(delta)
 	if not _live:
 		return
-	var scroll := _axis(KEY_DOWN, KEY_UP)
+	# The arrows are the second player's, with two.
+	var scroll := _axis(KEY_DOWN, KEY_UP) if crews.size() == 1 else 0.0
 	if scroll != 0.0:
 		following = false
 		focus.y -= scroll * SCROLL_SPEED / zoom * delta
@@ -2256,13 +2584,14 @@ func _process(delta: float) -> void:
 	# the BTR stands at START unseen until the Chinook is down, then is put in
 	# its cabin, and a frame following it jumped there, 6.4 m in one frame.
 	# After the hand-over the frame comes on to the BTR over CATCH_UP seconds,
-	# where it was not over it already.
+	# where it was not over it already. Two players, it follows the middle of
+	# them (_follow_point), which keeps both in it (_hold_crews).
 	if following:
 		if chinook != null:
 			focus = chinook.frame_centre(level_aabb.size.x / zoom * 9.0 / 32.0)
 		else:
 			_catch_up *= exp(-delta / CATCH_UP)
-			focus = Vector2(btr.position.x, btr.position.z) + _catch_up
+			focus = _follow_point() + _catch_up
 	else:
 		_catch_up = Vector2.ZERO
 	# The boss's pan and the arena after it: the frame's top where the boss
@@ -2276,9 +2605,11 @@ func _process(delta: float) -> void:
 	# or its tracks (Level3DBtr.blink).
 	if helicopter != null:
 		helicopter.enlarge = not tilted
-	elif _respawning == 0:
-		_blink = _blink + 1 if _invincible > 0 else 0
-		btr.blink(_blink % 4 < 2)
+	else:
+		for c in crews:
+			if c.respawning == 0:
+				c.blink = c.blink + 1 if c.invincible > 0 else 0
+				c.btr.blink(c.blink % 4 < 2)
 	_shake_left = maxf(_shake_left - delta, 0.0)
 	_update_camera()
 	Level3DAudio.listen(Vector3(focus.x, 0.0, focus.y), _view_frame())
@@ -2299,10 +2630,13 @@ func _turret_key(action: String) -> bool:
 # An action's key (Level3DSettings.ACTIONS) held on the keyboard, or the action
 # held by --hold.
 func _key(action: String) -> bool:
-	if Input.is_key_pressed(settings.key(action)):
-		return true
+	return Input.is_key_pressed(settings.key(action)) or _held_key(action, 0)
+
+
+# An action held by --hold for player `index`.
+func _held_key(action: String, index: int) -> bool:
 	for h in _held:
-		if h[0] == action and _ticks >= h[1] and _ticks < h[2]:
+		if h[0] == action and h[3] == index and _ticks >= h[1] and _ticks < h[2]:
 			return true
 	return false
 
@@ -2330,7 +2664,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		# it as held instead, in _physics_process.
 		if event.keycode == settings.key("rocket"):
 			if not btr.classic:
-				_rocket_wanted = ROCKET_WAIT
+				crews[0].rocket_wanted = ROCKET_WAIT
 			return
 		# A key bound to an action is that action's and nothing else's.
 		if settings.action_of(event.keycode) != "":
@@ -2356,7 +2690,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				_settings_changed()
 				_flash_modes()
 			KEY_T:
-				gun.turbo = not gun.turbo
+				var turbo := not gun.turbo
+				for c in crews:
+					c.gun.turbo = turbo
 			KEY_G:
 				Level3DWind.set_stepped(not Level3DWind.is_stepped())
 				print("wind: ", "stepped" if Level3DWind.is_stepped() else "smooth")
@@ -2380,7 +2716,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			# The left button is the gun's, read as held in _physics_process.
 			MOUSE_BUTTON_RIGHT:
 				if not btr.classic:
-					_rocket_wanted = ROCKET_WAIT
+					crews[0].rocket_wanted = ROCKET_WAIT
 			MOUSE_BUTTON_MIDDLE:
 				var at = _cursor_on_ground()
 				if at != null:
@@ -2394,9 +2730,10 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 # R, and the last life lost: the BTR flown in again, everything blown up
-# rebuilt and every enemy back, the score and the lives as they started.
+# rebuilt and every enemy back, the score and the lives as they started --
+# both players', both in again.
 func _restart() -> void:
-	btr.place(start(), START_HEADING)
+	_place_crews()
 	following = true
 	for building in destructibles:
 		_set_destroyed(building, false)
@@ -2413,9 +2750,14 @@ func _restart() -> void:
 	friends.reset()
 	rescue.reset()
 	map.reset()
-	_respawning = 0
-	_invincible = 0
-	_lives = EXTRA_LIVES
+	for c in crews:
+		c.respawning = 0
+		c.invincible = 0
+		c.lives = EXTRA_LIVES
+		c.score = 0
+		c.out = false
+		c.btr.visible = true
+		c.btr.blink(true)
 	_banner.visible = false
 	_banners.clear()
 	_saw_chinook = false
@@ -2423,9 +2765,7 @@ func _restart() -> void:
 	_saw_defeat = false
 	_saw_boss = false
 	_saw_beaten = false
-	btr.visible = true
-	btr.blink(true)
-	_set_score(0)
+	_show_state()
 	# stage_song0, the Chinook's after a continue: no start jingle again.
 	Level3DAudio.play_music("stage")
 	_start_intro()
@@ -2513,34 +2853,38 @@ func _screenshot_mode() -> void:
 		settings.driving = Level3DSettings.Driving.FREE
 		_apply_settings()
 		args.remove_at(free)
-		_set_score(_score)
+		_show_state()
 	var hold := args.find("--hold")
 	if hold >= 0:
 		const KEYS := {"w": "up", "a": "left", "s": "down", "d": "right", "l": "gun", "p": "rocket"}
 		for span in args[hold + 1].split(","):
-			var at := span.split("@")
+			# 2:wd@0-1 is the second player's.
+			var index := 1 if span.begins_with("2:") else 0
+			var at := span.trim_prefix("2:").split("@")
 			var times := at[1].split("-")
 			for c in at[0]:
 				_held.append([KEYS[c], _ticks + roundi(float(times[0]) * 100.0),
-						_ticks + roundi(float(times[1]) * 100.0)])
+						_ticks + roundi(float(times[1]) * 100.0), index])
 		args = args.slice(0, hold) + args.slice(hold + 2)
 	var weapon := args.find("--weapon")
 	if weapon >= 0:
 		var level := int(args[weapon + 1])
-		friends.has_missiles = level > 0
-		friends.missile_power = clampi(level - 1, 0, 2)
+		crews[0].carrier.has_missiles = level > 0
+		crews[0].carrier.missile_power = clampi(level - 1, 0, 2)
 		args = args.slice(0, weapon) + args.slice(weapon + 2)
-		_set_score(_score)
+		_show_state()
 	var aboard := args.find("--pows")
 	if aboard >= 0:
-		friends.pows = int(args[aboard + 1])
-		friends.releaseable_pows = friends.pows
+		for c in crews:
+			c.carrier.pows = int(args[aboard + 1])
+			c.carrier.releaseable_pows = c.carrier.pows
 		args = args.slice(0, aboard) + args.slice(aboard + 2)
-		_set_score(_score)
+		_show_state()
 	var start_at := args.find("--at")
 	if start_at >= 0:
 		var xz := args[start_at + 1].split(",")
-		btr.place(Vector3(float(xz[0]), 0.0, float(xz[1])), START_HEADING)
+		for c in crews:
+			c.btr.place(Vector3(float(xz[0]) + COOP_SPREAD * c.index, 0.0, float(xz[1])), START_HEADING)
 		args = args.slice(0, start_at) + args.slice(start_at + 2)
 	var blow_up := args.find("--destroy")
 	if blow_up >= 0:
@@ -2559,17 +2903,17 @@ func _screenshot_mode() -> void:
 		var xz := at[0].split(",")
 		_forced_aim = Vector3(float(xz[0]), 0.0, float(xz[1]))
 		if at.size() > 1:
-			get_tree().create_timer(float(at[1])).timeout.connect(func(): _rocket_wanted = INF)
+			get_tree().create_timer(float(at[1])).timeout.connect(func(): crews[0].rocket_wanted = INF)
 		else:
-			_rocket_wanted = INF
+			crews[0].rocket_wanted = INF
 		args = args.slice(0, rocket) + args.slice(rocket + 2)
 	var die := args.find("--die")
 	if die >= 0:
 		get_tree().create_timer(float(args[die + 1])).timeout.connect(func():
-			if _respawning == 0:
-				_explode_btr("--die"))
+			if crews[0].respawning == 0:
+				_explode_btr(crews[0], "--die"))
 		args = args.slice(0, die) + args.slice(die + 2)
-	for flag in ["--level", "--file"]:
+	for flag in ["--level", "--file", "--players"]:
 		var at := args.find(flag)
 		if at >= 0:
 			args = args.slice(0, at) + args.slice(at + 2)  # read in _ready
@@ -2613,6 +2957,9 @@ func _screenshot_mode() -> void:
 		await get_tree().create_timer(float(args[5])).timeout
 	print("BTR at %.2f, %.2f heading %.1f, %s" % [btr.position.x, btr.position.z,
 			rad_to_deg(btr.heading), "classic" if btr.classic else "free"])
+	for c in crews:
+		print("%dP at %.2f, %.2f heading %.1f, %d lives, %d points%s" % [c.index + 1, c.btr.position.x,
+				c.btr.position.z, rad_to_deg(c.btr.heading), c.lives, c.score, ", out" if c.out else ""])
 
 	# Shadows and the first frame's pipeline compilation need a few frames.
 	for i in 8:

@@ -118,7 +118,8 @@ var guns: Level3DGuns
 var frame: Callable
 # `ground.call(x, z)`: {"height": ...} as the preview's.
 var ground: Callable
-# `player_position.call()`: the player's level x, z.
+# `player_position.call(from)`: the level x, z of the player nearest `from`,
+# a level x, z too (Level3DGuns.player_position).
 var player_position: Callable
 var scored: Callable
 var verbose := false
@@ -285,16 +286,20 @@ func reset() -> void:
 # ----------------------------------------------------------------------------
 # The tick
 
+# The player nearest map x, y, in map px.
+func _player_near(x: float, y: float) -> Vector2:
+	return Level3DMap.to_map(player_position.call(Level3DMap.to_level(Vector2(x, y))))
+
+
 func tick() -> void:
 	var view: Rect2 = frame.call()
 	var top := Level3DMap.to_map(view.position).y
 	_process_triggers(top)
 	_furthest_top = minf(_furthest_top, top)
-	var player := Level3DMap.to_map(player_position.call())
 	var bound := _furthest_top + Level3DSoldiers.CAMERA_BOUND + Level3DSoldiers.REMOVE_BOUND
 	for i in range(tanks.size() - 1, -1, -1):
 		var t := tanks[i]
-		_update(t, player)
+		_update(t, _player_near(t.x, t.y))
 		# Enemy.check_bounds, on its solid box.
 		if t.y - SOLID > bound:
 			t.root.queue_free()

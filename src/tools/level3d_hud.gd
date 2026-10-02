@@ -1,5 +1,5 @@
 # The 3D preview's HUD line, drawn with the game's own font and with icons
-# rendered from the preview's own models (level3d_preview.gd, _set_score
+# rendered from the preview's own models (level3d_preview.gd, _show_state
 # hands it the run's state, _render_icons the icons):
 #
 #     1P 004500   [jeep][jeep][jeep]   [prisoner] 3   [missile]
@@ -21,6 +21,10 @@
 #   * on lines of their own, a size smaller, in the font's gray: the driving
 #     and firing modes when shown, and the cheats that are on
 #     (Level3DSettings.hud_cheats).
+#
+# With two players each has a line of its own, the second's "2P" in the
+# corner across the frame, its groups in the same order, as GameMode's score
+# puts the second player's at the other side of the frame.
 #
 # Sizes are whole multiples of a pixel. A glyph is 32 px at 100%, as the
 # game's own HUD draws it on the same 2048x1152 frame, 24 to 48 through
@@ -62,6 +66,8 @@ var modes := ""             # "" for none
 var cheats := ""            # the cheats on, "" for none or not shown
 var parts := {"score": true, "lives": true, "pows": true, "weapon": true}
 var bottom := false         # the bottom left corner rather than the top left
+var right := false          # the right-hand corner, the second player's
+var label := "1P"
 var scale_factor := 1.0
 # Level3DIcons.render_all's: {"lives", "pow", "weapons": [4]}, or empty.
 var icons := {}
@@ -70,6 +76,7 @@ var _fonts: Array = []      # [colour] -> {code point -> Spr}
 var _sprites := {}          # sprite name -> Spr, until the icons come
 var _weapon := ""           # the weapon last shown, for the blink
 var _blink_left := 0.0
+var _measuring := false     # laying the line out to see how wide it is
 
 
 func _init() -> void:
@@ -111,11 +118,32 @@ func _draw() -> void:
 	var g := GLYPH * scale_factor
 	var row := g * ICON_HEIGHT
 	var top := size.y - MARGIN.y - row if bottom else MARGIN.y
+	var left := MARGIN.x
+	if right:
+		# Laid out once without drawing, to end at the margin.
+		_measuring = true
+		left = size.x - MARGIN.x - _line(0.0, top, g, row)
+		_measuring = false
+	_line(left, top, g, row)
+	# The modes and the cheats on lines of their own, smaller, stacked away
+	# from the corner: they are several words each and would run the main line
+	# off the frame at the bigger sizes.
+	var small := roundf(g * 0.75 / 8.0) * 8.0 if g >= 32.0 else g
+	var gap := roundf(g * 0.25)
+	var at := top - gap - small if bottom else top + row + gap
+	for line in [modes, cheats]:
+		if line == "":
+			continue
+		_text(line, left, at, small, GRAY)
+		at += -(small + gap) if bottom else small + gap
+
+
+# The main line from `x`; returns where it ends.
+func _line(x: float, top: float, g: float, row: float) -> float:
 	var y := top + roundf((row - g) * 0.5)      # the glyphs' top
-	var x := MARGIN.x
 	var groups := 0
 	if parts.score:
-		x = _text("1P %06d" % score, x, y, g, WHITE)
+		x = _text("%s %06d" % [label, score], x, y, g, WHITE)
 		groups += 1
 	if parts.lives:
 		x = _gap(x, g, groups)
@@ -139,17 +167,7 @@ func _draw() -> void:
 		var rounds: Array = icons.get("weapons", [])
 		x = _icon(rounds[level] if level < rounds.size() else null,
 				MISSILE_SPRITE if has_missiles else GRENADE_SPRITE, x, top, row, alpha)
-	# The modes and the cheats on lines of their own, smaller, stacked away
-	# from the corner: they are several words each and would run the main line
-	# off the frame at the bigger sizes.
-	var small := roundf(g * 0.75 / 8.0) * 8.0 if g >= 32.0 else g
-	var gap := roundf(g * 0.25)
-	var at := top - gap - small if bottom else top + row + gap
-	for line in [modes, cheats]:
-		if line == "":
-			continue
-		_text(line, MARGIN.x, at, small, GRAY)
-		at += -(small + gap) if bottom else small + gap
+	return x
 
 
 func _gap(x: float, g: float, groups: int) -> float:
@@ -161,7 +179,7 @@ func _text(text: String, x: float, y: float, g: float, colour: int, alpha := 1.0
 	var glyphs: Dictionary = _fonts[colour]
 	for i in text.length():
 		var s: Spr = glyphs.get(text.to_upper().unicode_at(i))
-		if s != null:
+		if s != null and not _measuring:
 			draw_texture_rect_region(s.tex, Rect2(x, y, g, g), s.region, Color(1, 1, 1, alpha))
 		x += g
 	return x
@@ -174,13 +192,16 @@ func _icon(icon: Texture2D, sprite: String, x: float, top: float, row: float, al
 	if icon != null:
 		var factor := row / icon.get_height()
 		var w := roundf(icon.get_width() * factor)
-		draw_texture_rect(icon, Rect2(x, top, w, row), false, Color(1, 1, 1, alpha))
+		if not _measuring:
+			draw_texture_rect(icon, Rect2(x, top, w, row), false, Color(1, 1, 1, alpha))
 		return x + w
 	var s: Spr = _sprites.get(sprite)
 	if s == null:
 		return x
 	var h := row * 0.8
 	var sw := roundf(s.w * h / s.h)
+	if _measuring:
+		return x + sw
 	draw_texture_rect_region(s.tex, Rect2(x, top + (row - h) * 0.5, sw, h), s.region, Color(1, 1, 1, alpha))
 	return x + sw
 
@@ -190,6 +211,8 @@ func _icon(icon: Texture2D, sprite: String, x: float, top: float, row: float, al
 func _infinity(x: float, y: float, g: float) -> float:
 	var r := g * 0.3
 	var width := maxf(roundf(g / 8.0), 1.0)
+	if _measuring:
+		return x + r * 4.0 + width * 2.0
 	for pass_colour in [SHADOW, Color.WHITE]:
 		var offset := Vector2(width, width) if pass_colour != Color.WHITE else Vector2.ZERO
 		var centre := Vector2(x + r + width, y + g * 0.5) + offset

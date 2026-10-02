@@ -233,6 +233,11 @@ var target_angle := -1
 var last_target_angle := 270
 var fire_angle := 270.0
 var _classic_synced := false
+# Two players (the preview's co-op): how far north and south, level z, it may
+# go, for the frame to hold the other jeep as well -- Player.update's clamp to
+# the camera. It stops there as at a wall, both modes; one already past it is
+# not pulled back in, only kept from going further.
+var z_limits := Vector2(-INF, INF)
 
 # VEHICLES' entry for the one driven, and what it scales to in the level.
 var vehicle: Dictionary
@@ -365,6 +370,27 @@ func blink(shown: bool) -> void:
 			mesh.layers = 0
 		else:
 			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+
+
+# The second player's colours (the preview's co-op): every coloured part whose
+# hue is from `min_hue` to `max_hue` degrees turned by `shift`, on copies of
+# its materials, as Spr.hue_shifted_copy makes the game's blue jeep out of the
+# green one. Grey, black, white and glass are left alone.
+func tint(min_hue: float, max_hue: float, shift: float) -> void:
+	for node in _model.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		for surface in mesh_instance.get_surface_override_material_count():
+			var material := mesh_instance.get_active_material(surface) as StandardMaterial3D
+			if material == null:
+				continue
+			var colour := material.albedo_color
+			var hue := colour.h * 360.0
+			if colour.s <= 0.2 or hue < min_hue or hue > max_hue:
+				continue
+			var copy := material.duplicate() as StandardMaterial3D
+			colour.h = fposmod(hue + shift, 360.0) / 360.0
+			copy.albedo_color = colour
+			mesh_instance.set_surface_override_material(surface, copy)
 
 
 # The model as it stands, for the wreck to copy (Level3DWreck).
@@ -558,6 +584,12 @@ func step(delta: float) -> void:
 	else:
 		_classic_synced = false
 		_step_free(delta)
+	if position.z < z_limits.x and position.z < was.z:
+		position.z = maxf(position.z, minf(z_limits.x, was.z))
+		speed = 0.0
+	elif position.z > z_limits.y and position.z > was.z:
+		position.z = minf(position.z, maxf(z_limits.y, was.z))
+		speed = 0.0
 
 	# What the body felt, not which branch ran: signed along the bow, so pulling
 	# away in reverse dips the nose just as braking does.

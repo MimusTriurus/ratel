@@ -238,6 +238,12 @@ var struck: Callable
 # the first upgrade, and two up and down it as well for the second. The rules
 # are Level3DGuns.travel's; what is seen of them is here (_travel).
 var traveled: Callable
+# Where its craters, scorches and rubble go: the launcher whose lists the
+# ground is told of (_push_ground, ground_materials), and the one the vehicles
+# feel them through (crater_height). Null, this one. The second player's
+# launcher in co-op has the first's, so that two players' rounds dig one
+# ground.
+var marks: Level3DLauncher
 
 var yaw := 0.0              # the mount, relative to the hull
 var loaded := true
@@ -894,7 +900,7 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3) -> void:
 		var hit: Dictionary = strike.call(at, -normal) if strike.is_valid() else {"hit": false}
 		if hit.hit and hit.kind in Level3DMarks.KINDS:
 			Level3DMarks.soot(hit.position, _rng.randf_range(SOOT_RADIUS.x, SOOT_RADIUS.y))
-			_rubble(hit.position, hit.normal, hit.colour)
+			_marks()._rubble(hit.position, hit.normal, hit.colour)
 			_smoulder(hit.position + hit.normal * 0.05)
 		elif there.hit and there.kind != "wall" and at.y <= there.height + 0.2:
 			_dust_ring(Vector3(at.x, there.height, at.z), there.kind)
@@ -903,8 +909,8 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3) -> void:
 			# where not.
 			if not destroyed and there.kind != "water":
 				var on_ground := Vector3(at.x, there.height, at.z)
-				if not (there.kind != "hard" and _crater(on_ground)):
-					_scorch(on_ground)
+				if not (there.kind != "hard" and _marks()._crater(on_ground)):
+					_marks()._scorch(on_ground)
 	# PlayerMissile.update: an upgraded missile throws its blast sideways, and
 	# the second upgrade vertically too.
 	if rocket.power > 0:
@@ -915,6 +921,10 @@ func _explode(rocket: Dictionary, at: Vector3, normal: Vector3) -> void:
 			if traveled.is_valid():
 				traveled.call(at, way)
 			_travel(Vector3(at.x, there.height if there.hit else at.y, at.z), way)
+
+
+func _marks() -> Level3DLauncher:
+	return self if marks == null else marks
 
 
 # A TravelingExplosion as it is seen: a ball of fire running along the ground
