@@ -79,6 +79,18 @@ OUT = "build/sfx3d_chip"
 # the table.
 LOOPS = {"rocket_flight", "btr_idle", "btr_drive", "tank_engine", "boat_engine",
          "chinook", "rescue_rotor", "ambient_sea", "ambient_jungle"}
+# Rotors, which a frame-by-frame reading takes apart: the APU's registers
+# change 60 times a second, and a blade-pass rate that is no whole number of
+# frames (the rescue helicopter's 24 Hz is 2.5) reads as a rhythm that
+# wanders -- its regularity, the envelope's autocorrelation at the chop, fell
+# from 0.76 to 0.19. The original's own rotors are a whole number of frames,
+# 12 (chinook) and 4 (rescue_rotor). These are played instead as a steady
+# chop of that many frames each (steady), the nearest to modern's rate:
+# chinook's 12.6 Hz as 5 frames (12 Hz), rescue_rotor's 24 Hz as 3 (20 Hz).
+STEADY = {"chinook": 5, "rescue_rotor": 3}
+# How a blade's chop falls over its frames, from the loud end of the noise's
+# volume to the quiet end: a thump, then the swish dying away.
+CHOP = {3: [1.0, 0.55, 0.25], 5: [1.0, 0.7, 0.45, 0.25, 0.1]}
 
 RATE = 44100
 OVER = 4
@@ -455,6 +467,40 @@ def write_ogg(path, y):
                    input=np.ascontiguousarray(y, np.float32).tobytes(), check=True)
 
 
+def steady(table, period, frames=60):
+    """`table` as an even chop of `period` frames, `frames` long (a whole
+    number of chops, so it loops on itself): the noise's volume falling over
+    each chop from its loud end to its quiet end as the source has them (the
+    90th and 10th percentiles), on the period it uses most, a step deeper for
+    the thump; a tone the source holds most of the time (a pulse or the
+    triangle on in half its frames), held at its median, and none otherwise,
+    since a rotor's wandering partials read as a melody."""
+    vol = np.array(table["noise_vol"], dtype=np.float64)
+    loud, quiet = np.percentile(vol[vol > 0], 90), np.percentile(vol[vol > 0], 10)
+    periods = np.array(table["noise_period"])[vol > 0]
+    period_mode = int(np.bincount(periods).argmax())
+    out = {k: [0] * frames for k in REGISTERS}
+    for f in range(frames):
+        k = f % period
+        out["noise_vol"][f] = int(round(quiet + (loud - quiet) * CHOP[period][k]))
+        out["noise_period"][f] = min(period_mode + (1 if k == 0 else 0), 15)
+    for ch in ("pulse", "pulse2"):
+        v = np.array(table[ch + "_vol"])
+        on = v > 0
+        if on.mean() >= 0.5:
+            timer = int(np.median(np.array(table[ch + "_timer"])[on]))
+            level = int(round(np.median(v[on])))
+            duty = int(np.bincount(np.array(table[ch + "_duty"])[on]).argmax())
+            for f in range(frames):
+                out[ch + "_vol"][f], out[ch + "_timer"][f], out[ch + "_duty"][f] = level, timer, duty
+    on = np.array(table["tri_on"]) > 0
+    if on.mean() >= 0.5:
+        timer = int(np.median(np.array(table["tri_timer"])[on]))
+        for f in range(frames):
+            out["tri_on"][f], out["tri_timer"][f] = 1, timer
+    return out
+
+
 def seamless(table, frames):
     """A loop of `table`'s `frames`: the table three times over, rendered, and
     the middle cut out, its first 10 ms faded in over what followed it, so
@@ -563,6 +609,9 @@ def main():
         n = len(y) * OVER
 
         table = analyse(y, shapes, keys)
+        if base in STEADY:
+            table = steady(table, STEADY[base])
+            n = len(table["noise_vol"]) * int(round(RATE / FRAME)) * OVER
         pulse, tri, noise = render_apu(table, n)
         apu, clip_a = level_to(mix(pulse, tri, noise, n=n)[:len(y)], target)
         write_ogg(os.path.join(OUT, "apu", stem + ".ogg"), apu)
