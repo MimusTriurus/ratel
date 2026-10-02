@@ -78,6 +78,10 @@ func _init() -> void:
 	_sound = AudioStreamPlayer.new()
 	_sound.stream = load(SOUND_PATH)
 	add_child(_sound)
+	# Hidden until a banner comes: only _show hides it, and with the STAGE
+	# banner off, or a run started on the ground, nothing calls that, which
+	# left the empty band, its padding tall, across the middle of the frame.
+	_show()
 
 
 func clear() -> void:
