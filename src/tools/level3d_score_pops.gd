@@ -3,7 +3,7 @@
 # thin black line outside that, rising and fading
 # (level3d_preview.gd, rescue.scored). Not the game's: its points only ever
 # went to the score, and in the 3D frame, at the far end of the screen from
-# the HUD, that went unseen. And, a size bigger and longer, "1UP" and
+# the HUD, that went unseen. And, longer, "1UP" and
 # "POWER UP" over the jeep that got the life or the upgrade, going along with
 # it (`add_text`): those come in the thick of things, anywhere on the stage,
 # and the HUD's flash alone, at the frame's edge, goes by unseen there.
@@ -24,12 +24,15 @@
 class_name Level3DScorePops
 extends Control
 
-const GLYPH := 32.0             # at 100%
+# The glyphs at 100%, the points' and a jeep's alike: three quarters of the
+# HUD's, which over the jeep and the helicopter read out of all proportion
+# to them.
+const GLYPH := 24.0
+const FONT := 32.0              # a glyph's own pixels across, which RING, LINE and BAR are in
 const LIFE := 1.2               # seconds
 const RISE := 2.0               # glyphs it rises over LIFE, steadily: eased, one under would catch it up
 const FADE := 0.4               # the last seconds of LIFE it fades out over
 const SPACING := 1.2            # glyphs from a pop's top to the foot of one stacked over it
-const BIG := 1.25               # a jeep's pop's glyphs, of GLYPH
 const BIG_LIFE := 1.6
 # The hyphen's bar and the shadow under it, in the glyph's 32 font pixels:
 # the plus is it and the same bar stood upright through its middle.
@@ -92,7 +95,7 @@ func _init() -> void:
 	var hyphen: Spr = font.get_sprite("font-black-hyphen.png")
 	if hyphen != null:
 		var image := hyphen.tex.get_image()
-		var p := hyphen.region.position + SHADOW_SAMPLE * hyphen.region.size.x / GLYPH
+		var p := hyphen.region.position + SHADOW_SAMPLE * hyphen.region.size.x / FONT
 		_shadow = image.get_pixelv(Vector2i(p))
 
 
@@ -105,7 +108,7 @@ func add(at: Vector3, points: int, colour: Color) -> void:
 	_push(pop)
 
 
-# A jeep's pop, `text` over `follow.call()` wherever that goes, a size bigger,
+# A jeep's pop, `text` over `follow.call()` wherever that goes, longer,
 # in `colour`.
 func add_text(follow: Callable, text: String, colour: Color) -> void:
 	var pop := Pop.new()
@@ -168,7 +171,7 @@ func _rise(pop: Pop) -> float:
 
 # Its glyphs' size: whole font pixels.
 func _glyph(pop: Pop) -> float:
-	return maxf(roundf(GLYPH * scale_factor * (BIG if pop.big else 1.0) / 8.0), 1.0) * 8.0
+	return maxf(roundf(GLYPH * scale_factor / 8.0), 1.0) * 8.0
 
 
 # Where it starts from on the screen, its foot's middle.
@@ -209,7 +212,7 @@ func _process(delta: float) -> void:
 # The rings as the glyphs' silhouette (OUTLINE_SHADER) stamped round them at
 # every whole pixel out to each ring's reach, the outermost first.
 func _draw_rings(pop: Pop) -> void:
-	var unit := pop.g / GLYPH
+	var unit := pop.g / FONT
 	for ring in [[Color.BLACK, roundf((RING + LINE) * unit)], [pop.colour, roundf(RING * unit)]]:
 		var reach: float = ring[1]
 		for r in range(1, int(reach) + 1):
@@ -238,7 +241,7 @@ func _glyph_line(on: CanvasItem, text: String, x: float, y: float, g: float, tin
 # The "+" in a glyph's box at `x`, `y`: the hyphen's bar and one upright, the
 # shadows first, each down and right of its bar as the font's are.
 func _plus(on: CanvasItem, x: float, y: float, g: float, tint: Color) -> void:
-	var unit := g / GLYPH
+	var unit := g / FONT
 	var flat := BAR
 	var upright := Rect2(BAR.position.x + (BAR.size.x - BAR.size.y) * 0.5,
 			BAR.position.y + (BAR.size.y - BAR.size.x) * 0.5, BAR.size.y, BAR.size.x)
