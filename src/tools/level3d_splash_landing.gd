@@ -27,9 +27,11 @@ const CHINOOK_SCALE := Level3DChinook.MODEL_SCALE / 0.375
 # (GROUND_SIZE), and its wheels would stand off the far ground's plane.
 const LANDING := Vector3(0.0, 0.0, -62.0)
 # Its way in, a cubic Bezier from behind and above the camera to a hover over
-# the landing, ARRIVE_TIME seconds of it slowing all the way (a constant
-# deceleration, so a constant flare, nose up), ARRIVE_DELAY after the title
-# opens; then SETTLE_TIME down onto its wheels, and the ramp after RAMP_WAIT.
+# the landing, ARRIVE_TIME seconds of it slowing all the way, ARRIVE_DELAY
+# after the title opens; then SETTLE_TIME down onto its wheels, and the ramp
+# after RAMP_WAIT. It slows less and less as it comes to the hover, and so
+# flares less and less: slowed at a constant rate, it was nose up to the last
+# and dropped its nose in three frames as it stopped.
 const ARRIVE := [Vector3(10.0, 24.0, 30.0), Vector3(6.0, 16.0, -20.0), Vector3(0.0, 9.0, -50.0),
 		Vector3(0.0, 5.0, -62.0)]
 const ARRIVE_DELAY := 0.6
@@ -43,10 +45,13 @@ const RAMP_WAIT := 0.4
 const ARRIVE_HURRY := 1.8
 const HURRY_EASE := 0.6
 # How it leans, radians for every m/s^2: its nose up as it slows and down as
-# it speeds up, over into a turn; and no further than LEAN_MOST.
+# it speeds up, over into a turn; and no further than LEAN_MOST. It comes
+# round to that over LEAN_TIME seconds or so rather than at once: a change of
+# speed -- a hurry, a lift -- is not a jolt of the airframe.
 const PITCH_GAIN := 0.03
 const ROLL_GAIN := 0.04
 const LEAN_MOST := 0.3
+const LEAN_TIME := 0.3
 # Its rotors' wash raises dust under it below WASH_HEIGHT metres, up to
 # WASH_RATE clouds a second on the ground, WASH_RING metres out from under
 # it, blown out at WASH_SPEED m/s; WASH_CLOUD as WHEEL_CLOUD.
@@ -94,15 +99,18 @@ const DUST_CLOUD := Vector2(0.5, 0.35)
 const FOLLOW := 0.6
 const SPACING := 1.0
 # After the last is in: the ramp goes up after CLOSE_WAIT, and LIFT_WAIT
-# after it is shut, the stage built, the Chinook lifts -- LIFT_UP m/s^2 up,
-# LIFT_ON m/s^2 on into the sun from LIFT_LEAN seconds -- and the title fades
-# out over it LIFT_SHOWN seconds into that (fade_after).
+# after it is shut, the stage built, the Chinook lifts -- up at up to LIFT_UP
+# m/s^2, and on into the sun from LIFT_LEAN seconds at up to LIFT_ON, each
+# coming up to it over LIFT_RAMP seconds (_ramped): set off at once, it
+# pitched its nose down in four frames -- and the title fades out over it
+# LIFT_SHOWN seconds into that (fade_after).
 const CLOSE_WAIT := 0.2
 const CLOSE_SPEED := 1.5       # the ramp's clip, faster going up
 const LIFT_WAIT := 0.2
 const LIFT_UP := 2.5
 const LIFT_ON := 5.0
 const LIFT_LEAN := 0.6
+const LIFT_RAMP := 0.8
 const LIFT_SHOWN := 1.2
 
 var _chinook: Node3D
@@ -113,6 +121,8 @@ var _sound: AudioStreamPlayer
 var _clock := 0.0            # seconds since the title opened
 var _flight := 0.0           # the Chinook's own: the same, but hurried (ARRIVE_HURRY)
 var _rate := 1.0             # how fast _flight goes
+var _hurry := 0.0            # 0 to 1, the way from 1 to ARRIVE_HURRY
+var _lean := Vector2.ZERO    # its pitch and roll now, coming round (LEAN_TIME)
 var _wash := 0.0             # clouds of wash owed
 var _ramp_state := ""        # "", "opening", "open", "closing", "shut"
 var _ramp_open_at := 0.0
@@ -159,23 +169,36 @@ func _chinook_at(t: float) -> Vector3:
 	var ground: Vector3 = LANDING + Vector3.UP * _height.call(LANDING.x, LANDING.z)
 	if t > _lift_at:
 		var up := t - _lift_at
-		var on := maxf(up - LIFT_LEAN, 0.0)
-		return ground + Vector3(0.0, 0.5 * LIFT_UP * up * up, -0.5 * LIFT_ON * on * on)
+		return ground + Vector3(0.0, _ramped(up, LIFT_UP), -_ramped(up - LIFT_LEAN, LIFT_ON))
 	var k := clampf((t - ARRIVE_DELAY) / ARRIVE_TIME, 0.0, 1.0)
 	if k < 1.0:
-		var u := 1.0 - (1.0 - k) * (1.0 - k)
+		var u := 1.0 - (1.0 - k) * (1.0 - k) * (1.0 - k)
 		var w := 1.0 - u
 		return ARRIVE[0] * w * w * w + ARRIVE[1] * 3.0 * w * w * u + ARRIVE[2] * 3.0 * w * u * u \
 				+ ARRIVE[3] * u * u * u
 	var hover: Vector3 = ARRIVE[3]
-	var settle := smoothstep(0.0, 1.0, (t - ARRIVE_DELAY - ARRIVE_TIME) / SETTLE_TIME)
+	# Smootherstep: its acceleration starts and ends at nothing too.
+	var x := clampf((t - ARRIVE_DELAY - ARRIVE_TIME) / SETTLE_TIME, 0.0, 1.0)
+	var settle := x * x * x * (x * (x * 6.0 - 15.0) + 10.0)
 	return Vector3(ground.x, lerpf(hover.y, ground.y, settle), ground.z)
+
+
+# How far it has gone `t` seconds after setting off from rest, its
+# acceleration coming up from nothing to `most` over LIFT_RAMP seconds.
+static func _ramped(t: float, most: float) -> float:
+	if t <= 0.0:
+		return 0.0
+	if t < LIFT_RAMP:
+		return most * t * t * t / (6.0 * LIFT_RAMP)
+	var on := t - LIFT_RAMP
+	return most * (LIFT_RAMP * LIFT_RAMP / 6.0 + LIFT_RAMP * 0.5 * on + 0.5 * on * on)
 
 
 # The Chinook where _chinook_at has it, leaning as it slows, speeds up and
 # turns, its nose into the way it goes and, slow, away from the camera; its
-# ramp where its clip has it; its dust and its sound.
-func _fly() -> void:
+# ramp where its clip has it; its dust and its sound. `delta`: how long since
+# the last, for the lean to come round over; none puts it straight there.
+func _fly(delta := -1.0) -> void:
 	var h := 1.0 / 30.0
 	var p := _chinook_at(_flight)
 	var before := _chinook_at(_flight - h)
@@ -187,9 +210,10 @@ func _fly() -> void:
 	var yaw := lerp_angle(PI, atan2(velocity.x, velocity.z), clampf(flat.length() / 6.0 - 0.2, 0.0, 1.0))
 	var nose := Vector3(sin(yaw), 0.0, cos(yaw))
 	var right := nose.cross(Vector3.UP)
-	var pitch := clampf(-acceleration.dot(nose) * PITCH_GAIN, -LEAN_MOST, LEAN_MOST)
-	var roll := clampf(acceleration.dot(right) * ROLL_GAIN, -LEAN_MOST, LEAN_MOST)
-	var basis := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -pitch) * Basis(Vector3.BACK, roll)
+	var lean := Vector2(clampf(-acceleration.dot(nose) * PITCH_GAIN, -LEAN_MOST, LEAN_MOST),
+			clampf(acceleration.dot(right) * ROLL_GAIN, -LEAN_MOST, LEAN_MOST))
+	_lean = lean if delta < 0.0 else _lean.lerp(lean, 1.0 - exp(-delta / LEAN_TIME))
+	var basis := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -_lean.x) * Basis(Vector3.BACK, _lean.y)
 	_chinook.transform = Transform3D(basis.scaled(Vector3.ONE * CHINOOK_SCALE), p)
 	_chinook.visible = _flight > ARRIVE_DELAY
 
@@ -371,6 +395,7 @@ func reset_launch() -> void:
 	_clock = 0.0
 	_flight = 0.0
 	_rate = 1.0
+	_hurry = 0.0
 	_wash = 0.0
 	_launched = false
 	_close_at = INF
@@ -393,7 +418,9 @@ func _process(delta: float) -> void:
 		return
 	_clock += delta
 	var hurry := _launched and _ramp_state in ["", "opening"]
-	_rate = move_toward(_rate, ARRIVE_HURRY if hurry else 1.0, (ARRIVE_HURRY - 1.0) * delta / HURRY_EASE)
+	# Eased both ends: set off at a steady rate, the speeding up was a jolt.
+	_hurry = move_toward(_hurry, 1.0 if hurry else 0.0, delta / HURRY_EASE)
+	_rate = lerpf(1.0, ARRIVE_HURRY, smoothstep(0.0, 1.0, _hurry))
 	_flight += delta * _rate
 	var aboard := _launched
 	for i in _rigs.size():
@@ -407,7 +434,7 @@ func _process(delta: float) -> void:
 	if _ramp_state == "shut" and _game_ready and is_inf(_lift_at):
 		_lift_at = _flight + LIFT_WAIT
 	_drive_ramp(delta)
-	_fly()
+	_fly(delta)
 	_raise_wash(delta)
 	_play_sound()
 	super(delta)
