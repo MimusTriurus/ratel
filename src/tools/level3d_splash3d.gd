@@ -246,7 +246,8 @@ void fragment() {
 # x out from the middle and z behind the camera -- throwing dust off its rear
 # wheels, a small short cloud (the wind's own, CLOUD_*, scaled by
 # WHEEL_CLOUD) every WHEEL_DUST_STEP metres. The title fades to black over
-# them and starts the run (Level3DTitle.LAUNCH_HOLD).
+# them LAUNCH_HOLD seconds in and starts the run (Level3DTitle).
+const LAUNCH_HOLD := 1.3
 const LAUNCH_REV := 0.25
 const LAUNCH_ACCEL := 9.0
 const LAUNCH_PASS := Vector2(4.5, 8.0)
@@ -865,8 +866,9 @@ func _place_runner(runner: Dictionary, anywhere: bool) -> void:
 
 
 # A cloud born where a runner is, `strength` 0..1 of its gust -- or a wheel,
-# with `size` and `life` the shares of a wind cloud's it is.
-func _raise_cloud(at: Vector3, strength: float, size := 1.0, life := 1.0) -> void:
+# with `size` and `life` the shares of a wind cloud's it is. The cloud, for
+# whoever raised it to carry off some other way than the wind's ("drift").
+func _raise_cloud(at: Vector3, strength: float, size := 1.0, life := 1.0) -> Dictionary:
 	at.y = _height.call(at.x, at.z)
 	var cloud := {
 		"at": at,
@@ -885,6 +887,7 @@ func _raise_cloud(at: Vector3, strength: float, size := 1.0, life := 1.0) -> voi
 		# The pool is full: the oldest goes.
 		_clouds[_oldest] = cloud
 		_oldest = (_oldest + 1) % CLOUD_POOL
+	return cloud
 
 
 # The palms in the wind: each paint of theirs as TOON_SHADER moving its
@@ -1159,8 +1162,9 @@ func _drive_rigs(delta: float) -> void:
 
 
 # A game for `count` players: that many jeeps, the left one first, light up
-# and drive off past the camera (LAUNCH_*). Level3DTitle fades out over it.
-func launch(count: int) -> void:
+# and drive off past the camera (LAUNCH_*). Returns how long Level3DTitle is
+# to wait before it fades out over them.
+func launch(count: int) -> float:
 	_launch_time = 0.0
 	for i in _rigs.size():
 		var rig: Dictionary = _rigs[i]
@@ -1172,6 +1176,7 @@ func launch(count: int) -> void:
 			rig.going = true
 			# Gunned again as it goes.
 			rig.pitch_speed -= ENGINE_KICK * 0.6
+	return LAUNCH_HOLD
 
 
 # Back where they stood, dark, and their dust gone: the title opened again.

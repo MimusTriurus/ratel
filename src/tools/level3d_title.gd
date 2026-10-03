@@ -36,10 +36,10 @@ const GLYPH := 32.0
 # second, SELECT_TIME frames of the 2D game's 100 Hz in all.
 const SELECT_TIME := 0.08
 # A game picked over a splash that drives its jeeps off (Level3DSplash3D.
-# launch): the keys held off while they go, LAUNCH_HOLD seconds of it before
-# the title fades to black over LAUNCH_FADE, and then the run. Over the
-# picture the run starts at once, as it always did.
-const LAUNCH_HOLD := 1.3
+# launch): the menu's keys held off while they go, for as long as the
+# splash's launch says, before the title fades to black over LAUNCH_FADE, and
+# then the run; any key or click fades at once. Over the picture the run
+# starts at once, as it always did.
 const LAUNCH_FADE := 0.5
 
 var settings: Level3DSettings
@@ -61,6 +61,7 @@ var _jeep: Spr
 var _splash: Control         # Level3DSplash, or Level3DSplash3D under --splash-3d
 var _veil: ColorRect         # the fade to black over the launch
 var _launching := false
+var _launch: Tween           # the hold and the fade
 var _art: Control            # the jeep, nearest
 var _text: Control           # the entries, in the font's filter
 
@@ -76,9 +77,12 @@ func _ready() -> void:
 	# In place of the title art (level3d_splash.gd): as wide as it, in the
 	# picture's own proportions rather than its, centred on where it was.
 	# --splash-3d puts the scene there instead, a prototype
-	# (level3d_splash3d.gd).
+	# (level3d_splash3d.gd), and --splash-landing the scene with the Chinook
+	# (level3d_splash_landing.gd).
 	var splash: Control
-	if OS.get_cmdline_user_args().has("--splash-3d"):
+	if OS.get_cmdline_user_args().has("--splash-landing"):
+		splash = Level3DSplashLanding.new()
+	elif OS.get_cmdline_user_args().has("--splash-3d"):
 		splash = Level3DSplash3D.new()
 	else:
 		splash = Level3DSplash.new()
@@ -110,6 +114,9 @@ func is_open() -> bool:
 func open() -> void:
 	visible = true
 	_launching = false
+	if _launch != null:
+		_launch.kill()
+		_launch = null
 	_veil.color.a = 0.0
 	if _splash != null and _splash.has_method("reset_launch"):
 		_splash.reset_launch()
@@ -171,15 +178,7 @@ func _pick() -> void:
 			var count := _selected + 1
 			if _splash != null and _splash.has_method("launch"):
 				_launching = true
-				_splash.launch(count)
-				var fade := create_tween()
-				fade.tween_interval(LAUNCH_HOLD)
-				fade.tween_property(_veil, "color:a", 1.0, LAUNCH_FADE)
-				fade.tween_callback(func():
-					close()
-					_launching = false
-					_veil.color.a = 0.0
-					start.call(count))
+				_fade_out(count, _splash.call("launch", count))
 			else:
 				close()
 				start.call(count)
@@ -189,6 +188,21 @@ func _pick() -> void:
 			open_settings.call()
 		Entry.QUIT:
 			get_tree().quit()
+
+
+# The title fading out over the launch after `hold` seconds, and the run.
+func _fade_out(count: int, hold: float) -> void:
+	if _launch != null:
+		_launch.kill()
+	_launch = create_tween()
+	_launch.tween_interval(hold)
+	_launch.tween_property(_veil, "color:a", 1.0, LAUNCH_FADE * (1.0 - _veil.color.a))
+	_launch.tween_callback(func():
+		_launch = null
+		close()
+		_launching = false
+		_veil.color.a = 0.0
+		start.call(count))
 
 
 func _toggle_difficulty() -> void:
@@ -206,9 +220,16 @@ func _redraw() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	# The settings over the title have the keys while they are open; nothing
-	# has them while the jeeps drive off.
-	if not visible or _launching or settings_open.is_valid() and settings_open.call():
+	# The settings over the title have the keys while they are open; while
+	# the jeeps drive off, a key or a click only hurries the fade on.
+	if not visible or settings_open.is_valid() and settings_open.call():
+		return
+	if _launching:
+		var pressed: bool = event is InputEventKey and event.pressed and not event.echo \
+				or event is InputEventMouseButton and event.pressed
+		if pressed and _launch != null and _veil.color.a == 0.0:
+			_fade_out(_selected + 1, 0.0)
+			get_viewport().set_input_as_handled()
 		return
 	var key := event as InputEventKey
 	if key != null and key.pressed and not key.echo:
