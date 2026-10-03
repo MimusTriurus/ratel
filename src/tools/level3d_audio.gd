@@ -224,6 +224,12 @@ const MUSIC := {
 	# stage_song0: the Chinook's trigger after a continue.
 	"stage": ["stage0_intro.ogg", "stage0_repeat.ogg"],
 	"boss": ["boss_intro.ogg", "boss_repeat.ogg"],
+	# The title screen's (Level3DTitle), the whole song over and over: in
+	# ORIGINAL the 2D game's title_song, which IntroMode plays once the title
+	# has stood a while; in MODERN a heavy cover of «От героев былых времён»
+	# (Хозак, «Офицеры»), its guitar intro and three verses, and in CLASSIC
+	# the same notes on the NES and VRC6 (build/music3d_officers/).
+	"title": ["title.ogg"],
 }
 
 # The modern mode's songs that follow the fight, in place of MUSIC's song of

@@ -2521,12 +2521,12 @@ func _make_menu() -> void:
 	add_child(_menu)
 
 
-# The title screen over the stage, the tree paused under it and the music
-# stopped, as the 2D game's title stops its song.
+# The title screen over the stage, the tree paused under it and its own song
+# playing (Level3DAudio.MUSIC's "title").
 func _show_title() -> void:
 	_menu.leave()
 	get_tree().paused = true
-	Level3DAudio.stop_music()
+	Level3DAudio.play_music("title")
 	_title.open()
 
 

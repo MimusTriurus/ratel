@@ -83,6 +83,7 @@ const MUSIC_NAMES := {
 	"boss_tank_2.ogg": "Boss: tank 2 (double kick)", "boss_tank_3.ogg": "Boss: tank 3 (strings)",
 	"boss_tank_4.ogg": "Boss: tank 4 (arpeggiator)", "boss_full.ogg": "Boss: whole loop (linear)",
 	"boss_victory.ogg": "Boss: victory", "boss_breach.ogg": "Boss: breach accent",
+	"title.ogg": "Title screen",
 }
 const MIX_MIN_DB := -40.0
 const MIX_MAX_DB := 12.0

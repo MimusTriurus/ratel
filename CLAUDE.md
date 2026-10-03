@@ -599,7 +599,10 @@ the last with a switch of its own since the original's enemies fired in
 silence; under them, a 0–200 % slider for each of the modern mode's sounds
 (`Level3DMenu.SOUND_GROUPS`, which must list every sound in `SOUNDS` but
 `enemy_hit`, which only plays under a blast -- the verify script checks).
-The music is chained as `Song` chains it: `intro_song` at the start,
+The music is chained as `Song` chains it: the title's song under the title
+screen, over and over -- in modern a heavy cover of «От героев былых
+времён», in classic its notes on the chips (`build/music3d_officers/`), in
+original the 2D game's `title_song` -- `intro_song` at the start,
 `stage_song0` after a restart, `boss_song` from the boss's trigger, stopped
 when it is beaten or the last life goes. A song's parts are not chained
 through `finished` as `Song` chains them, which left about 20 ms of silence
