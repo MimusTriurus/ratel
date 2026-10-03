@@ -383,6 +383,13 @@ func reset() -> void:
 	_destroyed = 0
 
 
+# The map row whose coming into the frame starts the pan: the
+# BOSS_BLUE_TANKS trigger's, or -1 on a level without one. --boss starts
+# the BTR below it.
+func trigger_row() -> int:
+	return _trigger_row
+
+
 # The frame's top in map pixels while the boss has the camera, -1 while it
 # has not: Level3DPreview puts the frame there.
 func camera_top() -> float:

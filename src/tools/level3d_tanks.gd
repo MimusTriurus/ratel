@@ -310,6 +310,13 @@ func tick() -> void:
 			_wrecks.remove_at(i)
 
 
+# --boss: the rows from the start up to the frame's `top` (map px) passed
+# without spawning what is on them, as if they had been driven through and
+# everything on them were left behind.
+func skip_to(top: float) -> void:
+	_trigger_y = mini(_trigger_y, maxi((int(top) >> 5) - 1, 0))
+
+
 func _process_triggers(top: float) -> void:
 	var row := (int(top) >> 5) - 1
 	if row < 0:

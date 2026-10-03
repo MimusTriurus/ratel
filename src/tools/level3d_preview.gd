@@ -147,6 +147,13 @@
 # without it, at START, unless --intro is given, when the seconds count from
 # the Chinook's arrival.
 #
+# --no-chinook skips the Chinook's run at every start of a run, as Space
+# does: the jeep is simply there. --boss starts every run BOSS_LEAD_ROWS
+# below the boss's trigger, a few seconds' drive from the pan, with the
+# soldiers, tanks and boats on the way left unspawned (_start_flags). Both
+# apply to the title screen's games and to R as well as to the first.
+# docs/preview3d-options.md lists every option.
+#
 # The vehicle is the jeep; --btr, with or without --shot, drives the BTR
 # instead (level3d_btr.gd, VEHICLES): the same driving, stiffer springs and
 # no aerials.
@@ -434,6 +441,7 @@ func _ready() -> void:
 		Level3DAudio.play_music("intro")
 		if args.has("--intro") or not (args.has("--shot") or args.has("--obstacle-map")):
 			_start_intro()
+		_start_flags()
 	_screenshot_mode()
 
 
@@ -3221,6 +3229,55 @@ func _restart(jingle := false) -> void:
 	# stage_song0, the Chinook's after a continue: no start jingle again.
 	Level3DAudio.play_music("intro" if jingle else "stage")
 	_start_intro()
+	_start_flags()
+
+
+# What the command line asks of every run's start, the title screen's and R's
+# as well as the first: --no-chinook skips the Chinook's run, as Space does,
+# the BTR simply there; --boss starts it BOSS_LEAD_ROWS below the boss's
+# trigger, a few seconds' drive from the pan, with nothing behind it spawned.
+const BOSS_LEAD_ROWS := 48
+
+func _start_flags() -> void:
+	var args := OS.get_cmdline_user_args()
+	var to_boss := args.has("--boss")
+	if (to_boss or args.has("--no-chinook")) and chinook != null:
+		chinook.skip()
+	if to_boss:
+		_jump_to_boss()
+
+
+func _jump_to_boss() -> void:
+	var row := boss.trigger_row()
+	if row < 0:
+		push_warning("--boss: this level has no BOSS_BLUE_TANKS trigger")
+		return
+	# The middle-most open ground on the first row below the lead with any,
+	# wide enough for every jeep side by side.
+	var y := float((row + BOSS_LEAD_ROWS) * 32 + 16)
+	var spread := COOP_SPREAD / Level3DMap.PX * (crews.size() - 1)
+	var spot := Vector2(-1.0, -1.0)
+	while spot.x < 0.0 and y < map.stage.map_height * 32:
+		for i in 64:
+			var x := 1024.0 + (i >> 1) * 32.0 * (1 if i & 1 else -1)
+			if map.is_driveable_box(x - 48.0, y - 48.0, x + spread + 48.0, y + 48.0):
+				spot = Vector2(x, y)
+				break
+		y += 32.0
+	if spot.x < 0.0:
+		push_warning("--boss: no open ground below the boss's trigger")
+		return
+	var at := Level3DMap.to_level(spot)
+	for c in crews:
+		c.btr.place(Vector3(at.x + COOP_SPREAD * c.index, 0.0, at.y), START_HEADING)
+	following = true
+	_catch_up = Vector2.ZERO
+	focus = _follow_point()
+	_update_camera()
+	var top := Level3DMap.to_map(_view_frame().position).y
+	soldiers.skip_to(top)
+	tanks.skip_to(top)
+	boats.skip_to(top)
 
 
 # What the scene's collision says over the whole level, one pixel per
@@ -3296,7 +3353,7 @@ func _screenshot_mode() -> void:
 	# Level3DSoldiers, Level3DBtr and Level3DAudio read these for themselves;
 	# they are not waypoints.
 	for own in ["--fade-corpses", "--btr", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
-			"--no-wind", "--wind-steps", "--spots", "--audio-debug", "--editor"]:
+			"--no-wind", "--wind-steps", "--spots", "--audio-debug", "--editor", "--no-chinook", "--boss"]:
 		var at := args.find(own)
 		if at >= 0:
 			args.remove_at(at)

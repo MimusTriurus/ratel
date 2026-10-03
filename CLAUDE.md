@@ -580,6 +580,9 @@ start jingle; the Escape menu's "Main menu" goes back to it. Hard is the
 stage's hard trigger list, as `GameMode.set_stage` picks it
 (`Level3DMap.hard`, `Level3DMap.triggers()`, saved as `Level3DSettings.hard`):
 more soldiers, tanks and boats. A --shot and the level editor's Play skip it.
+`docs/preview3d-options.md` lists every command-line option of the preview;
+`--no-chinook` skips the Chinook's run and `--boss` starts each run a few
+seconds' drive below the boss, the way there left unspawned.
 
 The 3D preview's Escape menu opens its settings on a Game tab: 8-bit or
 modern, each a preset of the sound mode, the driving, the firing, the reach,
