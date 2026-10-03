@@ -667,6 +667,8 @@ var zoom := 1.0 / FOCUS_ZOOM
 var _focused := Vector2.ONE              # the frame's size focused, place
 
 var _height: Callable        # the near ground's height at (x, z)
+var _rock_paint: Material    # the boulders' (_ground), for any put down later
+var _palm_meshes: Array[Mesh] = []
 var _dust_mesh: MultiMeshInstance3D
 var _haze_mesh: MeshInstance3D
 var _runners: Array[Dictionary] = []
@@ -909,24 +911,39 @@ func _ground() -> Node3D:
 	line.set_shader_parameter("width", ROCK_CONTOUR)
 	line.set_shader_parameter("extent", 1.0 + ROCK_JITTER)
 	rock_paint.next_pass = line
+	_rock_paint = rock_paint
 	for entry in ROCKS:
 		var at: Vector3 = entry[0]
 		_rock(root, Vector3(at.x, height.call(at.x, at.z), at.z), entry[1], entry[2], entry[3], entry[4],
 				rock_paint)
 
-	var palm_meshes := _stage_meshes(PALM_MESHES)
-	if palm_meshes.size() == PALM_MESHES.size():
-		for entry in PALMS:
-			var at: Vector3 = entry[0]
-			var palm := MeshInstance3D.new()
-			palm.mesh = palm_meshes[entry[1]]
-			_dress(palm)
-			_sway(palm)
-			palm.scale = Vector3.ONE * PALM_SCALE * float(entry[3])
-			palm.rotation.y = deg_to_rad(entry[2])
-			palm.position = Vector3(at.x, height.call(at.x, at.z) - 0.05, at.z)
-			root.add_child(palm)
+	_palm_meshes = _stage_meshes(PALM_MESHES)
+	for entry in PALMS:
+		_palm(root, entry)
 	return root
+
+
+# A palm as PALMS has it, `entry` [position, which of PALM_MESHES, its turn
+# in degrees, its scale over PALM_SCALE], on the ground under it -- none if
+# the stage's glb has lost its palms.
+func _palm(root: Node3D, entry: Array) -> void:
+	if _palm_meshes.size() != PALM_MESHES.size():
+		return
+	var at: Vector3 = entry[0]
+	var palm := MeshInstance3D.new()
+	palm.mesh = _palm_meshes[entry[1]]
+	_dress(palm)
+	_sway(palm)
+	palm.scale = Vector3.ONE * PALM_SCALE * float(entry[3])
+	palm.rotation.y = deg_to_rad(entry[2])
+	palm.position = Vector3(at.x, _ground_y(at.x, at.z) - 0.05, at.z)
+	root.add_child(palm)
+
+
+# The ground's height at (x, z): the near ground's, or the flat ground's
+# beyond it (_ground).
+func _ground_y(x: float, z: float) -> float:
+	return _height.call(x, z) if z > 8.0 - GROUND_SIZE.y else -0.3
 
 
 # A boulder on the ground at `at`: `radius` at its widest, out of a ball of

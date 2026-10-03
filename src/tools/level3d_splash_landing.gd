@@ -54,12 +54,16 @@ const LEAN_MOST := 0.3
 const LEAN_TIME := 0.3
 # Its rotors' wash raises dust under it below WASH_HEIGHT metres, up to
 # WASH_RATE clouds a second on the ground, WASH_RING metres out from under
-# it, blown out at WASH_SPEED m/s; WASH_CLOUD as WHEEL_CLOUD.
+# it, blown out at WASH_SPEED m/s; WASH_CLOUD as WHEEL_CLOUD. More and
+# smaller clouds than a gust's: at 1.3 of a wind cloud's radius, 2 m across
+# and more out where the Chinook lands (_raise_cloud grows them with the
+# distance), they were blobs as broad as its cabin once the camera came in
+# after the jeeps (CHASE_*).
 const WASH_HEIGHT := 7.0
-const WASH_RATE := 14.0
+const WASH_RATE := 18.0
 const WASH_RING := Vector2(3.0, 8.0)
 const WASH_SPEED := Vector2(2.5, 5.0)
-const WASH_CLOUD := Vector2(1.3, 0.6)
+const WASH_CLOUD := Vector2(0.75, 0.5)
 const ROTOR_SOUND := Level3DChinook.SOUND
 # Heard at full this close, and falling off as one over the distance past it.
 const SOUND_NEAR := 25.0
@@ -99,9 +103,11 @@ const RAMP_SPEED := 4.0
 const HOLD_BACK := 8.0
 # Their dust: fewer and smaller clouds than Level3DSplash3D's drive-off
 # (WHEEL_DUST_STEP, WHEEL_CLOUD), which go past the camera and are gone; these
-# turn in front of it, where theirs, lit through, were broad bright bands.
+# turn in front of it, where theirs, lit through, were broad bright bands --
+# and the camera comes in after them, where at 0.5 they were lumps as big as
+# a wheel arch.
 const DUST_STEP := 1.4
-const DUST_CLOUD := Vector2(0.5, 0.35)
+const DUST_CLOUD := Vector2(0.32, 0.3)
 # The second jeep sets off FOLLOW seconds after the first, and slows and
 # stops rather than come nearer than a jeep's length and SPACING to it while
 # the first is on its way -- in their places in the cabin they stand closer.
@@ -139,6 +145,57 @@ const CHASE_BEHIND := 13.0
 const CHASE_NEAREST := 26.0
 const CHASE_RISE := 0.8
 const CHASE_LAG := 0.9
+# What the camera comes in over (_chase): the boulders of ROCKS and the
+# palms of PALMS are behind it by then or out of the frame, and the ground
+# up to the Chinook was bare. So a few more, by hand, as ROCKS has them and
+# out of their way: not in ROCKS, which the jeeps' way goes round (_plan) --
+# clumps out to the sides of where the jeeps bend in onto the Chinook's line
+# and either side of it, low, none over a metre high, so that from where the
+# title opens they stand below the horizon, dark on the dark ground, and the
+# sun's frame is as it was; and the last stones behind the Chinook, small at
+# that distance. [position, radius, seed, squash, turn], as ROCKS.
+const SCATTER := [
+	# Left of the Chinook's line, where the left jeep has bent in past.
+	[Vector3(-8.5, 0.0, -53.0), 0.85, 31, 0.7, 40.0],
+	[Vector3(-9.6, 0.0, -54.2), 0.45, 32, 0.8, 160.0],
+	[Vector3(-7.6, 0.0, -51.6), 0.25, 33, 0.85, 280.0],
+	# Out to the left, seen as the camera comes in.
+	[Vector3(-21.0, 0.0, -42.0), 0.7, 34, 0.75, 110.0],
+	[Vector3(-19.9, 0.0, -43.3), 0.3, 35, 0.8, 20.0],
+	[Vector3(-17.0, 0.0, -66.0), 1.0, 36, 0.6, 250.0],
+	[Vector3(-15.6, 0.0, -64.8), 0.4, 37, 0.85, 75.0],
+	[Vector3(-18.4, 0.0, -64.9), 0.28, 38, 0.8, 190.0],
+	# Right of the line, and out to the right.
+	[Vector3(9.8, 0.0, -57.5), 0.9, 39, 0.68, 300.0],
+	[Vector3(11.1, 0.0, -56.4), 0.38, 40, 0.85, 130.0],
+	[Vector3(19.5, 0.0, -38.5), 0.6, 41, 0.75, 220.0],
+	[Vector3(20.6, 0.0, -39.6), 0.26, 42, 0.8, 50.0],
+	[Vector3(20.0, 0.0, -71.0), 0.85, 43, 0.65, 15.0],
+	[Vector3(18.7, 0.0, -70.2), 0.32, 44, 0.85, 140.0],
+	# Nearer, either side of where the jeeps are in on the line, low in the
+	# frame's corners where the camera stops.
+	[Vector3(-7.5, 0.0, -46.5), 0.55, 51, 0.75, 60.0],
+	[Vector3(-8.4, 0.0, -45.6), 0.22, 52, 0.85, 230.0],
+	[Vector3(8.5, 0.0, -45.5), 0.5, 53, 0.7, 330.0],
+	[Vector3(9.3, 0.0, -46.6), 0.24, 54, 0.8, 100.0],
+	# Single stones on the open ground.
+	[Vector3(-12.5, 0.0, -47.0), 0.22, 45, 0.85, 0.0],
+	[Vector3(15.5, 0.0, -48.5), 0.25, 46, 0.8, 90.0],
+	[Vector3(-4.8, 0.0, -73.0), 0.3, 47, 0.8, 200.0],
+	[Vector3(6.5, 0.0, -76.0), 0.35, 48, 0.75, 310.0],
+	[Vector3(26.0, 0.0, -58.0), 0.3, 49, 0.8, 60.0],
+	[Vector3(-27.0, 0.0, -52.0), 0.28, 50, 0.85, 170.0],
+]
+# And two palms further back, out past PALMS' on either side, so that the
+# frame's sides are not empty as it comes in; as PALMS has them. Out of the
+# frame the title opens with they would be out of the camera's too by the
+# time it has come in, so they are in it, at the half of its width that the
+# disc leaves -- 0.5 of their distance off the middle, well clear of PALMS'
+# at 0.43 and 0.375, beside which a palm read as a second trunk of theirs.
+const SCATTER_PALMS := [
+	[Vector3(-42.0, 0.0, -80.0), 3, 70.0, 0.8],
+	[Vector3(41.0, 0.0, -82.0), 2, 300.0, 0.85],
+]
 
 var _chinook: Node3D
 var _rotors: AnimationPlayer
@@ -177,6 +234,12 @@ func _build() -> void:
 	_ramp.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	_skeleton = _chinook.find_child("Skeleton3D", true, false) as Skeleton3D
 	_ramp_open_at = ARRIVE_DELAY + ARRIVE_TIME + SETTLE_TIME + RAMP_WAIT
+	for entry in SCATTER:
+		var at: Vector3 = entry[0]
+		_rock(world, Vector3(at.x, _ground_y(at.x, at.z), at.z), entry[1], entry[2], entry[3], entry[4],
+				_rock_paint)
+	for entry in SCATTER_PALMS:
+		_palm(world, entry)
 	_sound = AudioStreamPlayer.new()
 	add_child(_sound)
 	for i in _rigs.size():
