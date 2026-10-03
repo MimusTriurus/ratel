@@ -166,7 +166,11 @@ uniform float rim_tint = 0.35;
 // What it gives off itself: the lamps, when they are on.
 uniform vec3 glow : source_color = vec3(0.0);
 void fragment() {
-	ALBEDO = albedo.rgb;
+	// The paint's lightness only, not its colour: the splash is drawn in
+	// the dark and the sun's colours, and whatever light falls on a face --
+	// the sun on a jeep turned from the camera, a lamp on the jeep ahead or
+	// into the Chinook -- shows that light's colour on it, not green.
+	ALBEDO = vec3(dot(albedo.rgb, vec3(0.299, 0.587, 0.114)));
 	EMISSION = glow;
 }
 void light() {
@@ -206,6 +210,11 @@ const SPOT_ENERGY := 9.0
 const SPOT_RANGE := 16.0
 const SPOT_ANGLE := 24.0
 const SPOT_DIP := 7.0          # degrees below level
+# The spots light the ground and nothing else (its layers): on a jeep or the
+# Chinook their near-white light, strong enough for a pool on the dark sand,
+# burnt the paint out white, which is not one of the splash's colours -- the
+# dark and the sun's.
+const GROUND_LAYER := 2
 # The engine: the hull shakes on its wheels, ENGINE_IDLE metres at a tick-
 # over and ENGINE_RUN when the jeep's lamps are on; gunned, its nose kicks up
 # ENGINE_KICK rad/s on a spring (ENGINE_SPRING: stiffness, damping) and
@@ -676,6 +685,7 @@ func _ground() -> Node3D:
 	var ground := MeshInstance3D.new()
 	ground.mesh = st.commit()
 	ground.material_override = _toon(GROUND_COLOUR, 0.0)
+	ground.layers = 1 | GROUND_LAYER
 	root.add_child(ground)
 	# Beyond, flat to the horizon, a little under the near ground so that the
 	# two do not fight where they overlap.
@@ -684,6 +694,7 @@ func _ground() -> Node3D:
 	plane.size = Vector2(FAR_GROUND * 2.0, FAR_GROUND)
 	far.mesh = plane
 	far.material_override = ground.material_override
+	far.layers = ground.layers
 	far.position = Vector3(0, -0.3, -FAR_GROUND * 0.5)
 	root.add_child(far)
 
@@ -1110,6 +1121,7 @@ func _rig(jeep: Node3D, side: float) -> Dictionary:
 		spot.spot_range = SPOT_RANGE
 		spot.spot_angle = SPOT_ANGLE
 		spot.shadow_enabled = false
+		spot.light_cull_mask = GROUND_LAYER
 		spot.position = at
 		# Forward, down the jeep's +Z, dipped.
 		spot.basis = Basis.looking_at(Vector3(0, -sin(deg_to_rad(SPOT_DIP)), 1.0), Vector3.UP)
