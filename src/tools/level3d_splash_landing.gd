@@ -2,10 +2,14 @@
 # sunset, ground and jeeps, and a Chinook. It comes in over the camera as the
 # title opens, flies off into the sun slowing, and sets down in front of it,
 # tail to the camera, in a cloud of its own dust, and lowers its ramp. A game
-# picked turns the jeeps it is for round and drives them up into it, one
-# behind the other; the ramp goes up, it lifts off with them, and the title
-# fades out over it -- into the stage, which opens on a Chinook unloading
-# them (level3d_chinook.gd): the one loads them, the other unloads them.
+# picked turns the jeeps it is for round at once and drives them up into it,
+# one behind the other -- waiting short of it if its ramp is not down yet;
+# the ramp goes up, and once the stage is built under the title too
+# (game_ready) it lifts off with them, and the title fades out over it --
+# into the stage, which opens on a Chinook unloading them
+# (level3d_chinook.gd): the one loads them, the other unloads them. So the
+# game answers the pick at once, and what is left of the building is played
+# through rather than waited out.
 #
 # Everything else is Level3DSplash3D's, the menu's lamps and turrets too
 # (show_menu); what is new is the Chinook and the way the jeeps go (launch,
@@ -32,6 +36,12 @@ const ARRIVE_DELAY := 0.6
 const ARRIVE_TIME := 7.0
 const SETTLE_TIME := 2.2
 const RAMP_WAIT := 0.4
+# A game picked before it is down: the rest of its way in, the settling and
+# the ramp go ARRIVE_HURRY times as fast, coming up to it over HURRY_EASE
+# seconds rather than at once -- the jeeps are on their way, and wait for it
+# no longer than they have to.
+const ARRIVE_HURRY := 1.8
+const HURRY_EASE := 0.6
 # How it leans, radians for every m/s^2: its nose up as it slows and down as
 # it speeds up, over into a turn; and no further than LEAN_MOST.
 const PITCH_GAIN := 0.03
@@ -66,24 +76,27 @@ const JEEP_LENGTH := 3.98      # Level3DBtr.VEHICLES' jeep body, 1:1
 const JEEP_HALF_WIDTH := 1.33
 const AXLES := Vector2(1.2, -1.1)  # front, rear, along the jeep (ramp_axles)
 # Their speed: up to DRIVE_SPEED at DRIVE_ACCEL, down to RAMP_SPEED at
-# DRIVE_BRAKE by the lip, and to a stop at their places.
+# DRIVE_BRAKE by the lip, and to a stop at their places -- or, the ramp not
+# down yet, to a stop HOLD_BACK metres short of the lip, to wait for it.
 const DRIVE_SPEED := 16.0
 const DRIVE_ACCEL := 9.0
 const DRIVE_BRAKE := 7.0
 const RAMP_SPEED := 4.0
+const HOLD_BACK := 8.0
 # Their dust: fewer and smaller clouds than Level3DSplash3D's drive-off
 # (WHEEL_DUST_STEP, WHEEL_CLOUD), which go past the camera and are gone; these
 # turn in front of it, where theirs, lit through, were broad bright bands.
 const DUST_STEP := 1.4
 const DUST_CLOUD := Vector2(0.5, 0.35)
-# The second jeep sets off at least FOLLOW seconds after the first, and later
-# if it would come nearer than a jeep's length and SPACING to it.
+# The second jeep sets off FOLLOW seconds after the first, and slows and
+# stops rather than come nearer than a jeep's length and SPACING to it while
+# the first is on its way -- in their places in the cabin they stand closer.
 const FOLLOW := 0.6
 const SPACING := 1.0
 # After the last is in: the ramp goes up after CLOSE_WAIT, and LIFT_WAIT
-# after it is shut, the Chinook lifts -- LIFT_UP m/s^2 up, LIFT_ON m/s^2 on
-# into the sun from LIFT_LEAN seconds -- and the title fades out over it
-# LIFT_SHOWN seconds into that (launch's hold).
+# after it is shut, the stage built, the Chinook lifts -- LIFT_UP m/s^2 up,
+# LIFT_ON m/s^2 on into the sun from LIFT_LEAN seconds -- and the title fades
+# out over it LIFT_SHOWN seconds into that (fade_after).
 const CLOSE_WAIT := 0.2
 const CLOSE_SPEED := 1.5       # the ramp's clip, faster going up
 const LIFT_WAIT := 0.2
@@ -98,11 +111,15 @@ var _ramp: AnimationPlayer
 var _skeleton: Skeleton3D
 var _sound: AudioStreamPlayer
 var _clock := 0.0            # seconds since the title opened
+var _flight := 0.0           # the Chinook's own: the same, but hurried (ARRIVE_HURRY)
+var _rate := 1.0             # how fast _flight goes
 var _wash := 0.0             # clouds of wash owed
 var _ramp_state := ""        # "", "opening", "open", "closing", "shut"
 var _ramp_open_at := 0.0
-var _close_at := INF         # when the ramp goes up, once it is known
-var _lift_at := INF
+var _launched := false
+var _close_at := INF         # when the ramp goes up, once the jeeps are in (_flight)
+var _lift_at := INF          # when it lifts, once it is shut and the stage built (_flight)
+var _game_ready := false
 var _plans: Array[Dictionary] = []   # per jeep, its way in (_plan)
 
 
@@ -128,6 +145,8 @@ func _build() -> void:
 		var plan := _plan(_rigs[i], i)
 		_plans.append(plan)
 		_rigs[i].plan = plan
+		_rigs[i].index = i
+		_rigs[i].speed = 0.0
 	_fly()
 
 
@@ -158,11 +177,12 @@ func _chinook_at(t: float) -> Vector3:
 # ramp where its clip has it; its dust and its sound.
 func _fly() -> void:
 	var h := 1.0 / 30.0
-	var p := _chinook_at(_clock)
-	var before := _chinook_at(_clock - h)
-	var after := _chinook_at(_clock + h)
-	var velocity := (after - before) / (2.0 * h)
-	var acceleration := (after - 2.0 * p + before) / (h * h)
+	var p := _chinook_at(_flight)
+	var before := _chinook_at(_flight - h)
+	var after := _chinook_at(_flight + h)
+	# In seconds, not the Chinook's own: hurried, it leans the harder.
+	var velocity := (after - before) / (2.0 * h) * _rate
+	var acceleration := (after - 2.0 * p + before) / (h * h) * _rate * _rate
 	var flat := Vector2(velocity.x, velocity.z)
 	var yaw := lerp_angle(PI, atan2(velocity.x, velocity.z), clampf(flat.length() / 6.0 - 0.2, 0.0, 1.0))
 	var nose := Vector3(sin(yaw), 0.0, cos(yaw))
@@ -171,16 +191,16 @@ func _fly() -> void:
 	var roll := clampf(acceleration.dot(right) * ROLL_GAIN, -LEAN_MOST, LEAN_MOST)
 	var basis := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -pitch) * Basis(Vector3.BACK, roll)
 	_chinook.transform = Transform3D(basis.scaled(Vector3.ONE * CHINOOK_SCALE), p)
-	_chinook.visible = _clock > ARRIVE_DELAY
+	_chinook.visible = _flight > ARRIVE_DELAY
 
 
 func _drive_ramp(delta: float) -> void:
-	if _ramp_state == "" and _clock >= _ramp_open_at:
+	if _ramp_state == "" and _flight >= _ramp_open_at:
 		_play_ramp("Ramp_Open", "opening")
-	elif _ramp_state == "open" and _clock >= _close_at:
+	elif _ramp_state == "open" and _flight >= _close_at:
 		_play_ramp("Ramp_Close", "closing")
 	if _ramp_state in ["opening", "closing"]:
-		_ramp.advance(delta * (CLOSE_SPEED if _ramp_state == "closing" else 1.0))
+		_ramp.advance(delta * (CLOSE_SPEED if _ramp_state == "closing" else _rate))
 		if _ramp.current_animation_position >= _ramp.current_animation_length:
 			_ramp_state = "open" if _ramp_state == "opening" else "shut"
 	Level3DChinook.hold_ramp(_skeleton)
@@ -285,43 +305,11 @@ func _plan(rig: Dictionary, index: int) -> Dictionary:
 		curve.add_point(point)
 	var length := curve.get_baked_length()
 	var lip := length - (lip_z - end.y)
-	# How far along it the jeep is, every 1/60 s from when it sets off.
-	var runs := PackedFloat32Array([0.0])
-	var run := 0.0
-	var speed := 0.0
-	var dt := 1.0 / 60.0
-	while run < length - 0.01:
-		var most := minf(DRIVE_SPEED, sqrt(RAMP_SPEED * RAMP_SPEED + 2.0 * DRIVE_BRAKE * maxf(lip - run, 0.0)))
-		most = minf(most, sqrt(2.0 * DRIVE_BRAKE * maxf(length - run, 0.0)) + 0.3)
-		speed = minf(speed + DRIVE_ACCEL * dt, most)
-		run = minf(run + speed * dt, length)
-		runs.append(run)
-	return {"curve": curve, "length": length, "lip": lip, "runs": runs, "start": INF}
-
-
-# Along jeep `plan`'s way at `t` seconds since it set off.
-func _run_at(plan: Dictionary, t: float) -> float:
-	var runs: PackedFloat32Array = plan.runs
-	var i := t * 60.0
-	if i <= 0.0:
-		return 0.0
-	if i >= runs.size() - 1:
-		return runs[runs.size() - 1]
-	var j := floori(i)
-	return lerpf(runs[j], runs[j + 1], i - j)
+	return {"curve": curve, "length": length, "lip": lip, "hold": lip - HOLD_BACK, "start": INF}
 
 
 func _place_at(plan: Dictionary, run: float) -> Vector2:
 	return (plan.curve as Curve2D).sample_baked(clampf(run, 0.0, plan.length), true)
-
-
-# Seconds from setting off to the lip, and to its place.
-func _time_to(plan: Dictionary, run: float) -> float:
-	var runs: PackedFloat32Array = plan.runs
-	for i in runs.size():
-		if runs[i] >= run - 0.01:
-			return i / 60.0
-	return (runs.size() - 1) / 60.0
 
 
 # The height of the ground at p, or of the Chinook's floor and ramp where they
@@ -347,48 +335,33 @@ func _surface(p: Vector3) -> float:
 # The menu's calls
 
 # A game for `count` players: the jeeps it is for, the left one first, set off
-# for the Chinook -- as soon as they can, or later, to be at the ramp no
-# sooner than it is down -- and the second once it will not run into the
-# first. Returns how long the title is to wait before fading out.
+# for the Chinook at once, the second FOLLOW after. When the title is to fade
+# is not known yet (fade_after).
 func launch(count: int) -> float:
 	_launch_time = 0.0
-	var ramp_down := _ramp_open_at + _ramp_length()
-	var last := 0.0
-	for i in _rigs.size():
+	_launched = true
+	for i in mini(count, _rigs.size()):
 		var rig: Dictionary = _rigs[i]
-		var plan := _plans[i]
-		if i >= count:
-			continue
 		if not rig.on:
 			rig.pitch_speed -= ENGINE_KICK
 			rig.flicker = 0.0
 		rig.on = true
 		rig.pitch_speed -= ENGINE_KICK * 0.6
-		var start := maxf(_clock + LAUNCH_REV, ramp_down - _time_to(plan, plan.lip))
-		if i > 0:
-			start = maxf(start, _plans[i - 1].start + FOLLOW)
-			while _too_near(_plans[i - 1], plan, start):
-				start += 0.05
-		plan.start = start
-		last = maxf(last, start + _time_to(plan, plan.length))
-	_close_at = last + CLOSE_WAIT
-	_lift_at = _close_at + _ramp_length() / CLOSE_SPEED + LIFT_WAIT
-	return _lift_at + LIFT_SHOWN - _clock
+		rig.plan.start = _clock + LAUNCH_REV + i * FOLLOW
+	return INF
 
 
-# Whether `plan`, setting off at `start`, would come nearer to `ahead` than a
-# jeep's length and SPACING, centre to centre, at any moment while `ahead` is
-# on its way -- in their places in the cabin they stand closer than that.
-func _too_near(ahead: Dictionary, plan: Dictionary, start: float) -> bool:
-	var end := minf(start + _time_to(plan, plan.length), float(ahead.start) + _time_to(ahead, ahead.length))
-	var t := start
-	while t <= end:
-		var a := _place_at(ahead, _run_at(ahead, t - float(ahead.start)))
-		var b := _place_at(plan, _run_at(plan, t - start))
-		if a.distance_to(b) < JEEP_LENGTH + SPACING:
-			return true
-		t += 1.0 / 30.0
-	return false
+# Seconds until the title is to fade out over the Chinook lifting off, or INF
+# while it is not known: until the jeeps are in, the ramp is shut and the
+# stage is built.
+func fade_after() -> float:
+	return (_lift_at + LIFT_SHOWN - _flight) / _rate
+
+
+# The stage under the title is built (Level3DTitle.game_ready): the Chinook
+# may go.
+func game_ready() -> void:
+	_game_ready = true
 
 
 # The title opened again: the Chinook back behind the camera, to come in
@@ -396,7 +369,10 @@ func _too_near(ahead: Dictionary, plan: Dictionary, start: float) -> bool:
 func reset_launch() -> void:
 	super()
 	_clock = 0.0
+	_flight = 0.0
+	_rate = 1.0
 	_wash = 0.0
+	_launched = false
 	_close_at = INF
 	_lift_at = INF
 	_ramp_state = ""
@@ -406,6 +382,7 @@ func reset_launch() -> void:
 		plan.start = INF
 	for rig in _rigs:
 		(rig.jeep as Node3D).visible = true
+		rig.speed = 0.0
 	_fly()
 
 
@@ -415,10 +392,20 @@ func _process(delta: float) -> void:
 			_sound.stop()
 		return
 	_clock += delta
+	var hurry := _launched and _ramp_state in ["", "opening"]
+	_rate = move_toward(_rate, ARRIVE_HURRY if hurry else 1.0, (ARRIVE_HURRY - 1.0) * delta / HURRY_EASE)
+	_flight += delta * _rate
+	var aboard := _launched
 	for i in _rigs.size():
 		var rig: Dictionary = _rigs[i]
 		if not rig.going and _clock >= float(_plans[i].start):
 			rig.going = true
+		if is_finite(float(_plans[i].start)) and float(rig.run) < float(_plans[i].length) - 0.01:
+			aboard = false
+	if aboard and is_inf(_close_at):
+		_close_at = _flight + CLOSE_WAIT
+	if _ramp_state == "shut" and _game_ready and is_inf(_lift_at):
+		_lift_at = _flight + LIFT_WAIT
 	_drive_ramp(delta)
 	_fly()
 	_raise_wash(delta)
@@ -426,14 +413,30 @@ func _process(delta: float) -> void:
 	super(delta)
 
 
-# A jeep on its way in: along its plan, its heading the curve's, riding the
-# ground, the ramp and the floor by its axles, its wheels rolling, dust off
-# its rear wheels on the ground; its lamps off once it is in, and out of
-# sight once the ramp is shut on it.
-func _drive_off(rig: Dictionary, _delta: float) -> void:
+# A jeep on its way in: along its plan as fast as the way allows (DRIVE_*),
+# held short of the lip while the ramp is not down and behind the jeep ahead,
+# its heading the curve's, riding the ground, the ramp and the floor by its
+# axles, its wheels rolling, dust off its rear wheels on the ground; its
+# lamps off once it is in, and out of sight once the ramp is shut on it.
+func _drive_off(rig: Dictionary, delta: float) -> void:
 	var plan: Dictionary = rig.plan
-	var run := _run_at(plan, _clock - float(plan.start))
-	var step: float = run - float(rig.run)
+	var length: float = plan.length
+	var lip: float = plan.lip
+	var run: float = rig.run
+	var most := minf(DRIVE_SPEED, sqrt(RAMP_SPEED * RAMP_SPEED + 2.0 * DRIVE_BRAKE * maxf(lip - run, 0.0)))
+	most = minf(most, sqrt(2.0 * DRIVE_BRAKE * maxf(length - run, 0.0)) + 0.3)
+	if _ramp_state != "open":
+		most = minf(most, sqrt(2.0 * DRIVE_BRAKE * maxf(float(plan.hold) - run, 0.0)))
+	var index: int = rig.index
+	if index > 0:
+		var ahead: Dictionary = _rigs[index - 1]
+		if ahead.going and float(ahead.run) < float(ahead.plan.length) - 0.01:
+			var between := (ahead.jeep as Node3D).position - (rig.jeep as Node3D).position
+			between.y = 0.0
+			most = minf(most, maxf(between.length() - JEEP_LENGTH - SPACING, 0.0) * 2.0)
+	rig.speed = minf(float(rig.speed) + DRIVE_ACCEL * delta, most)
+	var step: float = minf(float(rig.speed) * delta, length - run)
+	run += step
 	rig.run = run
 	var at := _place_at(plan, run)
 	var way := _place_at(plan, run + 0.6) - _place_at(plan, run - 0.6)

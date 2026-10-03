@@ -37,9 +37,12 @@ const GLYPH := 32.0
 const SELECT_TIME := 0.08
 # A game picked over a splash that drives its jeeps off (Level3DSplash3D.
 # launch): the menu's keys held off while they go, for as long as the
-# splash's launch says, before the title fades to black over LAUNCH_FADE, and
-# then the run; any key or click fades at once. Over the picture the run
-# starts at once, as it always did.
+# splash's launch says -- or, when it cannot say yet, until its fade_after
+# can (Level3DSplashLanding's Chinook lifts off once the stage is built) --
+# before the title fades to black over LAUNCH_FADE, and then the run; any key
+# or click fades at once. Over the picture the run starts at once, as it
+# always did. Either way not before the stage under the title is built
+# (game_ready): until then the title stays, black if it has faded.
 const LAUNCH_FADE := 0.5
 
 var settings: Level3DSettings
@@ -62,6 +65,8 @@ var _splash: Control         # Level3DSplash, or Level3DSplash3D under --splash-
 var _veil: ColorRect         # the fade to black over the launch
 var _launching := false
 var _launch: Tween           # the hold and the fade
+var _waiting := 0            # players of a game whose fade the splash cannot time yet
+var _game_ready := false     # the stage under the title is built (game_ready)
 var _art: Control            # the jeep, nearest
 var _text: Control           # the entries, in the font's filter
 
@@ -114,6 +119,7 @@ func is_open() -> bool:
 func open() -> void:
 	visible = true
 	_launching = false
+	_waiting = 0
 	if _launch != null:
 		_launch.kill()
 		_launch = null
@@ -138,12 +144,27 @@ func close() -> void:
 	visible = false
 
 
+# The stage under the title is built, and a game can start (Level3DPreview's
+# _ready builds it under the title); the splash is told, for a Chinook that
+# waits for it to lift off.
+func game_ready() -> void:
+	_game_ready = true
+	if _splash != null and _splash.has_method("game_ready"):
+		_splash.game_ready()
+
+
 func _entries() -> Array[String]:
 	return ["1 player", "2 players", "difficulty: " + ("hard" if settings.hard else "normal"),
 			"settings", "quit"]
 
 
 func _process(delta: float) -> void:
+	if _waiting > 0 and _launch == null:
+		var after: float = _splash.call("fade_after")
+		if not is_inf(after):
+			var count := _waiting
+			_waiting = 0
+			_fade_out(count, after)
 	if not visible or _moving >= 1.0:
 		return
 	_moving = minf(_moving + delta / SELECT_TIME, 1.0)
@@ -180,8 +201,8 @@ func _pick() -> void:
 				_launching = true
 				_fade_out(count, _splash.call("launch", count))
 			else:
-				close()
-				start.call(count)
+				_launching = true
+				_begin(count)
 		Entry.DIFFICULTY:
 			_toggle_difficulty()
 		Entry.SETTINGS:
@@ -190,19 +211,31 @@ func _pick() -> void:
 			get_tree().quit()
 
 
-# The title fading out over the launch after `hold` seconds, and the run.
+# The title fading out over the launch after `hold` seconds, and the run; an
+# infinite hold waits for the splash to say (_process).
 func _fade_out(count: int, hold: float) -> void:
 	if _launch != null:
 		_launch.kill()
+		_launch = null
+	if is_inf(hold):
+		_waiting = count
+		return
 	_launch = create_tween()
 	_launch.tween_interval(hold)
 	_launch.tween_property(_veil, "color:a", 1.0, LAUNCH_FADE * (1.0 - _veil.color.a))
 	_launch.tween_callback(func():
 		_launch = null
-		close()
-		_launching = false
-		_veil.color.a = 0.0
-		start.call(count))
+		_begin(count))
+
+
+# The run, once the stage is built.
+func _begin(count: int) -> void:
+	while not _game_ready:
+		await get_tree().process_frame
+	close()
+	_launching = false
+	_veil.color.a = 0.0
+	start.call(count)
 
 
 func _toggle_difficulty() -> void:
@@ -227,7 +260,8 @@ func _input(event: InputEvent) -> void:
 	if _launching:
 		var pressed: bool = event is InputEventKey and event.pressed and not event.echo \
 				or event is InputEventMouseButton and event.pressed
-		if pressed and _launch != null and _veil.color.a == 0.0:
+		if pressed and (_launch != null or _waiting > 0) and _veil.color.a == 0.0:
+			_waiting = 0
 			_fade_out(_selected + 1, 0.0)
 			get_viewport().set_input_as_handled()
 		return
