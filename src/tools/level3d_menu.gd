@@ -25,10 +25,17 @@ extends CanvasLayer
 
 const FONT_SIZE := 24
 # Press Start 2P at FONT_SIZE is a letter as wide as it is tall, half as wide
-# again as Godot's font: its sizes are scaled by this, so the panels hold it.
+# again as Godot's font: its sizes are scaled by this, so the panels hold it,
+# and then to a whole number of its 8 px grid (PIXEL_GRID), since at 12 px the
+# notes' letters came out a pixel wide and two by turns.
 const PIXEL_FONT := "res://assets/fonts/PressStart2P-Regular.ttf"
 const PIXEL_FONT_SCALE := 2.0 / 3.0
+const PIXEL_GRID := 8
 const MODERN_FONT := "res://assets/fonts/BlackOpsOne-Regular.ttf"
+# Black Ops One is a stencil face: flat tops, cut corners and gaps in its
+# letters, which at the notes' FONT_SIZE - 6 were a pixel or two and read as
+# letters cut off. Nothing is drawn smaller than this in it.
+const MODERN_MIN_SIZE := 22
 # The headings' colour, and a ticked box's.
 const ACCENT := Color(1.0, 0.8, 0.3)
 # The boxes' size in pixels of the 2048x1152 layout; drawn at ICON_OVERSAMPLE
@@ -865,7 +872,9 @@ func _font_size(control: Control, delta: int) -> void:
 
 
 func _scaled(size: int) -> int:
-	return roundi(size * PIXEL_FONT_SCALE) if _font_style != Level3DFont.Style.MODERN else size
+	if _font_style == Level3DFont.Style.MODERN:
+		return maxi(size, MODERN_MIN_SIZE)
+	return maxi(roundi(size * PIXEL_FONT_SCALE / PIXEL_GRID), 1) * PIXEL_GRID
 
 
 # The menu in settings.font's face, when it has changed: Press Start 2P sharp
@@ -880,6 +889,9 @@ func _apply_font() -> void:
 		font.antialiasing = TextServer.FONT_ANTIALIASING_NONE
 		font.hinting = TextServer.HINTING_NONE
 		font.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_DISABLED
+	if not modern:
+		# Its "fi" ligature is a glyph of its own, which reads as a smudge.
+		font.opentype_feature_overrides = {TextServerManager.get_primary_interface().name_to_tag("liga"): 0}
 	# The Mixer's ▶ and ■ are in neither.
 	font.fallbacks = [ThemeDB.fallback_font]
 	_theme.default_font = font
