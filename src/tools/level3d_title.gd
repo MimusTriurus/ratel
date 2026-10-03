@@ -35,6 +35,12 @@ const GLYPH := 32.0
 # Menu's: the icon speeds up over the first half of the way and slows over the
 # second, SELECT_TIME frames of the 2D game's 100 Hz in all.
 const SELECT_TIME := 0.08
+# A game picked over a splash that drives its jeeps off (Level3DSplash3D.
+# launch): the keys held off while they go, LAUNCH_HOLD seconds of it before
+# the title fades to black over LAUNCH_FADE, and then the run. Over the
+# picture the run starts at once, as it always did.
+const LAUNCH_HOLD := 1.3
+const LAUNCH_FADE := 0.5
 
 var settings: Level3DSettings
 # `start.call(players)`: a game for one player or two, at settings.hard.
@@ -52,6 +58,9 @@ var _icon_y := 16.0
 var _from_y := 16.0
 var _moving := 1.0           # 0 to 1 of the icon's way, 1 when it stands
 var _jeep: Spr
+var _splash: Control         # Level3DSplash, or Level3DSplash3D under --splash-3d
+var _veil: ColorRect         # the fade to black over the launch
+var _launching := false
 var _art: Control            # the jeep, nearest
 var _text: Control           # the entries, in the font's filter
 
@@ -75,6 +84,7 @@ func _ready() -> void:
 		splash = Level3DSplash.new()
 	splash.place(FRAME + TITLE_AT + TITLE_SIZE * 0.5, TITLE_SIZE.x)
 	add_child(splash)
+	_splash = splash
 	_art = Control.new()
 	_art.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -86,6 +96,11 @@ func _ready() -> void:
 	_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_text.draw.connect(_draw_text)
 	add_child(_text)
+	_veil = ColorRect.new()
+	_veil.color = Color(0, 0, 0, 0)
+	_veil.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_veil)
 
 
 func is_open() -> bool:
@@ -94,8 +109,22 @@ func is_open() -> bool:
 
 func open() -> void:
 	visible = true
+	_launching = false
+	_veil.color.a = 0.0
+	if _splash != null and _splash.has_method("reset_launch"):
+		_splash.reset_launch()
 	_place_icon()
 	_redraw()
+	_tell_splash()
+
+
+# The splash's jeeps follow the menu (Level3DSplash3D.show_menu): one jeep's
+# lamps on for "1 player", both for "2 players", and the difficulty. A splash
+# without show_menu, the picture, ignores it.
+func _tell_splash() -> void:
+	if _splash != null and _splash.has_method("show_menu"):
+		var lit := 1 if _selected == Entry.ONE_PLAYER else (2 if _selected == Entry.TWO_PLAYERS else 0)
+		_splash.show_menu(lit, settings.hard)
 
 
 func close() -> void:
@@ -133,13 +162,27 @@ func _select(index: int) -> void:
 	_selected = index
 	_from_y = _icon_y
 	_moving = 0.0
+	_tell_splash()
 
 
 func _pick() -> void:
 	match _selected:
 		Entry.ONE_PLAYER, Entry.TWO_PLAYERS:
-			close()
-			start.call(_selected + 1)
+			var count := _selected + 1
+			if _splash != null and _splash.has_method("launch"):
+				_launching = true
+				_splash.launch(count)
+				var fade := create_tween()
+				fade.tween_interval(LAUNCH_HOLD)
+				fade.tween_property(_veil, "color:a", 1.0, LAUNCH_FADE)
+				fade.tween_callback(func():
+					close()
+					_launching = false
+					_veil.color.a = 0.0
+					start.call(count))
+			else:
+				close()
+				start.call(count)
 		Entry.DIFFICULTY:
 			_toggle_difficulty()
 		Entry.SETTINGS:
@@ -153,6 +196,7 @@ func _toggle_difficulty() -> void:
 	if changed.is_valid():
 		changed.call()
 	_redraw()
+	_tell_splash()
 
 
 func _redraw() -> void:
@@ -162,8 +206,9 @@ func _redraw() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	# The settings over the title have the keys while they are open.
-	if not visible or settings_open.is_valid() and settings_open.call():
+	# The settings over the title have the keys while they are open; nothing
+	# has them while the jeeps drive off.
+	if not visible or _launching or settings_open.is_valid() and settings_open.call():
 		return
 	var key := event as InputEventKey
 	if key != null and key.pressed and not key.echo:

@@ -1,7 +1,8 @@
 # The title screen's splash made as a scene rather than a picture: the sunset
 # of Level3DSplash (level3d_splash.gd), and the jeeps standing against it,
 # made in 3D from nothing -- no picture in it -- and cel-shaded as the preview
-# draws its units. A prototype, two steps of four in: the sky, the jeeps
+# draws its units. A prototype: the title's menu lights the jeeps and swings
+# their turrets (show_menu), and a game picked drives them off (launch); the sky, the jeeps
 # backlit and the ground; the haze, the palms in the wind, the mouse's gust
 # and, under --splash-dust, the dust (HAZE_DISTANCE, PALM_WIND, GUST_SPEED,
 # RUNNERS); the menu driving the jeeps is still to come. The title shows it in place of
@@ -162,12 +163,18 @@ uniform vec4 albedo : source_color = vec4(1.0);
 uniform float rim_width = 0.3;
 uniform float rim = 0.9;
 uniform float rim_tint = 0.35;
+// What it gives off itself: the lamps, when they are on.
+uniform vec3 glow : source_color = vec3(0.0);
 void fragment() {
 	ALBEDO = albedo.rgb;
+	EMISSION = glow;
 }
 void light() {
-	// The two tones: lit or not, no shading between.
-	DIFFUSE_LIGHT += step(0.0, dot(NORMAL, LIGHT)) * ATTENUATION * LIGHT_COLOR / PI;
+	// The two tones: lit or not, no shading between. A spot's falloff --
+	// the lamps' -- is cut in bands too, full, half and none, so that the
+	// pool it lights has edges; the sun's is 1 everywhere.
+	float reach = ATTENUATION > 0.55 ? 1.0 : (ATTENUATION > 0.12 ? 0.5 : 0.0);
+	DIFFUSE_LIGHT += step(0.0, dot(NORMAL, LIGHT)) * reach * LIGHT_COLOR / PI;
 	// The rim: seen edge on, with the light behind.
 	float edge_on = step(1.0 - rim_width, 1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0));
 	float behind = clamp(-dot(LIGHT, VIEW), 0.0, 1.0);
@@ -177,6 +184,78 @@ void light() {
 	SPECULAR_LIGHT += band * (1.0 - rim_tint);
 }
 """
+
+# The title's menu drives the jeeps (show_menu): on "1 player" the left
+# jeep's lamps come on and its engine is gunned, on "2 players" both jeeps',
+# on anything else they go dark; on hard the turrets swing round on the
+# camera, on normal they look out to either side.
+#
+# The lamps are the hull's Jeep_White surface, the pair of headlights at its
+# nose: their paint glows (TOON_SHADER's `glow`) and over each a flare and a
+# spot light come up, the spot lighting a pool on the ground before the jeep
+# that the two-tone light cuts in bands (TOON_SHADER, ATTENUATION). Coming on
+# they flicker once, as a lamp catching does; going off they fade quickly.
+const LAMP_SURFACE := "Jeep_White"
+const LAMP_COLOUR := Color(1.0, 0.9, 0.68)
+const LAMP_GLOW := 2.4
+const LAMPS_AT := [Vector3(-0.78, 0.8, 1.8), Vector3(0.78, 0.8, 1.8)]
+const LAMP_ON := 0.25          # seconds to come up
+const LAMP_OFF := 0.15         # seconds to go down
+const FLARE_SIZE := 1.6        # metres across at full
+const SPOT_ENERGY := 9.0
+const SPOT_RANGE := 16.0
+const SPOT_ANGLE := 24.0
+const SPOT_DIP := 7.0          # degrees below level
+# The engine: the hull shakes on its wheels, ENGINE_IDLE metres at a tick-
+# over and ENGINE_RUN when the jeep's lamps are on; gunned, its nose kicks up
+# ENGINE_KICK rad/s on a spring (ENGINE_SPRING: stiffness, damping) and
+# settles.
+const ENGINE_IDLE := 0.004
+const ENGINE_RUN := 0.009
+const ENGINE_KICK := 0.9
+const ENGINE_SPRING := Vector2(120.0, 9.0)
+# The turrets: degrees out from the camera on normal, turning at TURRET_RATE
+# degrees a second.
+const TURRET_OUT := 40.0
+const TURRET_RATE := 90.0
+
+const FLARE_SHADER := """
+shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, fog_disabled, shadows_disabled;
+uniform vec3 colour : source_color = vec3(1.0, 0.9, 0.68);
+uniform float level = 0.0;
+void vertex() {
+	// A billboard, keeping the instance's scale.
+	MODELVIEW_MATRIX = VIEW_MATRIX * mat4(INV_VIEW_MATRIX[0], INV_VIEW_MATRIX[1], INV_VIEW_MATRIX[2], MODEL_MATRIX[3]);
+	MODELVIEW_MATRIX = MODELVIEW_MATRIX * mat4(vec4(length(MODEL_MATRIX[0].xyz), 0.0, 0.0, 0.0),
+			vec4(0.0, length(MODEL_MATRIX[1].xyz), 0.0, 0.0), vec4(0.0, 0.0, length(MODEL_MATRIX[2].xyz), 0.0),
+			vec4(0.0, 0.0, 0.0, 1.0));
+}
+void fragment() {
+	vec2 q = (UV - 0.5) * 2.0;
+	float core = pow(max(1.0 - length(q), 0.0), 2.5);
+	// A thin streak across, as a lens draws a lamp seen head on.
+	float streak = pow(max(1.0 - abs(q.x), 0.0), 1.5) * pow(max(1.0 - abs(q.y) * 9.0, 0.0), 2.0) * 0.6;
+	ALBEDO = colour * (core + streak) * level;
+}
+"""
+
+# A game picked (launch): the jeeps it is for gun their engines for
+# LAUNCH_REV seconds and go, LAUNCH_ACCEL m/s^2, squatting on their tails,
+# their wheels turning, each out past its side of the camera -- to LAUNCH_PASS,
+# x out from the middle and z behind the camera -- throwing dust off its rear
+# wheels, a small short cloud (the wind's own, CLOUD_*, scaled by
+# WHEEL_CLOUD) every WHEEL_DUST_STEP metres. The title fades to black over
+# them and starts the run (Level3DTitle.LAUNCH_HOLD).
+const LAUNCH_REV := 0.25
+const LAUNCH_ACCEL := 9.0
+const LAUNCH_PASS := Vector2(4.5, 8.0)
+const LAUNCH_SQUAT := -0.045      # rad, nose up
+const WHEEL_RADIUS := 0.44
+const WHEELS := ["Jeep_Wheel_L1", "Jeep_Wheel_L2", "Jeep_Wheel_R1", "Jeep_Wheel_R2"]
+const REAR_WHEELS := ["Jeep_Wheel_L2", "Jeep_Wheel_R2"]
+const WHEEL_DUST_STEP := 0.6
+const WHEEL_CLOUD := Vector2(0.7, 0.45)   # radius, life, as shares of a wind cloud's
 
 # The dust: clouds of it, raised by the wind -- off unless the preview is run
 # with --splash-dust. RUNNERS gusts skim along the
@@ -458,6 +537,10 @@ var viewport: SubViewport
 var camera: Camera3D
 var jeeps: Array[Node3D] = []
 
+var _rigs: Array[Dictionary] = []    # per jeep, what the menu moves (_rig)
+var _hard := false
+var _launch_time := -1.0             # seconds since launch, -1 before it
+
 var _height: Callable        # the near ground's height at (x, z)
 var _dust_mesh: MultiMeshInstance3D
 var _haze_mesh: MeshInstance3D
@@ -545,12 +628,13 @@ func _build() -> void:
 		jeep.position = at
 		jeep.rotation.y = deg_to_rad(JEEP_TOE) * signf(at.x) * -1.0
 		jeeps.append(jeep)
+		_rigs.append(_rig(jeep, signf(at.x)))
 	_haze_mesh = _haze()
 	world.add_child(_haze_mesh)
-	# --splash-dust: the dust clouds, which are off unless asked for.
-	if OS.get_cmdline_user_args().has("--splash-dust"):
-		_dust_mesh = _dust()
-		world.add_child(_dust_mesh)
+	# The clouds' pool is always there, for the wheels' dust when the jeeps
+	# drive off; the wind raises clouds only under --splash-dust.
+	_dust_mesh = _dust(OS.get_cmdline_user_args().has("--splash-dust"))
+	world.add_child(_dust_mesh)
 
 
 # Gently rolling ground, faceted, out of a fixed seed so that the frame is
@@ -727,8 +811,9 @@ func _toon(colour: Color, rim: float, two_sided := false) -> ShaderMaterial:
 
 
 # The dust, one MultiMesh of CLOUD_POOL clouds that _process moves: a cloud
-# slot not in use is scaled to nothing.
-func _dust() -> MultiMeshInstance3D:
+# slot not in use is scaled to nothing. `wind`: the runners raise clouds, as
+# --splash-dust asks; without, only the wheels do.
+func _dust(wind: bool) -> MultiMeshInstance3D:
 	var ball := Level3DFx.ball(3, 0.0, 11)
 	var shader := Shader.new()
 	shader.code = DUST_SHADER
@@ -749,7 +834,7 @@ func _dust() -> MultiMeshInstance3D:
 	for i in CLOUD_POOL:
 		multimesh.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO))
 	_dust_rng.seed = 5
-	for r in RUNNERS:
+	for r in (RUNNERS if wind else 0):
 		var runner := {}
 		_place_runner(runner, true)
 		_runners.append(runner)
@@ -779,13 +864,14 @@ func _place_runner(runner: Dictionary, anywhere: bool) -> void:
 	runner.next = _dust_rng.randf_range(CLOUD_EVERY.x, CLOUD_EVERY.y)
 
 
-# A cloud born where a runner is, `strength` 0..1 of its gust.
-func _raise_cloud(at: Vector3, strength: float) -> void:
+# A cloud born where a runner is, `strength` 0..1 of its gust -- or a wheel,
+# with `size` and `life` the shares of a wind cloud's it is.
+func _raise_cloud(at: Vector3, strength: float, size := 1.0, life := 1.0) -> void:
 	at.y = _height.call(at.x, at.z)
 	var cloud := {
 		"at": at,
-		"radius": _dust_rng.randf_range(CLOUD_RADIUS.x, CLOUD_RADIUS.y) * (0.6 + 0.4 * strength) * (1.0 - at.z / 120.0),
-		"life": _dust_rng.randf_range(CLOUD_LIFE.x, CLOUD_LIFE.y),
+		"radius": _dust_rng.randf_range(CLOUD_RADIUS.x, CLOUD_RADIUS.y) * (0.6 + 0.4 * strength) * (1.0 - at.z / 120.0) * size,
+		"life": _dust_rng.randf_range(CLOUD_LIFE.x, CLOUD_LIFE.y) * life,
 		"age": 0.0,
 		# Carried by the wind a little slower than it blows, and off sideways.
 		"drift": WIND * _dust_rng.randf_range(0.6, 0.9) + Vector3(0.0, 0.0, _dust_rng.randf_range(-0.2, 0.2)),
@@ -874,6 +960,9 @@ func _process(delta: float) -> void:
 	_follow_mouse(delta)
 	for m in _wind_materials:
 		m.set_shader_parameter("wind_clock", _time)
+	if _launch_time >= 0.0:
+		_launch_time += delta
+	_drive_rigs(delta)
 	if _dust_mesh == null:
 		return
 	# The runners, each raising a cloud every CLOUD_EVERY while its gust is up.
@@ -950,3 +1039,183 @@ func _follow_mouse(delta: float) -> void:
 	var haze := _haze_mesh.mesh.surface_get_material(0) as ShaderMaterial
 	haze.set_shader_parameter("mouse", at)
 	haze.set_shader_parameter("gust", _gust)
+
+
+# What the title's menu has picked: `lit` jeeps with their lamps on and their
+# engines gunned -- 0, 1 (the left one) or 2 -- and whether it is on hard.
+# Level3DTitle calls it when the pick or the difficulty changes; the picture
+# splash (Level3DSplash) has no such method and is left alone.
+func show_menu(lit: int, hard: bool) -> void:
+	for i in _rigs.size():
+		var rig: Dictionary = _rigs[i]
+		var on := i < lit
+		if on and not rig.on:
+			# Gunned: the nose kicks up.
+			rig.pitch_speed -= ENGINE_KICK
+			rig.flicker = 0.0
+		rig.on = on
+	_hard = hard
+
+
+# What moves on a jeep: its hull, its turret, its lamps' paint, flares and
+# spots, and their state.
+func _rig(jeep: Node3D, side: float) -> Dictionary:
+	var hull := jeep.find_child("Jeep_Hull", true, false) as MeshInstance3D
+	var turret := jeep.find_child("Jeep_TurretPivot", true, false) as Node3D
+	var rig := {
+		"jeep": jeep, "jeep_rest": jeep.transform,
+		"hull": hull, "rest": hull.transform, "turret": turret, "turret_rest": turret.transform,
+		"side": side, "yaw": 0.0, "on": false, "level": 0.0, "flicker": 1.0,
+		"pitch": 0.0, "pitch_speed": 0.0, "phase": side * 1.7,
+		"lamp": null, "flares": [], "spots": [],
+		"wheels": [], "wheel_rests": [], "rear": [],
+		"going": false, "run": 0.0, "dust_run": 0.0,
+	}
+	for name in WHEELS:
+		var wheel := jeep.find_child(name, true, false) as Node3D
+		if wheel != null:
+			rig.wheels.append(wheel)
+			rig.wheel_rests.append(wheel.transform)
+			if name in REAR_WHEELS:
+				rig.rear.append(wheel)
+	for surface in hull.mesh.get_surface_count():
+		var paint := hull.mesh.surface_get_material(surface)
+		if paint != null and String(paint.resource_name) == LAMP_SURFACE:
+			# A copy of its own, since each jeep's lamps glow on their own.
+			var lamp := (hull.get_surface_override_material(surface) as ShaderMaterial).duplicate() as ShaderMaterial
+			hull.set_surface_override_material(surface, lamp)
+			rig.lamp = lamp
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE
+	var shader := Shader.new()
+	shader.code = FLARE_SHADER
+	for at in LAMPS_AT:
+		var flare := MeshInstance3D.new()
+		var m := ShaderMaterial.new()
+		m.shader = shader
+		m.set_shader_parameter("colour", LAMP_COLOUR)
+		flare.mesh = quad
+		flare.material_override = m
+		flare.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		flare.position = at + Vector3(0, 0, 0.08)
+		flare.scale = Vector3.ONE * FLARE_SIZE
+		hull.add_child(flare)
+		rig.flares.append(flare)
+		var spot := SpotLight3D.new()
+		spot.light_color = LAMP_COLOUR
+		spot.light_energy = 0.0
+		spot.spot_range = SPOT_RANGE
+		spot.spot_angle = SPOT_ANGLE
+		spot.shadow_enabled = false
+		spot.position = at
+		# Forward, down the jeep's +Z, dipped.
+		spot.basis = Basis.looking_at(Vector3(0, -sin(deg_to_rad(SPOT_DIP)), 1.0), Vector3.UP)
+		hull.add_child(spot)
+		rig.spots.append(spot)
+	return rig
+
+
+func _drive_rigs(delta: float) -> void:
+	for rig in _rigs:
+		# The lamps: up, with a flicker as they catch, and down.
+		var target := 1.0 if rig.on else 0.0
+		var level: float = move_toward(rig.level, target, delta / (LAMP_ON if rig.on else LAMP_OFF))
+		rig.level = level
+		rig.flicker = minf(rig.flicker + delta, 1.0)
+		var shown := level
+		if rig.on and rig.flicker < 0.35:
+			# Catching: on, off for a moment, on.
+			shown *= 0.25 if rig.flicker > 0.08 and rig.flicker < 0.16 else 1.0
+		if rig.lamp != null:
+			(rig.lamp as ShaderMaterial).set_shader_parameter("glow", LAMP_COLOUR * LAMP_GLOW * shown)
+		for flare in rig.flares:
+			((flare as MeshInstance3D).material_override as ShaderMaterial).set_shader_parameter("level", shown)
+		for spot in rig.spots:
+			(spot as SpotLight3D).light_energy = SPOT_ENERGY * shown
+		# The engine: the nose's spring, and the shake.
+		var pitch: float = rig.pitch
+		var speed: float = rig.pitch_speed
+		# Squatting on its tail while it pulls away.
+		var squat := LAUNCH_SQUAT if rig.going and _launch_time > LAUNCH_REV else 0.0
+		speed += (-ENGINE_SPRING.x * (pitch - squat) - ENGINE_SPRING.y * speed) * delta
+		pitch += speed * delta
+		rig.pitch = pitch
+		rig.pitch_speed = speed
+		var shake := lerpf(ENGINE_IDLE, ENGINE_RUN, level) * sin(_time * 52.0 + float(rig.phase)) \
+				+ lerpf(ENGINE_IDLE, ENGINE_RUN, level) * 0.5 * sin(_time * 31.0 + float(rig.phase) * 2.3)
+		var rest: Transform3D = rig.rest
+		(rig.hull as Node3D).transform = Transform3D(Basis(Vector3.RIGHT, pitch) * rest.basis,
+				rest.origin + Vector3.UP * shake)
+		# The turret: at the camera on hard, out to its side on normal -- the
+		# jeep's own toe taken off, so that "at the camera" is at it.
+		var toe := deg_to_rad(JEEP_TOE) * float(rig.side)
+		var want := toe if _hard else toe + deg_to_rad(TURRET_OUT) * float(rig.side)
+		rig.yaw = move_toward(rig.yaw, want, deg_to_rad(TURRET_RATE) * delta)
+		var turret_rest: Transform3D = rig.turret_rest
+		(rig.turret as Node3D).transform = Transform3D(Basis(Vector3.UP, rig.yaw) * turret_rest.basis,
+				turret_rest.origin)
+		if rig.going:
+			_drive_off(rig, delta)
+
+
+# A game for `count` players: that many jeeps, the left one first, light up
+# and drive off past the camera (LAUNCH_*). Level3DTitle fades out over it.
+func launch(count: int) -> void:
+	_launch_time = 0.0
+	for i in _rigs.size():
+		var rig: Dictionary = _rigs[i]
+		if i < count:
+			if not rig.on:
+				rig.pitch_speed -= ENGINE_KICK
+				rig.flicker = 0.0
+			rig.on = true
+			rig.going = true
+			# Gunned again as it goes.
+			rig.pitch_speed -= ENGINE_KICK * 0.6
+
+
+# Back where they stood, dark, and their dust gone: the title opened again.
+func reset_launch() -> void:
+	_launch_time = -1.0
+	for rig in _rigs:
+		rig.going = false
+		rig.run = 0.0
+		rig.dust_run = 0.0
+		(rig.jeep as Node3D).transform = rig.jeep_rest
+		for k in rig.wheels.size():
+			(rig.wheels[k] as Node3D).transform = rig.wheel_rests[k]
+	_clouds.clear()
+	_oldest = 0
+	for i in CLOUD_POOL:
+		_dust_mesh.multimesh.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO))
+
+
+# A launched jeep along its way: out of where it stood towards LAUNCH_PASS on
+# its side, turning to it over the first few metres, its wheels rolling the
+# ground it covers, dust off its rear wheels.
+func _drive_off(rig: Dictionary, delta: float) -> void:
+	var t := maxf(_launch_time - LAUNCH_REV, 0.0)
+	var run := 0.5 * LAUNCH_ACCEL * t * t
+	var step: float = run - float(rig.run)
+	rig.run = run
+	var rest: Transform3D = rig.jeep_rest
+	var side: float = rig.side
+	var to := Vector3(LAUNCH_PASS.x * side, 0.0, LAUNCH_PASS.y) - rest.origin
+	to.y = 0.0
+	var way := to.normalized()
+	var at := rest.origin + way * run
+	at.y = _height.call(at.x, at.z)
+	var rest_yaw := rest.basis.get_euler().y
+	var yaw := lerp_angle(rest_yaw, atan2(way.x, way.z), smoothstep(0.0, 3.0, run))
+	(rig.jeep as Node3D).transform = Transform3D(Basis(Vector3.UP, yaw), at)
+	for k in rig.wheels.size():
+		var wheel_rest: Transform3D = rig.wheel_rests[k]
+		(rig.wheels[k] as Node3D).transform = Transform3D(wheel_rest.basis * Basis(Vector3.RIGHT, run / WHEEL_RADIUS),
+				wheel_rest.origin)
+	rig.dust_run += step
+	while rig.dust_run >= WHEEL_DUST_STEP:
+		rig.dust_run -= WHEEL_DUST_STEP
+		for wheel in rig.rear:
+			var under: Vector3 = (wheel as Node3D).global_position
+			_raise_cloud(under + Vector3(_dust_rng.randf_range(-0.2, 0.2), 0.0, _dust_rng.randf_range(-0.3, 0.3)),
+					1.0, WHEEL_CLOUD.x, WHEEL_CLOUD.y)
