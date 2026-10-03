@@ -2153,6 +2153,8 @@ func _make_hud() -> void:
 	layer.add_child(_banners)
 	var crosshair := Level3DCrosshair.new()
 	crosshair.wanted = _crosshair_wanted
+	crosshair.hide_pointer = func(): return _title != null and _title.pointer_hidden() \
+			or _menu != null and _menu.pointer_hidden()
 	layer.add_child(crosshair)
 
 

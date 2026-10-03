@@ -1,7 +1,7 @@
 # The 3D preview's title screen, the 2D game's (IntroMode's title and its
-# Menu) over the stage: the splash where the title art was, the jeep sliding
-# between the entries as Menu's icon does, the same layout in the 1024x960
-# frame centred in the 2048x1152 one. Its entries are the preview's own: a
+# Menu) over the stage: the splash where the title art was, the menus'
+# reticle where Menu's jeep icon was (Level3DReticle), the same layout in the
+# 1024x960 frame centred in the 2048x1152 one. Its entries are the preview's own: a
 # game for one player or two (the 2D game's "1 player" / "2 players"), the
 # difficulty the 2D game picks under options, the Escape menu's settings,
 # and quit. Written in the HUD's font (Level3DFont), so that it follows the
@@ -15,7 +15,7 @@
 #
 # Keys as on the 2D game's menus: up and down (the arrows, and the keys
 # bound to the BTR's), Enter, Space or the gun to pick, and left and right to
-# change the difficulty; the mouse picks an entry by pointing at it.
+# change the difficulty; the mouse picks an entry by aiming the reticle at it.
 class_name Level3DTitle
 extends CanvasLayer
 
@@ -32,9 +32,12 @@ const MENU_AT := Vector2(416, 608)
 const ROW := 64
 const ICON_X := -72
 const GLYPH := 32.0
-# Menu's: the icon speeds up over the first half of the way and slows over the
-# second, SELECT_TIME frames of the 2D game's 100 Hz in all.
-const SELECT_TIME := 0.08
+# The reticle (Level3DReticle) is in place of the 2D game's jeep icon, which
+# was the one sprite left on a screen drawn otherwise in the splash's dark and
+# the sun's colours; the keys glide it to before the entry they pick.
+# The entries: the one picked in the sun's yellow, the others a dim copper.
+const PICKED_TINT := Color(1.0, 0.83, 0.42)
+const OTHER_TINT := Color(0.55, 0.36, 0.27)
 # A game picked over a splash that drives its jeeps off (Level3DSplash3D.
 # launch): the menu's keys held off while they go, for as long as the
 # splash's launch says -- or, when it cannot say yet, until its fade_after
@@ -57,24 +60,19 @@ var settings_open: Callable
 var changed: Callable
 
 var _selected := 0
-var _icon_y := 16.0
-var _from_y := 16.0
-var _moving := 1.0           # 0 to 1 of the icon's way, 1 when it stands
-var _jeep: Spr
 var _splash: Control         # Level3DSplash, or Level3DSplash3D under --splash-3d
 var _veil: ColorRect         # the fade to black over the launch
 var _launching := false
 var _launch: Tween           # the hold and the fade
 var _waiting := 0            # players of a game whose fade the splash cannot time yet
 var _game_ready := false     # the stage under the title is built (game_ready)
-var _art: Control            # the jeep, nearest
+var _reticle: Level3DReticle
 var _text: Control           # the entries, in the font's filter
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
-	_jeep = SpriteBank.new(Main.SPRITES).get_sprite("player-green-0.png")
 	var black := ColorRect.new()
 	black.color = Color.BLACK
 	black.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -94,17 +92,13 @@ func _ready() -> void:
 	splash.place(FRAME + TITLE_AT + TITLE_SIZE * 0.5, TITLE_SIZE.x)
 	add_child(splash)
 	_splash = splash
-	_art = Control.new()
-	_art.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_art.draw.connect(_draw_art)
-	add_child(_art)
 	_text = Control.new()
 	_text.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_text.draw.connect(_draw_text)
 	add_child(_text)
+	_reticle = Level3DReticle.new()
+	add_child(_reticle)
 	_veil = ColorRect.new()
 	_veil.color = Color(0, 0, 0, 0)
 	_veil.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -126,7 +120,8 @@ func open() -> void:
 	_veil.color.a = 0.0
 	if _splash != null and _splash.has_method("reset_launch"):
 		_splash.reset_launch()
-	_place_icon()
+	_reticle.park()
+	_reticle.aim(_slot, false)
 	_redraw()
 	_tell_splash()
 
@@ -142,6 +137,14 @@ func _tell_splash() -> void:
 
 func close() -> void:
 	visible = false
+
+
+# Whether the system's pointer is hidden, the reticle in its place: while the
+# title is up and the settings are not over it -- they have a reticle of
+# their own (Level3DMenu.pointer_hidden). Level3DCrosshair, which owns the
+# mouse mode, asks this too.
+func pointer_hidden() -> bool:
+	return visible and not (settings_open.is_valid() and settings_open.call())
 
 
 # The stage under the title is built, and a game can start (Level3DPreview's
@@ -165,22 +168,19 @@ func _process(delta: float) -> void:
 			var count := _waiting
 			_waiting = 0
 			_fade_out(count, after)
-	if not visible or _moving >= 1.0:
+	if not visible:
 		return
-	_moving = minf(_moving + delta / SELECT_TIME, 1.0)
-	var t := _moving
-	var eased := 2.0 * t * t if t < 0.5 else 1.0 - 2.0 * (1.0 - t) * (1.0 - t)
-	_icon_y = lerpf(_from_y, _target_y(), eased)
-	_art.queue_redraw()
+	_reticle.shown = pointer_hidden()
+	# Until the HUD's crosshair, which owns the mouse mode, is made under the
+	# title (Level3DPreview._ready), nobody else hides the pointer; and the
+	# settings over it hide it themselves.
+	if pointer_hidden() and Input.mouse_mode != Input.MOUSE_MODE_HIDDEN:
+		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 
 
-func _target_y() -> float:
-	return 16.0 + _selected * ROW
-
-
-func _place_icon() -> void:
-	_moving = 1.0
-	_icon_y = _target_y()
+# Before the entry picked, where Menu's icon stood.
+func _slot() -> Vector2:
+	return FRAME + MENU_AT + Vector2(ICON_X, 16.0 + _selected * ROW)
 
 
 func _select(index: int) -> void:
@@ -188,12 +188,13 @@ func _select(index: int) -> void:
 	if index == _selected:
 		return
 	_selected = index
-	_from_y = _icon_y
-	_moving = 0.0
+	_reticle.aim(_slot)
+	_text.queue_redraw()
 	_tell_splash()
 
 
 func _pick() -> void:
+	_reticle.fire()
 	match _selected:
 		Entry.ONE_PLAYER, Entry.TWO_PLAYERS:
 			var count := _selected + 1
@@ -247,7 +248,6 @@ func _toggle_difficulty() -> void:
 
 
 func _redraw() -> void:
-	_art.queue_redraw()
 	_text.queue_redraw()
 	_text.texture_filter = Level3DFont.filter()
 
@@ -268,6 +268,9 @@ func _input(event: InputEvent) -> void:
 	var key := event as InputEventKey
 	if key != null and key.pressed and not key.echo:
 		var code := key.keycode
+		if code in [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE] \
+				or code in ["up", "down", "left", "right", "gun"].map(settings.key):
+			_reticle.keys()
 		if code in [KEY_UP, settings.key("up")]:
 			_select(_selected - 1)
 		elif code in [KEY_DOWN, settings.key("down")]:
@@ -284,7 +287,7 @@ func _input(event: InputEvent) -> void:
 	var motion := event as InputEventMouseMotion
 	if motion != null:
 		var at := _entry_at()
-		if at >= 0:
+		if _reticle.mouse_has_it() and at >= 0:
 			_select(at)
 		return
 	var click := event as InputEventMouseButton
@@ -292,13 +295,12 @@ func _input(event: InputEvent) -> void:
 		var at := _entry_at()
 		if at >= 0:
 			_select(at)
-			_place_icon()
 			_pick()
 			get_viewport().set_input_as_handled()
 
 
 # The entry under the mouse, or -1: the row the text is on, from where the
-# icon would be to the end of the longest entry.
+# reticle stands before it to the end of the longest entry.
 func _entry_at() -> int:
 	var p := _text.get_local_mouse_position() - FRAME - MENU_AT
 	if p.x < ICON_X - 48 or p.x > 640:
@@ -307,15 +309,8 @@ func _entry_at() -> int:
 	return row if row >= 0 and row < Entry.size() else -1
 
 
-func _draw_art() -> void:
-	if _jeep != null:
-		var centre := FRAME + MENU_AT + Vector2(ICON_X, _icon_y)
-		_art.draw_texture_rect_region(_jeep.tex, Rect2(centre - Vector2(_jeep.w, _jeep.h) * 0.5,
-				Vector2(_jeep.w, _jeep.h)), _jeep.region)
-
-
 func _draw_text() -> void:
 	var entries := _entries()
 	for i in entries.size():
 		Level3DFont.draw(_text, entries[i], FRAME.x + MENU_AT.x, FRAME.y + MENU_AT.y + i * ROW, GLYPH,
-				Level3DFont.GRAY)
+				Level3DFont.WHITE, PICKED_TINT if i == _selected else OTHER_TINT)
