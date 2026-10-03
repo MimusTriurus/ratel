@@ -62,6 +62,11 @@ const LAUNCH_FADE := 0.5
 # (Level3DReticle.FIRE) has been seen, leaving the scene to play alone.
 const MENU_HIDE_AFTER := 0.15
 const MENU_HIDE := 0.4
+# And the splash comes to the middle of the screen as the menu goes, over
+# MENU_FOCUS seconds, growing (Level3DSplash3D.focus): left where the title
+# art was, it hung over an empty half screen.
+const MENU_FOCUS := 1.4
+const SCREEN_MIDDLE := Vector2(1024, 576)
 
 var settings: Level3DSettings
 # `start.call(players)`: a game for one player or two, at settings.hard.
@@ -259,7 +264,8 @@ func _pick() -> void:
 			get_tree().quit()
 
 
-# The entries and the reticle out of the way of the launch (MENU_HIDE).
+# The entries and the reticle out of the way of the launch (MENU_HIDE), and
+# the splash to the middle (MENU_FOCUS).
 func _hide_menu() -> void:
 	if _menu_hide != null:
 		_menu_hide.kill()
@@ -267,6 +273,8 @@ func _hide_menu() -> void:
 	_menu_hide.tween_interval(MENU_HIDE_AFTER)
 	_menu_hide.tween_property(_text, "modulate:a", 0.0, MENU_HIDE)
 	_menu_hide.parallel().tween_property(_reticle, "modulate:a", 0.0, MENU_HIDE)
+	if _splash != null and _splash.has_method("focus"):
+		_splash.focus(SCREEN_MIDDLE, MENU_FOCUS)
 
 
 # The title fading out over the launch after `hold` seconds, and the run; an

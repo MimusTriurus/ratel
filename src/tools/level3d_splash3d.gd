@@ -106,6 +106,12 @@ const PALMS := [
 # The frame's width over its height: Level3DSplash's picture's, 1024 x 504,
 # so that the two take the same place on the title.
 const ASPECT := 1024.0 / 504.0
+# A game picked, the menu goes and the title brings the frame to the middle
+# of the screen, FOCUS_ZOOM times as big (focus): in the title art's place,
+# with nothing under it, it left the bottom half of the screen empty. It is
+# rendered that big throughout, drawn smaller until then, so that it is
+# not blown up and soft once it is there, and is not resized as it grows.
+const FOCUS_ZOOM := 1.5
 
 # The jeep's launcher fits (level3d_rocket.gd's FITS, and the spare ones in
 # level3d_btr.gd): only the missiles' is shown, the picture's rocket pods.
@@ -377,6 +383,7 @@ uniform float rim = 0.9;
 uniform float rim_tint = 0.35;
 uniform float lump = 0.5;
 uniform float break_up = 0.55;
+uniform float side_fade = 0.25;
 varying vec3 dir;
 varying float life;
 varying float seed;
@@ -422,9 +429,13 @@ void vertex() {
 
 void fragment() {
 	// Broken up: eaten away where a noise over its surface is under a level
-	// that rises from nothing at break_up to all of it at the end.
+	// that rises from nothing at break_up to all of it at the end -- and
+	// towards the frame's sides, all of it by the edge, so that a cloud
+	// thrown out there goes as it would with age: lit, on the black the sky
+	// has died to by then, the edge's own fade to black cut it off in a line.
 	float e = noise(dir * 3.2 + seed * 1.7) * 0.7 + noise(dir * 7.0 + seed) * 0.3;
-	if (e < smoothstep(break_up, 1.0, life) * 1.05) {
+	float side = 1.0 - smoothstep(0.03, side_fade, min(SCREEN_UV.x, 1.0 - SCREEN_UV.x));
+	if (e < max(smoothstep(break_up, 1.0, life), side) * 1.05) {
 		discard;
 	}
 	ALBEDO = albedo.rgb;
@@ -584,6 +595,8 @@ var camera: Camera3D
 var jeeps: Array[Node3D] = []
 
 var _rigs: Array[Dictionary] = []    # per jeep, what the menu moves (_rig)
+var _rest := Rect2()                 # where place put the frame
+var _focus: Tween                    # the frame going to the middle (focus)
 var _hard := false
 var _launch_time := -1.0             # seconds since launch, -1 before it
 
@@ -667,11 +680,23 @@ func _init() -> void:
 
 
 # `width` wide at ASPECT, centred on `centre`, as Level3DSplash.place puts the
-# picture; rendered at the size it is drawn.
+# picture; rendered at the size focus makes it (FOCUS_ZOOM).
 func place(centre: Vector2, width: float) -> void:
 	size = Vector2(width, width / ASPECT)
 	position = centre - size * 0.5
-	viewport.size = Vector2i(size.round())
+	_rest = Rect2(position, size)
+	viewport.size = Vector2i((size * FOCUS_ZOOM).round())
+
+
+# The frame to `centre`, FOCUS_ZOOM times as big, over `seconds`, eased
+# both ends; reset_launch puts it back.
+func focus(centre: Vector2, seconds: float) -> void:
+	if _focus != null:
+		_focus.kill()
+	var to := _rest.size * FOCUS_ZOOM
+	_focus = create_tween().set_parallel().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_focus.tween_property(self, "size", to, seconds)
+	_focus.tween_property(self, "position", centre - to * 0.5, seconds)
 
 
 func _build() -> void:
@@ -1115,12 +1140,14 @@ func _process(delta: float) -> void:
 
 # Where the cursor points at the ground (or null, pointing over it), how fast
 # that point moves, and the gust: as hard as the cursor is fast across the
-# frame, dying down when it stops.
+# frame, dying down when it stops -- across the title, so that the frame
+# moving under a still cursor (focus) is not a gust.
 func _follow_mouse(delta: float) -> void:
 	var at := get_local_mouse_position() / size
 	var pixels := at * Vector2(viewport.size)
-	var speed := (pixels - _last_mouse).length() / maxf(delta, 1e-4)
-	_last_mouse = pixels
+	var on_title := get_global_mouse_position()
+	var speed := (on_title - _last_mouse).length() / maxf(delta, 1e-4)
+	_last_mouse = on_title
 	_gust = maxf(_gust * exp(-GUST_DECAY * delta), minf(speed / GUST_SPEED, 1.0))
 	var origin := camera.project_ray_origin(pixels)
 	var ray := camera.project_ray_normal(pixels)
@@ -1404,6 +1431,11 @@ func _silence_engines() -> void:
 # opened again, which lights them as its menu says (show_menu).
 func reset_launch() -> void:
 	_launch_time = -1.0
+	if _focus != null:
+		_focus.kill()
+		_focus = null
+	position = _rest.position
+	size = _rest.size
 	_silence_engines()
 	for rig in _rigs:
 		rig.on = false
