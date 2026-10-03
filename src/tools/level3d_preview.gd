@@ -219,6 +219,10 @@ const SEA_REACH := 5
 # shadow, and this is measured there: sand, palm leaves and the hangars'
 # roofs back at their colours from before, 245,151,0 now 255,149,0.
 const SUN_SHARE_COMPATIBILITY := 0.34
+# And what more ambient adds to a lit face there, in the same units: the sun's
+# share that gives up for each step of the shade above SHADE (_day_sun_energy),
+# measured as SUN_SHARE_COMPATIBILITY was, on a lit grey.
+const AMBIENT_ON_LIT_COMPATIBILITY := 1.5
 # The top camera sits this far above the ground, which is as low as it can go
 # over the tallest building; the shadow map only has to cover that depth.
 const TOP_CAMERA_HEIGHT := 20.0
@@ -246,6 +250,13 @@ const ZOOM_STEP := 1.15
 
 var camera: Camera3D
 var sun: DirectionalLight3D
+# The light preset (Level3DLighting): --light, or the settings' Light.
+var lighting := Level3DLighting.Preset.DAY
+var _fill: DirectionalLight3D
+var _environment: Environment
+var _water: ShaderMaterial
+# The preset's grade, over the stage and under the pixels and the HUD.
+var _grade: ColorRect
 # The players, one or two (Crew). `btr`, `gun` and `launcher` are the first's:
 # the mouse's and the --shot options', and the launcher whose craters the
 # ground shows (Level3DLauncher.marks).
@@ -792,48 +803,129 @@ static func _from_blender(v: Vector3) -> Vector3:
 
 
 func _add_environment() -> void:
-	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = (WORLD_COLOR * WORLD_STRENGTH).linear_to_srgb()
-	# The shadow side's light, and all of it: grey, since the sky's blue would
-	# be lost on the sand anyway, which has none to reflect.
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color.WHITE
-	env.ambient_light_energy = SHADE
-	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+	_environment = Environment.new()
+	# The shadow side's light, and all of it: grey by day, since the sky's
+	# blue would be lost on the sand anyway, which has none to reflect; its
+	# colour and strength are the light preset's (_apply_lighting).
+	_environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	_environment.background_mode = Environment.BG_COLOR
+	_environment.tonemap_mode = Environment.TONE_MAPPER_LINEAR
 	var world := WorldEnvironment.new()
-	world.environment = env
+	world.environment = _environment
 	add_child(world)
 
 
 func _add_lights() -> void:
 	sun = DirectionalLight3D.new()
 	add_child(sun)
-	var direction := _from_blender(SUN_DIRECTION_BLENDER).normalized()
-	sun.look_at_from_position(Vector3.ZERO, direction, Vector3.FORWARD)
-	# The two renderers disagree by about a factor of two, so the gain is
-	# measured rather than derived: sand at the start of the stage matched
-	# against the same frame rendered in Blender.
-	var gain := SUN_GAIN_COMPATIBILITY if _is_compatibility() else SUN_GAIN_FORWARD
-	# Measured with Lambert light, under which the sand took the sun times
-	# N.L, the sun's height; _toon's lit side takes all of it, so the same
-	# sand wants the sun that much weaker.
-	gain *= -SUN_DIRECTION_BLENDER.z
-	# At that gain a lit face takes about its own colour, which the ambient's
-	# SHADE is now part of, so the sun gives up that much.
-	gain *= SUN_SHARE_COMPATIBILITY if _is_compatibility() else 1.0 - SHADE
-	sun.light_energy = SUN_STRENGTH / PI * gain
 	sun.shadow_enabled = true
 	# A shadow's edge is a line, not a blur: no filtering, docs/cel-shading.md.
 	RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_HARD)
 	# Without the blur the map's texels show as steps along it; twice the
 	# default halves them.
 	RenderingServer.directional_shadow_atlas_set_size(8192, true)
+	# The fill (Level3DLighting): what stands up, lit on its shaded side.
+	_fill = DirectionalLight3D.new()
+	_fill.shadow_enabled = false
+	add_child(_fill)
+	_apply_lighting()
 
 	# No lamp. The Blender scene's default point light is still in it, and
 	# was rendered with here as a faint warm spot over the start area; but a
 	# point light falls off with distance, which is a gradient across the sand,
 	# and the two-tone light (_toon) is there to have none.
+
+
+# The sun's energy for white light under an ambient of `shade`: the day's,
+# SHADE, is what the HUD's icons keep whatever the preset (_render_icons).
+func _day_sun_energy(shade := SHADE) -> float:
+	# The two renderers disagree by about a factor of two, so the gain is
+	# measured rather than derived: sand at the start of the stage matched
+	# against the same frame rendered in Blender.
+	var gain := SUN_GAIN_COMPATIBILITY if _is_compatibility() else SUN_GAIN_FORWARD
+	# Measured with Lambert light, under which the sand took the sun times
+	# N.L, the sun's height; _toon's lit side takes all of it, so the same
+	# sand wants the sun that much weaker. The day's height, whatever the
+	# preset's: it is part of the calibration, and the lit side takes all of
+	# a lower sun too.
+	gain *= -SUN_DIRECTION_BLENDER.z
+	# At that gain a lit face takes about its own colour, which the ambient's
+	# SHADE is now part of, so the sun gives up that much -- and what a
+	# lighter shade adds to a lit face on top of that (AMBIENT_ON_LIT).
+	if _is_compatibility():
+		gain *= SUN_SHARE_COMPATIBILITY - AMBIENT_ON_LIT_COMPATIBILITY * (shade - SHADE)
+	else:
+		gain *= 1.0 - shade
+	return SUN_STRENGTH / PI * gain
+
+
+# The light preset (Level3DLighting) on the sun, the fill, the ambient, the
+# background, the water and the grade: at the start, and again whenever the
+# menu picks another. Every colour's energy is held to the day's
+# brightness on a grey (Level3DLighting.keep), times the exposure; a lighter
+# shade takes the sun down by as much as it adds to a lit face, so that a lit
+# grey stays where it was.
+func _apply_lighting() -> void:
+	var spec := Level3DLighting.spec(lighting)
+	if _grade != null:
+		var grade := _grade.material as ShaderMaterial
+		for key in ["shade_tint", "light_tint"]:
+			var tint: Color = spec[key]
+			grade.set_shader_parameter(key, Vector3(tint.r, tint.g, tint.b))
+		for key in ["shade_amount", "light_amount"]:
+			grade.set_shader_parameter(key, spec[key])
+		_grade.visible = spec["shade_amount"] > 0.0 or spec["light_amount"] > 0.0
+	if sun == null:
+		return
+	var exposure: float = spec["exposure"]
+	var shade: float = spec["shade"]
+	var direction := Level3DLighting.sun_direction(spec, SUN_DIRECTION_BLENDER)
+	sun.look_at_from_position(Vector3.ZERO, _from_blender(direction).normalized(), Vector3.FORWARD)
+	var sun_colour: Color = spec["sun"]
+	sun.light_color = sun_colour
+	var hold: float = spec["hold"]
+	sun.light_energy = _day_sun_energy(shade) * Level3DLighting.keep(sun_colour, Level3DLighting.GREY, hold) * exposure
+
+	var fill_direction := Level3DLighting.fill_direction(SUN_DIRECTION_BLENDER)
+	var up := Vector3.UP if absf(fill_direction.z) < 0.99 else Vector3.FORWARD
+	_fill.look_at_from_position(Vector3.ZERO, _from_blender(fill_direction).normalized(), up)
+	_fill.light_color = spec["fill_colour"]
+	_fill.light_energy = _day_sun_energy() * float(spec["fill"]) * exposure
+	_fill.visible = float(spec["fill"]) > 0.0
+
+	var ambient: Color = spec["ambient"]
+	_environment.ambient_light_color = ambient
+	_environment.ambient_light_energy = shade * Level3DLighting.keep(ambient, Level3DLighting.GREY, hold) * exposure
+	var background = spec["background"]
+	if background == null:
+		background = (WORLD_COLOR * WORLD_STRENGTH).linear_to_srgb()
+	_environment.background_color = background
+
+	if _water == null:
+		return
+	# The sun _add_lights weakened for the two-tone light, given back to the
+	# water, which is still lit smoothly (Burley, as Godot's own diffuse): all
+	# of it under Forward+, where the water is as bright as it was at 1 / N.L;
+	# Compatibility's, measured the same way, needs less. And what SHADE took
+	# of the sun on top of that. The ambient the water takes is not SHADE's
+	# grey but the Blender world it was calibrated under, which the shader adds
+	# for itself.
+	var water_gain := 1.0 / -SUN_DIRECTION_BLENDER.z / (1.0 - SHADE)
+	if _is_compatibility():
+		water_gain = WATER_GAIN_COMPATIBILITY
+	# Lambert, so a lower sun lights it less: given back, and what a lighter
+	# shade took off the sun. Its colour is not: under a warm sun the sea
+	# darkens (Level3DLighting).
+	water_gain *= -SUN_DIRECTION_BLENDER.z / -direction.z
+	water_gain *= _day_sun_energy() / _day_sun_energy(shade)
+	_water.set_shader_parameter("sun_gain", water_gain)
+	var sky = spec["sky"]
+	if sky == null:
+		sky = Vector3(WORLD_COLOR.r, WORLD_COLOR.g, WORLD_COLOR.b) * WORLD_STRENGTH
+	_water.set_shader_parameter("sky", sky)
+	# Its shadows lifted as the land's are, or they are black: the sun is all
+	# the light the water has.
+	_water.set_shader_parameter("shade", shade)
 
 
 func _replace_ocean(level: Node) -> void:
@@ -843,22 +935,9 @@ func _replace_ocean(level: Node) -> void:
 		return
 	var water := ShaderMaterial.new()
 	water.shader = OCEAN_SHADER
-	# The sun _add_lights weakened for the two-tone light, given back to the
-	# water, which is still lit smoothly (Burley, as Godot's own diffuse): all
-	# of it under Forward+, where the water is as bright as it was at 1 / N.L;
-	# Compatibility's, measured the same way, needs less. And what SHADE took
-	# of the sun on top of that. The ambient the water takes is not SHADE's
-	# grey but the Blender world it was calibrated under, which the shader adds
-	# for itself.
-	if _is_compatibility():
-		water.set_shader_parameter("sun_gain", WATER_GAIN_COMPATIBILITY)
-	else:
-		water.set_shader_parameter("sun_gain", 1.0 / -SUN_DIRECTION_BLENDER.z / (1.0 - SHADE))
-	water.set_shader_parameter("sky", Vector3(WORLD_COLOR.r, WORLD_COLOR.g, WORLD_COLOR.b)
-			* WORLD_STRENGTH)
-	# Its shadows lifted as the land's are, or they are black: the sun is all
-	# the light the water has.
-	water.set_shader_parameter("shade", SHADE)
+	# Its light, the sun's gain and the sky, is the light preset's
+	# (_apply_lighting), set when the sun is made.
+	_water = water
 	ocean.material_override = water
 	# The water is drawn in the transparent pass, because it reads the screen;
 	# it casts nothing either way.
@@ -2196,7 +2275,7 @@ func _render_icons() -> void:
 	if _icons == null:
 		_icons = Level3DIcons.new()
 		add_child(_icons)
-	_icons.sun_energy = sun.light_energy
+	_icons.sun_energy = _day_sun_energy()
 	_icons.shade = SHADE
 	_icon_pixels = crews[0].hud.icon_pixels()
 	_icon_run += 1
@@ -2493,16 +2572,19 @@ func _flash_modes() -> void:
 		_show_state())
 
 
-# The Escape menu, and under it the look it picks: two rects over the whole
-# frame, each drawing it again through level3d_screen.gdshader -- the pixels,
-# then the HUD, then the CRT's glass over all of it. The HUD is over the pixels
+# The Escape menu, and under it the look it picks: rects over the whole
+# frame, each drawing it again through level3d_screen.gdshader -- the light
+# preset's grade, the pixels, then the HUD, then the CRT's glass over all of
+# it. The grade is the stage's, so under the HUD. The HUD is over the pixels
 # because they would make it unreadable, and under the glass because it is on
 # the screen.
+const GRADE_LAYER := 49
 const PIXELS_LAYER := 50
 const HUD_LAYER := 51
 const CRT_LAYER := 52
 
 func _make_menu() -> void:
+	_grade = _screen_pass(GRADE_LAYER, 3)
 	_pixels = _screen_pass(PIXELS_LAYER, 2)
 	_crt = _screen_pass(CRT_LAYER, 1)
 	_menu = Level3DMenu.new()
@@ -2623,6 +2705,10 @@ func _apply_settings() -> void:
 		c.launcher.rate = settings.launcher_rate
 	_apply_resolution()
 	_pixels.visible = settings.look == Level3DSettings.Look.PIXELS
+	# --light over the setting, for a --shot, which reads no settings.
+	var light_flag := OS.get_cmdline_user_args().find("--light")
+	lighting = Level3DLighting.from_name(OS.get_cmdline_user_args()[light_flag + 1]) 			if light_flag >= 0 else settings.light as Level3DLighting.Preset
+	_apply_lighting()
 	_crt.visible = settings.crt
 	if friends != null:
 		friends.calls = settings.hud and settings.hud_help
@@ -3432,7 +3518,7 @@ func _screenshot_mode() -> void:
 			if crews[0].respawning == 0:
 				_explode_btr(crews[0], "--die"))
 		args = args.slice(0, die) + args.slice(die + 2)
-	for flag in ["--level", "--file", "--players"]:
+	for flag in ["--level", "--file", "--players", "--light"]:
 		var at := args.find(flag)
 		if at >= 0:
 			args = args.slice(0, at) + args.slice(at + 2)  # read in _ready

@@ -51,6 +51,9 @@ var camera := Camera.TILTED
 var look := Look.MODERN
 # The CRT monitor, over either look.
 var crt := false
+# The stage's light (Level3DLighting.Preset), the one a run's sunrise ends
+# in: the day, Blender's, or the title's low sun.
+var light := Level3DLighting.Preset.DAY as int
 var resolution := Resolution.NATIVE
 var driving := Driving.CLASSIC
 var firing := Firing.CLASSIC
@@ -188,6 +191,7 @@ func load_saved() -> void:
 	hard = config.get_value("game", "hard", hard)
 	camera = clampi(config.get_value("graphics", "camera", camera), 0, Camera.size() - 1)
 	resolution = clampi(config.get_value("graphics", "resolution", resolution), 0, Resolution.size() - 1)
+	light = clampi(config.get_value("graphics", "light", light), 0, Level3DLighting.NAMES.size() - 1)
 	if config.has_section_key("graphics", "render"):
 		look = clampi(config.get_value("graphics", "render", look), 0, Look.size() - 1)
 		crt = config.get_value("graphics", "crt", crt)
@@ -257,6 +261,7 @@ func save() -> void:
 	config.set_value("graphics", "render", look)
 	config.set_value("graphics", "resolution", resolution)
 	config.set_value("graphics", "crt", crt)
+	config.set_value("graphics", "light", light)
 	config.set_value("controls", "driving", driving)
 	config.set_value("controls", "firing", firing)
 	config.set_value("controls", "reach", reach)
