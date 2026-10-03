@@ -600,8 +600,10 @@ or `--light day|golden|dusk|sunrise`, which a --shot takes too). The time of
 day does not change in a stage: the title's sun rises instead, once a game is
 picked (`Level3DSplash3D`, `RISE_*`: the disc out of the horizon, the sky
 and the ground lit -- the ground by a glow of its own, since a sun light
-raised with the disc turned the rolling ground's facets lit one by one), and
-the title fades on it into the day.
+raised with the disc turned the rolling ground's facets lit one by one, and
+the sun taken off the ground as it rises), and the title fades on it into the
+day. Over the Chinook the camera follows the jeeps in as they go
+(`Level3DSplashLanding`, `CHASE_*`), so that the frame is not half empty ground.
 So that the risen disc is not cut off, the splash is rendered the whole screen
 big (`SCREEN`, the camera as wide as the focused frame's `FOCUS_ZOOM` needs):
 the title shows the middle of it, exactly the old frame (`_region`), and the

@@ -180,9 +180,14 @@ const SINK := 0.187              # SKY_SHADER's, the sun half set
 const RISEN_SINK := -0.12
 const RISEN_AMBIENT := 0.42
 # And the ground lighter under it, a warm brown, all of it at once: its paint
-# lighter, and a glow of its own, which no facet's slope turns on or off.
+# lighter, and a glow of its own, which no facet's slope turns on or off --
+# and the sun going off it as the glow comes, since the camera follows the
+# jeeps in over it (Level3DSplashLanding, CHASE_*) and the facets the sun just
+# under the horizon catches were angular patches of light all over the
+# ground near to.
 const RISEN_GROUND := Color(0.36, 0.16, 0.08)
 const RISEN_GLOW := Color(0.16, 0.075, 0.035)
+const GROUND_SUN_OFF := 0.35   # of the rise, the sun off the ground by then
 
 # Dark, so that the faces the low sun catches are a glint and not a stripe.
 const GROUND_COLOUR := Color(0.085, 0.036, 0.028)
@@ -200,6 +205,9 @@ uniform float rim = 0.9;
 uniform float rim_tint = 0.35;
 // What it gives off itself: the lamps, when they are on.
 uniform vec3 glow : source_color = vec3(0.0);
+// How much of the sun it takes: all of it, but for the ground as the sun
+// rises (Level3DSplash3D._show_rise).
+uniform float sun = 1.0;
 void fragment() {
 	// The paint's lightness only, not its colour: the splash is drawn in
 	// the dark and the sun's colours, and whatever light falls on a face --
@@ -213,6 +221,7 @@ void light() {
 	// the lamps' -- is cut in bands too, full, half and none, so that the
 	// pool it lights has edges; the sun's is 1 everywhere.
 	float reach = ATTENUATION > 0.55 ? 1.0 : (ATTENUATION > 0.12 ? 0.5 : 0.0);
+	reach *= LIGHT_IS_DIRECTIONAL ? sun : 1.0;
 	DIFFUSE_LIGHT += step(0.0, dot(NORMAL, LIGHT)) * reach * LIGHT_COLOR / PI;
 	// The rim: seen edge on, with the light behind.
 	float edge_on = step(1.0 - rim_width, 1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0));
@@ -1593,3 +1602,5 @@ func _show_rise() -> void:
 	if _ground_paint != null:
 		_ground_paint.set_shader_parameter("albedo", GROUND_COLOUR.lerp(RISEN_GROUND, t))
 		_ground_paint.set_shader_parameter("glow", Color.BLACK.lerp(RISEN_GLOW, t))
+		# Off sooner than the rest comes up: gone before the camera is near.
+		_ground_paint.set_shader_parameter("sun", 1.0 - smoothstep(0.0, GROUND_SUN_OFF, _rise))

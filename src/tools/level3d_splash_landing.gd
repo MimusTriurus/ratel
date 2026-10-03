@@ -126,6 +126,19 @@ const LIFT_SHOWN := 1.2
 # goes up, MUFFLED as loud, coming down to that over MUFFLE_TIME.
 const MUFFLED := 0.35
 const MUFFLE_TIME := 0.8
+# The camera after the jeeps once they set off: the sun rising as they go
+# (Level3DSplash3D, RISE_*) and the frame open to the screen's foot, the
+# ground between the camera and them was a wide empty floor under it all. So
+# it follows them in, CHASE_BEHIND metres behind the middle of those on their
+# way, forward only -- their U-turn brings them back towards it, and it holds
+# rather than backs off -- and no nearer the Chinook than CHASE_NEAREST, where
+# it stands whole in the frame, rotors and all, as it lifts off; up by
+# CHASE_RISE as it goes, so that the jeeps ahead do not hide it. It lags them
+# by CHASE_LAG seconds or so, so that it sets off and stops gently.
+const CHASE_BEHIND := 13.0
+const CHASE_NEAREST := 26.0
+const CHASE_RISE := 0.8
+const CHASE_LAG := 0.9
 
 var _chinook: Node3D
 var _rotors: AnimationPlayer
@@ -138,6 +151,7 @@ var _rate := 1.0             # how fast _flight goes
 var _hurry := 0.0            # 0 to 1, the way from 1 to ARRIVE_HURRY
 var _lean := Vector2.ZERO    # its pitch and roll now, coming round (LEAN_TIME)
 var _wash := 0.0             # clouds of wash owed
+var _chase_to := CAMERA_AT.z  # where the camera is headed (CHASE_*), forward only
 var _ramp_state := ""        # "", "opening", "open", "closing", "shut"
 var _ramp_open_at := 0.0
 var _launched := false
@@ -425,6 +439,9 @@ func game_ready() -> void:
 # again, and the jeeps where they stood.
 func reset_launch() -> void:
 	super()
+	_chase_to = CAMERA_AT.z
+	camera.position = CAMERA_AT
+	_haze_mesh.position.z = CAMERA_AT.z - HAZE_DISTANCE
 	_clock = 0.0
 	_flight = 0.0
 	_rate = 1.0
@@ -473,6 +490,26 @@ func _process(delta: float) -> void:
 	_raise_wash(delta)
 	_play_sound()
 	super(delta)
+	_chase(delta)
+
+
+# The camera after the jeeps on their way (CHASE_*), and the haze's sheet of
+# warm air with it, HAZE_DISTANCE ahead: left where it stood, the camera came
+# up to it, and it was a ripple across the whole frame.
+func _chase(delta: float) -> void:
+	var sum := 0.0
+	var going := 0
+	for rig in _rigs:
+		if rig.going:
+			sum += (rig.jeep as Node3D).position.z
+			going += 1
+	var nearest := LANDING.z + CHASE_NEAREST
+	if going > 0:
+		_chase_to = minf(_chase_to, clampf(sum / going + CHASE_BEHIND, nearest, CAMERA_AT.z))
+	var z := lerpf(_chase_to, camera.position.z, exp(-delta / CHASE_LAG))
+	var way := inverse_lerp(CAMERA_AT.z, nearest, z)
+	camera.position = Vector3(CAMERA_AT.x, CAMERA_AT.y + CHASE_RISE * smoothstep(0.0, 1.0, way), z)
+	_haze_mesh.position.z = z - HAZE_DISTANCE
 
 
 # Shut in, its engine dying away is heard through the hull (MUFFLED).
