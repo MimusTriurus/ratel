@@ -1,5 +1,5 @@
 # The 3D preview's title screen, the 2D game's (IntroMode's title and its
-# Menu) over the stage: the same title art out of large-5, the jeep sliding
+# Menu) over the stage: the splash where the title art was, the jeep sliding
 # between the entries as Menu's icon does, the same layout in the 1024x960
 # frame centred in the 2048x1152 one. Its entries are the preview's own: a
 # game for one player or two (the 2D game's "1 player" / "2 players"), the
@@ -21,11 +21,13 @@ extends CanvasLayer
 
 enum Entry { ONE_PLAYER, TWO_PLAYERS, DIFFICULTY, SETTINGS, QUIT }
 
-# Where IntroMode draws them in its 1024x960 frame (title at 128,192, Menu at
+# Where IntroMode draws them in its 1024x960 frame (title at 128,192, 25x8
+# tiles of 32 px, Menu at
 # 416,608, an entry each 64 px, the icon 72 px to the left of the text and
 # 16 px down), and where that frame is in the 2048x1152 one.
 const FRAME := Vector2(512, 96)
 const TITLE_AT := Vector2(128, 192)
+const TITLE_SIZE := Vector2(800, 256)
 const MENU_AT := Vector2(416, 608)
 const ROW := 64
 const ICON_X := -72
@@ -49,22 +51,30 @@ var _selected := 0
 var _icon_y := 16.0
 var _from_y := 16.0
 var _moving := 1.0           # 0 to 1 of the icon's way, 1 when it stands
-var _title_tiles: Array[Spr] = []
-var _title_map: Array = []   # [y] -> PackedInt32Array of tile indices
 var _jeep: Spr
-var _art: Control            # the title and the jeep, nearest
+var _art: Control            # the jeep, nearest
 var _text: Control           # the entries, in the font's filter
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
-	_load_title()
 	_jeep = SpriteBank.new(Main.SPRITES).get_sprite("player-green-0.png")
 	var black := ColorRect.new()
 	black.color = Color.BLACK
 	black.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(black)
+	# In place of the title art (level3d_splash.gd): as wide as it, in the
+	# picture's own proportions rather than its, centred on where it was.
+	# --splash-3d puts the scene there instead, a prototype
+	# (level3d_splash3d.gd).
+	var splash: Control
+	if OS.get_cmdline_user_args().has("--splash-3d"):
+		splash = Level3DSplash3D.new()
+	else:
+		splash = Level3DSplash.new()
+	splash.place(FRAME + TITLE_AT + TITLE_SIZE * 0.5, TITLE_SIZE.x)
+	add_child(splash)
 	_art = Control.new()
 	_art.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -90,27 +100,6 @@ func open() -> void:
 
 func close() -> void:
 	visible = false
-
-
-# The title as Main.load_large_image reads it: title.dat's grid of tiles,
-# each named title-NNN.png in large-5's sheet.
-func _load_title() -> void:
-	var f := Main._open(Main.IMAGES + "title.dat")
-	if f == null:
-		return
-	var width := Main._s16(f)
-	var height := Main._s16(f)
-	var tile_count := Main._s16(f)
-	for y in height:
-		var row := PackedInt32Array()
-		row.resize(width)
-		for x in width:
-			row[x] = Main._s16(f)
-		_title_map.append(row)
-	f.close()
-	var atlas := Atlas.new(Main.IMAGES + "large-5.png", Main.IMAGES + "large-5.xml")
-	for i in tile_count:
-		_title_tiles.append(atlas.get_sprite("title-%03d.png" % i))
 
 
 func _entries() -> Array[String]:
@@ -219,13 +208,6 @@ func _entry_at() -> int:
 
 
 func _draw_art() -> void:
-	var at := FRAME + TITLE_AT
-	for y in _title_map.size():
-		var row: PackedInt32Array = _title_map[y]
-		for x in row.size():
-			var sp: Spr = _title_tiles[row[x]]
-			if sp != null:
-				_art.draw_texture_rect_region(sp.tex, Rect2(at + Vector2(x << 5, y << 5), Vector2(sp.w, sp.h)), sp.region)
 	if _jeep != null:
 		var centre := FRAME + MENU_AT + Vector2(ICON_X, _icon_y)
 		_art.draw_texture_rect_region(_jeep.tex, Rect2(centre - Vector2(_jeep.w, _jeep.h) * 0.5,
