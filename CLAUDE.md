@@ -575,7 +575,8 @@ The 3D preview opens on a title screen, `Level3DTitle`
 (`src/tools/level3d_title.gd`): the 2D game's title art and jeep cursor,
 laid out as `IntroMode` lays them out, with 1 player, 2 players, the
 difficulty, the settings and quit, in the HUD's font, over the stage with
-the tree paused. A game picked there starts the run from the Chinook with the
+the tree paused. Over the sun is the game's name, RATEL SQUAD
+(`Level3DLogo`), in the settings' font: Black Ops One in the sun's colours, or Press Start 2P in bands. A game picked there starts the run from the Chinook with the
 start jingle; the Escape menu's "Main menu" goes back to it. Hard is the
 stage's hard trigger list, as `GameMode.set_stage` picks it
 (`Level3DMap.hard`, `Level3DMap.triggers()`, saved as `Level3DSettings.hard`):

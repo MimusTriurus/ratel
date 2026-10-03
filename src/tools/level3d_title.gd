@@ -34,6 +34,10 @@ const MODE_NAMES := ["8-bit", "modern", "custom"]
 const FRAME := Vector2(512, 96)
 const TITLE_AT := Vector2(128, 192)
 const TITLE_SIZE := Vector2(800, 256)
+# The splash and the name over it (Level3DLogo) SCENE_DROP px lower than the
+# title art stood: with the name above it, the two were crowded up to the
+# top of the screen and left a wide gap over the menu.
+const SCENE_DROP := 48.0
 const MENU_AT := Vector2(416, 608)
 const ROW := 64
 const ICON_X := -72
@@ -67,6 +71,12 @@ const MENU_HIDE := 0.4
 # art was, it hung over an empty half screen.
 const MENU_FOCUS := 1.4
 const SCREEN_MIDDLE := Vector2(1024, 576)
+# The game's name over the sun (Level3DLogo), coming up over LOGO_IN seconds
+# LOGO_AFTER after the title opens -- once Level3DSplashLanding's Chinook
+# has come in over the camera, so that the two do not arrive at once -- and
+# going with the menu.
+const LOGO_AFTER := 1.6
+const LOGO_IN := 1.2
 
 var settings: Level3DSettings
 # `start.call(players)`: a game for one player or two, at settings.hard.
@@ -91,6 +101,8 @@ var _menu_hide: Tween        # the entries and the reticle fading out (_hide_men
 var _game_ready := false     # the stage under the title is built (game_ready)
 var _reticle: Level3DReticle
 var _text: Control           # the entries, in the font's filter
+var _logo: Level3DLogo
+var _logo_in: Tween          # the name coming up (LOGO_AFTER)
 
 
 func _ready() -> void:
@@ -112,9 +124,12 @@ func _ready() -> void:
 		splash = Level3DSplash3D.new()
 	else:
 		splash = Level3DSplash.new()
-	splash.place(FRAME + TITLE_AT + TITLE_SIZE * 0.5, TITLE_SIZE.x)
+	splash.place(FRAME + TITLE_AT + TITLE_SIZE * 0.5 + Vector2(0.0, SCENE_DROP), TITLE_SIZE.x)
 	add_child(splash)
 	_splash = splash
+	_logo = Level3DLogo.new()
+	_logo.drop = SCENE_DROP
+	add_child(_logo)
 	_text = Control.new()
 	_text.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -147,6 +162,12 @@ func open() -> void:
 		_menu_hide = null
 	_text.modulate.a = 1.0
 	_reticle.modulate.a = 1.0
+	if _logo_in != null:
+		_logo_in.kill()
+	_logo.modulate.a = 0.0
+	_logo_in = create_tween()
+	_logo_in.tween_interval(LOGO_AFTER)
+	_logo_in.tween_property(_logo, "modulate:a", 1.0, LOGO_IN)
 	if _splash != null and _splash.has_method("reset_launch"):
 		_splash.reset_launch()
 	_reticle.park()
@@ -264,8 +285,8 @@ func _pick() -> void:
 			get_tree().quit()
 
 
-# The entries and the reticle out of the way of the launch (MENU_HIDE), and
-# the splash to the middle (MENU_FOCUS).
+# The entries, the reticle and the name out of the way of the launch
+# (MENU_HIDE), and the splash to the middle (MENU_FOCUS).
 func _hide_menu() -> void:
 	if _menu_hide != null:
 		_menu_hide.kill()
@@ -273,6 +294,9 @@ func _hide_menu() -> void:
 	_menu_hide.tween_interval(MENU_HIDE_AFTER)
 	_menu_hide.tween_property(_text, "modulate:a", 0.0, MENU_HIDE)
 	_menu_hide.parallel().tween_property(_reticle, "modulate:a", 0.0, MENU_HIDE)
+	if _logo_in != null:
+		_logo_in.kill()
+	_menu_hide.parallel().tween_property(_logo, "modulate:a", 0.0, MENU_HIDE)
 	if _splash != null and _splash.has_method("focus"):
 		_splash.focus(SCREEN_MIDDLE, MENU_FOCUS)
 
@@ -328,6 +352,7 @@ func _toggle_difficulty() -> void:
 func _redraw() -> void:
 	_text.queue_redraw()
 	_text.texture_filter = Level3DFont.filter()
+	_logo.restyle()
 
 
 func _input(event: InputEvent) -> void:
