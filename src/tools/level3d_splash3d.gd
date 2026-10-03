@@ -216,13 +216,49 @@ const SPOT_DIP := 7.0          # degrees below level
 # dark and the sun's.
 const GROUND_LAYER := 2
 # The engine: the hull shakes on its wheels, ENGINE_IDLE metres at a tick-
-# over and ENGINE_RUN when the jeep's lamps are on; gunned, its nose kicks up
-# ENGINE_KICK rad/s on a spring (ENGINE_SPRING: stiffness, damping) and
-# settles.
+# over and ENGINE_RUN when the jeep's lamps are on, and not at all with the
+# engine off; gunned, its nose kicks up ENGINE_KICK rad/s on a spring
+# (ENGINE_SPRING: stiffness, damping) and settles -- the kick given over
+# about KICK_TIME seconds (_kick), since all at once the nose jumped in a
+# frame -- and CATCH_KICK of that as it catches.
 const ENGINE_IDLE := 0.004
 const ENGINE_RUN := 0.009
 const ENGINE_KICK := 0.9
+const KICK_TIME := 0.12
+const CATCH_KICK := 0.5
 const ENGINE_SPRING := Vector2(120.0, 9.0)
+# And heard. A jeep the menu lights is started (ENGINE_START, from
+# START_FROM, the silence before the key cut), catches START_CATCH seconds
+# into the file -- its nose kicks then, not at the pick -- and runs on into
+# the idle loop (ENGINE_LOOP) from IDLE_AT, where the start has come down to
+# it, crossfaded over IDLE_IN. Put out, it runs on ENGINE_LINGER seconds, so
+# that running down the menu is not a starter and a fade at every entry,
+# and then dies away, its sound faded out over ENGINE_FADE and its shake
+# with it. Lit again inside CATCH_AGAIN of that it picks up again with no
+# starter, and put out before it has caught the starter just gives up,
+# over STOP_IN. On the move the idle is
+# pitched up with the speed, to REV_PITCH at REV_SPEED m/s, and gunned it
+# revs, REV_BLIP up and down over REV_TIME. All at ENGINE_VOLUME, which is
+# as loud as ENGINE_NEAR m off -- where the jeeps stand (JEEPS) -- louder
+# nearer, up to ENGINE_LOUDEST, and flat, as the Chinook's rotor is
+# (Level3DSplashLanding). Times in the files are from their own start.
+const ENGINE_START := "jeep_start"
+const ENGINE_LOOP := "jeep_idle"
+const START_FROM := 0.12
+const START_CATCH := 0.5
+const IDLE_AT := 2.0
+const IDLE_IN := 0.6
+const STOP_IN := 0.2
+const ENGINE_LINGER := 1.5
+const CATCH_AGAIN := 1.0
+const ENGINE_FADE := 1.5
+const REV_PITCH := 1.5
+const REV_SPEED := 16.0
+const REV_BLIP := 0.25
+const REV_TIME := 0.5
+const ENGINE_VOLUME := 0.35
+const ENGINE_NEAR := 21.0
+const ENGINE_LOUDEST := 2.5
 # The turrets: degrees out from the camera on normal, turning at TURRET_RATE
 # degrees a second.
 const TURRET_OUT := 40.0
@@ -564,6 +600,51 @@ var _gust := 0.0
 var _last_mouse := Vector2.ZERO
 var _mouse_ground = null     # Vector3 or null
 var _mouse_velocity := Vector3.ZERO
+
+
+# One of a jeep's engine's two players (ENGINE_*): its level, 0 to 1,
+# going to `goal` at `rate` a second, and stopped once it is out.
+class Voice:
+	var sound: String
+	var player := AudioStreamPlayer.new()
+	var level := 0.0
+	var goal := 0.0
+	var rate := 0.0
+
+	func _init(name: String, owner: Node) -> void:
+		sound = name
+		owner.add_child(player)
+
+	# From `from` seconds into the file, coming up over `seconds`. The
+	# stream is asked again each time, since the sound mode can change.
+	func begin(from := 0.0, seconds := 0.0) -> void:
+		var stream := Level3DAudio.stream(sound)
+		player.stop()
+		player.stream = stream
+		player.bus = Level3DAudio.bus(sound)
+		level = 0.0 if seconds > 0.0 else 1.0
+		fade(1.0, seconds)
+		if stream != null and player.is_inside_tree():
+			player.play(from)
+
+	func fade(to: float, seconds: float) -> void:
+		goal = to
+		rate = absf(to - level) / seconds if seconds > 0.0 else INF
+		if is_inf(rate):
+			level = to
+
+	func step(delta: float, gain: float) -> void:
+		level = move_toward(level, goal, rate * delta)
+		if level <= 0.0 and goal <= 0.0:
+			if player.playing:
+				player.stop()
+			return
+		player.volume_db = Level3DAudio.volume_db(sound) + linear_to_db(maxf(level * gain, 0.0001))
+
+	func silence() -> void:
+		player.stop()
+		level = 0.0
+		goal = 0.0
 
 
 func _init() -> void:
@@ -969,6 +1050,7 @@ func _haze() -> MeshInstance3D:
 
 func _process(delta: float) -> void:
 	if not is_visible_in_tree():
+		_silence_engines()
 		return
 	_time += delta
 	_follow_mouse(delta)
@@ -1064,9 +1146,13 @@ func show_menu(lit: int, hard: bool) -> void:
 		var rig: Dictionary = _rigs[i]
 		var on := i < lit
 		if on and not rig.on:
-			# Gunned: the nose kicks up.
-			rig.pitch_speed -= ENGINE_KICK
 			rig.flicker = 0.0
+			if _engine_on(rig):
+				# Gunned: the nose kicks up.
+				_kick(rig, ENGINE_KICK)
+				rig.rev = 1.0
+		elif rig.on and not on:
+			_engine_off(rig)
 		rig.on = on
 	_hard = hard
 
@@ -1080,10 +1166,15 @@ func _rig(jeep: Node3D, side: float) -> Dictionary:
 		"jeep": jeep, "jeep_rest": jeep.transform,
 		"hull": hull, "rest": hull.transform, "turret": turret, "turret_rest": turret.transform,
 		"side": side, "yaw": 0.0, "on": false, "level": 0.0, "flicker": 1.0,
-		"pitch": 0.0, "pitch_speed": 0.0, "phase": side * 1.7,
+		"pitch": 0.0, "pitch_speed": 0.0, "push": 0.0, "phase": side * 1.7,
 		"lamp": null, "flares": [], "spots": [],
 		"wheels": [], "wheel_rests": [], "rear": [],
-		"going": false, "run": 0.0, "dust_run": 0.0,
+		"going": false, "run": 0.0, "dust_run": 0.0, "speed": 0.0,
+		# Its engine (ENGINE_*): "off", "starting", "running" or "stopping",
+		# seconds in that, whether a start has caught, the seconds it runs on
+		# for once put out, the rev's 0 to 1 and how hard it shakes, 0 to 1.
+		"engine": "off", "engine_time": 0.0, "caught": false, "linger": INF, "rev": 0.0, "turning": 0.0,
+		"start": Voice.new(ENGINE_START, self), "idle": Voice.new(ENGINE_LOOP, self),
 	}
 	for name in WHEELS:
 		var wheel := jeep.find_child(name, true, false) as Node3D
@@ -1150,14 +1241,19 @@ func _drive_rigs(delta: float) -> void:
 		# The engine: the nose's spring, and the shake.
 		var pitch: float = rig.pitch
 		var speed: float = rig.pitch_speed
+		# The kicks still owed (_kick), a share of them a frame.
+		var give: float = float(rig.push) * minf(delta / KICK_TIME, 1.0)
+		speed -= give
+		rig.push -= give
 		# Squatting on its tail while it pulls away.
 		var squat := LAUNCH_SQUAT if rig.going and _launch_time > LAUNCH_REV else 0.0
 		speed += (-ENGINE_SPRING.x * (pitch - squat) - ENGINE_SPRING.y * speed) * delta
 		pitch += speed * delta
 		rig.pitch = pitch
 		rig.pitch_speed = speed
-		var shake := lerpf(ENGINE_IDLE, ENGINE_RUN, level) * sin(_time * 52.0 + float(rig.phase)) \
-				+ lerpf(ENGINE_IDLE, ENGINE_RUN, level) * 0.5 * sin(_time * 31.0 + float(rig.phase) * 2.3)
+		_drive_engine(rig, delta)
+		var shake := lerpf(ENGINE_IDLE, ENGINE_RUN, level) * float(rig.turning) \
+				* (sin(_time * 52.0 + float(rig.phase)) + 0.5 * sin(_time * 31.0 + float(rig.phase) * 2.3))
 		var rest: Transform3D = rig.rest
 		(rig.hull as Node3D).transform = Transform3D(Basis(Vector3.RIGHT, pitch) * rest.basis,
 				rest.origin + Vector3.UP * shake)
@@ -1182,21 +1278,139 @@ func launch(count: int) -> float:
 		var rig: Dictionary = _rigs[i]
 		if i < count:
 			if not rig.on:
-				rig.pitch_speed -= ENGINE_KICK
 				rig.flicker = 0.0
 			rig.on = true
+			_engine_on(rig)
 			rig.going = true
 			# Gunned again as it goes.
-			rig.pitch_speed -= ENGINE_KICK * 0.6
+			_kick(rig, ENGINE_KICK * 0.6)
+			rig.rev = 1.0
 	return LAUNCH_HOLD
 
 
-# Back where they stood, dark, and their dust gone: the title opened again.
+# The engine lit (show_menu, launch): started, or kept running, or picked up
+# again as it dies away (ENGINE_*). True when it was running already, to be
+# gunned.
+func _engine_on(rig: Dictionary) -> bool:
+	rig.linger = INF
+	match rig.engine:
+		"running":
+			return true
+		"stopping":
+			var idle := rig.idle as Voice
+			if float(rig.engine_time) < CATCH_AGAIN:
+				# Still turning: it catches again by itself, the idle coming back
+				# from where it was, or in, if it went from the start.
+				(rig.start as Voice).fade(0.0, STOP_IN)
+				if idle.player.playing:
+					idle.fade(1.0, STOP_IN)
+				else:
+					idle.begin(0.0, STOP_IN)
+				rig.engine = "running"
+				rig.engine_time = 0.0
+				_kick(rig, ENGINE_KICK)
+				rig.rev = 1.0
+			else:
+				_crank(rig)
+		"off":
+			_crank(rig)
+	return false
+
+
+# The nose kicked up by `amount` rad/s, given over about KICK_TIME.
+func _kick(rig: Dictionary, amount: float) -> void:
+	rig.push += amount
+
+
+func _crank(rig: Dictionary) -> void:
+	(rig.start as Voice).begin(START_FROM)
+	rig.engine = "starting"
+	rig.engine_time = 0.0
+	rig.caught = false
+
+
+# The engine put out: after ENGINE_LINGER, or `at_once`.
+func _engine_off(rig: Dictionary, at_once := false) -> void:
+	if not at_once:
+		rig.linger = ENGINE_LINGER
+		return
+	rig.linger = INF
+	if rig.engine == "starting" and not rig.caught:
+		# The starter gives up.
+		(rig.start as Voice).fade(0.0, STOP_IN)
+		rig.engine = "off"
+		return
+	if rig.engine in ["starting", "running"]:
+		(rig.start as Voice).fade(0.0, ENGINE_FADE)
+		(rig.idle as Voice).fade(0.0, ENGINE_FADE)
+		rig.engine = "stopping"
+		rig.engine_time = 0.0
+
+
+# A frame of the engine: the start into the idle, the fade dying away, the
+# rev, the shake, and the players' levels, the idle's pitch with the speed.
+func _drive_engine(rig: Dictionary, delta: float) -> void:
+	rig.engine_time += delta
+	if is_finite(float(rig.linger)):
+		rig.linger -= delta
+		if rig.linger <= 0.0:
+			_engine_off(rig, true)
+	var at := START_FROM + float(rig.engine_time)
+	var turning := 0.0
+	match rig.engine:
+		"starting":
+			if not rig.caught and at >= START_CATCH:
+				rig.caught = true
+				_kick(rig, ENGINE_KICK * CATCH_KICK)
+			if at >= IDLE_AT:
+				(rig.start as Voice).fade(0.0, IDLE_IN)
+				(rig.idle as Voice).begin(0.0, IDLE_IN)
+				rig.engine = "running"
+			turning = 1.0 if rig.caught else 0.0
+		"running":
+			turning = 1.0
+		"stopping":
+			turning = clampf(1.0 - float(rig.engine_time) / ENGINE_FADE, 0.0, 1.0)
+			if float(rig.engine_time) >= ENGINE_FADE:
+				rig.engine = "off"
+	rig.turning = move_toward(float(rig.turning), turning, delta / 0.2)
+	rig.rev = move_toward(float(rig.rev), 0.0, delta / REV_TIME)
+	var gain := ENGINE_VOLUME * _engine_gain(rig, delta)
+	var idle := rig.idle as Voice
+	idle.player.pitch_scale = 1.0 + (REV_PITCH - 1.0) * clampf(float(rig.speed) / REV_SPEED, 0.0, 1.0) \
+			+ REV_BLIP * float(rig.rev)
+	for name in ["start", "idle"]:
+		(rig[name] as Voice).step(delta, gain)
+
+
+# How loud a jeep's engine is for where it is: 1 where they stand, louder
+# nearer the camera (ENGINE_NEAR, ENGINE_LOUDEST).
+func _engine_gain(rig: Dictionary, _delta: float) -> float:
+	var far := ((rig.jeep as Node3D).position - camera.position).length()
+	return clampf(ENGINE_NEAR / maxf(far, 1.0), 0.0, ENGINE_LOUDEST)
+
+
+# Every engine quiet and off at once: the title gone, or opened again.
+func _silence_engines() -> void:
+	for rig in _rigs:
+		for name in ["start", "idle"]:
+			(rig[name] as Voice).silence()
+		rig.engine = "off"
+		rig.linger = INF
+		rig.turning = 0.0
+
+
+# Back where they stood, dark and silent, and their dust gone: the title
+# opened again, which lights them as its menu says (show_menu).
 func reset_launch() -> void:
 	_launch_time = -1.0
+	_silence_engines()
 	for rig in _rigs:
+		rig.on = false
+		rig.level = 0.0
 		rig.going = false
 		rig.run = 0.0
+		rig.speed = 0.0
 		rig.dust_run = 0.0
 		(rig.jeep as Node3D).transform = rig.jeep_rest
 		for k in rig.wheels.size():
@@ -1213,6 +1427,7 @@ func reset_launch() -> void:
 func _drive_off(rig: Dictionary, delta: float) -> void:
 	var t := maxf(_launch_time - LAUNCH_REV, 0.0)
 	var run := 0.5 * LAUNCH_ACCEL * t * t
+	rig.speed = LAUNCH_ACCEL * t
 	var step: float = run - float(rig.run)
 	rig.run = run
 	var rest: Transform3D = rig.jeep_rest

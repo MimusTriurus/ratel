@@ -17,6 +17,8 @@
 # Keys as on the 2D game's menus: up and down (the arrows, and the keys
 # bound to the BTR's), Enter, Space or the gun to pick, and left and right to
 # change the mode or the difficulty; the mouse picks an entry by aiming the reticle at it.
+# Each with the menus' clicks: menu_move onto another entry, menu_pick as one
+# is picked or changed (Level3DAudio).
 class_name Level3DTitle
 extends CanvasLayer
 
@@ -49,8 +51,17 @@ const OTHER_TINT := Color(0.55, 0.36, 0.27)
 # before the title fades to black over LAUNCH_FADE, and then the run; any key
 # or click fades at once. Over the picture the run starts at once, as it
 # always did. Either way not before the stage under the title is built
-# (game_ready): until then the title stays, black if it has faded.
+# (game_ready): until then the title stays, black if it has faded. The
+# title's song fades out from when the fade is known -- or, over the Chinook,
+# reckoned, from when the jeeps are in and its ramp goes up
+# (music_fade_after) -- down to nothing as the title goes black, so that the
+# run's own song comes in on silence rather than cutting it off.
 const LAUNCH_FADE := 0.5
+# And the menu goes as they set off: the entries and the reticle fade out
+# over MENU_HIDE, MENU_HIDE_AFTER after the pick, once the reticle's flash
+# (Level3DReticle.FIRE) has been seen, leaving the scene to play alone.
+const MENU_HIDE_AFTER := 0.15
+const MENU_HIDE := 0.4
 
 var settings: Level3DSettings
 # `start.call(players)`: a game for one player or two, at settings.hard.
@@ -69,6 +80,9 @@ var _veil: ColorRect         # the fade to black over the launch
 var _launching := false
 var _launch: Tween           # the hold and the fade
 var _waiting := 0            # players of a game whose fade the splash cannot time yet
+var _music_fading := false   # the song's fade begun on the splash's reckoning
+var _tell_later := false     # the splash's jeeps to be lit once the stage is built
+var _menu_hide: Tween        # the entries and the reticle fading out (_hide_menu)
 var _game_ready := false     # the stage under the title is built (game_ready)
 var _reticle: Level3DReticle
 var _text: Control           # the entries, in the font's filter
@@ -118,22 +132,36 @@ func open() -> void:
 	visible = true
 	_launching = false
 	_waiting = 0
+	_music_fading = false
 	if _launch != null:
 		_launch.kill()
 		_launch = null
 	_veil.color.a = 0.0
+	if _menu_hide != null:
+		_menu_hide.kill()
+		_menu_hide = null
+	_text.modulate.a = 1.0
+	_reticle.modulate.a = 1.0
 	if _splash != null and _splash.has_method("reset_launch"):
 		_splash.reset_launch()
 	_reticle.park()
 	_reticle.aim(_slot, false)
 	_redraw()
-	_tell_splash()
+	# Opened first, while the stage is still being built under it in frames
+	# up to a tenth of a second long, the jeep the menu picks is started once
+	# it is built (game_ready): started in them, its nose's kick stuttered.
+	# A move of the menu's lights it at once all the same.
+	if _game_ready:
+		_tell_splash()
+	else:
+		_tell_later = true
 
 
 # The splash's jeeps follow the menu (Level3DSplash3D.show_menu): one jeep's
 # lamps on for "1 player", both for "2 players", and the difficulty. A splash
 # without show_menu, the picture, ignores it.
 func _tell_splash() -> void:
+	_tell_later = false
 	if _splash != null and _splash.has_method("show_menu"):
 		var lit := 1 if _selected == Entry.ONE_PLAYER else (2 if _selected == Entry.TWO_PLAYERS else 0)
 		_splash.show_menu(lit, settings.hard)
@@ -158,6 +186,8 @@ func game_ready() -> void:
 	_game_ready = true
 	if _splash != null and _splash.has_method("game_ready"):
 		_splash.game_ready()
+	if _tell_later and visible and not _launching:
+		_tell_splash()
 
 
 func _entries() -> Array[String]:
@@ -167,6 +197,11 @@ func _entries() -> Array[String]:
 
 func _process(delta: float) -> void:
 	if _waiting > 0 and _launch == null:
+		if not _music_fading and _splash.has_method("music_fade_after"):
+			var soon: float = _splash.call("music_fade_after")
+			if not is_inf(soon):
+				_music_fading = true
+				Level3DAudio.fade_music(soon + LAUNCH_FADE)
 		var after: float = _splash.call("fade_after")
 		if not is_inf(after):
 			var count := _waiting
@@ -187,11 +222,15 @@ func _slot() -> Vector2:
 	return FRAME + MENU_AT + Vector2(ICON_X, 16.0 + _selected * ROW)
 
 
-func _select(index: int) -> void:
+# Onto another entry, with its click unless `quiet` -- a click on it, whose
+# pick clicks.
+func _select(index: int, quiet := false) -> void:
 	index = clampi(index, 0, Entry.size() - 1)
 	if index == _selected:
 		return
 	_selected = index
+	if not quiet:
+		Level3DAudio.play("menu_move")
 	_reticle.aim(_slot)
 	_text.queue_redraw()
 	_tell_splash()
@@ -199,9 +238,11 @@ func _select(index: int) -> void:
 
 func _pick() -> void:
 	_reticle.fire()
+	Level3DAudio.play("menu_pick")
 	match _selected:
 		Entry.ONE_PLAYER, Entry.TWO_PLAYERS:
 			var count := _selected + 1
+			_hide_menu()
 			if _splash != null and _splash.has_method("launch"):
 				_launching = true
 				_fade_out(count, _splash.call("launch", count))
@@ -218,6 +259,16 @@ func _pick() -> void:
 			get_tree().quit()
 
 
+# The entries and the reticle out of the way of the launch (MENU_HIDE).
+func _hide_menu() -> void:
+	if _menu_hide != null:
+		_menu_hide.kill()
+	_menu_hide = create_tween()
+	_menu_hide.tween_interval(MENU_HIDE_AFTER)
+	_menu_hide.tween_property(_text, "modulate:a", 0.0, MENU_HIDE)
+	_menu_hide.parallel().tween_property(_reticle, "modulate:a", 0.0, MENU_HIDE)
+
+
 # The title fading out over the launch after `hold` seconds, and the run; an
 # infinite hold waits for the splash to say (_process).
 func _fade_out(count: int, hold: float) -> void:
@@ -227,9 +278,11 @@ func _fade_out(count: int, hold: float) -> void:
 	if is_inf(hold):
 		_waiting = count
 		return
+	var fade := LAUNCH_FADE * (1.0 - _veil.color.a)
+	Level3DAudio.fade_music(hold + fade)
 	_launch = create_tween()
 	_launch.tween_interval(hold)
-	_launch.tween_property(_veil, "color:a", 1.0, LAUNCH_FADE * (1.0 - _veil.color.a))
+	_launch.tween_property(_veil, "color:a", 1.0, fade)
 	_launch.tween_callback(func():
 		_launch = null
 		_begin(count))
@@ -293,10 +346,8 @@ func _input(event: InputEvent) -> void:
 		elif code in [KEY_DOWN, settings.key("down")]:
 			_select(_selected + 1)
 		elif code in [KEY_LEFT, KEY_RIGHT, settings.key("left"), settings.key("right")]:
-			if _selected == Entry.DIFFICULTY:
-				_toggle_difficulty()
-			elif _selected == Entry.MODE:
-				_toggle_mode()
+			if _selected in [Entry.MODE, Entry.DIFFICULTY]:
+				_pick()
 		elif code in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE, settings.key("gun")]:
 			_pick()
 		else:
@@ -313,7 +364,7 @@ func _input(event: InputEvent) -> void:
 	if click != null and click.pressed and click.button_index == MOUSE_BUTTON_LEFT:
 		var at := _entry_at()
 		if at >= 0:
-			_select(at)
+			_select(at, true)
 			_pick()
 			get_viewport().set_input_as_handled()
 

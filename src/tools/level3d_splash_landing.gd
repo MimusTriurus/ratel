@@ -112,6 +112,11 @@ const LIFT_ON := 5.0
 const LIFT_LEAN := 0.6
 const LIFT_RAMP := 0.8
 const LIFT_SHOWN := 1.2
+# A jeep in, its engine is put out at once (Level3DSplash3D's ENGINE_*), and
+# what is left of it dying away is heard through the hull once the ramp
+# goes up, MUFFLED as loud, coming down to that over MUFFLE_TIME.
+const MUFFLED := 0.35
+const MUFFLE_TIME := 0.8
 
 var _chinook: Node3D
 var _rotors: AnimationPlayer
@@ -157,6 +162,7 @@ func _build() -> void:
 		_rigs[i].plan = plan
 		_rigs[i].index = i
 		_rigs[i].speed = 0.0
+		_rigs[i].muffle = 0.0
 	_fly()
 
 
@@ -367,10 +373,11 @@ func launch(count: int) -> float:
 	for i in mini(count, _rigs.size()):
 		var rig: Dictionary = _rigs[i]
 		if not rig.on:
-			rig.pitch_speed -= ENGINE_KICK
 			rig.flicker = 0.0
 		rig.on = true
-		rig.pitch_speed -= ENGINE_KICK * 0.6
+		_engine_on(rig)
+		_kick(rig, ENGINE_KICK * 0.6)
+		rig.rev = 1.0
 		rig.plan.start = _clock + LAUNCH_REV + i * FOLLOW
 	return INF
 
@@ -380,6 +387,23 @@ func launch(count: int) -> float:
 # stage is built.
 func fade_after() -> float:
 	return (_lift_at + LIFT_SHOWN - _flight) / _rate
+
+
+# The same, sooner and reckoned: from when the jeeps are in, the ramp to go
+# up, the time it takes and the lift after it -- if the stage is built by
+# then, INF until both. The title fades its song out over that, the ramp
+# and the lift-off, rather than over the lift-off alone (Level3DTitle).
+func music_fade_after() -> float:
+	if is_finite(_lift_at):
+		return fade_after()
+	if is_inf(_close_at) or not _game_ready:
+		return INF
+	var closing := _ramp_length() / CLOSE_SPEED
+	if _ramp_state == "closing":
+		closing *= 1.0 - _ramp.current_animation_position / _ramp.current_animation_length
+	elif _ramp_state == "open":
+		closing += maxf(_close_at - _flight, 0.0) / _rate
+	return closing + (LIFT_WAIT + LIFT_SHOWN) / _rate
 
 
 # The stage under the title is built (Level3DTitle.game_ready): the Chinook
@@ -408,6 +432,7 @@ func reset_launch() -> void:
 	for rig in _rigs:
 		(rig.jeep as Node3D).visible = true
 		rig.speed = 0.0
+		rig.muffle = 0.0
 	_fly()
 
 
@@ -415,6 +440,7 @@ func _process(delta: float) -> void:
 	if not is_visible_in_tree():
 		if _sound != null and _sound.playing:
 			_sound.stop()
+		_silence_engines()
 		return
 	_clock += delta
 	var hurry := _launched and _ramp_state in ["", "opening"]
@@ -438,6 +464,13 @@ func _process(delta: float) -> void:
 	_raise_wash(delta)
 	_play_sound()
 	super(delta)
+
+
+# Shut in, its engine dying away is heard through the hull (MUFFLED).
+func _engine_gain(rig: Dictionary, delta: float) -> float:
+	var inside: bool = _ramp_state in ["closing", "shut"] and float(rig.run) >= float(rig.plan.length) - 0.01
+	rig.muffle = move_toward(float(rig.muffle), 1.0 if inside else 0.0, delta / MUFFLE_TIME)
+	return super(rig, delta) * lerpf(1.0, MUFFLED, float(rig.muffle))
 
 
 # A jeep on its way in: along its plan as fast as the way allows (DRIVE_*),
@@ -489,6 +522,7 @@ func _drive_off(rig: Dictionary, delta: float) -> void:
 				var under: Vector3 = (wheel as Node3D).global_position
 				_raise_cloud(under + Vector3(_dust_rng.randf_range(-0.2, 0.2), 0.0, _dust_rng.randf_range(-0.3, 0.3)),
 						1.0, DUST_CLOUD.x, DUST_CLOUD.y)
-	if run >= float(plan.length) - 0.01:
+	if run >= float(plan.length) - 0.01 and rig.on:
 		rig.on = false
+		_engine_off(rig, true)
 	jeep.visible = _ramp_state != "shut"

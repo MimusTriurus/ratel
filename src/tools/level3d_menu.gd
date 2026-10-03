@@ -26,6 +26,13 @@
 # focus, glide it to beside the focused control (BESIDE px to its left). A
 # list an OptionButton drops is a window of its own, drawn over everything
 # the menu draws, the reticle too: while one is open the pointer is back.
+#
+# It clicks as the title does (Level3DAudio's menu_move, menu_pick): a move
+# as the keys take the focus to another control or the reticle comes over
+# one, a pick as a button is pressed, a box ticked, a list's entry picked or
+# a tab changed (_hook). The sliders are left quiet -- the Sound and Mixer
+# tabs' play what they set -- and so is the focus a page takes as it opens
+# or a pick hands on (_hushed).
 class_name Level3DMenu
 extends CanvasLayer
 
@@ -67,8 +74,10 @@ const SOUND_GROUPS := [
 			["soldier_death_run_over", "Soldier run over"]]],
 	["Engines", [["btr_idle", "BTR idling"], ["btr_drive", "BTR driving"], ["tank_engine", "Tanks"],
 			["boat_engine", "Boats"], ["chinook", "Chinook"], ["rescue_rotor", "Rescue helicopter"]]],
+	["Title", [["jeep_start", "Jeeps: engine start"], ["jeep_idle", "Jeeps: engine running"]]],
 	["Interface", [["pickup", "Prisoner picked up"], ["rescue_pickup", "Prisoner aboard the helicopter"],
-			["upgrade", "Weapon upgrade"], ["extra_life", "Extra life"], ["warning", "Boss warning"], ["pause", "Pause"]]],
+			["upgrade", "Weapon upgrade"], ["extra_life", "Extra life"], ["warning", "Boss warning"], ["pause", "Pause"],
+			["menu_move", "Menu: onto an entry"], ["menu_pick", "Menu: entry picked"]]],
 	["Ambience", [["ambient_sea", "Sea"], ["ambient_jungle", "Jungle"]]],
 ]
 # The Mixer tab: the game's own gains (Level3DAudio's mix), in dB, for the
@@ -174,6 +183,8 @@ var _waiting := ""           # the action a key prompt is open for
 var _continue: Button
 var _reticle: Level3DReticle
 var _last_beside := Vector2.ZERO
+var _hushed := -1            # the frame a pick or a page took the focus in
+var _hovered: Control        # the control the reticle was last over
 
 
 func _ready() -> void:
@@ -207,6 +218,37 @@ func _ready() -> void:
 	_reticle = Level3DReticle.new()
 	add_child(_reticle)
 	get_viewport().gui_focus_changed.connect(_focus_changed)
+	for node in find_children("*", "Control", true, false):
+		_hook(node)
+	# And whatever a tab builds later.
+	get_tree().node_added.connect(func(node: Node):
+		if is_ancestor_of(node):
+			_hook(node))
+
+
+# A control's pick, clicked (menu_pick).
+func _hook(node: Node) -> void:
+	if node.has_meta("clicks"):
+		return
+	node.set_meta("clicks", true)
+	if node is BaseButton:
+		(node as BaseButton).pressed.connect(_click)
+	if node is OptionButton:
+		(node as OptionButton).item_selected.connect(func(_index: int): _click())
+	elif node is TabContainer:
+		(node as TabContainer).tab_changed.connect(func(_tab: int): _click())
+
+
+# Not asked whether the menu is up: a button's own handler, connected before
+# this, may have closed it (Back, Resume).
+func _click() -> void:
+	Level3DAudio.play("menu_pick")
+	_hush()
+
+
+# The focus taken from now to the end of the frame is no move.
+func _hush() -> void:
+	_hushed = Engine.get_process_frames()
 
 
 func is_open() -> bool:
@@ -234,6 +276,19 @@ func _process(_delta: float) -> void:
 	var mode := Input.MOUSE_MODE_HIDDEN if pointer_hidden() else Input.MOUSE_MODE_VISIBLE
 	if Input.mouse_mode != mode:
 		Input.mouse_mode = mode
+	# The reticle onto another control: a move.
+	var over: Control = null
+	if pointer_hidden() and _reticle.by_mouse:
+		over = get_viewport().gui_get_hovered_control()
+		while over != null and over != _main_page and over != _settings_page \
+				and not (over is BaseButton or over is Slider):
+			over = over.get_parent() as Control
+		if not (over is BaseButton or over is Slider):
+			over = null
+	if over != _hovered:
+		_hovered = over
+		if over != null:
+			Level3DAudio.play("menu_move")
 
 
 # The keys moved the focus: the reticle goes beside the control, following
@@ -241,6 +296,8 @@ func _process(_delta: float) -> void:
 func _focus_changed(control: Control) -> void:
 	if visible and is_ancestor_of(control):
 		_reticle.aim(_beside.bind(control))
+		if not _reticle.by_mouse and Engine.get_process_frames() != _hushed:
+			Level3DAudio.play("menu_move")
 
 
 func _beside(control: Control) -> Vector2:
@@ -296,6 +353,7 @@ func close() -> void:
 
 func _show_main() -> void:
 	_waiting = ""
+	_hush()
 	_apply_font()
 	if _back.is_valid():
 		var back := _back
@@ -309,6 +367,7 @@ func _show_main() -> void:
 
 
 func _show_settings() -> void:
+	_hush()
 	refresh()
 	_main_page.visible = false
 	_settings_page.visible = true
