@@ -575,11 +575,15 @@ The 3D preview opens on a title screen, `Level3DTitle`
 (`src/tools/level3d_title.gd`): the 2D game's title art and jeep cursor,
 laid out as `IntroMode` lays them out, with 1 player, 2 players, the
 difficulty, the settings and quit, in the HUD's font, over the stage with
-the tree paused. A game picked there starts the run from the Chinook with the
+the tree paused. Over the sun is the game's name, RATEL SQUAD
+(`Level3DLogo`), in the settings' font: Black Ops One in the sun's colours, or Press Start 2P in bands. A game picked there starts the run from the Chinook with the
 start jingle; the Escape menu's "Main menu" goes back to it. Hard is the
 stage's hard trigger list, as `GameMode.set_stage` picks it
 (`Level3DMap.hard`, `Level3DMap.triggers()`, saved as `Level3DSettings.hard`):
 more soldiers, tanks and boats. A --shot and the level editor's Play skip it.
+`docs/preview3d-options.md` lists every command-line option of the preview;
+`--no-chinook` skips the Chinook's run and `--boss` starts each run a few
+seconds' drive below the boss, the way there left unspawned.
 
 The 3D preview's Escape menu opens its settings on a Game tab: 8-bit or
 modern, each a preset of the sound mode, the driving, the firing, the reach,
@@ -599,7 +603,10 @@ the last with a switch of its own since the original's enemies fired in
 silence; under them, a 0–200 % slider for each of the modern mode's sounds
 (`Level3DMenu.SOUND_GROUPS`, which must list every sound in `SOUNDS` but
 `enemy_hit`, which only plays under a blast -- the verify script checks).
-The music is chained as `Song` chains it: `intro_song` at the start,
+The music is chained as `Song` chains it: the title's song under the title
+screen, over and over -- in modern a heavy cover of «От героев былых
+времён», in classic its notes on the chips (`build/music3d_officers/`), in
+original the 2D game's `title_song` -- `intro_song` at the start,
 `stage_song0` after a restart, `boss_song` from the boss's trigger, stopped
 when it is beaten or the last life goes. A song's parts are not chained
 through `finished` as `Song` chains them, which left about 20 ms of silence

@@ -20,6 +20,19 @@
 #
 # Escape goes back a step: out of a key prompt, out of the settings, and from
 # the first page back to the stage.
+#
+# It points with the title screen's reticle (Level3DReticle) rather than the
+# system's pointer: the mouse moves it, and the keys, which move Godot's
+# focus, glide it to beside the focused control (BESIDE px to its left). A
+# list an OptionButton drops is a window of its own, drawn over everything
+# the menu draws, the reticle too: while one is open the pointer is back.
+#
+# It clicks as the title does (Level3DAudio's menu_move, menu_pick): a move
+# as the keys take the focus to another control or the reticle comes over
+# one, a pick as a button is pressed, a box ticked, a list's entry picked or
+# a tab changed (_hook). The sliders are left quiet -- the Sound and Mixer
+# tabs' play what they set -- and so is the focus a page takes as it opens
+# or a pick hands on (_hushed).
 class_name Level3DMenu
 extends CanvasLayer
 
@@ -42,6 +55,7 @@ const ACCENT := Color(1.0, 0.8, 0.3)
 # times that, so that they stay sharp scaled up to a bigger screen.
 const ICON_SIZE := 26
 const ICON_OVERSAMPLE := 2
+const BESIDE := 34
 # The Sound tab's sliders, one for each of the modern mode's sounds
 # (Level3DAudio.SOUNDS), under a heading for each kind. enemy_hit is left out:
 # it is only the original's layer under explode, which the modern mode's
@@ -60,8 +74,10 @@ const SOUND_GROUPS := [
 			["soldier_death_run_over", "Soldier run over"]]],
 	["Engines", [["btr_idle", "BTR idling"], ["btr_drive", "BTR driving"], ["tank_engine", "Tanks"],
 			["boat_engine", "Boats"], ["chinook", "Chinook"], ["rescue_rotor", "Rescue helicopter"]]],
+	["Title", [["jeep_start", "Jeeps: engine start"], ["jeep_idle", "Jeeps: engine running"]]],
 	["Interface", [["pickup", "Prisoner picked up"], ["rescue_pickup", "Prisoner aboard the helicopter"],
-			["upgrade", "Weapon upgrade"], ["extra_life", "Extra life"], ["warning", "Boss warning"], ["pause", "Pause"]]],
+			["upgrade", "Weapon upgrade"], ["extra_life", "Extra life"], ["warning", "Boss warning"], ["pause", "Pause"],
+			["menu_move", "Menu: onto an entry"], ["menu_pick", "Menu: entry picked"]]],
 	["Ambience", [["ambient_sea", "Sea"], ["ambient_jungle", "Jungle"]]],
 ]
 # The Mixer tab: the game's own gains (Level3DAudio's mix), in dB, for the
@@ -76,6 +92,7 @@ const MUSIC_NAMES := {
 	"boss_tank_2.ogg": "Boss: tank 2 (double kick)", "boss_tank_3.ogg": "Boss: tank 3 (strings)",
 	"boss_tank_4.ogg": "Boss: tank 4 (arpeggiator)", "boss_full.ogg": "Boss: whole loop (linear)",
 	"boss_victory.ogg": "Boss: victory", "boss_breach.ogg": "Boss: breach accent",
+	"title.ogg": "Title screen",
 }
 const MIX_MIN_DB := -40.0
 const MIX_MAX_DB := 12.0
@@ -164,6 +181,10 @@ var _mix_save: Button
 var _key_buttons := {}       # action -> Button
 var _waiting := ""           # the action a key prompt is open for
 var _continue: Button
+var _reticle: Level3DReticle
+var _last_beside := Vector2.ZERO
+var _hushed := -1            # the frame a pick or a page took the focus in
+var _hovered: Control        # the control the reticle was last over
 
 
 func _ready() -> void:
@@ -194,10 +215,104 @@ func _ready() -> void:
 	centre.add_child(_main_page)
 	_settings_page = _make_settings_page()
 	centre.add_child(_settings_page)
+	_reticle = Level3DReticle.new()
+	add_child(_reticle)
+	get_viewport().gui_focus_changed.connect(_focus_changed)
+	for node in find_children("*", "Control", true, false):
+		_hook(node)
+	# And whatever a tab builds later.
+	get_tree().node_added.connect(func(node: Node):
+		if is_ancestor_of(node):
+			_hook(node))
+
+
+# A control's pick, clicked (menu_pick).
+func _hook(node: Node) -> void:
+	if node.has_meta("clicks"):
+		return
+	node.set_meta("clicks", true)
+	if node is BaseButton:
+		(node as BaseButton).pressed.connect(_click)
+	if node is OptionButton:
+		(node as OptionButton).item_selected.connect(func(_index: int): _click())
+	elif node is TabContainer:
+		(node as TabContainer).tab_changed.connect(func(_tab: int): _click())
+
+
+# Not asked whether the menu is up: a button's own handler, connected before
+# this, may have closed it (Back, Resume).
+func _click() -> void:
+	Level3DAudio.play("menu_pick")
+	_hush()
+
+
+# The focus taken from now to the end of the frame is no move.
+func _hush() -> void:
+	_hushed = Engine.get_process_frames()
 
 
 func is_open() -> bool:
 	return visible
+
+
+# Whether the system's pointer is hidden, the reticle in its place: while the
+# menu is up and no list is dropped from it. Level3DCrosshair, which owns the
+# mouse mode, asks this too.
+func pointer_hidden() -> bool:
+	return visible and not _list_open()
+
+
+func _list_open() -> bool:
+	for window in get_viewport().get_embedded_subwindows():
+		if window is PopupMenu and window.visible:
+			return true
+	return false
+
+
+func _process(_delta: float) -> void:
+	if not visible:
+		return
+	_reticle.shown = pointer_hidden()
+	var mode := Input.MOUSE_MODE_HIDDEN if pointer_hidden() else Input.MOUSE_MODE_VISIBLE
+	if Input.mouse_mode != mode:
+		Input.mouse_mode = mode
+	# The reticle onto another control: a move.
+	var over: Control = null
+	if pointer_hidden() and _reticle.by_mouse:
+		over = get_viewport().gui_get_hovered_control()
+		while over != null and over != _main_page and over != _settings_page \
+				and not (over is BaseButton or over is Slider):
+			over = over.get_parent() as Control
+		if not (over is BaseButton or over is Slider):
+			over = null
+	if over != _hovered:
+		_hovered = over
+		if over != null:
+			Level3DAudio.play("menu_move")
+
+
+# The keys moved the focus: the reticle goes beside the control, following
+# it as a scroll moves it.
+func _focus_changed(control: Control) -> void:
+	if visible and is_ancestor_of(control):
+		_reticle.aim(_beside.bind(control))
+		if not _reticle.by_mouse and Engine.get_process_frames() != _hushed:
+			Level3DAudio.play("menu_move")
+
+
+func _beside(control: Control) -> Vector2:
+	if is_instance_valid(control) and control.is_visible_in_tree():
+		var rect := control.get_global_rect()
+		_last_beside = Vector2(rect.position.x - BESIDE, rect.get_center().y)
+	return _last_beside
+
+
+# Opened: the keys have the reticle, beside the focused control.
+func _park_reticle() -> void:
+	_reticle.park()
+	var focused := get_viewport().gui_get_focus_owner()
+	if focused != null and is_ancestor_of(focused):
+		_reticle.aim(_beside.bind(focused), false)
 
 
 # With GameMode's pause sound, which its pause key plays both ways.
@@ -206,6 +321,7 @@ func open() -> void:
 	get_tree().paused = true
 	Level3DAudio.play("pause")
 	_show_main()
+	_park_reticle()
 
 
 # The settings page alone, over the title screen, whose tree is already
@@ -214,6 +330,7 @@ func open_settings(back: Callable) -> void:
 	_back = back
 	visible = true
 	_show_settings()
+	_park_reticle()
 
 
 # Out of sight with the tree left paused, for the title screen.
@@ -236,6 +353,7 @@ func close() -> void:
 
 func _show_main() -> void:
 	_waiting = ""
+	_hush()
 	_apply_font()
 	if _back.is_valid():
 		var back := _back
@@ -249,6 +367,7 @@ func _show_main() -> void:
 
 
 func _show_settings() -> void:
+	_hush()
 	refresh()
 	_main_page.visible = false
 	_settings_page.visible = true
@@ -756,7 +875,16 @@ func _prompt(action: String) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if not visible or _waiting == "":
+	if not visible:
+		return
+	# A key takes the reticle to the focus; a pick, by key or click, fires it.
+	if event is InputEventKey and event.pressed and not event.echo:
+		_reticle.keys()
+		if event.is_action("ui_accept"):
+			_reticle.fire()
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_reticle.fire()
+	if _waiting == "":
 		return
 	var key := event as InputEventKey
 	if key == null or not key.pressed or key.echo:

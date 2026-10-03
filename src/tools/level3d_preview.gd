@@ -147,6 +147,13 @@
 # without it, at START, unless --intro is given, when the seconds count from
 # the Chinook's arrival.
 #
+# --no-chinook skips the Chinook's run at every start of a run, as Space
+# does: the jeep is simply there. --boss starts every run BOSS_LEAD_ROWS
+# below the boss's trigger, a few seconds' drive from the pan, with the
+# soldiers, tanks and boats on the way left unspawned (_start_flags). Both
+# apply to the title screen's games and to R as well as to the first.
+# docs/preview3d-options.md lists every option.
+#
 # The vehicle is the jeep; --btr, with or without --shot, drives the BTR
 # instead (level3d_btr.gd, VEHICLES): the same driving, stiffer springs and
 # no aerials.
@@ -320,12 +327,27 @@ func _ready() -> void:
 	if run_args.has("--file"):
 		Level3DMap.file = run_args[run_args.find("--file") + 1]
 		Level3DMap.rows = int(Level3DIO.read_path(Level3DMap.file)["grid"]["height"])
+	# The title screen first, which starts the run when a game is picked;
+	# not for a --shot, nor for the level editor's Play, there to try the
+	# level out. It is up before the stage is built: the stage is built under
+	# it a little at a time (_breathe), the title's splash playing on, and a
+	# game picked before it is done waits for it (Level3DTitle.game_ready).
+	var titled := _persist and not run_args.has("--editor") and not run_args.has("--intro")
+	if titled:
+		_make_menu()
+		_apply_settings()
+		_show_title()
+		await get_tree().process_frame
+		_slicing = true
+		_slice_from = Time.get_ticks_usec()
 	var scene: PackedScene = load(level_path)
 	if scene == null:
 		push_error("Cannot load %s -- open the project in the editor once so it is imported" % level_path)
 		return
 	var level := scene.instantiate()
+	await _breathe()
 	add_child(level)
+	await _breathe()
 	_replace_ocean(level)
 	# The level goes on past its edges, forest, beach and sea, for the tilted
 	# camera to look over (jackal_level_edges.py); the frame stays where the
@@ -346,16 +368,23 @@ func _ready() -> void:
 				Vector3(float(frame[2]) - float(frame[0]), level_aabb.size.y, float(frame[3]) - float(frame[1])))
 	_cast_both_sides_of_planes(level)
 	_flat_ground_casts_nothing(level)
-	_add_collision(level)
+	await _breathe()
+	await _add_collision(level, true)
 	# After the collision, which is how it tells the water from the land.
 	_mark_sea(level)
+	await _breathe()
 	_add_targets(level, false)
+	await _breathe()
 	# Last: it adds meshes of its own, which want no collision.
 	_holed_ground(level)
+	await _breathe()
 	_add_destructibles()
+	await _breathe()
 	_add_marks(level)
+	await _breathe()
 	# After the contour and the shadows, whose materials it replaces.
 	_add_wind(level)
+	await _breathe()
 
 	_add_environment()
 	_add_lights()
@@ -366,13 +395,20 @@ func _ready() -> void:
 	_mapping_2 = ButtonMapping.second_player(_mapping)
 	_mapping_2.load_saved()
 	_make_hud()
+	if titled:
+		move_child(_title, -1)
+		move_child(_menu, -1)
+	await _breathe()
 	_add_crew()
+	await _breathe()
 	_add_guns(level)
+	await _breathe()
 	_arm(crews[0])
 	launcher.ground_materials = _ground_materials
 	launcher.ground_materials.append(tracks.material())
 	_make_markers()
-	_make_menu()
+	if not titled:
+		_make_menu()
 	add_child(KeySides.new())
 
 	camera = Camera3D.new()
@@ -392,18 +428,35 @@ func _ready() -> void:
 	focus = _follow_point()
 	_update_camera()
 	_live = true
+	_slicing = false
 
-	# The title screen first, which starts the run when a game is picked;
-	# not for a --shot, nor for the level editor's Play, there to try the
-	# level out.
-	if _persist and not args.has("--editor") and not args.has("--intro"):
-		_show_title()
+	if titled:
+		# Over the HUD again, made since on the same layer, and the Escape
+		# menu over the title, in the order _make_menu adds them after it.
+		move_child(_title, -1)
+		move_child(_menu, -1)
+		_title.game_ready()
 	else:
 		# intro_song, IntroMapMode's: the start jingle running on into stage 1.
 		Level3DAudio.play_music("intro")
 		if args.has("--intro") or not (args.has("--shot") or args.has("--obstacle-map")):
 			_start_intro()
+		_start_flags()
 	_screenshot_mode()
+
+
+# Building the stage under the title (_ready): a step of it that has run
+# past SLICE_BUDGET in this frame hands the frame back, so that the title's
+# splash goes on playing while it is built, a frame lost here and there
+# rather than 2.5 s at once.
+const SLICE_BUDGET := 8000      # microseconds
+var _slicing := false
+var _slice_from := 0
+
+func _breathe() -> void:
+	if _slicing and Time.get_ticks_usec() - _slice_from > SLICE_BUDGET:
+		await get_tree().process_frame
+		_slice_from = Time.get_ticks_usec()
 
 
 # The Chinook's run, from the top: Triggers.CHINOOK, which the stage fires on
@@ -1168,7 +1221,9 @@ static func _kind_of(object_name: String) -> String:
 	return ""
 
 
-func _add_collision(root: Node) -> void:
+# `sliced`: building the stage under the title (_breathe), handing the frame
+# back between pieces.
+func _add_collision(root: Node, sliced := false) -> void:
 	for node in root.find_children("*", "MeshInstance3D", true, false):
 		var mesh_instance := node as MeshInstance3D
 		var kind := _kind_of(mesh_instance.name)
@@ -1177,18 +1232,53 @@ func _add_collision(root: Node) -> void:
 		if kind == "trunk":
 			_add_trunk(mesh_instance)
 			continue
-		mesh_instance.create_trimesh_collision()
-		for child in mesh_instance.get_children():
-			if child is StaticBody3D:
-				child.collision_layer = GROUND_LAYER | (SOLID_LAYER if kind == "wall" else 0)
-				_kinds[child.get_rid()] = kind
-				# Both sides: the northern terrain's faces are wound downwards,
-				# which its double-sided material hides from the eye and a
-				# one-sided shape does not -- the ray went through the land
-				# and found the sea under it.
-				for shape_owner in child.get_children():
-					if shape_owner is CollisionShape3D:
-						(shape_owner.shape as ConcavePolygonShape3D).backface_collision = true
+		var body := StaticBody3D.new()
+		body.collision_layer = GROUND_LAYER | (SOLID_LAYER if kind == "wall" else 0)
+		mesh_instance.add_child(body)
+		_kinds[body.get_rid()] = kind
+		await _add_trimesh(body, mesh_instance.mesh, sliced)
+
+
+# What MeshInstance3D.create_trimesh_collision makes, its body given: the
+# mesh's triangles as concave shapes, but in pieces of at most COLLISION_PIECE
+# triangles rather than one. One is the same to a ray; but the sea is 430,000
+# triangles, nine in ten of the level's, and as one shape it was 0.7 s in a
+# frame, the tree of its triangles and its place in the physics space, where
+# in pieces it is 0.27 s, which the title can be left to play through.
+const COLLISION_PIECE := 8000
+
+func _add_trimesh(body: StaticBody3D, mesh: Mesh, sliced: bool) -> void:
+	for surface in mesh.get_surface_count():
+		if mesh.surface_get_primitive_type(surface) != Mesh.PRIMITIVE_TRIANGLES:
+			continue
+		var arrays := mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null \
+				else PackedInt32Array()
+		var corners := indices.size() if not indices.is_empty() else vertices.size()
+		var from := 0
+		while from < corners:
+			var count := mini(COLLISION_PIECE * 3, corners - from)
+			var faces := PackedVector3Array()
+			faces.resize(count)
+			if indices.is_empty():
+				faces = vertices.slice(from, from + count)
+			else:
+				for i in count:
+					faces[i] = vertices[indices[from + i]]
+			var shape := ConcavePolygonShape3D.new()
+			shape.set_faces(faces)
+			# Both sides: the northern terrain's faces are wound downwards,
+			# which its double-sided material hides from the eye and a
+			# one-sided shape does not -- the ray went through the land and
+			# found the sea under it.
+			shape.backface_collision = true
+			var collider := CollisionShape3D.new()
+			collider.shape = shape
+			body.add_child(collider)
+			from += count
+			if sliced:
+				await _breathe()
 
 
 # A cylinder round the bottom of the trunk: the trunk surface's own vertices
@@ -2071,6 +2161,8 @@ func _make_hud() -> void:
 	layer.add_child(_banners)
 	var crosshair := Level3DCrosshair.new()
 	crosshair.wanted = _crosshair_wanted
+	crosshair.hide_pointer = func(): return _title != null and _title.pointer_hidden() \
+			or _menu != null and _menu.pointer_hidden()
 	layer.add_child(crosshair)
 
 
@@ -2437,18 +2529,20 @@ func _make_menu() -> void:
 	add_child(_menu)
 
 
-# The title screen over the stage, the tree paused under it and the music
-# stopped, as the 2D game's title stops its song.
+# The title screen over the stage, the tree paused under it and its own song
+# playing (Level3DAudio.MUSIC's "title").
 func _show_title() -> void:
 	_menu.leave()
 	get_tree().paused = true
-	Level3DAudio.stop_music()
+	Level3DAudio.play_music("title")
 	_title.open()
 
 
 # A game picked on the title screen: the run from the top, with the start
 # jingle, for `count` players at the difficulty picked there.
 func _start_game(count: int) -> void:
+	while not _live:
+		await get_tree().process_frame
 	Level3DMap.hard = settings.hard
 	get_tree().paused = false
 	_gun_locked = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
@@ -2534,8 +2628,13 @@ func _apply_settings() -> void:
 		friends.calls = settings.hud and settings.hud_help
 		if rescue != null and rescue.crew != null:
 			rescue.crew.calls = friends.calls
-	_layout_hud()
-	_show_state()
+	# Under the title, before the stage and its HUD are built (_ready), only
+	# the font, which the title is drawn in too.
+	if _hud != null:
+		_layout_hud()
+		_show_state()
+	else:
+		Level3DFont.style = settings.font
 	Level3DAudio.set_mode(settings.sound_mode as Level3DAudio.Mode)
 	Level3DAudio.set_adaptive(settings.boss_music == Level3DSettings.BossMusic.ADAPTIVE)
 	Level3DAudio.set_volumes(settings.master_volume, settings.music_volume, settings.effects_volume,
@@ -3130,6 +3229,55 @@ func _restart(jingle := false) -> void:
 	# stage_song0, the Chinook's after a continue: no start jingle again.
 	Level3DAudio.play_music("intro" if jingle else "stage")
 	_start_intro()
+	_start_flags()
+
+
+# What the command line asks of every run's start, the title screen's and R's
+# as well as the first: --no-chinook skips the Chinook's run, as Space does,
+# the BTR simply there; --boss starts it BOSS_LEAD_ROWS below the boss's
+# trigger, a few seconds' drive from the pan, with nothing behind it spawned.
+const BOSS_LEAD_ROWS := 48
+
+func _start_flags() -> void:
+	var args := OS.get_cmdline_user_args()
+	var to_boss := args.has("--boss")
+	if (to_boss or args.has("--no-chinook")) and chinook != null:
+		chinook.skip()
+	if to_boss:
+		_jump_to_boss()
+
+
+func _jump_to_boss() -> void:
+	var row := boss.trigger_row()
+	if row < 0:
+		push_warning("--boss: this level has no BOSS_BLUE_TANKS trigger")
+		return
+	# The middle-most open ground on the first row below the lead with any,
+	# wide enough for every jeep side by side.
+	var y := float((row + BOSS_LEAD_ROWS) * 32 + 16)
+	var spread := COOP_SPREAD / Level3DMap.PX * (crews.size() - 1)
+	var spot := Vector2(-1.0, -1.0)
+	while spot.x < 0.0 and y < map.stage.map_height * 32:
+		for i in 64:
+			var x := 1024.0 + (i >> 1) * 32.0 * (1 if i & 1 else -1)
+			if map.is_driveable_box(x - 48.0, y - 48.0, x + spread + 48.0, y + 48.0):
+				spot = Vector2(x, y)
+				break
+		y += 32.0
+	if spot.x < 0.0:
+		push_warning("--boss: no open ground below the boss's trigger")
+		return
+	var at := Level3DMap.to_level(spot)
+	for c in crews:
+		c.btr.place(Vector3(at.x + COOP_SPREAD * c.index, 0.0, at.y), START_HEADING)
+	following = true
+	_catch_up = Vector2.ZERO
+	focus = _follow_point()
+	_update_camera()
+	var top := Level3DMap.to_map(_view_frame().position).y
+	soldiers.skip_to(top)
+	tanks.skip_to(top)
+	boats.skip_to(top)
 
 
 # What the scene's collision says over the whole level, one pixel per
@@ -3205,7 +3353,7 @@ func _screenshot_mode() -> void:
 	# Level3DSoldiers, Level3DBtr and Level3DAudio read these for themselves;
 	# they are not waypoints.
 	for own in ["--fade-corpses", "--btr", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
-			"--no-wind", "--wind-steps", "--spots", "--audio-debug", "--editor"]:
+			"--no-wind", "--wind-steps", "--spots", "--audio-debug", "--editor", "--no-chinook", "--boss"]:
 		var at := args.find(own)
 		if at >= 0:
 			args.remove_at(at)

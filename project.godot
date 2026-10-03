@@ -31,6 +31,10 @@ window/stretch/mode="viewport"
 
 project/assembly_name="Jackal"
 
+[editor]
+
+run/main_run_args="-- --splash-landing"
+
 [filesystem]
 
 import/blender/enabled=false

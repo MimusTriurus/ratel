@@ -215,14 +215,26 @@ func _ready() -> void:
 	_pose()
 
 
-# One copy of the model, its clips split in two players as the boat's are:
-# the glTF export gives every clip a track for every bone any clip moves, so
-# Fly would hold the ramp shut and the ramp's clips would stop the rotors.
+# One copy of the model, its clips split in two players (split_clips).
 func _instance(scene: PackedScene, shadows: int) -> Node3D:
 	var root := scene.instantiate() as Node3D
 	add_child(root)
 	for mesh in root.find_children("*", "MeshInstance3D", true, false):
 		(mesh as MeshInstance3D).cast_shadow = shadows
+	var players := split_clips(root)
+	# The ramp goes by the tick, not by the frame.
+	players[1].callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+	_players.append(players[0])
+	_ramps.append(players[1])
+	return root
+
+
+# A copy of the model's clips split in two players as the boat's are, the
+# rotors' turning and the ramp shut: the glTF export gives every clip a track
+# for every bone any clip moves, so Fly would hold the ramp shut and the
+# ramp's clips would stop the rotors. [the rotors' player, the ramp's].
+# The title's splash flies one too (level3d_splash_landing.gd).
+static func split_clips(root: Node3D) -> Array[AnimationPlayer]:
 	var imported := root.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	var rotors := AnimationLibrary.new()
 	var ramp := AnimationLibrary.new()
@@ -245,13 +257,9 @@ func _instance(scene: PackedScene, shadows: int) -> Node3D:
 	# second; Fly is two.
 	imported.speed_scale = 2.5
 	imported.play("Fly")
-	# The ramp goes by the tick, not by the frame.
-	ramp_player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	ramp_player.play("Ramp_Close")
 	ramp_player.seek(ramp_player.current_animation_length, true)
-	_players.append(imported)
-	_ramps.append(ramp_player)
-	return root
+	return [imported, ramp_player]
 
 
 # The vehicles aboard, hidden till the ramp is down: the first at CARGO_BACK,
@@ -585,10 +593,13 @@ func _play_ramp(clip: String) -> void:
 # by hand, so what this sets stands until the next step.
 func _hold_ramp() -> void:
 	for copy in [_model, _shadow]:
-		var skeleton := (copy as Node3D).find_child("Skeleton3D", true, false) as Skeleton3D
-		var past := _ramp_down() - _ramp_angle(skeleton)
-		if past <= 0.0:
-			continue
+		hold_ramp((copy as Node3D).find_child("Skeleton3D", true, false) as Skeleton3D)
+
+
+# One copy's ramp turned back up to _ramp_down, if its clip has taken it past.
+static func hold_ramp(skeleton: Skeleton3D) -> void:
+	var past := _ramp_down() - ramp_angle(skeleton)
+	if past > 0.0:
 		var bone := skeleton.find_bone("Ramp")
 		var parent := skeleton.get_bone_global_pose(skeleton.get_bone_parent(bone)).basis
 		var pose := Basis(Vector3.RIGHT, past) * skeleton.get_bone_global_pose(bone).basis
@@ -679,12 +690,12 @@ func _surface(p: Vector3) -> float:
 	if absf(into.x) > CABIN_HALF_WIDTH:
 		return outside
 	var back := -into.z
-	var ramp_angle := _ramp_angle()
+	var slope := _ramp_angle()
 	var deck := -INF
 	if back <= HINGE_BACK:
 		deck = FLOOR
-	elif back <= HINGE_BACK + RAMP_LEN * cos(ramp_angle):
-		deck = FLOOR + (back - HINGE_BACK) * tan(ramp_angle)
+	elif back <= HINGE_BACK + RAMP_LEN * cos(slope):
+		deck = FLOOR + (back - HINGE_BACK) * tan(slope)
 	if deck == -INF:
 		return outside
 	return maxf(outside, _shadow.position.y + deck * MODEL_SCALE)
@@ -692,9 +703,11 @@ func _surface(p: Vector3) -> float:
 
 # The ramp's angle up from level now, off the ramp bone's pose: the clip is
 # the one place that knows it.
-func _ramp_angle(skeleton: Skeleton3D = null) -> float:
-	if skeleton == null:
-		skeleton = _shadow.find_child("Skeleton3D", true, false) as Skeleton3D
+func _ramp_angle() -> float:
+	return ramp_angle(_shadow.find_child("Skeleton3D", true, false) as Skeleton3D)
+
+
+static func ramp_angle(skeleton: Skeleton3D) -> float:
 	var bone := skeleton.find_bone("Ramp")
 	var rest := skeleton.get_bone_global_rest(bone)
 	var now := skeleton.get_bone_global_pose(bone)

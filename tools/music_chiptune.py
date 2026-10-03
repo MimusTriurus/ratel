@@ -2,8 +2,9 @@
 """The modern music as a Famicom game with a VRC6 could have played it.
 
 What the classic sound mode plays (assets/music3d/classic/): the same notes
-as modern's songs -- the MIDI the remix and the boss theme are rendered from,
-in build/music3d_pogonya/ and build/music3d_boss/ -- arranged for eight
+as modern's songs -- the MIDI the remix, the boss theme and the title's cover
+are rendered from, in build/music3d_pogonya/, build/music3d_boss/ and
+build/music3d_officers/ -- arranged for eight
 voices and played on a model of the chips, not modern's audio converted:
 
   2A03  pulse 1 and 2 (four duties, 4-bit volume), the triangle (no volume:
@@ -59,6 +60,7 @@ INSTALL = "assets/music3d/classic"
 MODERN = "assets/music3d/modern"
 POGONYA = "build/music3d_pogonya"
 BOSS = "build/music3d_boss"
+OFFICERS = "build/music3d_officers"
 
 # ----------------------------------------------------------------------------
 # The arrangement: voice -> (role, tracks, level). Tracks by their MIDI name;
@@ -88,6 +90,17 @@ BOSS_ARRANGEMENT = {
     "vrc2": ("fifth chug", ["rg1"], 8),
     "saw": ("arp", ["strings"], 26),
     "triangle": ("bass", ["bass"], 15),
+}
+# The title's: the cover's second guitar (verse 1's countermelody, verse 3's
+# third above) on pulse 2 in place of the echo, the intro's nylon guitar on
+# the lead's pulse.
+TITLE = {
+    "pulse1": ("lead", ["Lead", "Nylon"], 13),
+    "pulse2": ("lead", ["Lead 2"], 8),
+    "vrc1": ("root chug", ["Rhythm L"], 10),
+    "vrc2": ("fifth chug", ["Rhythm L"], 8),
+    "saw": ("arp", ["Strings"], 24),
+    "triangle": ("bass", ["Bass"], 15),
 }
 # Duties: the 2A03's 0-3 (12.5, 25, 50, 75 %), the VRC6's 0-7 ((d+1)/16).
 DUTY = {"pulse1": 1, "pulse2": 0, "vrc1": 7, "vrc2": 5}
@@ -125,10 +138,13 @@ CUTS = {
     "boss_full.ogg": (f"{BOSS}/stem_all.mid", 16, 32, 0.0, 0.0),
     "boss_victory.ogg": (f"{BOSS}/clip_victory.mid", 0, 2, 1.2, 2.5),
     "boss_breach.ogg": (f"{BOSS}/clip_accent.mid", 0, 0.25, 0.8, 2.2),
+    # the whole of it, the last hit ringing a bar and faded over its last 2 s
+    "title.ogg": (f"{OFFICERS}/officers_heavy.mid", 0, 60, 2.0, 0.0),
 }
 SONGS = {"stage": (["start.ogg", "stage0_intro.ogg", "stage0_repeat.ogg"], "stage0_repeat.ogg", STAGE),
          "boss": (["boss_intro.ogg", "boss_full.ogg", "boss_victory.ogg", "boss_breach.ogg"], "boss_full.ogg",
-                  BOSS_ARRANGEMENT)}
+                  BOSS_ARRANGEMENT),
+         "title": (["title.ogg"], "title.ogg", TITLE)}
 # The accent plays over the music: as the modern one, 9 dB under the rest.
 UNDER_DB = {"boss_breach.ogg": 9.0}
 LIMITER = "alimiter=limit=0.891:attack=5:release=50:level=disabled:latency=1"

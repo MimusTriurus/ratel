@@ -17,8 +17,11 @@ const GAP := Main.CROSSHAIR_GAP
 const COLOUR := Main.CROSSHAIR_COLOR
 const OUTLINE := Main.CROSSHAIR_OUTLINE
 
-# `wanted.call()`: whether the reticle is drawn this frame.
+# `wanted.call()`: whether the reticle is drawn this frame; `hide_pointer.call()`
+# whether the pointer is hidden all the same, something else drawing in its
+# place -- the title's reticle (Level3DTitle.pointer_hidden).
 var wanted: Callable
+var hide_pointer: Callable
 var _shown := false
 
 
@@ -30,7 +33,8 @@ func _init() -> void:
 
 func _process(_delta: float) -> void:
 	_shown = wanted.is_valid() and wanted.call()
-	var mode := Input.MOUSE_MODE_HIDDEN if _shown else Input.MOUSE_MODE_VISIBLE
+	var hidden: bool = _shown or hide_pointer.is_valid() and hide_pointer.call()
+	var mode := Input.MOUSE_MODE_HIDDEN if hidden else Input.MOUSE_MODE_VISIBLE
 	if Input.mouse_mode != mode:
 		Input.mouse_mode = mode
 	queue_redraw()

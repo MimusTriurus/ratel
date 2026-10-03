@@ -78,7 +78,7 @@ OUT = "build/sfx3d_chip"
 # classic's loops are looped, not that this list is right, so keep it with
 # the table.
 LOOPS = {"rocket_flight", "btr_idle", "btr_drive", "tank_engine", "boat_engine",
-         "chinook", "rescue_rotor", "ambient_sea", "ambient_jungle"}
+         "chinook", "rescue_rotor", "jeep_idle", "ambient_sea", "ambient_jungle"}
 # Rotors, which a frame-by-frame reading takes apart: the APU's registers
 # change 60 times a second, and a blade-pass rate that is no whole number of
 # frames (the rescue helicopter's 24 Hz is 2.5) reads as a rhythm that

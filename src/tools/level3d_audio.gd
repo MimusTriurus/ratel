@@ -203,6 +203,11 @@ const SOUNDS := {
 	# files' gains bring their loudest 50 ms (RMS) down to the originals'.
 	"chinook": {"bus": &"Engines", "loop": true, "original": "helicopter.ogg", "flat": true},
 	"rescue_rotor": {"bus": &"Engines", "loop": true, "original": "helicopter2.ogg", "flat": true},
+	# The title's jeeps (Level3DSplash3D), started and running as the menu
+	# lights them, the idle faded out when it puts them out, on players of
+	# the splash's own.
+	"jeep_start": {"bus": &"Engines", "flat": true},
+	"jeep_idle": {"bus": &"Engines", "loop": true, "flat": true, "mixed": true},
 	# Prisoners, the HUD and the menu.
 	"pickup": {"bus": &"Interface", "original": "pickup.ogg", "flat": true},
 	"rescue_pickup": {"bus": &"Interface", "original": "helicopter_pickup.ogg", "flat": true},
@@ -211,6 +216,10 @@ const SOUNDS := {
 	"warning": {"bus": &"Interface", "flat": true},
 	# GameMode's pause key: the Escape menu opening and closing.
 	"pause": {"bus": &"Interface", "original": "pause.ogg", "flat": true},
+	# The menus' clicks, the title's and the Escape menu's (Level3DTitle,
+	# Level3DMenu): onto another entry, and an entry picked.
+	"menu_move": {"bus": &"Interface", "flat": true, "voices": 3, "gap": 0.03},
+	"menu_pick": {"bus": &"Interface", "flat": true, "voices": 2},
 	# Under everything, for as long as the preview runs.
 	"ambient_sea": {"bus": &"Ambient", "loop": true, "flat": true},
 	"ambient_jungle": {"bus": &"Ambient", "loop": true, "flat": true},
@@ -224,6 +233,12 @@ const MUSIC := {
 	# stage_song0: the Chinook's trigger after a continue.
 	"stage": ["stage0_intro.ogg", "stage0_repeat.ogg"],
 	"boss": ["boss_intro.ogg", "boss_repeat.ogg"],
+	# The title screen's (Level3DTitle), the whole song over and over: in
+	# ORIGINAL the 2D game's title_song, which IntroMode plays once the title
+	# has stood a while; in MODERN a heavy cover of «От героев былых времён»
+	# (Хозак, «Офицеры»), its guitar intro and three verses, and in CLASSIC
+	# the same notes on the NES and VRC6 (build/music3d_officers/).
+	"title": ["title.ogg"],
 }
 
 # The modern mode's songs that follow the fight, in place of MUSIC's song of
@@ -326,6 +341,7 @@ var _auditions: Array = []  # audition's players of loops, while they last
 # What audition_music took the music off: [the parts still to come, the part,
 # where it had got to or -1], or null.
 var _held_music = null
+var _music_fade: Tween       # fade_music's, until the next song
 # --audio-debug: every bus's mute, gain and peak, once a second, on the
 # console -- whether anything reaches Master, and what is holding it back.
 var _debug := false
@@ -644,6 +660,9 @@ static func play_music(song: String) -> void:
 	if _current == null:
 		return
 	var c := _current
+	if c._music_fade != null:
+		c._music_fade.kill()
+		c._music_fade = null
 	c._held_music = null
 	c._music.stop()
 	c._song_name = song
@@ -659,6 +678,27 @@ static func play_music(song: String) -> void:
 
 static func stop_music() -> void:
 	play_music("")
+
+
+# The song playing taken down to nothing over `seconds`, from where it is,
+# and stopped: the title's as the game it was left for comes in
+# (Level3DTitle), so that the one does not cut into the other. Asked again,
+# it goes on down from where it has got to over the new `seconds`. The next
+# play_music plays at full.
+static func fade_music(seconds: float) -> void:
+	if _current == null or not _current._music.playing:
+		return
+	var c := _current
+	if c._music_fade != null:
+		c._music_fade.kill()
+	var player := c._music
+	var from := player.volume_db
+	c._music_fade = c.create_tween()
+	c._music_fade.tween_method(func(g: float): player.volume_db = from + linear_to_db(maxf(g, 0.0001)),
+			1.0, 0.0, maxf(seconds, 0.01))
+	c._music_fade.tween_callback(func():
+		c._music_fade = null
+		play_music(""))
 
 
 # Which enemies are on the field, for a song that follows the fight: a bool
