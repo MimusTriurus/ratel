@@ -106,12 +106,19 @@ const PALMS := [
 # The frame's width over its height: Level3DSplash's picture's, 1024 x 504,
 # so that the two take the same place on the title.
 const ASPECT := 1024.0 / 504.0
-# A game picked, the menu goes and the title brings the frame to the middle
+# A game picked, the menu goes and the title brings the scene to the middle
 # of the screen, FOCUS_ZOOM times as big (focus): in the title art's place,
-# with nothing under it, it left the bottom half of the screen empty. It is
-# rendered that big throughout, drawn smaller until then, so that it is
-# not blown up and soft once it is there, and is not resized as it grows.
+# with nothing under it, it left the bottom half of the screen empty. And the
+# frame opens out to the screen's edges as it comes: the sun rises as the
+# jeeps go (RISE_*), and a disc 23 degrees in radius came up out of the top
+# of a frame cut to the picture's proportions. So the scene is rendered the
+# whole screen big throughout, SCREEN, as wide as a camera FOCUS_ZOOM times
+# as close would see it all (place); on the title only the middle of it shows,
+# the frame's (_region), which is the scene exactly as it was, drawn smaller,
+# so that it is not blown up and soft once it is there and is not resized as
+# it grows.
 const FOCUS_ZOOM := 1.5
+const SCREEN := Vector2(2048, 1152)
 
 # The jeep's launcher fits (level3d_rocket.gd's FITS, and the spare ones in
 # level3d_btr.gd): only the missiles' is shown, the picture's rocket pods.
@@ -154,6 +161,28 @@ const RIM_TINT := 0.35
 # A single plane's rim, the fronds' and the glass's: narrower and fainter.
 const PLANE_RIM := 0.5
 const PLANE_RIM_WIDTH := 0.12
+
+# The sunrise: once a game is picked (launch) the sun comes up over RISE_TIME
+# -- the disc out of the horizon to RISEN_SINK, the shade to RISEN_AMBIENT,
+# the ground lit (RISEN_GROUND, RISEN_GLOW) and the sky over the horizon
+# (SKY_SHADER's `dawn`) -- so that the title fades out on a sun that has
+# risen, into the stage's day, and not on one that has set. Its light stays
+# where it was, SUN_ELEVATION, just under the horizon, so that everything
+# stands against the disc as a silhouette still: raised with it, it crossed
+# the slopes of the rolling ground's facets one by one between 0 and 2
+# degrees, and the two-tone light (TOON_SHADER) turned each lit in a frame,
+# angular patches of light jumping about the ground as the sun came up. The title has
+# faded out about 11 s after the pick over the Chinook (measured), a little
+# over RISE_TIME, so it fades on the risen sun; the frame has opened out to
+# the screen's edges by then (focus), for the whole disc to be seen.
+const RISE_TIME := 10.0
+const SINK := 0.187              # SKY_SHADER's, the sun half set
+const RISEN_SINK := -0.12
+const RISEN_AMBIENT := 0.42
+# And the ground lighter under it, a warm brown, all of it at once: its paint
+# lighter, and a glow of its own, which no facet's slope turns on or off.
+const RISEN_GROUND := Color(0.36, 0.16, 0.08)
+const RISEN_GLOW := Color(0.16, 0.075, 0.035)
 
 # Dark, so that the faces the low sun catches are a glint and not a stripe.
 const GROUND_COLOUR := Color(0.085, 0.036, 0.028)
@@ -384,6 +413,8 @@ uniform float rim_tint = 0.35;
 uniform float lump = 0.5;
 uniform float break_up = 0.55;
 uniform float side_fade = 0.25;
+// The frame's sides in the render, SCREEN_UV.x (Level3DSplash3D._region).
+uniform vec2 sides = vec2(0.0, 1.0);
 varying vec3 dir;
 varying float life;
 varying float seed;
@@ -434,7 +465,8 @@ void fragment() {
 	// thrown out there goes as it would with age: lit, on the black the sky
 	// has died to by then, the edge's own fade to black cut it off in a line.
 	float e = noise(dir * 3.2 + seed * 1.7) * 0.7 + noise(dir * 7.0 + seed) * 0.3;
-	float side = 1.0 - smoothstep(0.03, side_fade, min(SCREEN_UV.x, 1.0 - SCREEN_UV.x));
+	float across = (SCREEN_UV.x - sides.x) / (sides.y - sides.x);
+	float side = 1.0 - smoothstep(0.03, side_fade, min(across, 1.0 - across));
 	if (e < max(smoothstep(break_up, 1.0, life), side) * 1.05) {
 		discard;
 	}
@@ -484,7 +516,11 @@ uniform vec2 push = vec2(2.5, 1.2);
 uniform float rise = 0.7;
 uniform vec2 mouse = vec2(-10.0);
 uniform float gust = 0.0;
-uniform float aspect = 0.4922;
+// The render's size and the frame's focused size, pixels (Level3DSplash3D.
+// place): the gust's reach and the push are measured in the focused frame's
+// pixels, whatever of the render shows.
+uniform vec2 pixels = vec2(1200.0, 591.0);
+uniform vec2 focused = vec2(1200.0, 591.0);
 varying vec3 world;
 
 float hash(vec2 p) {
@@ -506,13 +542,13 @@ void vertex() {
 void fragment() {
 	float h = world.y;
 	float strength = smoothstep(-0.3, 0.3, h) * (1.0 - smoothstep(0.0, reach, h));
-	vec2 from_mouse = (SCREEN_UV - mouse) * vec2(1.0, aspect);
+	vec2 from_mouse = (SCREEN_UV - mouse) * pixels / focused.x;
 	strength *= 1.0 + 2.5 * gust * exp(-dot(from_mouse, from_mouse) / 0.008);
 	// Two octaves, cells wider than they are tall: layers of warm air rising.
 	vec2 p = vec2(world.x * 0.45, (world.y - TIME * rise) * 1.4);
 	vec2 n = vec2(noise(p) * 0.65 + noise(p * 2.3 + 17.0) * 0.35,
 			noise(p + 41.0) * 0.65 + noise(p * 2.3 + 59.0) * 0.35);
-	vec2 offset = (n - 0.5) * 2.0 * push * strength / 406.0 * vec2(aspect, 1.0);
+	vec2 offset = (n - 0.5) * 2.0 * push * strength / 406.0 * focused.y / pixels;
 	ALBEDO = textureLod(screen, SCREEN_UV + offset, 0.0).rgb;
 }
 """
@@ -522,10 +558,15 @@ shader_type canvas_item;
 // The frame fades to black this far in from each edge, as a share of the
 // width and the height: wider at the bottom, where the ground runs out.
 uniform vec4 fade = vec4(0.12, 0.08, 0.12, 0.16); // left, top, right, bottom
+// What of the render the frame shows (Level3DSplash3D._region), and how far it
+// has opened out to the screen's edges, where it fades no more.
+uniform vec4 region = vec4(0.0, 0.0, 1.0, 1.0);
+uniform float opened = 0.0;
 void fragment() {
-	vec4 c = texture(TEXTURE, UV);
-	float f = smoothstep(0.0, fade.x, UV.x) * smoothstep(0.0, fade.z, 1.0 - UV.x)
-			* smoothstep(0.0, fade.y, UV.y) * smoothstep(0.0, fade.w, 1.0 - UV.y);
+	vec4 c = texture(TEXTURE, mix(region.xy, region.zw, UV));
+	vec4 edge = fade * (1.0 - opened);
+	float f = smoothstep(-1e-4, edge.x, UV.x) * smoothstep(-1e-4, edge.z, 1.0 - UV.x)
+			* smoothstep(-1e-4, edge.y, UV.y) * smoothstep(-1e-4, edge.w, 1.0 - UV.y);
 	COLOR = vec4(c.rgb * f, 1.0);
 }
 """
@@ -557,6 +598,12 @@ uniform float sink = 0.187;
 uniform float breath = 7.0;
 uniform float swell = 0.012;
 uniform float brighten = 0.05;
+// The sunrise (RISE_TIME), 0 to 1: the sky over the horizon lit, orange low
+// and violet higher up, and the far ground with it.
+uniform float dawn = 0.0;
+const vec3 DAWN_LOW = vec3(0.62, 0.22, 0.07);
+const vec3 DAWN_HIGH = vec3(0.20, 0.09, 0.16);
+const vec3 DAWN_GROUND = vec3(0.07, 0.03, 0.02);
 // sRGB, 0..1.
 const vec3 HEART = vec3(253.0, 227.0, 6.0) / 255.0;
 const vec3 EDGE = vec3(246.0, 58.0, 1.0) / 255.0;
@@ -583,8 +630,9 @@ void sky() {
 	float r = acos(clamp(dot(d, sun), -1.0, 1.0)) / (radius * (1.0 + swell * b));
 	vec3 c = r < 1.0 ? mix(HEART, EDGE, clamp((r - 0.47) / 0.53, 0.0, 1.0)) : glow(r);
 	c *= 1.0 + brighten * b;
+	c = max(c, mix(DAWN_LOW, DAWN_HIGH, clamp(d.y * 2.5, 0.0, 1.0)) * dawn);
 	// Below the horizon only past the far ground's edge: as dark as it.
-	c = d.y < 0.0 ? GROUND : c;
+	c = d.y < 0.0 ? GROUND + DAWN_GROUND * dawn : c;
 	// The Compatibility renderer takes the sky's colour as sRGB as it is.
 	COLOR = c;
 }
@@ -599,6 +647,15 @@ var _rest := Rect2()                 # where place put the frame
 var _focus: Tween                    # the frame going to the middle (focus)
 var _hard := false
 var _launch_time := -1.0             # seconds since launch, -1 before it
+var _rise := 0.0                     # the sunrise, 0 to 1 (RISE_TIME)
+var _sun: DirectionalLight3D
+var _environment: Environment
+var _sky_material: ShaderMaterial
+var _ground_paint: ShaderMaterial
+var _dust_paint: ShaderMaterial
+# Screen pixels to a render pixel: 1 / FOCUS_ZOOM on the title, 1 focused.
+var zoom := 1.0 / FOCUS_ZOOM
+var _focused := Vector2.ONE              # the frame's size focused, place
 
 var _height: Callable        # the near ground's height at (x, z)
 var _dust_mesh: MultiMeshInstance3D
@@ -685,18 +742,46 @@ func place(centre: Vector2, width: float) -> void:
 	size = Vector2(width, width / ASPECT)
 	position = centre - size * 0.5
 	_rest = Rect2(position, size)
-	viewport.size = Vector2i((size * FOCUS_ZOOM).round())
+	_focused = size * FOCUS_ZOOM
+	viewport.size = Vector2i(SCREEN)
+	# CAMERA_FOV across the focused frame's height, and the render as much
+	# wider and taller as SCREEN is than that frame.
+	camera.keep_aspect = Camera3D.KEEP_WIDTH
+	camera.fov = rad_to_deg(2.0 * atan(tan(deg_to_rad(CAMERA_FOV) * 0.5) * ASPECT * SCREEN.x / _focused.x))
+	var haze := _haze_mesh.mesh.surface_get_material(0) as ShaderMaterial
+	haze.set_shader_parameter("pixels", SCREEN)
+	haze.set_shader_parameter("focused", _focused)
+	_show_frame()
 
 
-# The frame to `centre`, FOCUS_ZOOM times as big, over `seconds`, eased
-# both ends; reset_launch puts it back.
+# What of the render the frame shows, in its UV: as much as the frame is big
+# at `zoom`, about the render's middle, where the camera looks.
+func _region() -> Rect2:
+	var seen := size / zoom / SCREEN
+	return Rect2(Vector2(0.5, 0.5) - seen * 0.5, seen)
+
+
+# The frame's region and how far it has opened, to the shaders that read them.
+func _show_frame() -> void:
+	var r := _region()
+	var edge := material as ShaderMaterial
+	edge.set_shader_parameter("region", Vector4(r.position.x, r.position.y, r.end.x, r.end.y))
+	edge.set_shader_parameter("opened", inverse_lerp(1.0 / FOCUS_ZOOM, 1.0, zoom))
+	if _dust_paint != null:
+		_dust_paint.set_shader_parameter("sides", Vector2(r.position.x, r.end.x))
+
+
+# The scene to `centre`, FOCUS_ZOOM times as big, and the frame out to the
+# screen's edges about it, over `seconds`, eased both ends -- the frame's
+# growth and the zoom's in step, so that it never shows more than the render
+# has; reset_launch puts it back.
 func focus(centre: Vector2, seconds: float) -> void:
 	if _focus != null:
 		_focus.kill()
-	var to := _rest.size * FOCUS_ZOOM
 	_focus = create_tween().set_parallel().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	_focus.tween_property(self, "size", to, seconds)
-	_focus.tween_property(self, "position", centre - to * 0.5, seconds)
+	_focus.tween_property(self, "size", SCREEN, seconds)
+	_focus.tween_property(self, "position", centre - SCREEN * 0.5, seconds)
+	_focus.tween_property(self, "zoom", 1.0, seconds)
 
 
 func _build() -> void:
@@ -721,14 +806,17 @@ func _build() -> void:
 	var world_environment := WorldEnvironment.new()
 	world_environment.environment = environment
 	world.add_child(world_environment)
+	_environment = environment
+	_sky_material = sky_material
 
-	var sun := DirectionalLight3D.new()
-	sun.light_color = SUN_COLOUR
-	sun.light_energy = SUN_ENERGY
-	world.add_child(sun)
+	_sun = DirectionalLight3D.new()
+	_sun.light_color = SUN_COLOUR
+	_sun.light_energy = SUN_ENERGY
+	world.add_child(_sun)
 	# Pointing from the sky at the camera, the light's -Z its way.
 	var travel := Vector3(0, sin(deg_to_rad(-SUN_ELEVATION)), cos(deg_to_rad(SUN_ELEVATION)))
-	sun.basis = Basis.looking_at(travel, Vector3.UP)
+	_sun.basis = Basis.looking_at(travel, Vector3.UP)
+	_show_rise()
 
 	camera = Camera3D.new()
 	camera.fov = CAMERA_FOV
@@ -791,6 +879,7 @@ func _ground() -> Node3D:
 	var ground := MeshInstance3D.new()
 	ground.mesh = st.commit()
 	ground.material_override = _toon(GROUND_COLOUR, 0.0)
+	_ground_paint = ground.material_override
 	ground.layers = 1 | GROUND_LAYER
 	root.add_child(ground)
 	# Beyond, flat to the horizon, a little under the near ground so that the
@@ -944,6 +1033,7 @@ func _dust(wind: bool) -> MultiMeshInstance3D:
 	paint.set_shader_parameter("rim", RIM)
 	paint.set_shader_parameter("rim_tint", RIM_TINT)
 	ball.surface_set_material(0, paint)
+	_dust_paint = paint
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_custom_data = true
@@ -1064,7 +1154,6 @@ func _haze() -> MeshInstance3D:
 	var m := ShaderMaterial.new()
 	m.shader = shader
 	m.set_shader_parameter("reach", HAZE_REACH)
-	m.set_shader_parameter("aspect", 1.0 / ASPECT)
 	quad.material = m
 	var haze := MeshInstance3D.new()
 	haze.mesh = quad
@@ -1078,11 +1167,15 @@ func _process(delta: float) -> void:
 		_silence_engines()
 		return
 	_time += delta
+	_show_frame()
 	_follow_mouse(delta)
 	for m in _wind_materials:
 		m.set_shader_parameter("wind_clock", _time)
 	if _launch_time >= 0.0:
 		_launch_time += delta
+		if _rise < 1.0:
+			_rise = minf(_rise + delta / RISE_TIME, 1.0)
+			_show_rise()
 	_drive_rigs(delta)
 	if _dust_mesh == null:
 		return
@@ -1143,7 +1236,8 @@ func _process(delta: float) -> void:
 # frame, dying down when it stops -- across the title, so that the frame
 # moving under a still cursor (focus) is not a gust.
 func _follow_mouse(delta: float) -> void:
-	var at := get_local_mouse_position() / size
+	var r := _region()
+	var at := r.position + get_local_mouse_position() / size * r.size
 	var pixels := at * Vector2(viewport.size)
 	var on_title := get_global_mouse_position()
 	var speed := (on_title - _last_mouse).length() / maxf(delta, 1e-4)
@@ -1431,11 +1525,14 @@ func _silence_engines() -> void:
 # opened again, which lights them as its menu says (show_menu).
 func reset_launch() -> void:
 	_launch_time = -1.0
+	_rise = 0.0
+	_show_rise()
 	if _focus != null:
 		_focus.kill()
 		_focus = null
 	position = _rest.position
 	size = _rest.size
+	zoom = 1.0 / FOCUS_ZOOM
 	_silence_engines()
 	for rig in _rigs:
 		rig.on = false
@@ -1483,3 +1580,16 @@ func _drive_off(rig: Dictionary, delta: float) -> void:
 			var under: Vector3 = (wheel as Node3D).global_position
 			_raise_cloud(under + Vector3(_dust_rng.randf_range(-0.2, 0.2), 0.0, _dust_rng.randf_range(-0.3, 0.3)),
 					1.0, WHEEL_CLOUD.x, WHEEL_CLOUD.y)
+
+
+# The sun as far up as the rise has it (RISE_*), eased in and out.
+func _show_rise() -> void:
+	if _sun == null:
+		return
+	var t := smoothstep(0.0, 1.0, _rise)
+	_environment.ambient_light_energy = lerpf(AMBIENT_ENERGY, RISEN_AMBIENT, t)
+	_sky_material.set_shader_parameter("sink", lerpf(SINK, RISEN_SINK, t))
+	_sky_material.set_shader_parameter("dawn", t)
+	if _ground_paint != null:
+		_ground_paint.set_shader_parameter("albedo", GROUND_COLOUR.lerp(RISEN_GROUND, t))
+		_ground_paint.set_shader_parameter("glow", Color.BLACK.lerp(RISEN_GLOW, t))

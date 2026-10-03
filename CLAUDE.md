@@ -593,6 +593,29 @@ it as "Custom". The menu is in English, drawn in the HUD's font from the
 .ttf files its sheets were baked from: Press Start 2P (scaled by 2/3 to fit
 the panels) for both classic styles, Black Ops One for modern.
 
+The stage's light is a preset, `Level3DLighting` (`src/tools/level3d_lighting.gd`):
+day, Blender's light and the default, or golden hour, dusk and sunrise, the
+title splash's palette as far as a stage can be read in it (Graphics -> Light,
+or `--light day|golden|dusk|sunrise`, which a --shot takes too). The time of
+day does not change in a stage: the title's sun rises instead, once a game is
+picked (`Level3DSplash3D`, `RISE_*`: the disc out of the horizon, the sky
+and the ground lit -- the ground by a glow of its own, since a sun light
+raised with the disc turned the rolling ground's facets lit one by one), and
+the title fades on it into the day.
+So that the risen disc is not cut off, the splash is rendered the whole screen
+big (`SCREEN`, the camera as wide as the focused frame's `FOCUS_ZOOM` needs):
+the title shows the middle of it, exactly the old frame (`_region`), and the
+frame opens out to the screen's edges as it comes to the middle (`focus`). Readability is the constraint, so a preset moves hue
+and not brightness: a light's energy is held to the day's on a grey, the sun
+stays top left and no lower than 30 degrees, the shade gets lighter as the sun
+gets lower (and the sun weaker by what that adds to a lit face in
+Compatibility, `AMBIENT_ON_LIT_COMPATIBILITY`, measured), and a fill from the
+other side lights what stands up. The sand's orange is at the edge of the
+gamut, so no light moves it: a grade over the stage and under the HUD
+(`level3d_screen.gdshader`, mode 3) turns hue in OKLab -- cool shade, warm
+light -- with its lightness, its black contour and its saturated colours'
+chroma left as they were.
+
 The 3D preview has its own sound, `Level3DAudio` (`src/tools/level3d_audio.gd`):
 one table, `SOUNDS`, of every effect it plays, with its bus (sub-buses of
 `Sfx`; the enemies' guns on `EnemyFire` under `Weapons`), gain, variants and
