@@ -14,16 +14,25 @@
 # splash's own two tones (DUST_* in Level3DSplash3D), lit through where the
 # cloud is thin and a rim inside the ink where it is against the sun.
 #
+# On the stage (Level3DWash) it is lit instead, `lit` true: one albedo, the
+# ground's dust's (Level3DPuffs.COLOURS), and the blended normal handed to
+# the stage's two-tone light, as every material there is (Level3DPreview.
+# _toon), so that it is lit as the puffs and the models are under whatever
+# preset; it takes no shadows, since the light sees the quad and not the
+# cloud. The stage's top view is orthographic, as the bench's camera is:
+# there the tangent plane is the view plane itself.
+#
 # A frame is clear(), add() a puff, then draw(). The puffs' motion is the
 # owner's; this knows only where each is this frame, how big, how far it is
 # eaten and how old.
 class_name Level3DCelCloud
 extends RefCounted
 
-# Puffs in one cloud at most -- the shader's arrays.
-const POOL := 64
+# Puffs in one cloud at most -- the shader's arrays: the stage's wash
+# (Level3DWash) wants some 90 to be one body.
+const POOL := 96
 
-static var _shader: Shader
+static var _shaders := {}   # lit -> Shader
 
 var _quad: MeshInstance3D
 var _paint: ShaderMaterial
@@ -33,16 +42,18 @@ var _n := 0
 var _blend := 0.2
 
 
-# A cloud under `parent`, its puffs flowing into one within `blend` metres.
-func _init(parent: Node3D, blend: float, ink: float, ink_px: float) -> void:
+# A cloud under `parent`, its puffs flowing into one within `blend` metres;
+# lit by the scene's light rather than painted in tones, `lit`.
+func _init(parent: Node3D, blend: float, ink: float, ink_px: float, lit := false) -> void:
 	_blend = blend
 	_where.resize(POOL)
 	_looks.resize(POOL)
-	if _shader == null:
-		_shader = Shader.new()
-		_shader.code = SHADER.replace("POOL", str(POOL))
+	if not _shaders.has(lit):
+		var shader := Shader.new()
+		shader.code = SHADER.replace("POOL", str(POOL)).replace("HEAD", LIT_HEAD if lit else PAINTED_HEAD)
+		_shaders[lit] = shader
 	_paint = ShaderMaterial.new()
-	_paint.shader = _shader
+	_paint.shader = _shaders[lit]
 	_paint.set_shader_parameter("blend", blend)
 	_paint.set_shader_parameter("ink_width", ink)
 	_paint.set_shader_parameter("ink_min_px", ink_px)
@@ -85,9 +96,26 @@ func paint(body: Color, lit: Color, rim: Color, sides: Vector2) -> void:
 	_paint.set_shader_parameter("sides", sides)
 
 
+# A lit cloud's albedo and how sharp its light's edge is (Level3DPreview.
+# TOON_EDGE).
+func tint(albedo: Color, toon_edge: float) -> void:
+	_paint.set_shader_parameter("albedo", albedo)
+	_paint.set_shader_parameter("toon_edge", toon_edge)
+
+
+# The ground's height under the cloud: a puff sat low, its middle near the
+# ground, is partly under it, and the ground in front of its foot cut the
+# cloud off there, ink and all. Where the cloud's depth is under the ground,
+# it is put on the ground along the pixel's ray instead. Brought forward by
+# the radius everywhere instead, its far side stood in front of the hull.
+func set_ground(height: float) -> void:
+	_paint.set_shader_parameter("ground_y", height)
+
+
 # The puffs added since clear(), seen from `camera`; `sun_toward` the way to
 # the sun, for how much the cloud is against it.
 func draw(camera: Camera3D, sun_toward: Vector3) -> void:
+	var ortho := camera.projection == Camera3D.PROJECTION_ORTHOGONAL
 	var eye := camera.global_transform
 	var right := eye.basis.x.normalized()
 	var up := eye.basis.y.normalized()
@@ -105,8 +133,10 @@ func draw(camera: Camera3D, sun_toward: Vector3) -> void:
 		var depth := -rel.dot(back)
 		if depth < camera.near * 2.0:
 			continue
-		var reach := (_where[i].w * 1.4 + _blend + 0.1) / depth
-		var s := Vector2(rel.dot(right), rel.dot(up)) / depth
+		# Over its depth in perspective, as it is in the orthographic view.
+		var over := 1.0 if ortho else depth
+		var reach := (_where[i].w * 1.4 + _blend + 0.1) / over
+		var s := Vector2(rel.dot(right), rel.dot(up)) / over
 		lo = Vector2(minf(lo.x, s.x - reach), minf(lo.y, s.y - reach))
 		hi = Vector2(maxf(hi.x, s.x + reach), maxf(hi.y, s.y + reach))
 		mid += at
@@ -125,14 +155,17 @@ func draw(camera: Camera3D, sun_toward: Vector3) -> void:
 	var near := maxf(camera.near * 4.0, front * 0.5)
 	var centre := (lo + hi) * 0.5
 	var half := (hi - lo) * 0.5 * 1.03
-	_quad.global_transform = Transform3D(Basis(right * (2.0 * half.x * near), up * (2.0 * half.y * near), back),
-			eye.origin + (right * centre.x + up * centre.y - back) * near)
+	# Orthographic, the plane's size is the same at any depth.
+	var spread := 1.0 if ortho else near
+	_quad.global_transform = Transform3D(Basis(right * (2.0 * half.x * spread), up * (2.0 * half.y * spread), back),
+			eye.origin + (right * centre.x + up * centre.y) * spread - back * near)
 	_quad.visible = true
 	_paint.set_shader_parameter("puffs", _where)
 	_paint.set_shader_parameter("looks", _looks)
 	_paint.set_shader_parameter("count", _n)
 	_paint.set_shader_parameter("near_cut", camera.near * 2.0)
-	_paint.set_shader_parameter("mid_depth", maxf(-(mid - eye.origin).dot(back), near))
+	_paint.set_shader_parameter("ortho", ortho)
+	_paint.set_shader_parameter("mid_depth", 1.0 if ortho else maxf(-(mid - eye.origin).dot(back), near))
 	_paint.set_shader_parameter("behind", pow(clampf((mid - eye.origin).normalized().dot(sun_toward.normalized()), 0.0, 1.0), 4.0))
 
 
@@ -146,9 +179,12 @@ func draw(camera: Camera3D, sun_toward: Vector3) -> void:
 # from the puffs' spheres with the union's weights, so the cloud has one
 # body; the depth is the blended front of the same spheres, found along the
 # pixel's ray, so the Chinook still hides what is behind it.
+const PAINTED_HEAD := "render_mode unshaded, cull_disabled, shadows_disabled;"
+const LIT_HEAD := "#define LIT\nrender_mode diffuse_toon, specular_disabled, cull_disabled, shadows_disabled;"
+
 const SHADER := """
 shader_type spatial;
-render_mode unshaded, cull_disabled, shadows_disabled;
+HEAD
 uniform vec4 puffs[POOL];
 uniform vec4 looks[POOL];
 uniform int count = 0;
@@ -170,7 +206,15 @@ uniform float rim_inks = 2.5;
 uniform float ink_width = 0.03;
 uniform float ink_min_px = 1.2;
 uniform float side_fade = 0.25;
-uniform vec2 sides = vec2(0.0, 1.0);
+// Far outside the frame unless painted (the splash's): no fade.
+uniform vec2 sides = vec2(-1.0, 2.0);
+// The tangent plane is the view plane (Level3DCelCloud.draw).
+uniform bool ortho = false;
+// Lit, its one colour and its light's edge.
+uniform vec3 albedo : source_color = vec3(0.93, 0.76, 0.48);
+uniform float toon_edge = 0.02;
+// The ground's height (Level3DCelCloud.set_ground): no depth under it.
+uniform float ground_y = -1e9;
 
 float hash3(vec3 p) {
 	p = fract(p * 0.3183099 + vec3(0.71, 0.113, 0.419));
@@ -196,10 +240,13 @@ float bayer(vec2 p) {
 }
 
 void fragment() {
-	// The pixel in the tangent plane: its ray's x and y over its depth.
-	vec2 p = VERTEX.xy / -VERTEX.z;
+	// The pixel in the tangent plane: its ray's x and y over its depth --
+	// or, orthographic, as they are.
+	vec2 p = ortho ? VERTEX.xy : VERTEX.xy / -VERTEX.z;
 	float bl = blend / mid_depth;
-	float px = 2.0 / (PROJECTION_MATRIX[1][1] * VIEWPORT_SIZE.y);
+	// A pixel in the plane, off the plane itself: the projection's own
+	// numbers gave a fraction of one, and the ink was a dashed hairline.
+	float px = abs(dFdx(p.x));
 	float ink = max(ink_width / mid_depth, ink_min_px * px);
 	float sd = 1e9;
 	float wsum = 0.0;
@@ -209,9 +256,10 @@ void fragment() {
 		if (i >= count) break;
 		vec3 c = (VIEW_MATRIX * vec4(puffs[i].xyz, 1.0)).xyz;
 		if (-c.z < near_cut) continue;
-		float r = max(puffs[i].w, 1e-3) / -c.z;
+		float over = ortho ? 1.0 : -c.z;
+		float r = max(puffs[i].w, 1e-3) / over;
 		vec4 lk = looks[i];
-		vec2 q = p - c.xy / -c.z;
+		vec2 q = p - c.xy / over;
 		float len = length(q);
 		vec2 u = q / max(len, 1e-6);
 		float bite = noise3(vec3(u * 2.2 + lk.z * 31.0, lk.y * 1.2));
@@ -242,6 +290,11 @@ void fragment() {
 		discard;
 	}
 	vec3 n = normalize(nsum);
+#ifdef LIT
+	ALBEDO = sd > -ink ? ink_colour : albedo;
+	NORMAL = n;
+	ROUGHNESS = toon_edge;
+#else
 	// Three tones, as the tanks' clouds step one lit top and one shaded
 	// foot: the foot darker, the rest half lit, its thin edges lit through.
 	// Lit only at the edges, the middle of every cloud was a dark hole; with
@@ -260,9 +313,22 @@ void fragment() {
 		colour = ink_colour;
 	}
 	ALBEDO = colour;
+#endif
 	// The blended front, along this pixel's ray.
 	float z = min(zsum / wsum, -near_cut);
-	vec4 clip = PROJECTION_MATRIX * vec4(VERTEX * (z / VERTEX.z), 1.0);
+	vec3 front = ortho ? vec3(VERTEX.xy, z) : VERTEX * (z / VERTEX.z);
+	// Not under the ground: where the ray goes into it, a hair over it.
+	if ((INV_VIEW_MATRIX * vec4(front, 1.0)).y < ground_y + 0.05) {
+		vec3 up = (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz;
+		vec3 on = (VIEW_MATRIX * vec4(0.0, ground_y + 0.05, 0.0, 1.0)).xyz;
+		vec3 from = ortho ? vec3(VERTEX.xy, 0.0) : vec3(0.0);
+		vec3 way = ortho ? vec3(0.0, 0.0, -1.0) : VERTEX;
+		float t = dot(up, on - from) / dot(up, way);
+		if (t > 0.0) {
+			front = from + way * t;
+		}
+	}
+	vec4 clip = PROJECTION_MATRIX * vec4(front, 1.0);
 	float ndc = clip.z / clip.w;
 #if CURRENT_RENDERER == RENDERER_COMPATIBILITY
 	DEPTH = ndc * 0.5 + 0.5;

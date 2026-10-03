@@ -59,6 +59,13 @@ const SMOKE_JITTER := 0.2
 # _grow's highest, which a smoke source's `size` is: its puffs at their
 # biggest.
 const GROW_PEAK := 0.76
+# The dust's colours, by the ground it is raised off: the sand, the hard
+# ground's concrete, the forest's earth. Level3DWash's too.
+const COLOURS := {
+	"ground": Color(0.93, 0.76, 0.48),
+	"hard": Color(0.66, 0.65, 0.62),
+	"forest": Color(0.52, 0.42, 0.26),
+}
 const DUST_STEP := 0.28
 const DUST_LIFE := Vector2(0.6, 0.85)
 const CLOUD_LIFE := Vector2(0.9, 1.4)
@@ -108,9 +115,9 @@ func _ready() -> void:
 		"exhaust": _lit(Color8(132, 130, 126)),
 		# The tanks' MT_SmokeDark, which their wrecks' smoke was.
 		"smoke": _lit(Color8(58, 56, 54)),
-		"ground": _lit(Color(0.93, 0.76, 0.48)),
-		"hard": _lit(Color(0.66, 0.65, 0.62)),
-		"forest": _lit(Color(0.52, 0.42, 0.26)),
+		"ground": _lit(COLOURS.ground),
+		"hard": _lit(COLOURS.hard),
+		"forest": _lit(COLOURS.forest),
 	}
 
 

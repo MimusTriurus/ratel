@@ -127,7 +127,9 @@
 # The BTR's rear wheels and the tanks' tracks leave marks on the ground that
 # fade in under seven seconds (level3d_tracks.gd); the game leaves none. They
 # raise dust as they go, and everything that drives puffs its exhaust
-# (level3d_puffs.gd), which the game draws neither of.
+# (level3d_puffs.gd), which the game draws neither of. Under --landing-dust
+# the Chinook's rotors raise a cloud of it round its hull as it comes down,
+# stands and climbs away (level3d_wash.gd); off by default.
 #
 # The prisoners the BTR picks up go home by helicopter, as the game's do: one
 # flies up the stage on row 161 and lands on the Helipad, and the prisoners
@@ -270,6 +272,7 @@ var friends: Level3DFriends
 var rescue: Level3DRescue
 var tracks: Level3DTracks
 var puffs: Level3DPuffs
+var wash: Level3DWash
 var boats: Level3DBoats
 var tanks: Level3DTanks
 var boss: Level3DBoss
@@ -1980,6 +1983,13 @@ func _add_guns(level: Node) -> void:
 	puffs.ground = _ground_at
 	puffs.sources = [btr.puffs, tanks.puffs, boss.puffs, boats.puffs]
 	add_child(puffs)
+	# And the dust the Chinook's rotors raise, under --landing-dust.
+	wash = Level3DWash.new()
+	wash.ground = _ground_at
+	wash.sun = sun
+	if OS.get_cmdline_user_args().has("--landing-dust"):
+		wash.sources = [func(): return helicopter.wash() if helicopter != null else {}]
+	add_child(wash)
 	# The boss tanks are not in explosion_hit: nothing but the player's own
 	# weapons hurts them (BossBlueTank.attack).
 	guns.explosion_hit = func(box: Rect2, player: bool):
@@ -2968,6 +2978,7 @@ func _physics_process(delta: float) -> void:
 	boss.tick()
 	tracks.tick()
 	puffs.tick()
+	wash.tick()
 	friends.tick()
 	rescue.tick()
 	_show_state()
@@ -3286,6 +3297,7 @@ func _restart(jingle := false) -> void:
 	boss.reset()
 	tracks.reset()
 	puffs.reset()
+	wash.reset()
 	Level3DWind.reset()
 	friends.reset()
 	rescue.reset()
@@ -3439,7 +3451,8 @@ func _screenshot_mode() -> void:
 	# Level3DSoldiers, Level3DBtr and Level3DAudio read these for themselves;
 	# they are not waypoints.
 	for own in ["--fade-corpses", "--btr", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
-			"--no-wind", "--wind-steps", "--spots", "--audio-debug", "--editor", "--no-chinook", "--boss"]:
+			"--no-wind", "--wind-steps", "--spots", "--audio-debug", "--editor", "--no-chinook", "--boss",
+			"--landing-dust"]:
 		var at := args.find(own)
 		if at >= 0:
 			args.remove_at(at)
