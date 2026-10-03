@@ -1,6 +1,8 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+It keeps the rules; the detail behind them is in the files under **Further
+reading** at the end — read the one for the area you are about to touch.
 
 ## What this is
 
@@ -16,8 +18,7 @@ explanation of why anything works the way it does, and most of the odd-looking
 code here is odd because the original was.
 
 Matching it is no longer binding, though. Deliberate departures are allowed and
-several already exist — WASD and mouse aim, a longer camera leash, a flow field
-that paths better than the one that shipped. What is not allowed is departing by
+several already exist (listed at the end). What is not allowed is departing by
 accident: know what the original did, say in the source why this differs, and do
 not reach for a "cleaner" Godot-native rewrite of something that already works.
 
@@ -40,62 +41,24 @@ godot --path . --headless --check-only --script src/core/main.gd
 
 A fresh clone has no `.godot/`, so `class_name` globals are unresolved and any
 `--script` run fails with "Identifier not declared in the current scope". Run
-`godot --path . --headless --import` once first.
+`godot --path . --headless --import` once first. New PNGs also need an import
+before they resolve.
 
 `tools/README.md` lists every script in `tools/`, what it is for and how it is
-run.
+run. The closest thing to a test suite:
 
-The closest thing to a test suite is the three map checks in `tools/`, none of
-which need a window:
-
-```bash
-godot --path . --headless --script tools/verify_json_maps.gd
-```
-
-```bash
-godot --path . --headless --script tools/verify_json_roundtrip.gd
-```
-
-```bash
-godot --path . --headless --script tools/verify_map_edit.gd
-```
-
-The first loads every stage through `MapIO` and through the original binary
-readers and compares the two (see Data). The second writes every stage straight
-back out: `git diff --exit-code assets/maps` must stay clean, which is what
-proves `MapIO.serialize` agrees with `tools/map_json.py` byte for byte; it also
-checks the optional `background` block both ways round. The
-third drives the editor's brushes, undo and save without a tree, and leaves
-`stage-0.json` modified on purpose — `git diff --stat assets/maps` should show
-one line per painted row and nothing else, then `git checkout -- assets/maps`.
-
-A fourth check does need a window, because it compares rendered frames: it draws
-every stage both ways, from the tile grid and from the baked image chunks, and
-they must come out identical. See Image backdrops.
+- Maps: `tools/verify_json_maps.gd`, `verify_json_roundtrip.gd` (then
+  `git diff --exit-code assets/maps` must be clean), `verify_map_edit.gd`
+  (leaves `stage-0.json` modified on purpose; `git checkout -- assets/maps`
+  after), `verify_flow_field.gd`, and `verify_backdrop.gd` (needs a window).
+  See `docs/maps.md`.
+- Behaviour: `tools/play_trace.gd` — a seeded, scripted run of every stage
+  writing every tick's state; run on two revisions and `cmp` the output.
+  Anything that should not change gameplay must leave it identical.
+- 3D: `verify_level3d.gd`, `verify_level_editor.gd`, `verify_level3d_audio.gd`.
 
 ```bash
-godot --path . --windowed --resolution 1280x720 --script tools/verify_backdrop.gd
-```
-
-`src/tools/map_editor.tscn` shows a stage the way the game draws it, with the
-collision types, destruction groups and spawn triggers over the top — including
-the row each trigger actually fires on, which is the thing about the map format
-that is impossible to see in the game. It edits all four things a stage file
-holds: the tile grid, the collision grid, the triggers and the destruction
-groups. Check stage looks for the mistake the format invites — a destructible
-object binds to its group by reading `groups_map` at one cell of its own
-footprint, so a group that has drifted off that cell silently fires group 0
-instead:
-
-```bash
-godot --path . src/tools/map_editor.tscn
-```
-
-It can also render one view and quit, which is how it gets checked (a real
-window is required, `--headless` has no framebuffer to read back):
-
-```bash
-godot --path . --windowed --resolution 1280x720 src/tools/map_editor.tscn -- --shot out.png 3 0.6 150 "tiles,overlay,types,triggers"
+godot --path . --headless --script tools/play_trace.gd -- build/play_trace/a.txt ghost
 ```
 
 Export uses the single `Windows Desktop` preset in `export_presets.cfg`:
@@ -106,16 +69,18 @@ godot --path . --headless --export-release "Windows Desktop" build/jackal.exe
 
 `include_filter="*.dat,*.xml,*.json"` in that preset is load-bearing — Godot does
 not import any of those extensions as resources, so without it an exported build
-ships with no maps or sprite indices and dies on the loading screen. `*.json` is
-there for the stage maps; verify a build really carries them with
-`--export-pack` and a grep for `stage-0.json` in the `.pck`.
+ships with no maps or sprite indices and dies on the loading screen. Verify a
+build really carries them with `--export-pack` and a grep for `stage-0.json` in
+the `.pck`.
 
-## Architecture
+## Architecture (2D game)
 
 The original is a fixed-logic-rate game drawn with immediate-mode OpenGL, and is
 reproduced as such. There is exactly one node: `Main` (`Node2D`) in
 `src/main.tscn`. Everything else is a plain `RefCounted` — no `Area2D`, no
 physics server, no scene tree, no signals except `AudioStreamPlayer.finished`.
+Collision is the original's hand-written AABB tests (`HitElement.overlap` and the
+`hit_*` / `is_solid_*` / `is_mine_*` families), not Godot collision.
 
 ### Timing — the 100 Hz / 60 fps split
 
@@ -132,879 +97,75 @@ that pairing is deliberate:
 
 Moving work between `_physics_process` and `_process` changes game speed.
 
-### Mode state machine
+### Modes and entities
 
-`Modes` (`src/core/modes.gd`) lists the 14 modes; `Main.request_mode(int)`
-constructs one and `set_mode` calls `init(main)` then `update()`. Modes are
-duck-typed, not an interface: `init/update/render`, plus optional `input_event`
-(only `InputMode` needs raw events, for key remapping), `fade_completed`
-(`IFadeListener`) and `pan_complete`. `src/modes/` holds title/map/cutscene/menu
-modes; `GameMode` in `src/game/` is the gameplay mode.
+`Modes` (`src/core/modes.gd`) lists the modes; `Main.request_mode(int)` builds
+one. Modes are duck-typed (`init/update/render`, optional `input_event`,
+`fade_completed`, `pan_complete`). `GameMode` (`src/game/`) is gameplay;
+requesting any mode destroys it and the run with it.
 
-Startup is `Main._ready` → `load_all()` → `INTRO`, the title screen. Loading
-used to be a mode of its own: `LoadingMode` called `load_next()` once a tick and
-drew a progress bar over an NES controller, because the original did. It is a
-`_ready` block now, so the window opens on the title screen rather than on a
-progress bar — about 0.6 s of work before the first frame. `load_next` is still
-a giant `match load_index` loading one asset group per call, and its last step
-is what requests `INTRO`, which is what ends `load_all`'s loop.
-`CutsceneSequence` shuffles the between-stage cutscenes.
-
-### Entities
-
-`GameElement` → `HitElement` → `Enemy` (`src/game/`), held in
-`GameMode.elements[8]` — eight draw layers, with the player drawn between layers
-3 and 4. `GameMode.add()` also files enemies into the parallel `enemies` /
-`solids` / `mines` lists.
-
-Two invariants that are easy to break:
+`GameElement` → `HitElement` → `Enemy`, held in `GameMode.elements[8]` (eight
+draw layers, the player between 3 and 4). Two invariants that are easy to break:
 
 - **`super()` first.** GDScript does not call a parent `_init` implicitly, so
   every element constructor starts with `super()`. `GameElement._init` runs
-  `init()` and registers the element with the current `GameMode` **before** the
-  subclass body assigns `x`/`y` — as in Java. So `init()` must not read `x`/`y`.
-- **Reversed loops.** Update and draw walk `elements` backwards
-  (`for j in range(list.size() - 1, -1, -1)`) and layers 7→0 on update. Enemy
-  behaviour depends on this order; preserve it.
-
-Collision is the original's hand-written AABB tests (`HitElement.overlap` and the
-`hit_*` / `is_solid_*` / `is_mine_*` box families), not Godot collision.
-
-The jeeps are `GameMode.players`, one per `Main.player_states` — the
-`PlayerState` that holds what the original kept on `Main` (lives, score,
-weapon, POWs delivered) and outlives the stage. This is the groundwork for
-two-player co-op; with one player it plays exactly as before, tick for tick.
-`tools/play_trace.gd` is how that is checked: a seeded, scripted run of every
-stage that writes the state of every tick, run on two revisions and compared
-with `cmp`. `ghost` carries an invincible jeep through every trigger and boss.
-
-```bash
-godot --path . --headless --script tools/play_trace.gd -- build/play_trace/a.txt ghost
-```
-
-Nothing picks a jeep
-by index: an element reads `player`, a `GameElement` property that returns
-`GameMode.target_player(x, y)` — the nearest, re-picked on every read, so not
-from `init()` — a shot at the jeeps calls `attack_players` / `attack_players_rect`,
-and points and pickups go to `GameMode.acting_player`, the jeep whose update
-is running (`Main.add_points` credits it). Grenades and missiles remember their
-`shooter`, whose weapon their blast re-arms.
-
-### Rendering
-
-`Main` owns the whole draw path. `Spr` stands in for Slick's `Image` — including
-its per-image `alpha`, which the stage 2 water cross-fade mutates directly.
-`Atlas` parses the `.xml` sprite sheets with `XMLParser`, returning `null` for an
-unknown name (`load_extra_large_image` relies on that); it still serves the tile
-sheets, the large cutscene images and the font, while the object sprites go
-through `SpriteBank` (see Sprite atlases below). `_push`/`pop_graphics`/
-`translate_graphics`/`rotate_graphics`/`scale_graphics` emulate the
-`glPushMatrix`/`glTranslatef`/`glRotatef` stack; the `draw_*` family mirrors
-Slick's overloads one for one.
-
-Slick's `Graphics.setWorldClip()` has no Godot equivalent, so `set_clip` +
-`_blit_clipped` emit a clipped sprite as a textured polygon: the quad is
-transformed into device space, clipped against the rectangle with
-Sutherland–Hodgman, and its UVs recovered through the inverse transform. Exact
-for rotated and scaled sprites, which the floor guns, super tank treads and
-rolling columns need.
-
-`GameMode.render()` is `_draw_background()` → `_draw_sprites()` → `_draw_score()`,
-replaying the original's order.
-
-### Sprite atlases
-
-The original's nine `sprites-N.png` sheets were packing-driven — `sprites-1`
-held the player, brown tanks, soldiers, mines and lasers only because they fit
-together — so every loader had to know which sheet its sprite lived in, and
-`load_sprites` threaded `pack1`..`pack9` through 400 lines. They are now one
-atlas per object in `assets/images/sprites/`: `brown-tank.png` holds exactly
-the three brown-tank frames. 140 atlases, 264 sprites, and the total canvas
-area went *down* (1.96 Mpx against 2.36 Mpx), because the sheets no longer pad
-to 512x512.
-
-`SpriteBank` (`src/core/sprite_bank.gd`) resolves a name against all of them
-through the generated `sprites/index.xml`, loading each texture on first use,
-so no loader names an atlas and the physical grouping can be changed again
-without touching GDScript. It returns `null` for an unknown name, like
-`Atlas.get_sprite`. Sprite names still carry their `.png` suffix
-(`"brown-tank-%d.png"`), so call sites read exactly as before.
-
-`tools/` owns the migration: `sprite_repack.py` regrouped the sheets (pixels
-copied verbatim, 1 px transparent gutter), `sprite_verify.py` compared all 264
-regions against the originals pixel for pixel and checked for overlaps, and
-`sprite_index.py` regenerates `assets/images/SPRITES.md` — the name → atlas →
-size table, which is the thing to grep when looking for a sprite. Verify needs
-the pre-migration sheets, so run it after
-`git checkout <ref-before-migration> -- assets/images/sprites-*`.
-
-Two things to keep in mind: `index.xml` is what ships (the export preset's
-`include_filter` covers `*.xml`, so no change was needed there), and new PNGs
-need one editor open — or `--headless --import` — before they resolve.
-
-### Data
-
-Stage maps are `assets/maps/stage-N.json`, read by `MapIO` (`src/core/map_io.gd`)
-into a `Stage`. One file holds everything authored about a stage:
-
-- `types` — the collision grid, one character per tile (`#` solid, `.` empty,
-  `S` shield, `~` water, `%` swamp, `>` conveyor), one string per map row, with
-  the legend repeated in every file. `MapIO` appends the row of water past the
-  bottom of the map that the original loader added, and `map_height` counts it,
-  so a stage is 359 rows on disk and 360 in memory (391/392 for stage 5).
-- `tiles` — the tile grid, one line per map row. Indices ≥ 225 come from the
-  shared `tiles-6` sheet and are drawn over everything else; see the background
-  loop in `GameMode._draw_background`.
-- `groups` — the cells rewritten when a destructible thing is destroyed, each
-  `[x, y, new tile, new type]`. **Order is significant**: `groups_map` stores the
-  group index per cell and `BossHeadquarters` hardcodes `groups[0]`.
-- `triggers` — spawn triggers by `Triggers` name, for both difficulties.
-- `background` — optional, and the one part of the file that is not the
-  original's data: `{"mode": "tiles" | "image", "chunk_height": 2048}`. See
-  Image backdrops below. Absent means `tiles`, so a stage that has never been
-  baked round-trips byte for byte without it, which
-  `tools/verify_json_roundtrip.gd` checks along with the block itself.
-
-`Triggers` (61 constants) indexes `GameMode.process_trigger`, which spawns the
-element for each map trigger, and is also what the JSON names resolve through
-(`MapIO.trigger_constants`, via `get_script_constant_map`). Footprints live in
-`trigger-sizes.json`; `MapIO.load_trigger_sizes` applies the same four-row
-early fire to boss triggers that `Main.load_sizes` used to.
-
-Two binary formats are left, both generated rather than authored, still read
-with `FileAccess` in big-endian mode (`Main._open`/`_s16`/`_s32`) because they
-are `java.io.DataInputStream` dumps: `assets/images/*.dat` (cutscene tile
-tables) and `maps/dirs-N.dat`, the precomputed flow field — a 3-bit direction
-for every (from-cell, to-cell) pair on a 128 px grid, packed 21 to a `long`,
-which is how tanks path in O(1) via `GameMode.suggest_direction*` and
-`_lookup_direction`. Text would be several MB a stage, and nobody edits them by
-hand.
-
-`Stage` holds the pristine per-stage maps; `GameMode` copies `tile_map` /
-`types_map` because gameplay mutates them.
-
-`MapIO` writes as well as reads. `serialize` reproduces `map_json.py`'s layout
-exactly, one map row to a line, so that saving a stage nobody edited leaves no
-diff and an edit to one tile touches one line. The grids come from the `Stage`;
-everything else is carried over from the document the stage was loaded from,
-which is why `read_document` exists and why `save_stage` wants it — the trigger
-list keeps the order it was authored in, and a `Stage` cannot preserve that
-because it files triggers by the row they fire on.
-
-`tools/map_json.py` did the conversion from the original `.dat` maps and can
-still check it: `verify` re-encodes each JSON into the binary layout and
-compares byte for byte, and `tools/verify_json_maps.gd` loads every stage both
-ways and diffs the `Stage` objects. Both need the deleted `.dat` maps back
-first, as `sprite_verify.py` needs the pre-migration sheets:
-
-```bash
-git checkout <ref-before-the-json-migration> -- assets/maps
-```
-
-`FlowField` owns `dirs-N.dat` — reading, writing and building it. Building is
-**not** a faithful port: the original generator is not in this repo, so the rule
-was reverse engineered from the data. It is a breadth-first search from each
-target over the 128 px cells, eight-connected, neighbours visited in
-direction-code order, each cell taking the direction back to whichever neighbour
-reached it first; a cell is passable when the four tiles in the middle of it are
-drivable. That agrees with the shipped files on 60–76% of pairs and, where it
-differs, produces the shorter path — it is optimal by construction and the
-shipped one is not.
-
-Rebuild only after editing the collision grid, which invalidates the field
-anyway. Editing tiles or triggers does not.
-
-```bash
-godot --path . --headless --script tools/dirs_build.gd -- 3
-```
-
-```bash
-godot --path . --headless --script tools/verify_flow_field.gd
-```
-
-The check must report `valid 100%` for every stage: following a built field
-always arrives. Two other numbers are worth knowing before rebuilding anything.
-Following the *shipped* field arrives on 99% of walks for `dirs-0`, 98% for
-`dirs-2`, 87% for `dirs-3` and 86% for `dirs-5` — but only 38% for `dirs-1` and
-56% for `dirs-4`, under any passability rule tried. Those two disagree with
-their own collision grids and were most likely generated from a different
-revision of those maps, so rebuilding them changes tank behaviour more than the
-others — towards the map that is actually in the game.
-
-### Image backdrops
-
-An alternative to assembling the terrain out of tiles: one image per stage,
-authored as a whole rather than as a grid. It draws, and it draws exactly what
-the tile path drew — `tools/verify_backdrop.gd` compares 222 rendered frames
-across the six stages and finds no differing pixel. What does not exist yet is a
-reason to switch: the images are baked *from* the tiles, so every stage still
-says `"mode": "tiles"`, and there is nothing to gain until a stage is painted by
-hand. Flipping that one word per stage file is the whole switch.
-
-The geometry is what makes it cheap. A map is 64 tiles wide, so 2048 px, which
-is exactly `SCREEN_WIDTH` — hence `max_camera_x == 0` — and a stage image is a
-2048x11488 strip (2048x12512 for stage 5). That is 94 MB of RGBA8, and
-`Main.load_stages` loads all six up front, so it is cut into 2048x2048 chunks:
-`assets/images/levels/stage-N-K.png`, chunk `K` covering map rows
-`[K * chunk_height / 32, ...)` with the last one cropped to what is left. The
-names and the count are a convention rather than data — `MapIO.background_chunk_*`
-derives both from `chunk_height` and `map_height`, as `dirs-N.dat` and
-`tiles-N.png` are derived from a stage index. At a 1152 px frame no more than two
-chunks are ever on screen.
-
-`tools/bake_stage_image.gd` writes them, reproducing `_draw_background` cell for
-cell out of the same sheets, so a stage can be compared against the tile path
-frame by frame and the images double as wallpaper to paint over:
-
-```bash
-godot --path . --headless --script tools/bake_stage_image.gd -- all
-```
-
-Three things are deliberately not in the image, because they move: stage 2's
-water (`tiles-2` is the one sheet with transparency, so the terrain layer comes
-out with holes in exactly the shape of the water, which is what an animated layer
-drawn *under* the image wants — `--water` fills them in for a look, not for
-shipping), stage 5's conveyor (frame 0 is baked in; the frames are opaque, so an
-animated layer over the image covers it), and destruction, which rewrites 16 to
-50 cells a stage through `trigger_group`.
-
-`tile_map` is otherwise **only** visual: collisions are `types_map`, the flow
-field is built from `types_map`, triggers fire by row. That is why the switch
-touches so little — the four places that read it are the whole of it:
-
-- `GameMode._draw_background` picks between `_draw_background_tiles`, unchanged,
-  and `_draw_background_image`: the water pattern, then the chunks the frame
-  spans, then the patches, then the conveyor. `Main.draw_tiled` is the one new
-  primitive, and the one with no Slick counterpart — the water is a repeating
-  64x64 pattern rather than a tile per cell, two draws for the whole frame
-  instead of a few thousand.
-- `trigger_group` and `TileDebris` also call `mark_patched`, which records the
-  cell in `background_patches`. `tile_map` stays the source of truth for what a
-  cell looks like now; the patch set is just which cells the image is wrong
-  about, and they are drawn from the tile sheet.
-- `TileDebris` takes the cell's current sprite off the chunk through
-  `Spr.sub_image` — `GameMode.background_sprite` answers for either backdrop, so
-  the debris code does not know which it got. It falls back to the sheet for a
-  patched cell and for a conveyor cell, where the image holds a frame of an
-  animation.
-
-Chunks load on demand and are kept for the run: 12 ms each, 16 ms worst, so a
-chunk coming into view without the one-ahead prefetch would cost a single frame.
-Nothing is evicted — a stage is 90 to 98 MB of texture, and dropping chunks
-behind the camera would reload during a boss pan, which can drive the camera back
-up a whole stage.
-
-### 3D level files
-
-`assets/level3d/stage-N.json` is what the 3D preview plays and what the
-Blender builder is to build from — the start of the level editor in
-`docs/level-editor-plan.md`, which has the format, the decisions and the
-stages. `Level3DIO` (`src/tools/level3d_io.gd`) reads and writes it with a
-fixed layout, as `MapIO` does. It holds the gameplay grid (`nav`, in the
-`types` legend), the destruction groups, the triggers of both difficulties
-as one ordered list of `entities` (metres, centre of the footprint, with the
-group named outright rather than probed), and the placed scenery as
-`objects`; `assets/level3d/catalog.json` says what every trigger type and
-asset is. `Level3DMap` reads the grid from it, not from the game's
-`stage-0.json`, and nothing in the 2D game reads it at all.
-
-`tools/level_from_stage.gd` wrote stage 0's out of `assets/maps/stage-0.json`
-and `jackal_stage1.glb`, and overwrites it when run again. The check holds it
-to the game's map — round trip, nav, groups, both trigger lists in order, the
-`Stage` it fills — and to the catalogue:
-
-```bash
-godot --path . --headless --script tools/level_from_stage.gd
-```
-
-```bash
-godot --path . --headless --script tools/verify_level3d.gd
-```
-
-The ground is in the file too: land polygons along the brow, water polygons
-along the waterline, a measured slope profile between them, and forest
-polygons with a scatter rule (`Level3DTerrain`, `src/tools/level3d_terrain.gd`). The polygons are traced off two
-rasters the file names, `assets/level3d/rasters/stage-N-ground.png` (red land,
-blue water, half blue a river, green forest) and `-height.png` (the rise of
-the ground, 5 cm a step), which are what the level editor paints and the
-source from now on (`Level3DGround`, `src/tools/level3d_ground.gd`, part 2 of
-the plan); `verify_level3d.gd` checks that the two still agree, and
-`tools/level_ground_rasters.gd -- N` gave stage 0 its rasters off its
-polygons, once. Stage 0's was traced off the
-hand-built glb, by a tool that keeps everything else in the file, as
-`level_from_stage.gd` keeps the ground. The glb is built from the file now,
-so run bare the tool only compares the file with it; its header says how
-to trace the hand-built one, which is in git at `7d0abb6`, again:
-
-```bash
-godot --path . --headless --script tools/level_terrain_from_glb.gd
-```
-
-`tools/blender/build_level.py` builds the level in Blender from the file,
-on top of `jackal_stage1_lowpoly.blend` for what the file does not describe
-(the buildings that are blown up, the palette, the sun, the cameras) and for
-the pieces it builds the file's walls, bridges and gate frames out of --
-each a copy of the base's piece of its kind, with its bevel, contour and
-materials, and a box of its own (`walls` and `bridges` in the file; the gate
-an object tied to the GATE entity; stage 1's were read off the base by
-`tools/blender/extract_structures.py` and `tools/level_structures_from_base.gd`)
--- into
-`build/level3d/` — never over the base. Blender here is the Store build:
-run it through `%LOCALAPPDATA%\Microsoft\WindowsApps\blender-launcher.exe`,
-not `blender.exe` (permission denied), and read `--report`, because its
-console output is not seen. Then hold the result to the file, and to the
-hand-built level from above, and play it with the preview's `--level`.
-`resources/3d/jackal_stage1.glb` is such a build, copied over: it is what
-the preview and the editor load, so the file is the level's source and the
-base's own `export_all()` must not be run -- it would write the hand-built
-level back over it (`export_destructibles()` alone is safe). The preview
-takes its frame from the file's `terrain.frame`, since a built ground runs
-out to the file's bounds.
-Under the water nothing is triangulated -- the shallows show the ground, and
-whatever a triangulation fans out there shows as streaks -- so the builder
-makes a wall along every shore off the profile's foot table and a flat river
-bed that sinks out of sight where it ends at no shore, and stops the build if
-a slope face reaches under the water, an open edge of ground lies in it, or
-the slope has more specks -- tiny facets turned from their neighbours, which
-the two-tone light makes dead pixels -- than the hand-built stage's 14. The
-height raster lifts the land, the top of the slope, the brow's line, the
-forest and the objects (a hill's steep facets are rock, `Terrain_Hill`), and
-a level whose file is not stage 0 is built without stage 1's own pieces --
-its collections emptied, its ocean cut to the level's length.
-It also turns off Godot's vertex compression in the glb's `.import`
-(`jackal_stage1.glb.import` has it off too): compressed, a vertex two
-surfaces share is rounded to each surface's own bounds, and the water
-shows through the hairline between a light facet and a dark one as a
-row of bright pixels at close zoom:
-
-```bash
-blender-launcher -b resources/3d/jackal_stage1_lowpoly.blend --python tools/blender/build_level.py -- assets/level3d/stage-0.json --out build/level3d/jackal_stage1_gen.blend --glb build/level3d/jackal_stage1_gen.glb --report build/level3d/report.txt
-```
-
-```bash
-godot --path . --headless --script tools/level_terrain_from_glb.gd -- --glb res://build/level3d/jackal_stage1_gen.glb --compare
-```
-
-```bash
-blender-launcher -b build/level3d/jackal_stage1_gen.blend --python tools/blender/render_top.py -- --render build/level3d/top_gen.png 50
-```
-
-The level editor is a program of its own, `src/tools/level_editor.tscn`
-(`level_editor.gd`; `Level3DGroundView` draws its ground, `LevelEditorItems`
-what stands on it): File -> New, Open, Save, and four modes. Ground paints
-land, sea, river, forest and the rise of the ground; Nav paints the grid;
-Entities and Objects put down, pick, drag, turn and delete from the
-catalogue -- a type picked in the list puts one down, and with none picked
-a click picks, Shift+click adds, a drag over nothing draws a box, and a
-drag on a picked one moves everything picked (`LevelEditorItems` keeps a
-list, the last the one the panel shows); Esc empties the list first --
-entities snapped to the tiles their footprint covers and a
-building given the group its probe cell is in; one the catalogue gives an
-object (a gun its Bunker, the landing port its Helipad) comes with it, tied
-by the object's `"entity"`, which is how the preview finds another level's
-guns -- stage 1's it finds by its bunkers' names. Objects also draws bridges,
-a drag from end to end, and walls as paths, a click to a point -- straight
-or smooth, open or closed, through gates (`"paths"` in the file, with what
-they make, their runs and merlons, kept beside them as the ground's
-polygons are, so that the builder builds the curve the editor drew) -- laid
-out as stage 1's are (`Level3DStructures`, `src/tools/level3d_structures.gd`);
-a picked one has handles on its points, and a bridge's end by its handle
-lays its piers out again; a gate put down by a path goes into it, a path
-through a gate follows it, and a gate deleted closes the wall; a GATE entity
-brings its Gate and the destruction group of its passage, as many gates as
-wanted, each with a group of its own and never group 0 (the headquarters
-blows `groups[0]` by number, so a level's first gate starts an empty one),
-and the preview moves a `jackal_dest_Gate.glb` to each on a level that is
-not stage 1. Everything is one undo a
-stroke or a move. A save writes the level file, its two rasters and the
-polygons traced off them. Stage 1's nav grid is the game's and is painted
-as it is; a level made here plays the grid its ground makes (land empty,
-forest solid, slope and water water) with what was painted over it,
-`nav_paint` in the file, `-` where the ground's stands. Level -> Build runs
-the Blender builder in the background into `build/level3d/<name>.glb` and
-imports that; Play (F5) saves and builds first when the level is newer
-than its glb, then opens the preview on it in a process of its own --
-`-- --file <level> --level <glb> --editor`, the last making the Escape
-menu's exit "Back to the editor" -- and waits minimised for that process to end,
-however it ends, to come back. The preview is not run inside the editor's
-process because it keeps state in statics (`Level3DMap.file`, the audio
-buses, the tree's pause, the mouse mode). The preview moves the start and the Chinook's landing to the level's
-south end and leaves out stage 1's own buildings; Check is
-`Level3DIO.check`, and Rebuild flow field writes stage 1's own
-`assets/level3d/dirs-0.dat`, which `Level3DMap` prefers to the game's
-(another level's is built when the preview loads it). Its check drives it
-without anyone at it -- with a window it also writes what it drew to
-`build/level_editor/`, and `-- --build` builds through the menu too:
-
-```bash
-godot --path . src/tools/level_editor.tscn
-```
-
-```bash
-godot --path . --windowed --resolution 1600x900 --script tools/verify_level_editor.gd
-```
-
-### Audio and input
-
-`Song` chains intro → optional intro2 → looping track through
-`AudioStreamPlayer.finished`. `Sfx` keeps a small voice pool per effect and
-reproduces the original's 125 ms retrigger throttle (`Main.MINIMUM_SOUND_TIME`).
-Song changes are deferred: `request_song` sets `requested_song`, and `_process`
-swaps it.
-
-Three buses, not one. Everything used to play on `Master`, which is why the
-pause key — the only thing that ever silenced anything — muted the effects
-along with the music. `AudioSettings` (`src/core/audio_settings.gd`) adds
-`Music` and `Sfx`, both routed to `Master`, at `_ready` and before the first
-stream loads; `Sfx` and `Song.make_player` name them. The three controls are
-then three separate things: mute one bus, mute the other, set the gain on the
-bus they both feed. It persists to `user://audio.cfg`.
-
-Pause and preference are separate too. `set_music_paused` is what the pause key
-and the in-game menu use; `set_music_on` is the preference. Undoing a pause
-with `set_music_on(true)` — which is what the code did — turns the music back
-on for someone who had switched it off.
-
-`SoundMode` (`Modes.SOUND`, not in the original) is the screen: music, sound,
-volume, done, reached from Options and returning there. It is the one menu mode
-that does not leave when an entry is picked, so its labels carry the state and
-`Menu`'s one-shot `selection_made` latch is released after every toggle. The
-same trick drives the in-game menu's options page.
-
-The 3D preview opens on a title screen, `Level3DTitle`
-(`src/tools/level3d_title.gd`): the 2D game's title art and jeep cursor,
-laid out as `IntroMode` lays them out, with 1 player, 2 players, the
-difficulty, the settings and quit, in the HUD's font, over the stage with
-the tree paused. Over the sun is the game's name, RATEL SQUAD
-(`Level3DLogo`), in the settings' font: Black Ops One in the sun's colours, or Press Start 2P in bands. A game picked there starts the run from the Chinook with the
-start jingle; the Escape menu's "Main menu" goes back to it. Hard is the
-stage's hard trigger list, as `GameMode.set_stage` picks it
-(`Level3DMap.hard`, `Level3DMap.triggers()`, saved as `Level3DSettings.hard`):
-more soldiers, tanks and boats. A --shot and the level editor's Play skip it.
-`docs/preview3d-options.md` lists every command-line option of the preview;
-`--no-chinook` skips the Chinook's run and `--boss` starts each run a few
-seconds' drive below the boss, the way there left unspawned.
-
-The 3D preview's Escape menu opens its settings on a Game tab: 8-bit or
-modern, each a preset of the sound mode, the driving, the firing, the reach,
-the font, the look and the CRT (`Level3DSettings.PRESETS`). The mode is not
-saved but read back off those settings, so changing one on its own tab shows
-it as "Custom". The menu is in English, drawn in the HUD's font from the
-.ttf files its sheets were baked from: Press Start 2P (scaled by 2/3 to fit
-the panels) for both classic styles, Black Ops One for modern.
-
-The stage's light is a preset, `Level3DLighting` (`src/tools/level3d_lighting.gd`):
-day, Blender's light and the default, or golden hour, dusk and sunrise, the
-title splash's palette as far as a stage can be read in it (Graphics -> Light,
-or `--light day|golden|dusk|sunrise`, which a --shot takes too). The time of
-day does not change in a stage: the title's sun rises instead, once a game is
-picked (`Level3DSplash3D`, `RISE_*`: the disc out of the horizon and yellower, its glow golden, the sky going from the dawn's red to a morning's gold, rose and pale blue (`MORNING_*`),
-and the ground lit, to a burnt orange towards the stage's sand -- the ground by a glow of its own, since a sun light
-raised with the disc turned the rolling ground's facets lit one by one, and
-the sun taken off the ground as it rises), and the title fades on it into the
-day. Over the Chinook the camera follows the jeeps in as they go
-(`Level3DSplashLanding`, `CHASE_*`), so that the frame is not half empty ground,
-over a few more low rocks and two palms (`SCATTER`, `SCATTER_PALMS`) -- not in
-`ROCKS`, which the jeeps' way goes round. Its dust is one cloud a source --
-each jeep, the Chinook's wash, each gust -- in the models' look
-(`Level3DCelCloud`, `src/tools/level3d_cel_cloud.gd`, a port of the tank
-bench's `CelCloud` in `BlenderMCP/godot`): puffs as spheres flowed into one
-shape by a smooth union, one ink line round it, eaten from the rim, in the
-camera's tangent plane since our camera is a perspective one; a cloud is one
-only where its puffs overlap, so a jeep raises one every `CEL_WHEEL_STEP`;
-the Chinook's wash raises its puffs at the edge of its hull, small, growing
-as they roll out (`_hull_edge`, `WASH_*`), and the hull thins any that come
-back into it (`_thin`, off
-`Level3DChinook.HULL_BOXES`, as the bench's `CelSolids` thins its by the
-tanks'), and the clouds are drawn at the frame's end, after the chase has
-moved the camera.
-`--splash-veil` stands it in a thin haze the wash raises (`VEIL_*`, soft
-cards faded into the ground off the depth texture), off by default. `--splash-puffs` draws each puff as a card of
-its own (`DUST_SHADER`), `--splash-motes` as soft motes (`MOTE_*`).
-On the stage, under `--landing-dust` (off by default), the Chinook's rotors
-raise the same kind of cloud round its hull as it comes down, stands and
-climbs away (`Level3DWash`,
-`src/tools/level3d_wash.gd`): one body rolling out from the hull, as a
-helicopter's dust is, its puffs growing with the way they have gone
-(`GROW`) so that the ring does not break up as it widens; lit by the
-stage's two-tone light rather than painted in tones, so that it follows
-the light preset, in the colour of the ground under it, its depth kept
-out of the ground (`set_ground`), and orthographic in the top view.
-So that the risen disc is not cut off, the splash is rendered the whole screen
-big (`SCREEN`, the camera as wide as the focused frame's `FOCUS_ZOOM` needs):
-the title shows the middle of it, exactly the old frame (`_region`), and the
-frame opens out to the screen's edges as it comes to the middle (`focus`). Readability is the constraint, so a preset moves hue
-and not brightness: a light's energy is held to the day's on a grey, the sun
-stays top left and no lower than 30 degrees, the shade gets lighter as the sun
-gets lower (and the sun weaker by what that adds to a lit face in
-Compatibility, `AMBIENT_ON_LIT_COMPATIBILITY`, measured), and a fill from the
-other side lights what stands up. The sand's orange is at the edge of the
-gamut, so no light moves it: a grade over the stage and under the HUD
-(`level3d_screen.gdshader`, mode 3) turns hue in OKLab -- cool shade, warm
-light -- with its lightness, its black contour and its saturated colours'
-chroma left as they were.
-
-The 3D preview has its own sound, `Level3DAudio` (`src/tools/level3d_audio.gd`):
-one table, `SOUNDS`, of every effect it plays, with its bus (sub-buses of
-`Sfx`; the enemies' guns on `EnemyFire` under `Weapons`), gain, variants and
-whether it is positional; engines and rotors are loops on the unit, heard
-through a listener over the frame's centre. The Escape menu's Sound tab picks
-original, classic (8-bit) or modern, and sets the master, music, effects and enemy-fire volumes,
-the last with a switch of its own since the original's enemies fired in
-silence; under them, a 0–200 % slider for each of the modern mode's sounds
-(`Level3DMenu.SOUND_GROUPS`, which must list every sound in `SOUNDS` but
-`enemy_hit`, which only plays under a blast -- the verify script checks).
-The music is chained as `Song` chains it: the title's song under the title
-screen, over and over -- in modern a heavy cover of «От героев былых
-времён», in classic its notes on the chips (`build/music3d_officers/`), in
-original the 2D game's `title_song` -- `intro_song` at the start,
-`stage_song0` after a restart, `boss_song` from the boss's trigger, stopped
-when it is beaten or the last life goes. A song's parts are not chained
-through `finished` as `Song` chains them, which left about 20 ms of silence
-between two (measured on WASAPI): `_next_part` puts every part still to come
-into one `AudioStreamInteractive`, each auto-advancing into the next and the
-last looped. That runs on with no gap, though Godot switches some 12 ms
-before a clip's end, so the last of each part is not heard -- which is why
-modern `start.ogg` holds its chord to the bar line rather than ringing out.
-A chain's position is the clock's, since the stream's is always 0
-(`_music_position`). It is split by mode as the effects
-are: `assets/music3d/original/` holds copies of the parts of `MUSIC` from
-`assets/music/`, under their own names, and `assets/music3d/modern/` started
-as a copy of it, a new song going in by replacing its file. A change of mode
-swaps the part playing for the other folder's from the same position (an
-intro that runs out goes on to its loop, a loop wraps round).
-
-`assets/music3d/classic/` is modern's songs as a Famicom game with Konami's
-VRC6 (the Japanese Castlevania III's) could have played them, and
-`tools/music_chiptune.py --install` makes it -- not out of modern's audio but
-out of its notes, the MIDI in `build/music3d_pogonya/` and
-`build/music3d_boss/`. Its `ARRANGEMENT` puts the tracks on eight voices:
-the lead on pulse 1, a second voice (the stage's lead echoed an eighth late,
-the boss's harmony or arpeggio) on pulse 2, the rhythm guitar's power chord
-over the VRC6's two pulses, the strings on its sawtooth (a chord as a
-one-frame arpeggio), the bass on the triangle, the drums on the noise and
-the kick, timpani and taiko as DPCM samples. Everything moves on the frame,
-as an NES driver does; at 180 and 150 BPM a sixteenth is 5 and 6 frames and
-a bar 80 and 96, which are modern's 58800- and 70560-sample bars, so each
-part is cut on modern's bars, a loop out of the middle of three. A song is at
-modern's loop's loudness, through a limiter at -1 dBFS on the whole render
-before the cuts. The boss's is the linear one (below).
-
-The modern boss is the exception: its music follows the fight
-(`Level3DAudio.ADAPTIVE`). It is one `AudioStreamInteractive` of three clips:
-the intro over the pan, running on into the loop by itself; the loop, an
-`AudioStreamSynchronized` of the lead part (drums, bass, the theme) and a
-layer for each of the four tanks -- guitars, double kick, strings,
-arpeggio, by the order the tanks come in (`Level3DBoss.alive_layers`) -- all
-16 bars and summed sample for sample; and the victory, which anything goes
-to on the next beat (`music_end`). `Level3DPreview._update_music` says which
-tanks are on the field every tick (`music_layers`): a layer comes in on the
-next bar and goes as soon as its tank does, over a beat either way, by its
-volume in the synchronized stream, which takes a change while it plays; and
-the lead is up to 4 dB louder as layers go, so that the music thins and does
-not die away. Every part is at 150 BPM and starts on a bar, so the bars run on
-unbroken from the intro's first: that is what a layer comes in on, and what
-`music_accent` -- a tank breached -- counts the beat its `boss_breach.ogg`
-lands on from (the file starts a beat in, and is played from as far into the
-beat as the song has got). The count is the system clock, which agrees with a
-real audio driver and not with `--headless`'s Dummy one, which runs slow;
-`get_playback_position()` of an interactive stream is always 0. The parts are
-mixed linearly, EQ and gain and no compressor, because they are summed in the
-game. `modern/` holds the nine files in place of `boss_repeat.ogg`
-(`mode_music_files`); the mix has every file of both modes, so each layer has
-its own gain in the Mixer, which shows each mode's own. The original mode
-plays the intro and loop as before and stops at the end, as the game stops
-its song; the classic mode plays it as modern does linearly, whatever the
-setting, its folder holding the intro, `boss_full.ogg`, the victory and the
-accent (`linear_files`).
-The Sound tab's "Boss music" (`Level3DSettings.boss_music`,
-`Level3DAudio.set_adaptive`) plays it linearly, and does by default: the same stream with
-`boss_full.ogg` -- the lead and every layer mixed into one file -- for its
-loop, so the fight changes only the accent and the end. A switch while it
-plays starts the other loop from its first bar, since there is no position
-to carry over. The score and how the files are made are in
-`build/music3d_boss/`.
-
-Each mode is a folder holding its files under the same names, `<name>_0.ogg`
-and optionally `_1`, `_2`... as variants picked at random:
-`assets/sfx3d/original/`, `classic/` and `modern/`, all imported, committed
-and shipped. A sound with no file is silent, in any mode.
-
-- **Original** is the base and does not change: every file is a copy of the
-  sound's `"original"` in `assets/soundeffects/`, and a sound the original
-  had no sound for (engines, the enemies' guns, rounds landing, the ambience)
-  has none, played flat, unpitched, unlooped and throttled as
-  `Main.play_sound` plays it. `tools/sfx3d_classic.gd` wrote it and filled in
-  modern as a copy; run again, it rewrites original and only adds to modern
-  what is missing and the original has, never over a file already there.
-- **Modern** is positional, pitched and looped where `SOUNDS` says, and a new
-  sound goes in by replacing its file there, or by putting one where there is
-  none.
-- **Classic** is modern's sounds as the NES could have made them, and holds
-  exactly modern's files: `tools/sfx_chiptune.py --install` reads each modern
-  file a frame (1/60 s) at a time into the APU's registers and plays them on
-  a model of the 2A03 with a Famicom's output filters -- the original's
-  recordings keep the low end the NES's 440 Hz high-pass takes out -- at the
-  loudness of the original's file of that name, so the original's gains in
-  the mix hold for it, and copies the original's own where modern's is still a
-  copy of it. Played by modern's rules -- positional, pitched, looped, the
-  edge fades and fade-outs, the rescue helicopter idling on its pad, the
-  Sound tab's sliders; only the original is played as the game plays it
-  (`Level3DAudio.as_original`) -- and its music is modern's on the same
-  chips (above), the boss's linear. A loop is rendered three
-  times and the middle cut out, crossfaded at the seam. What modern is
-  silent for, classic is too. A new modern sound wants a run of the tool.
-
-`SOUNDS`' `"classic"` / `"modern"` sub-dicts hold what differs for one mode --
-a new blast that already has the hit in it `"with": ""` -- `"classic"` the
-original mode's and `"modern"` the classic mode's too (`SPEC_KEYS`),
-`"original"` being a field of its own. `Level3DAudio.Mode`'s values are the settings' and so a saved config's:
-`ORIGINAL` came last, so a config that said classic before it now says
-classic, the 8-bit mode.
-
-The gains are not in `SOUNDS`: `assets/sfx3d/mix.json` holds every sound's
-and every music part's, in dB, for each mode, one to a line. The Escape
-menu's Mixer tab (always there, as the other tabs are) is where they are set
-by ear -- a slider and a ▶ for each, the mode picked on the tab, the
-changes heard at once -- and Save writes the file through
-`Level3DAudio.save_mix`, which only works where `res://` is the project
-folder, not in an exported build. A replaced file starts from its measured
-loudness against the original one (`tools/measure_loudness.gd -- <paths>`).
-The generator leaves an echo and a rumble after the hit however dry it is
-asked for, so the long-tailed ones go through `tools/sfx_tails.py`, which
-reads each as generated out of git (its `TAILS` table names the sounds,
-where their hits end and where they now stop) and writes the shortened file
-in its place; a newly generated file is committed as it came first. The
-player's own 0–200 % sliders on the Sound tab act over the mix. The
-2D game reads `assets/soundeffects/` and `assets/music/` and nothing here;
-`tools/sfx3d_classic.gd` writes `music3d/` the same way. Check all five
-folders and the mix (every sound and part in every mode, laid out as a save
-writes it):
-
-```bash
-godot --path . --headless --script tools/verify_level3d_audio.gd
-```
-
-When the preview is silent, `-- --audio-debug` prints every bus's mute, gain and
-peak once a second, which says whether Godot is producing anything, and
-`tools/audio_check.ps1` says what Windows does with it: the output device, its
-volume, and every app's mute in the volume mixer. Windows remembers a mute per
-executable, so muting the editor once mutes every game it runs.
-
-```bash
-godot --path . --windowed --resolution 1280x720 src/tools/level3d_preview.tscn -- --audio-debug
-```
-
-```bash
-powershell -ExecutionPolicy Bypass -File tools/audio_check.ps1
-```
-
-`HumanInput.snap()` samples level-triggered state once per logic tick; edge
-triggers derive from the previous snap, which is what makes
-`clear_key_pressed_record()` work. `ButtonMapping` persists to
-`user://buttons.cfg`.
-
-### The in-game menu
-
-Escape opens it over the frozen stage — two pages, both inside `GameMode`
-(`_open_menu`, `_render_menu`), because requesting a mode destroys the
-`GameMode` and with it the run. That is what "quit to title" is for; the other
-entries are resume, options and quit game. The options page toggles music,
-sound, volume and mouse aim in place.
-
-Three things worth knowing before touching it:
-
-- It borrows `paused` rather than adding a second frozen state, so the
-  crosshair, the system cursor and the pause key all behave as they do under
-  the pause key.
-- The music keeps playing, unlike under the pause key. The options page can
-  switch the music off, and a switch you cannot hear tells you nothing.
-- Escape no longer leaves fullscreen while a stage is up — `full_screen_toggle_check`
-  ignores it when the mode is a `GameMode`. F12 still toggles the window, and
-  every other screen keeps Escape as the way out of fullscreen.
+  `init()` and registers the element **before** the subclass body assigns
+  `x`/`y` — as in Java. So `init()` must not read `x`/`y`.
+- **Reversed loops.** Update and draw walk `elements` backwards and layers 7→0
+  on update. Enemy behaviour depends on this order; preserve it.
+
+Nothing picks a jeep by index (there can be two): an element reads `player`,
+which returns the nearest jeep and is re-picked on every read, so not from
+`init()`; shots at the jeeps go through `attack_players` / `attack_players_rect`;
+points and pickups go to `GameMode.acting_player`.
 
 ### Two frames: SCREEN_* vs DISPLAY_*
 
-`DISPLAY_WIDTH`/`DISPLAY_HEIGHT` (1024x960) are no longer the viewport. They are
-the original frame, kept as the layout box for fixed-size artwork;
-`SCREEN_WIDTH`/`SCREEN_HEIGHT` (2048x1152, exact 16:9 at 4x) are the actual
-viewport. 2048 is the full width of every map, so `max_camera_x` is 0 and there
-is no horizontal scrolling. When touching anything that reads either, decide
-which one the code means:
+`SCREEN_WIDTH`/`SCREEN_HEIGHT` (2048x1152) are the viewport;
+`DISPLAY_WIDTH`/`DISPLAY_HEIGHT` (1024x960) are the original frame, kept as the
+layout box for fixed-size artwork. Decide which one the code means: "the edge
+of the visible frame" → `SCREEN_*`; "where on the title / menu / cutscene does
+this go" → `DISPLAY_*`.
 
-- "the edge of the visible frame" -- `is_outside_of_frame`, camera margins,
-  enemies turning at the edge, boss spawn spread -> `SCREEN_WIDTH`.
-- "where on the title screen / menu / cutscene does this go" -> `DISPLAY_WIDTH`.
-  `JeepYeahPlane` lives in `src/game` but is a cutscene actor, so it is the one
-  file there still on `DISPLAY_WIDTH`.
+2048 is the full width of every map, so `max_camera_x` is 0 and **every write to
+`camera_x` must clamp to it** — two places that did not crashed the background
+loop. Boss managers mix absolute map coordinates (keep them) with a few screen
+coordinates in disguise (derive those from `SCREEN_HEIGHT`).
 
-`Main._draw` centres every non-`GameMode` mode by `PILLAR_X` and wraps it in
-`set_outer_clip`. The clip is not optional: `IntroMode` slides its story crawl
-in from outside the frame and relied on the old viewport to hide it.
+### Controls
 
-Clipping therefore has two independent rects intersected into `_clip_rect`: the
-inner one is Slick's `setWorldClip` (`set_clip`/`clear_clip`), the outer one the
-pillar box. They are kept separate deliberately -- `set_clip` is a replace and
-`clear_clip` an off, and call sites like `boss_garage_manager` set twice and
-clear once, so a push/pop stack would leak, and a single shared rect would let a
-mode's `clear_clip` drop the pillar box for the rest of the frame. `_blit` skips
-the polygon path for sprites wholly inside the clip, which matters now that
-every sprite on a menu screen is clipped.
+- **`create_unit_vector(int)` silently lies** for an off-grid angle (a `match`
+  with no default). Continuous angles go through `create_unit_vector_deg(float)`.
+- **Mouse buttons stay out of `is_fire()` / `is_shoot()`**, which the menus read;
+  `Player` reads `is_gun()` / `is_grenade()`, which OR the mouse in.
 
-`GameMode.TILES_ACROSS`/`TILES_DOWN` are derived from the viewport; the
-background loop draws one more of each, and one column fewer at the right edge
-of the map where `row[TILES_ACROSS + x_tile]` would index `map_width` itself.
-`max_camera_y`, `REMOVE_BOUND`, `CAMERA_MARGIN_NORTH`, the player's bottom clamp
-in `Player.update` and the score HUD's y are all derived from the frame rather
-than hardcoded to 960 now.
+### Data
 
-The project starts fullscreen (`display/window/size/mode=3`). Note that
-`project.godot` comments use `;`, not `#` -- a `#` comment silently stops the
-keys after it from being applied.
+Stage maps are `assets/maps/stage-N.json`, read and written by `MapIO`.
 
-`_update_cursor_visibility` owns the mouse mode and compares against the live
-`Input.mouse_mode` rather than a cached flag, because `full_screen_toggle_check`
-used to set the mode itself and left that cache stale, stranding the cursor
-hidden on the menus.
+- `groups` order is significant: `groups_map` stores the group index per cell
+  and `BossHeadquarters` hardcodes `groups[0]`.
+- `MapIO.serialize` must agree with `tools/map_json.py` byte for byte, so saving
+  an unedited stage leaves no diff and one tile touches one line.
+- `tile_map` is only visual; collisions and the flow field read `types_map`.
+  Rebuild `dirs-N.dat` (`tools/dirs_build.gd`) only after editing the collision
+  grid.
 
-Because the frame is as wide as the map, `max_camera_x` is 0, and **every write
-to `camera_x` must clamp to it**. Two places got this wrong when the frame
-widened and crashed the background loop: `_create_player`, which the `PLAYER`
-trigger runs at the start of every stage, and the ending pan, which drove
-`camera_x` towards a hardcoded 512. `_create_player` also reused
-`CAMERA_MARGIN_NORTH` as a horizontal offset, so growing that margin for the
-taller frame moved the spawn sideways -- it has its own
-`PLAYER_SPAWN_CAMERA_OFFSET` now. The background loop clamps its column and row
-counts as a backstop rather than special-casing the exact map edge.
+### Audio
 
-`CAMERA_BOUND` is a deliberate departure: the original's 224 is a full frame
-here, so the jeep can back up about a screen and a half instead of two thirds
-of one. The ratchet in `_camera_track_player` is unchanged, and the boss pan
-still pins `max_camera_y` to 0, so an arena cannot be driven out of. Note that
-`REMOVE_BOUND` is measured from `max_camera_y`, so a longer leash also keeps
-elements alive further below the frame.
+Three buses — `Master`, with `Music` and `Sfx` feeding it (`AudioSettings`).
+`set_music_paused` is the pause; `set_music_on` is the preference — never undo a
+pause with `set_music_on(true)`.
 
-Boss managers are the exception to that, and worth checking when the frame
-changes: most of their coordinates are absolute positions on the 2048-wide map
-(garages, statues, ship guns, headquarters lights) and must stay that way, but a
-few are screen coordinates in disguise. The boss pan leaves `camera_y` at 0, so
-`BossBlueTanksManager` wrote its off-screen spawn as a literal 1012, which was
-960 + 52; with a 1152-tall frame that put a tank 140 px inside the view. It is
-derived from `SCREEN_HEIGHT` now. The reinforcement tanks in the ship, statue
-and headquarters fights were already written as `SCREEN_HEIGHT + 48`.
+## 3D preview and level files
 
-Spawning is otherwise frame-independent and does not need adjusting when the
-viewport changes: `load_trigger_map` sets a trigger's row to `tile_y + height - 1`, so it
-fires when the bottom of the enemy's footprint is one tile above the top edge,
-and a whole row fires at once regardless of x. This was measured, not assumed --
-see `README.md`.
-
-### Controls: WASD + mouse aim
-
-The one deliberate gameplay departure from the Java original. Movement defaults
-to WASD (arrows always work as a second set), O fires the machine gun and P
-throws the grenade/missile, the cursor sets the weapon angle, LMB fires the
-machine gun and RMB throws the grenade/missile. P was the pause key, and still
-is when it is not bound to a control (`ButtonMapping.claims`); Enter always
-pauses.
-
-`ButtonMapping.mouse_aim` gates the aiming half and is switched from Options →
-Controls (`ControlsMode`, `Modes.CONTROLS` — a mode with no counterpart in the
-original, modelled on `DifficultyMode`). Off, `HumanInput._snap_mouse` reports
-no cursor motion and no mouse buttons, so `Player` falls back to the original
-code path; the WASD/arrow movement is not gated and always applies.
-
-`README.md` has the rationale; the three constraints to keep in mind when
-touching this:
-
-- **`create_unit_vector(int)` silently lies.** It is a `match` over multiples of
-  45 with no default, so an off-grid angle leaves `unit_vector` at its previous
-  value. Continuous angles must go through `create_unit_vector_deg(float)`,
-  which routes multiples of 45 back to the exact table so keyboard aiming stays
-  bit-identical.
-- **Mouse buttons stay out of `is_fire()` / `is_shoot()`.** Those are read by
-  `Menu`, `IntroMode`, `SunsetMode`, `HardEndingMode` and `KonamiCode`; a click
-  must not navigate a menu. `Player` reads `is_gun()` / `is_grenade()`, which OR
-  the mouse in.
-- **`InputMode` binds whatever it is given.** It is a faithful port, so every
-  prompt accepts any key — which used to include `Escape`, leaving no way out
-  of the screen but to bind six controls. It now snapshots the mapping on entry
-  (`ButtonMapping.duplicate_mapping`), treats `Escape` as cancel, and shows the
-  binding each prompt would replace. Options → Defaults calls
-  `reset_to_defaults()` for when a mapping is already unusable.
-- **Direction keys shadow the fallback gun keys.** `GUN_FALLBACK` is the
-  original's `Z / Y / W / K`, and `W` is now "up", so `snap()` skips any
-  fallback key a direction or the grenade claims. The fallback only applies
-  while `gun_key_mapped` is false, which is no longer the default.
-
-### Two players
-
-"2 players" on the title screen (`Main.set_player_count`) puts a second, blue
-jeep in the stage, as the NES game could; the Java original could not. The
-menus keep reading `Main.input`. Each jeep reads its `PlayerState.input`: with
-one player that is `Main.input` itself, arrows and all, so a one-player game is
-unchanged tick for tick (`tools/play_trace.gd`); with two, the first player has
-WASD, O, P and the mouse without the arrows, and the second the arrows, right
-Alt for the gun, right Ctrl for the grenade and a pad (`ButtonMapping.second_player`,
-the defaults of `Main.button_mapping_2`, saved to `user://buttons2.cfg`).
-Options -> "2p input" is `InputMode.new(1)` (`Modes.INPUT_2`); either player's
-remap ignores a key the other has bound (`ButtonMapping.claims_at`, which knows
-left Ctrl from right) and keeps the side a weapon key was pressed on.
-`Input.is_key_pressed` cannot tell right Alt from left, and neither can an
-`InputMap` action with a location (tried: both sides match), so
-`HumanInput.key_event`, fed from `Main._input`, keeps which side each key is
-held at, cleared on focus loss.
-
-The frame holds the two together: `GameMode._camera_track_players` follows the
-leading jeep north and the trailing one south, never so far that either is
-nearer than `COOP_EDGE` to the top or bottom, and `Player.update` clamps them
-inside that. A jeep that runs out of lives while the other plays on is
-`PlayerState.out` -- not updated, drawn, targeted or followed, through later
-stages too -- and the continue screen comes when both are. The Chinook unloads
-both jeeps, the second down the ramp after the first and then straight back to
-beside it (`IntroPlayer.second`), and the rescue helicopter takes both at once:
-each jeep has its own drop-off delay, a soldier is credited to the jeep that
-brought it (`FriendlySoldier.deliverer`), and it leaves when every jeep still in
-is past it or empty-handed. Each jeep has its own
-lives, score, weapon, POWs and three-round cap; what a round, grenade, missile or
-their blast destroys is credited to its `shooter`, which sets `acting_player`.
-
-The 3D preview has the same co-op, from the Escape menu's "New game: 2 players"
-or `--players 2`; it always starts with one. Everything one player's
-is a `Crew` in `level3d_preview.gd` -- vehicle, gun, launcher, HUD line, and a
-`Level3DFriends.Carrier` for the prisoners and the weapon; `btr`, `gun` and
-`launcher` are still the first's, which the mouse, the --shot options and the
-ground's craters (`Level3DLauncher.marks`) go by. The second is blue
-(`Level3DBtr.tint`), reads `Main`'s second mapping from `user://buttons2.cfg`
-through a `HumanInput` of its own, fires the classic way, and takes the arrows
-from the camera. The modules get the nearest jeep from
-`player_position.call(from)`, points go to `Level3DGuns.acting` (explosions
-keep theirs as `by`), the frame follows the middle of the two and
-`Level3DBtr.z_limits` keeps them in it, the Chinook carries both
-(`Level3DChinook.Cargo`) and backs them out to either side of its ramp, and the rescue helicopter takes both at once. `--hold`
-drives the second with `2:` spans, which is how it was checked:
-
-```bash
-godot --path . --windowed --resolution 1280x720 src/tools/level3d_preview.tscn -- --shot out.png 0 1 top 8 --players 2 --immortal --hold w@0-8,2:l@0-8
-```
-
-Aim is resolved once per logic tick in `Player.update` (cursor position plus the
-camera offset), so a shot uses the angle the cursor had on its tick. The jeep
-body still faces its movement direction — the original's gun never pointed
-where the sprite did, so nothing is lost and no new art is needed.
-
-The reticle is `Main.draw_crosshair`, four `draw_rect` bars over a grown black
-pass (there is no crosshair in the sprite sheets), one original-screen pixel
-thick and about two thirds of the jeep's width. It is called last in
-`GameMode.render()`, after `_draw_sprites()` has popped the camera translation,
-so it sits at the cursor rather than in the world. `Main._update_cursor_visibility`
-hides the system cursor to match, but only while a `GameMode` is playing and
-unpaused — menus and pauses get the pointer back, and `MOUSE_MODE_HIDDEN` never
-confines it.
-
-Both are gated on `input.is_aiming()`, which stays false through the Chinook
-intro drop only incidentally — the real gate there is `GameMode.playing`, which
-`Chinook` holds false until the jeep lands.
+`src/tools/level3d_preview.tscn` plays `assets/level3d/stage-N.json`; nothing
+in the 2D game reads that. `resources/3d/jackal_stage1.glb` is *built* from the
+level file by `tools/blender/build_level.py`, so the base blend's `export_all()`
+must not be run — it would write the hand-built level back over it
+(`export_destructibles()` alone is safe). Blender here is the Store build: run
+`%LOCALAPPDATA%\Microsoft\WindowsApps\blender-launcher.exe`, not `blender.exe`,
+and read `--report`, because its console output is not seen.
 
 ## Conventions
 
@@ -1016,55 +177,45 @@ intro drop only incidentally — the real gate there is `GameMode.playing`, whic
   stable identity, and excluding them breaks references on clone.
 - `.gitattributes` forces LF everywhere, including the working tree on Windows.
 - `.godot/` is ignored; it is regenerated on open.
-- 3D models (`resources/3d/`, built by the scripts inside each `.blend`) are
-  cel-shaded, and a model without it is not finished. The units are drawn as
-  Chinatown Wars draws its cars: flat colours, no chamfers, an inverted-hull
-  contour round the silhouette and the big parts only (what lies on a part
-  is built plain), grey seals round flat panes; and so are stage 1's
-  buildings, the bunkers, the pads and the rocks. Only the blast's shards
-  in `jackal_fx.blend` still have black chamfers. How, and the line widths,
-  are in `docs/cel-shading.md`; the
-  per-kind pipelines are `docs/soldier-pipeline.md`, `docs/boat-pipeline.md`
-  and `docs/level3d-pipeline.md`. Only the jeep, the BTR, the Chinook,
-  the Little Bird (`jackal_littlebird_lowpoly.blend`, the preview's rescue
-  helicopter, `level3d_rescue.gd`), the model-sheet soldiers, the boat, the two tanks, the bunker with its
-  gun, and all of stage 1 are done, which is every model in the preview: the
-  first, sprite-made soldier (`jackal_units.blend`, `--sprite-soldiers`) was
-  deleted rather than converted. The 3D preview lights
-  every material two-tone (`_toon` in `level3d_preview.gd`), the terrain's
-  only lines are `Shore_Lines` along the beach's bands, and the water is
-  deliberately left soft: a cel-shaded version was tried and reverted.
+- `project.godot` comments use `;`, not `#` — a `#` comment silently stops the
+  keys after it from being applied.
+- 3D models are cel-shaded, and a model without it is not finished: see
+  `docs/cel-shading.md`. The water is deliberately left soft.
 
 ## Known deviations from the original
 
-Deliberate. Not bugs, and not to be "fixed" back without saying why:
+Deliberate. Not bugs, and not to be "fixed" back without saying why (the reasons
+are in `docs/game-2d.md`):
 
 - Controls: WASD movement, O and P for the weapons, and mouse aim, gated on
   `ButtonMapping.mouse_aim`.
 - Two players, from the title screen's "2 players", and in the 3D preview.
-- No loading screen: `Main.load_all` runs from `_ready`, so the game opens on
-  the title screen. `jackal.LoadingMode` has no counterpart here any more.
-- Sound options — music, effects and a master volume, on three buses where the
-  original had one — under Options → Sound and in the in-game menu.
-- An Escape menu inside a stage: resume, options, quit to title, quit game. The
-  original had no way out of a stage but to die or finish it.
-- `CAMERA_BOUND` is a full frame rather than the original's 224, so the jeep can
-  back up about a screen and a half.
-- At most `Player.MAX_BULLETS` (3) machine-gun rounds in flight. The original
-  fires on every press with no cap, so a turbo pad got a round per press; three
-  is above what hand tapping reaches and holds turbo to about 14 a second.
-- Turbo, on by default (`ButtonMapping.turbo`, Options → Controls and the
-  in-game options): a held gun fires every `Player.TURBO_DELAY` (7) ticks
-  rather than every `GUN_ARMED_DELAY` (45), which is exactly the cap's rate.
-  Mouse aiming means holding LMB, and the original's two rounds a second read
-  as a broken gun. Off gives the original trigger back.
+- No loading screen: `Main.load_all` runs from `_ready`.
+- Sound options on three buses, under Options → Sound and in the in-game menu.
+- An Escape menu inside a stage: resume, options, quit to title, quit game.
+- `CAMERA_BOUND` is a full frame rather than the original's 224.
+- At most `Player.MAX_BULLETS` (3) machine-gun rounds in flight.
+- Turbo, on by default (`ButtonMapping.turbo`): a held gun fires every
+  `Player.TURBO_DELAY` (7) ticks rather than every `GUN_ARMED_DELAY` (45).
 - `FlowField.build` produces shortest paths, which the shipped `dirs-N.dat` do
-  not always contain. Only stages whose collision grid is edited get rebuilt, so
-  this only bites where it has to.
+  not always contain.
 
-And one bug kept on purpose, because reproducing it is cheaper than explaining
-the difference:
+And one bug kept on purpose: `SunsetMode._draw_helicopter`'s rotor disc grows
+instead of fading in, because the Java original passes its fade value into
+`drawRotated`'s `scale` parameter rather than its `alpha` one.
 
-- `SunsetMode._draw_helicopter`'s rotor disc grows instead of fading in. The Java
-  original passes its fade value into `drawRotated`'s `scale` parameter rather
-  than its `alpha` one.
+## Further reading
+
+- `docs/game-2d.md` — modes, entities, rendering and clipping, sprite atlases,
+  the two frames, controls, two players, audio and input, the in-game menu.
+- `docs/maps.md` — the map checks and map editor, the stage JSON, binary
+  formats, the flow field, image backdrops.
+- `docs/level3d.md` — the 3D level file, its ground, the Blender builder, the
+  level editor.
+- `docs/preview3d.md` — the 3D preview's title, settings, light presets, splash
+  and dust, its co-op. Options: `docs/preview3d-options.md`.
+- `docs/audio3d.md` — the 3D preview's effects and music, the three sound
+  modes, the adaptive boss music, the mix, debugging silence.
+- `docs/level-editor-plan.md`, `docs/level3d-pipeline.md`,
+  `docs/cel-shading.md`, `docs/soldier-pipeline.md`, `docs/boat-pipeline.md`.
+- `README.md` — rationale for the controls and how spawning was measured.

@@ -48,7 +48,7 @@ WindowsApps). Blender — Store-сборка, запускается через
 
 ## 3D-уровни
 
-Как это всё связано — в `CLAUDE.md`, раздел «3D level files», и в
+Как это всё связано — в `docs/level3d.md` и в
 `docs/level-editor-plan.md`.
 
 | файл | что делает | запуск |

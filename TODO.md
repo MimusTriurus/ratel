@@ -49,7 +49,7 @@ What is left, in the order it matters.
 4. **A seventh stage.** The editor edits the six that exist; a new one needs its
    own `tiles-N` atlas first, which is an art problem rather than an editor one.
 
-5. **Image backdrops in the editor.** The game draws them (see CLAUDE.md, Image
+5. **Image backdrops in the editor.** The game draws them (see docs/maps.md, Image
    backdrops); the editor still draws the tile grid whatever the stage says. What
    it should show for an image stage is the chunks as the backdrop with the
    collision, trigger and group layers over them, and the tile brush off. The
