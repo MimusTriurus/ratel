@@ -605,7 +605,22 @@ the sun taken off the ground as it rises), and the title fades on it into the
 day. Over the Chinook the camera follows the jeeps in as they go
 (`Level3DSplashLanding`, `CHASE_*`), so that the frame is not half empty ground,
 over a few more low rocks and two palms (`SCATTER`, `SCATTER_PALMS`) -- not in
-`ROCKS`, which the jeeps' way goes round.
+`ROCKS`, which the jeeps' way goes round. Its dust is one cloud a source --
+each jeep, the Chinook's wash, each gust -- in the models' look
+(`Level3DCelCloud`, `src/tools/level3d_cel_cloud.gd`, a port of the tank
+bench's `CelCloud` in `BlenderMCP/godot`): puffs as spheres flowed into one
+shape by a smooth union, one ink line round it, eaten from the rim, in the
+camera's tangent plane since our camera is a perspective one; a cloud is one
+only where its puffs overlap, so a jeep raises one every `CEL_WHEEL_STEP`;
+the Chinook's wash raises its puffs at the edge of its hull, small, growing
+as they roll out (`_hull_edge`, `WASH_*`), and the hull thins any that come
+back into it (`_thin`, off
+`Level3DChinook.HULL_BOXES`, as the bench's `CelSolids` thins its by the
+tanks'), and the clouds are drawn at the frame's end, after the chase has
+moved the camera.
+`--splash-veil` stands it in a thin haze the wash raises (`VEIL_*`, soft
+cards faded into the ground off the depth texture), off by default. `--splash-puffs` draws each puff as a card of
+its own (`DUST_SHADER`), `--splash-motes` as soft motes (`MOTE_*`).
 So that the risen disc is not cut off, the splash is rendered the whole screen
 big (`SCREEN`, the camera as wide as the focused frame's `FOCUS_ZOOM` needs):
 the title shows the middle of it, exactly the old frame (`_region`), and the

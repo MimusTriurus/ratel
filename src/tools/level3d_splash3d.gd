@@ -355,19 +355,25 @@ const WHEEL_CLOUD := Vector2(0.7, 0.45)   # radius, life, as shares of a wind cl
 #
 # A cloud is one body with a life of its own, CLOUD_LIFE seconds: born a
 # small knot on the ground, it swells as it rises and drifts downwind, and
-# then breaks up -- eaten away in holes that widen until nothing is left, the
-# way cel-shaded smoke goes (DUST_SHADER). Its body is one ball, faceted
-# (Level3DFx.ball), pushed out by a noise of its own into lobes, billows on
-# billows, flattened, drawn out along the wind and half sunk in the ground;
-# its normals are worked out from the pushed shape, smooth over each lobe, so
-# that it is lit as the lobes it has. Pushed both in and out, it was a lumpy
-# ball, a potato.
+# then goes -- its lobes shrinking away one by one and its edge fraying, and
+# dithered out only by the frame's sides (DUST_SHADER).
 #
-# This is the third go at it. A stream of small balls, one per DUST_STEP of
+# It is a cartoon puff on a card that faces the camera, a billboard turned
+# about the vertical only: a cauliflower of round lobes (DUST_LOBES) drawn by
+# the shader, each lit as a sphere would be and pushed towards the camera by
+# as much as that sphere would stand out, into the depth buffer too, so that
+# two clouds and a cloud and the ground meet in round seams. Against the sun,
+# a lobe glows where it is thin -- out at its edges -- and the cloud's outline
+# brightest, a rim round the whole of it and none between its lobes.
+#
+# This is the fourth go at it. A stream of small balls, one per DUST_STEP of
 # a runner, as the preview's wheels raise theirs (Level3DPuffs), was a string
 # of bubbles: every ball drew its own rim, and no cloud was ever one thing.
 # Soft translucent spheres were blots, and big solid balls lumps that read
-# as rocks.
+# as rocks. One ball pushed out into lobes by a noise, flattened and lit
+# through, was the third: low and lit all over, a flat bright slab on the
+# dark ground, its facets and the holes it went in showing as the camera
+# came in after the jeeps (Level3DSplashLanding, CHASE_*).
 #
 # The runners cross the frame, not a box: at each depth they come in just
 # past its upwind edge and leave past the other, VIEW_SLOPE of the depth
@@ -383,113 +389,304 @@ const CLOUD_EVERY := Vector2(0.7, 1.4)
 const CLOUD_LIFE := Vector2(3.0, 5.0)
 # A cloud's radius at its biggest, metres, a little more far off; how big it
 # is born, as a share of that; how high it rises over its life, as a share of
-# its radius; how much flatter than round it is, and how much longer along
-# the wind -- low and long, hugging the ground. Grown with the distance to
-# hold their size in the frame, and rising as far as their radius, they were
-# boulders of dust taller than the jeeps.
+# its radius; and its card's half height and half width, as shares of it --
+# longer along the ground than it stands, rolling along it. Grown with the
+# distance to hold their size in the frame, and rising as far as their
+# radius, they were boulders of dust taller than the jeeps.
 const CLOUD_RADIUS := Vector2(0.45, 0.85)
 const CLOUD_BORN := 0.2
 const CLOUD_RISE := 0.12
-const CLOUD_FLAT := 0.6
-const CLOUD_LONG := 1.7
-const CLOUD_POOL := 120
+const CLOUD_TALL := 1.0
+const CLOUD_LONG := 1.6
+const CLOUD_POOL := 192
 const WIND := Vector3(1.3, 0.0, 0.0)
-# The preview's dust is sand (Level3DPuffs' "ground"). Lit as the solids
-# are, it was dark against the sun and lost on the dark ground, its rim all
-# that showed; dust lets the light through, so its two tones are its own
-# (DUST_SHADER): the faces turned from the sun, which the camera sees, take
-# the light that comes through, DUST_THROUGH of it, past a step; the rest
-# are the dark tone; the edge has the rim -- one rim round the cloud.
-const DUST_COLOUR := Color(0.93, 0.76, 0.48)
-const DUST_THROUGH := 0.5
-const DUST_STEP_AT := 0.3
-# Narrower than a solid's: a cloud's lobes each have an edge.
-const DUST_RIM_WIDTH := 0.25
+# The preview's dust is sand (Level3DPuffs' "ground"), and its tones are the
+# shader's own, not the lights': the body a little lighter than the ground,
+# what the sun comes through and the rim against it; all lighter as the sun
+# rises (_show_rise), as the ground is. Lit by the scene's lights, the body
+# was the sun's colour all over, brighter than anything on the ground, and
+# read as a thing rather than as air.
+const DUST_BODY := Color(0.24, 0.11, 0.07)
+const DUST_LIT := Color(0.72, 0.38, 0.16)
+const DUST_RIM := Color(1.0, 0.8, 0.45)
+const RISEN_DUST_BODY := Color(0.46, 0.25, 0.14)
+const RISEN_DUST_LIT := Color(0.86, 0.56, 0.3)
+const DUST_LOBES := 7
+# The clouds' look. By default each source's puffs -- a jeep's wheels, the
+# Chinook's wash, a gust -- are one cloud (Level3DCelCloud, a port of the
+# tank bench's CelCloud): spheres flowed into one shape with one ink line
+# round it, flowing into one within CEL_BLEND metres, eaten from the rim from
+# CEL_ERODE_FROM of their life, inked CEL_INK metres or CEL_INK_PX pixels
+# wide, whichever is wider, and popping up over the first CEL_POP of it.
+# --splash-puffs draws each as a card of its own (DUST_SHADER), and
+# --splash-motes as a handful of soft motes (MOTE_*).
+const CEL_BLEND := 0.3
+const CEL_ERODE_FROM := 0.25
+const CEL_INK := 0.04
+const CEL_INK_PX := 1.5
+const CEL_POP := 0.06
+# A cloud is one only where its puffs overlap: the tanks' grow four times as
+# wide as the run between two. A jeep's every CEL_WHEEL_STEP metres, then,
+# off one rear wheel and the other in turn, CEL_WHEEL times a wind cloud's
+# size and life (some 0.35 m across at the most, under a second): at the
+# cards' spacing and size they were balls in a row, and smaller, separate
+# stones; at twice this size, too big for a jeep (the user halved it); off
+# both wheels at once, each a cloud, two ropes along the ground, as the
+# tanks' were before theirs grew.
+const CEL_WHEEL_STEP := 0.3
+const CEL_WHEEL := Vector2(0.5, 0.2)
+# A puff thrown from where it is raised slows to a stop over THROW_TIME
+# seconds; a wheel's back from the jeep and out from under it at WHEEL_THROW
+# m/s, each out by its own share -- out alike, the puffs lay in one line, as
+# the tanks' did.
+const THROW_TIME := 0.3
+const WHEEL_THROW := Vector2(2.4, 1.6)
+# Under --splash-motes, a cloud is not one puff but
+# a handful of motes: soft sheets of the veil's kind (VEIL_SHADER), small
+# and thick, MOTES_PER_METRE of the cloud's radius of them (3 to 8), each
+# blown off its way by up to MOTE_SPREAD m/s and rising MOTE_RISE, swelling
+# from MOTE_BORN of its size and slowing (MOTE_DRAG) -- dust as particles.
+const MOTES_PER_METRE := 9.0
+const MOTE_SPREAD := Vector2(0.2, 0.7)
+const MOTE_RISE := Vector2(0.15, 0.45)
+const MOTE_SIZE := Vector2(1.0, 1.6)
+const MOTE_BORN := 0.3
+const MOTE_DRAG := 1.2
+const MOTE_LONG := 1.3
+const MOTE_OPACITY := 0.6
+const MOTE_CHURN := 0.3
 
-# The cloud's body and its going (vertex and fragment): `lump` how far the
-# noise pushes the surface in and out, as a share of the radius; the life
-# share at which it starts to break up. INSTANCE_CUSTOM is the cloud's life,
-# 0..1, and its seed.
+# The veil: dust in the air rather than in clouds -- a thin, soft haze low
+# over the ground, which the clouds stand in and which says the air is full
+# of it. Big soft cards facing the camera as the clouds' do, VEIL_OPACITY at
+# their thickest, the colour of dust lit through, raised where a cloud is
+# (_raise_veil: the Chinook's wash, Level3DSplashLanding), swelling out of
+# VEIL_BORN of their size and thinning out over their life, blown out and
+# slowing (VEIL_DRAG, a share of their way lost a second). They fade into the
+# ground and into anything else behind them by how near it is (VEIL_SOFT
+# metres, or their own height if less, off the depth buffer), so that no
+# card shows its edge where it goes into the ground. Solid, they were the
+# soft blots of the second go at the clouds; this thin and under the solid
+# ones, they are the air. The pool is the motes' too (MOTE_*), each sheet
+# with its own opacity and how ragged its edge is. The haze itself is off
+# unless the preview is run with --splash-veil (_veil_on).
+const VEIL_POOL := 360
+const VEIL_OPACITY := 0.45
+const VEIL_BORN := 0.35
+const VEIL_DRAG := 0.6
+const VEIL_SOFT := 1.2
+const VEIL_COLOUR := Color(0.78, 0.45, 0.22)
+const RISEN_VEIL_COLOUR := Color(0.9, 0.62, 0.36)
+const VEIL_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_disabled, shadows_disabled, skip_vertex_transform, depth_draw_never, blend_mix;
+uniform vec3 colour : source_color = vec3(0.78, 0.45, 0.22);
+// The middle, where it is thickest, this much darker than its thin edge --
+// a little: more, and each mote was a ring, a soap bubble.
+uniform float thick = 0.92;
+uniform float soft = 1.2;
+uniform float side_fade = 0.25;
+uniform vec2 sides = vec2(0.0, 1.0);
+uniform sampler2D depth : hint_depth_texture, filter_nearest;
+varying float life;
+varying float seed;
+varying vec2 extent;
+varying float opacity;
+varying float ragged;
+
+float hash(float n) {
+	return fract(sin(n) * 43758.5453);
+}
+
+float noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	float a = hash(dot(i, vec2(1.0, 57.0)));
+	float b = hash(dot(i + vec2(1.0, 0.0), vec2(1.0, 57.0)));
+	float c = hash(dot(i + vec2(0.0, 1.0), vec2(1.0, 57.0)));
+	float d = hash(dot(i + vec2(1.0, 1.0), vec2(1.0, 57.0)));
+	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+void vertex() {
+	// Its life, 0..1, its seed, its opacity and how ragged its edge is.
+	life = INSTANCE_CUSTOM.x;
+	seed = INSTANCE_CUSTOM.y * 37.0;
+	opacity = INSTANCE_CUSTOM.z;
+	ragged = INSTANCE_CUSTOM.w;
+	extent = vec2(length(MODEL_MATRIX[0].xyz), length(MODEL_MATRIX[1].xyz));
+	vec3 centre = MODEL_MATRIX[3].xyz;
+	vec3 toward = INV_VIEW_MATRIX[3].xyz - centre;
+	toward.y = 0.0;
+	toward = normalize(toward);
+	vec3 across = normalize(cross(vec3(0.0, 1.0, 0.0), toward));
+	vec3 world = centre + across * VERTEX.x * extent.x + vec3(0.0, 1.0, 0.0) * VERTEX.y * extent.y;
+	VERTEX = (VIEW_MATRIX * vec4(world, 1.0)).xyz;
+	NORMAL = normalize((VIEW_MATRIX * vec4(toward, 0.0)).xyz);
+}
+
+void fragment() {
+	vec2 q = (UV - 0.5) * 2.0;
+	q.y = -q.y;
+	// A soft heap, flatter on top, its edge wandering on a slow noise that
+	// rolls as it lives.
+	float churn = noise(q * vec2(1.6, 2.4) + vec2(seed + life * 1.2, seed * 0.5))
+			+ 0.5 * noise(q * vec2(3.5, 5.0) + vec2(seed * 0.3 - life * 2.0, seed));
+	float r = length(q * vec2(1.0, 1.25)) + (churn / 1.5 - 0.5) * ragged;
+	float a = 1.0 - smoothstep(0.25, 1.0, r);
+	a *= smoothstep(0.0, 0.2, life) * (1.0 - smoothstep(0.35, 1.0, life));
+	float across = (SCREEN_UV.x - sides.x) / (sides.y - sides.x);
+	a *= smoothstep(0.03, side_fade, min(across, 1.0 - across));
+	// Into whatever is behind it by how near that is.
+	float d = texture(depth, SCREEN_UV).r;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	vec3 ndc = vec3(SCREEN_UV * 2.0 - 1.0, d * 2.0 - 1.0);
+#else
+	vec3 ndc = vec3(SCREEN_UV * 2.0 - 1.0, d);
+#endif
+	vec4 behind = INV_PROJECTION_MATRIX * vec4(ndc, 1.0);
+	behind.xyz /= behind.w;
+	a *= clamp((VERTEX.z - behind.z) / min(soft, extent.y), 0.0, 1.0);
+	ALBEDO = colour * mix(thick, 1.0, smoothstep(0.0, 0.9, r));
+	ALPHA = a * opacity;
+}
+"""
+
+# The puff (vertex and fragment). INSTANCE_CUSTOM is the cloud's life, 0..1,
+# and its seed; its transform's scale the card's half width and height.
 const DUST_SHADER := """
 shader_type spatial;
-render_mode cull_back;
-uniform vec4 albedo : source_color = vec4(1.0);
-uniform float through = 0.5;
-uniform float step_at = 0.3;
-uniform float rim_width = 0.45;
-uniform float rim = 0.9;
-uniform float rim_tint = 0.35;
-uniform float lump = 0.5;
-uniform float break_up = 0.55;
+render_mode unshaded, cull_disabled, shadows_disabled, skip_vertex_transform;
+uniform vec3 body : source_color = vec3(0.24, 0.11, 0.07);
+// A lobe's underside, turned down more than below_at: what parts one lobe
+// from the next in front of it.
+uniform float under = 0.7;
+uniform float below_at = -0.3;
+uniform vec3 lit : source_color = vec3(0.72, 0.38, 0.16);
+uniform vec3 rim : source_color = vec3(1.0, 0.8, 0.45);
+// Towards the sun, world space: a cloud against it glows, one off to the
+// side less.
+uniform vec3 sun_toward = vec3(0.0, 0.0, -1.0);
+// A lobe is thin enough to glow where it faces the camera less than this.
+uniform float thin_at = 0.55;
+// The rim, as a share of the card's half height, in from the outline.
+uniform float rim_width = 0.07;
+uniform float break_up = 0.5;
 uniform float side_fade = 0.25;
 // The frame's sides in the render, SCREEN_UV.x (Level3DSplash3D._region).
 uniform vec2 sides = vec2(0.0, 1.0);
-varying vec3 dir;
 varying float life;
 varying float seed;
+varying vec2 extent;
+varying float behind;
 
-float hash(vec3 p) {
-	return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+float hash(float n) {
+	return fract(sin(n) * 43758.5453);
 }
 
-float noise(vec3 p) {
-	vec3 i = floor(p);
-	vec3 f = fract(p);
+float noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
 	f = f * f * (3.0 - 2.0 * f);
-	return mix(mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x), mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
-			mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x), mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+	float a = hash(dot(i, vec2(1.0, 57.0)));
+	float b = hash(dot(i + vec2(1.0, 0.0), vec2(1.0, 57.0)));
+	float c = hash(dot(i + vec2(0.0, 1.0), vec2(1.0, 57.0)));
+	float d = hash(dot(i + vec2(1.0, 1.0), vec2(1.0, 57.0)));
+	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
-// Billows: a few big round lobes bulging outward only, so that the outline
-// is a run of them rather than a lumpy ball; they churn a little as the cloud
-// lives. A second, finer octave of lobes on the lobes, each with its own
-// line between the tones, mottled the cloud like marble.
-vec3 billowed(vec3 d, float s, float l) {
-	vec3 q = d * 2.0 + vec3(s, s * 0.7, l * 0.9);
-	float lobe = smoothstep(0.25, 0.85, noise(q));
-	return d * (1.0 - lump * 0.5 + lump * lobe * 1.4);
+// Ordered dither, 4 x 4: the share of the pixels a level keeps.
+float bayer(vec2 p) {
+	int x = int(mod(p.x, 4.0));
+	int y = int(mod(p.y, 4.0));
+	int m[16] = int[](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
+	return (float(m[y * 4 + x]) + 0.5) / 16.0;
 }
 
 void vertex() {
 	life = INSTANCE_CUSTOM.x;
 	seed = INSTANCE_CUSTOM.y * 37.0;
-	dir = normalize(VERTEX);
-	VERTEX = billowed(dir, seed, life);
-	// The normal of the billowed surface, from two points beside this one:
-	// smooth over each lobe, so that the two tones part along its curve.
-	// The ball's own were its facets', and the facets of the billows, lit
-	// one by one, were shards.
-	vec3 t1 = normalize(cross(dir, abs(dir.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
-	vec3 t2 = cross(dir, t1);
-	vec3 a = billowed(normalize(dir + t1 * 0.03), seed, life) - VERTEX;
-	vec3 b = billowed(normalize(dir + t2 * 0.03), seed, life) - VERTEX;
-	vec3 n = normalize(cross(a, b));
-	NORMAL = dot(n, dir) < 0.0 ? -n : n;
+	extent = vec2(length(MODEL_MATRIX[0].xyz), length(MODEL_MATRIX[1].xyz));
+	vec3 centre = MODEL_MATRIX[3].xyz;
+	vec3 eye = INV_VIEW_MATRIX[3].xyz;
+	// Turned to the camera about the vertical: its foot stays level on the
+	// ground.
+	vec3 toward = eye - centre;
+	toward.y = 0.0;
+	toward = normalize(toward);
+	vec3 across = normalize(cross(vec3(0.0, 1.0, 0.0), toward));
+	vec3 world = centre + across * VERTEX.x * extent.x + vec3(0.0, 1.0, 0.0) * VERTEX.y * extent.y;
+	behind = pow(clamp(dot(normalize(centre - eye), normalize(sun_toward)), 0.0, 1.0), 4.0);
+	VERTEX = (VIEW_MATRIX * vec4(world, 1.0)).xyz;
+	NORMAL = normalize((VIEW_MATRIX * vec4(toward, 0.0)).xyz);
 }
 
 void fragment() {
-	// Broken up: eaten away where a noise over its surface is under a level
-	// that rises from nothing at break_up to all of it at the end -- and
-	// towards the frame's sides, all of it by the edge, so that a cloud
-	// thrown out there goes as it would with age: lit, on the black the sky
-	// has died to by then, the edge's own fade to black cut it off in a line.
-	float e = noise(dir * 3.2 + seed * 1.7) * 0.7 + noise(dir * 7.0 + seed) * 0.3;
-	float across = (SCREEN_UV.x - sides.x) / (sides.y - sides.x);
-	float side = 1.0 - smoothstep(0.03, side_fade, min(across, 1.0 - across));
-	if (e < max(smoothstep(break_up, 1.0, life), side) * 1.05) {
+	// Card space: x across, y up, in half heights, the middle 0.
+	vec2 q = (UV - 0.5) * 2.0;
+	q.y = -q.y;
+	float wide = extent.x / extent.y;
+	q.x *= wide;
+	// The lobes: a row along the ground, bigger and higher in the middle, the
+	// middle ones nearer the camera; they roll up a little as it lives, and
+	// shrink away one by one once it breaks up.
+	float best = -1.0;
+	vec3 n = vec3(0.0, 0.0, 1.0);
+	float outline = 1e3;
+	for (int i = 0; i < LOBES; i++) {
+		float fi = float(i);
+		float h1 = hash(seed + fi * 1.7);
+		float h2 = hash(seed * 1.3 + fi * 3.1);
+		float h3 = hash(seed * 0.7 + fi * 5.3);
+		float u = ((fi + 0.5 + (h1 - 0.5) * 0.7) / float(LOBES)) * 2.0 - 1.0;
+		float middle = 1.0 - u * u;
+		float r = (0.3 + 0.16 * h2) * (0.55 + 0.6 * middle);
+		vec2 c = vec2(u * (wide - 0.35), -0.62 + r + 0.3 * h3 * middle + life * 0.12 * h1);
+		r *= 1.0 - smoothstep(break_up + (1.0 - break_up) * 0.7 * h2, 1.0, life);
+		vec2 d = q - c;
+		float dd = length(d);
+		outline = min(outline, dd - r);
+		if (dd < r) {
+			float z = 0.25 * middle * h3 + sqrt(r * r - dd * dd);
+			if (z > best) {
+				best = z;
+				n = vec3(d / r, sqrt(max(1.0 - dd * dd / (r * r), 0.0)));
+			}
+		}
+	}
+	// Its edge frayed, and more of it as it goes.
+	float fray = (noise(q * 3.5 + seed) - 0.5) * (0.04 + 0.06 * life);
+	if (best < 0.0 || outline + fray > 0.0) {
 		discard;
 	}
-	ALBEDO = albedo.rgb;
-}
-
-void light() {
-	// Lit through: turned from the light by more than step_at.
-	DIFFUSE_LIGHT += step(step_at, -dot(NORMAL, LIGHT)) * through * ATTENUATION * LIGHT_COLOR / PI;
-	float edge_on = step(1.0 - rim_width, 1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0));
-	float behind = clamp(-dot(LIGHT, VIEW), 0.0, 1.0);
-	vec3 band = edge_on * behind * rim * ATTENUATION * LIGHT_COLOR / PI;
-	DIFFUSE_LIGHT += band * rim_tint;
-	SPECULAR_LIGHT += band * (1.0 - rim_tint);
+	// Dithered out towards the frame's sides -- all of it by the edge, so
+	// that a cloud thrown out there goes as it would with age: lit, on the
+	// black the sky has died to by then, the edge's own fade to black cut it
+	// off in a line. Its age needs none: its lobes are gone by the end, and
+	// dithered with it too it was a scatter of specks round every old cloud.
+	float across = (SCREEN_UV.x - sides.x) / (sides.y - sides.x);
+	float side = 1.0 - smoothstep(0.03, side_fade, min(across, 1.0 - across));
+	float keep = 1.0 - side;
+	if (keep < bayer(FRAGCOORD.xy)) {
+		discard;
+	}
+	vec3 colour = n.y < below_at ? body * under : body;
+	if (n.z < thin_at) {
+		colour = mix(body, lit, 0.35 + 0.65 * behind);
+	}
+	if (outline + fray > -rim_width && n.y > -0.4) {
+		colour = mix(colour, rim, behind);
+	}
+	ALBEDO = colour;
+	// Out towards the camera by as far as the lobe stands out of the card.
+	vec4 clip = PROJECTION_MATRIX * vec4(VERTEX + vec3(0.0, 0.0, best * extent.y), 1.0);
+	float ndc = clip.z / clip.w;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	DEPTH = ndc * 0.5 + 0.5;
+#else
+	DEPTH = ndc;
+#endif
 }
 """
 
@@ -670,6 +867,15 @@ var _height: Callable        # the near ground's height at (x, z)
 var _rock_paint: Material    # the boulders' (_ground), for any put down later
 var _palm_meshes: Array[Mesh] = []
 var _dust_mesh: MultiMeshInstance3D
+var _veil_mesh: MultiMeshInstance3D
+var _veil_paint: ShaderMaterial
+var _veils: Array[Dictionary] = []
+var _oldest_veil := 0
+var _dust_style := "cel"     # "cel", "puffs" (--splash-puffs) or "motes" (--splash-motes)
+var _veil_on := false        # the wash's haze (VEIL_*), under --splash-veil
+var _cel_clouds := {}        # lane -> Level3DCelCloud, one a source of dust
+var _dust_tones: Array[Color] = [DUST_BODY, DUST_LIT]   # the puffs' now, as the sun rises
+var _cel_pending := false    # the clouds' draw put off to the frame's end
 var _haze_mesh: MeshInstance3D
 var _runners: Array[Dictionary] = []
 var _clouds: Array[Dictionary] = []
@@ -780,6 +986,8 @@ func _show_frame() -> void:
 	edge.set_shader_parameter("opened", inverse_lerp(1.0 / FOCUS_ZOOM, 1.0, zoom))
 	if _dust_paint != null:
 		_dust_paint.set_shader_parameter("sides", Vector2(r.position.x, r.end.x))
+	if _veil_paint != null:
+		_veil_paint.set_shader_parameter("sides", Vector2(r.position.x, r.end.x))
 
 
 # The scene to `centre`, FOCUS_ZOOM times as big, and the frame out to the
@@ -848,8 +1056,13 @@ func _build() -> void:
 	world.add_child(_haze_mesh)
 	# The clouds' pool is always there, for the wheels' dust when the jeeps
 	# drive off; the wind raises clouds only under --splash-dust.
+	var args := OS.get_cmdline_user_args()
+	_dust_style = "puffs" if args.has("--splash-puffs") else ("motes" if args.has("--splash-motes") else "cel")
+	_veil_on = args.has("--splash-veil")
 	_dust_mesh = _dust(OS.get_cmdline_user_args().has("--splash-dust"))
 	world.add_child(_dust_mesh)
+	_veil_mesh = _veil()
+	world.add_child(_veil_mesh)
 
 
 # Gently rolling ground, faceted, out of a fixed seed so that the frame is
@@ -1047,36 +1260,34 @@ func _toon(colour: Color, rim: float, two_sided := false) -> ShaderMaterial:
 # slot not in use is scaled to nothing. `wind`: the runners raise clouds, as
 # --splash-dust asks; without, only the wheels do.
 func _dust(wind: bool) -> MultiMeshInstance3D:
-	var ball := Level3DFx.ball(3, 0.0, 11)
+	var card := QuadMesh.new()
+	card.size = Vector2(2.0, 2.0)
 	var shader := Shader.new()
-	shader.code = DUST_SHADER
+	shader.code = DUST_SHADER.replace("LOBES", str(DUST_LOBES))
 	var paint := ShaderMaterial.new()
 	paint.shader = shader
-	paint.set_shader_parameter("albedo", DUST_COLOUR)
-	paint.set_shader_parameter("through", DUST_THROUGH)
-	paint.set_shader_parameter("step_at", DUST_STEP_AT)
-	paint.set_shader_parameter("rim_width", DUST_RIM_WIDTH)
-	paint.set_shader_parameter("rim", RIM)
-	paint.set_shader_parameter("rim_tint", RIM_TINT)
-	ball.surface_set_material(0, paint)
+	paint.set_shader_parameter("body", DUST_BODY)
+	paint.set_shader_parameter("lit", DUST_LIT)
+	paint.set_shader_parameter("rim", DUST_RIM)
+	paint.set_shader_parameter("sun_toward", _sun.basis.z)
+	card.material = paint
 	_dust_paint = paint
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_custom_data = true
-	multimesh.mesh = ball
+	multimesh.mesh = card
 	multimesh.instance_count = CLOUD_POOL
 	for i in CLOUD_POOL:
 		multimesh.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO))
 	_dust_rng.seed = 5
 	for r in (RUNNERS if wind else 0):
-		var runner := {}
+		var runner := {"lane": "wind%d" % r}
 		_place_runner(runner, true)
 		_runners.append(runner)
 	# Some already about when the title opens, at every age.
 	for r in _runners:
 		for k in 2:
-			_raise_cloud(r.at + Vector3(-k * 2.5, 0.0, 0.0), 0.8)
-			_clouds[-1].age = _dust_rng.randf() * float(_clouds[-1].life)
+			_raise_cloud(r.at + Vector3(-k * 2.5, 0.0, 0.0), 0.8, 1.0, 1.0, null, _dust_rng.randf(), r.lane)
 	var instance := MultiMeshInstance3D.new()
 	instance.multimesh = multimesh
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -1101,26 +1312,126 @@ func _place_runner(runner: Dictionary, anywhere: bool) -> void:
 # A cloud born where a runner is, `strength` 0..1 of its gust -- or a wheel,
 # with `size` and `life` the shares of a wind cloud's it is. The cloud, for
 # whoever raised it to carry off some other way than the wind's ("drift").
-func _raise_cloud(at: Vector3, strength: float, size := 1.0, life := 1.0) -> Dictionary:
+# A puff at `at`, `size` and `life` times a wind cloud's, blown `drift` m/s
+# (the wind's, by default), `aged` of its life already, of the cloud named
+# `lane` (one a source: Level3DCelCloud), and thrown `throw` m/s from where it
+# is raised, slowing to a stop over `throw_time` seconds: one puff of that
+# cloud, a card of its own under --splash-puffs, a handful of motes (MOTE_*)
+# under --splash-motes.
+# `kind` what else differs: "born", its size at birth as a share of its full
+# size (CLOUD_BORN), and "grow_time", seconds -- growing as it is thrown out
+# rather than as it ages (Level3DSplashLanding's wash).
+func _raise_cloud(at: Vector3, strength: float, size := 1.0, life := 1.0, drift = null, aged := 0.0,
+		lane := "wind", throw := Vector3.ZERO, throw_time := THROW_TIME, kind := {}) -> void:
 	at.y = _height.call(at.x, at.z)
+	var radius := _dust_rng.randf_range(CLOUD_RADIUS.x, CLOUD_RADIUS.y) * (0.6 + 0.4 * strength) * (1.0 - at.z / 120.0) * size
+	var span := _dust_rng.randf_range(CLOUD_LIFE.x, CLOUD_LIFE.y) * life
+	# Carried by the wind a little slower than it blows, and off sideways.
+	var blown: Vector3 = drift if drift != null else \
+			WIND * _dust_rng.randf_range(0.6, 0.9) + Vector3(0.0, 0.0, _dust_rng.randf_range(-0.2, 0.2))
+	if _dust_style == "motes":
+		_raise_motes(at, radius, span, blown + throw, aged)
+		return
 	var cloud := {
 		"at": at,
-		"radius": _dust_rng.randf_range(CLOUD_RADIUS.x, CLOUD_RADIUS.y) * (0.6 + 0.4 * strength) * (1.0 - at.z / 120.0) * size,
-		"life": _dust_rng.randf_range(CLOUD_LIFE.x, CLOUD_LIFE.y) * life,
-		"age": 0.0,
-		# Carried by the wind a little slower than it blows, and off sideways.
-		"drift": WIND * _dust_rng.randf_range(0.6, 0.9) + Vector3(0.0, 0.0, _dust_rng.randf_range(-0.2, 0.2)),
+		"radius": radius,
+		"life": span,
+		"age": aged * span,
+		"drift": blown,
+		"throw": throw,
+		"throw_time": maxf(throw_time, 1e-3),
+		"lane": lane,
+		"born": CLOUD_BORN,
+		"grow_time": 0.0,
 		"push": Vector3.ZERO,     # what gusts of the cursor have blown it
 		"turn": _dust_rng.randf() * TAU,
 		"seed": _dust_rng.randf(),
 	}
+	cloud.merge(kind, true)
 	if _clouds.size() < CLOUD_POOL:
 		_clouds.append(cloud)
 	else:
 		# The pool is full: the oldest goes.
 		_clouds[_oldest] = cloud
 		_oldest = (_oldest + 1) % CLOUD_POOL
-	return cloud
+
+
+# A cloud as motes (MOTE_*): spread over its middle, low, each blown off its
+# way and rising.
+func _raise_motes(at: Vector3, radius: float, span: float, blown: Vector3, aged: float) -> void:
+	var count := clampi(roundi(radius * MOTES_PER_METRE), 3, 8)
+	for m in count:
+		var angle := _dust_rng.randf() * TAU
+		var out := Vector3(cos(angle), 0.0, sin(angle))
+		var from := at + out * radius * 0.5 * sqrt(_dust_rng.randf())
+		from.y = _dust_rng.randf() * radius * 0.3
+		var drift := blown + out * _dust_rng.randf_range(MOTE_SPREAD.x, MOTE_SPREAD.y) \
+				+ Vector3.UP * _dust_rng.randf_range(MOTE_RISE.x, MOTE_RISE.y)
+		var life := span * _dust_rng.randf_range(0.7, 1.2)
+		_raise_veil(from, drift, radius * _dust_rng.randf_range(MOTE_SIZE.x, MOTE_SIZE.y), MOTE_LONG, life, {
+			"born": MOTE_BORN, "drag": MOTE_DRAG, "lift": 0.6, "churn": MOTE_CHURN,
+			"opacity": MOTE_OPACITY * _dust_rng.randf_range(0.7, 1.0), "age": aged * life,
+		})
+
+
+# The veil's pool (VEIL_*), one MultiMesh as the clouds' is.
+func _veil() -> MultiMeshInstance3D:
+	var card := QuadMesh.new()
+	card.size = Vector2(2.0, 2.0)
+	var shader := Shader.new()
+	shader.code = VEIL_SHADER
+	_veil_paint = ShaderMaterial.new()
+	_veil_paint.shader = shader
+	_veil_paint.set_shader_parameter("colour", VEIL_COLOUR)
+	_veil_paint.set_shader_parameter("soft", VEIL_SOFT)
+	card.material = _veil_paint
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.use_custom_data = true
+	multimesh.mesh = card
+	multimesh.instance_count = VEIL_POOL
+	for i in VEIL_POOL:
+		multimesh.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO))
+	var instance := MultiMeshInstance3D.new()
+	instance.multimesh = multimesh
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	instance.custom_aabb = AABB(Vector3(-100, -10, -100), Vector3(200, 40, 200))
+	return instance
+
+
+# A sheet of the veil at `at` -- its height over the ground in `at.y` --
+# `size` metres high at its fullest and `long` times as wide, blown `drift`
+# m/s, for `life` seconds; `kind` what differs for a mote (_raise_motes).
+func _raise_veil(at: Vector3, drift: Vector3, size: float, long: float, life: float, kind := {}) -> void:
+	var veil := {"at": at, "drift": drift, "size": size, "long": long, "life": life, "age": 0.0,
+			"seed": _dust_rng.randf(), "born": VEIL_BORN, "drag": VEIL_DRAG, "lift": 0.35,
+			"churn": 0.6, "opacity": VEIL_OPACITY}
+	veil.merge(kind, true)
+	if _veils.size() < VEIL_POOL:
+		_veils.append(veil)
+	else:
+		_veils[_oldest_veil] = veil
+		_oldest_veil = (_oldest_veil + 1) % VEIL_POOL
+
+
+func _move_veils(delta: float) -> void:
+	var multimesh := _veil_mesh.multimesh
+	for i in _veils.size():
+		var veil: Dictionary = _veils[i]
+		veil.age += delta
+		var k: float = veil.age / float(veil.life)
+		if k >= 1.0:
+			multimesh.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO))
+			continue
+		veil.at += veil.drift * delta
+		veil.drift *= exp(-float(veil.drag) * delta)
+		var at: Vector3 = veil.at
+		var tall: float = veil.size * lerpf(veil.born, 1.0, 1.0 - pow(1.0 - k, 2.0))
+		# Its middle `lift` of its height up: a veil's a third under the
+		# ground, where the depth fade takes it.
+		var p := Vector3(at.x, _ground_y(at.x, at.z) + at.y + tall * float(veil.lift), at.z)
+		multimesh.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3(tall * float(veil.long), tall, tall)), p))
+		multimesh.set_instance_custom_data(i, Color(k, float(veil.seed), float(veil.opacity), float(veil.churn)))
 
 
 # The palms in the wind: each paint of theirs as TOON_SHADER moving its
@@ -1217,7 +1528,11 @@ func _process(delta: float) -> void:
 		if runner.next <= 0.0:
 			runner.next = _dust_rng.randf_range(CLOUD_EVERY.x, CLOUD_EVERY.y)
 			if strength > 0.25:
-				_raise_cloud(runner.at, strength)
+				_raise_cloud(runner.at, strength, 1.0, 1.0, null, 0.0, runner.lane)
+	_move_veils(delta)
+	var cel := _dust_style == "cel"
+	for lane in _cel_clouds:
+		(_cel_clouds[lane] as Level3DCelCloud).clear()
 	var multimesh := _dust_mesh.multimesh
 	for i in CLOUD_POOL:
 		if i >= _clouds.size():
@@ -1230,9 +1545,14 @@ func _process(delta: float) -> void:
 			continue
 		var push: Vector3 = cloud.push
 		var radius: float = cloud.radius
-		# Born small, swelling quickly and then slowly to its full size.
-		var size := radius * lerpf(CLOUD_BORN, 1.0, 1.0 - pow(1.0 - k, 2.5))
-		var base: Vector3 = cloud.at + cloud.drift * float(cloud.age) + push
+		# Born small, swelling quickly and then slowly to its full size -- or
+		# as it goes out, for one that grows with its throw.
+		var grow_time: float = cloud.grow_time
+		var grown := 1.0 - exp(-float(cloud.age) / grow_time) if grow_time > 0.0 else 1.0 - pow(1.0 - k, 2.5)
+		var size := radius * lerpf(float(cloud.born), 1.0, grown)
+		var tau: float = cloud.throw_time
+		var base: Vector3 = cloud.at + cloud.drift * float(cloud.age) + push \
+				+ cloud.throw * tau * (1.0 - exp(-float(cloud.age) / tau))
 		# The gust: away from where the cursor points, and along with it.
 		if _gust > 0.01 and _mouse_ground != null:
 			var away: Vector3 = base - _mouse_ground
@@ -1245,16 +1565,89 @@ func _process(delta: float) -> void:
 				# A gust tears it apart sooner, too.
 				cloud.age += delta * g * _gust * 1.5
 		cloud.push = push
-		# Half out of the ground at first, and more of it as it swells: low,
-		# but standing up off the ground rather than lying in it, which,
-		# flatter and sunk deeper, it did like a puddle.
-		var lift := size * CLOUD_FLAT * lerpf(0.15, 0.5, k) + radius * CLOUD_RISE * k
+		if cel:
+			# Popping up at once, grown with the puff's own easing, sat with
+			# most of its body over the ground -- centred on it, the ground's
+			# depth cut it in half -- and eaten from the rim as it ages.
+			var r := size * smoothstep(0.0, CEL_POP, k)
+			var middle := Vector3(base.x, _height.call(base.x, base.z) + 0.7 * r + radius * CLOUD_RISE * k, base.z)
+			_cel_cloud(cloud.lane).add(middle, r * _thin(middle, r), smoothstep(CEL_ERODE_FROM, 1.0, k), k,
+					float(cloud.seed))
+			continue
+		size *= _thin(base + Vector3.UP * size, size)
+		# The card's foot on the ground -- its lobes' feet some 0.6 of its half
+		# height under its middle -- and rising off it as it lives.
+		var tall := size * CLOUD_TALL
+		var lift := tall * 0.6 + radius * CLOUD_RISE * k
 		var p := Vector3(base.x, _height.call(base.x, base.z) + lift, base.z)
-		# Spread along the ground more than it stands up: it rolls downwind.
-		var basis := Basis(Vector3.UP, float(cloud.turn) * 0.3 + k * 0.3).scaled(Vector3(1.0, CLOUD_FLAT, 1.0) * size)
-		basis = Basis.from_scale(Vector3(CLOUD_LONG, 1.0, 1.0)) * basis
+		var basis := Basis.from_scale(Vector3(size * CLOUD_LONG, tall, size))
 		multimesh.set_instance_transform(i, Transform3D(basis, p))
 		multimesh.set_instance_custom_data(i, Color(k, float(cloud.seed), 0, 0))
+	if cel and not _cel_pending:
+		_cel_pending = true
+		_draw_cel_clouds.call_deferred()
+
+
+# The clouds (Level3DCelCloud) as the camera sees them at the end of the
+# frame, once anything that moves it -- Level3DSplashLanding's chase -- has.
+func _draw_cel_clouds() -> void:
+	_cel_pending = false
+	var r := _region()
+	for lane in _cel_clouds:
+		var cloud := _cel_clouds[lane] as Level3DCelCloud
+		cloud.paint(_dust_tones[0], _dust_tones[1], DUST_RIM, Vector2(r.position.x, r.end.x))
+		cloud.draw(camera, _sun.basis.z)
+
+
+# How much of a puff of radius `r` at `at` is left by what it may not stand
+# through: all of it here, where nothing stands in the dust's way;
+# Level3DSplashLanding's Chinook does.
+func _thin(_at: Vector3, _r: float) -> float:
+	return 1.0
+
+
+# A wheel's distance between puffs, `step` metres as the cards have it.
+func _wheel_step(step: float) -> float:
+	return CEL_WHEEL_STEP if _dust_style == "cel" else step
+
+
+# The cloud named `lane` (Level3DCelCloud), made on its first puff.
+func _cel_cloud(lane: String) -> Level3DCelCloud:
+	if not _cel_clouds.has(lane):
+		_cel_clouds[lane] = Level3DCelCloud.new(camera.get_parent(), CEL_BLEND, CEL_INK, CEL_INK_PX)
+	return _cel_clouds[lane]
+
+
+# A jeep's dust for a step of its way, `size` and `life` times a wind
+# cloud's: a puff off each rear wheel, or, as one cloud (CEL_WHEEL), off one
+# and the other in turn.
+func _wheel_dust(rig: Dictionary, size: float, life: float) -> void:
+	if _dust_style != "cel":
+		for wheel in rig.rear:
+			_raise_wheel_dust(rig, wheel, size, life)
+		return
+	if rig.rear.is_empty():
+		return
+	var turn: int = rig.get("dust_turn", 0)
+	rig.dust_turn = turn + 1
+	_raise_wheel_dust(rig, rig.rear[turn % rig.rear.size()], CEL_WHEEL.x, CEL_WHEEL.y)
+
+
+# A puff off a jeep's rear `wheel`, `size` and `life` times a wind cloud's:
+# on the ground under it, thrown back from the jeep and out from under it
+# (WHEEL_THROW), a cloud to each jeep.
+func _raise_wheel_dust(rig: Dictionary, wheel: Node3D, size: float, life: float) -> void:
+	var jeep := rig.jeep as Node3D
+	var ahead := jeep.global_basis.z
+	ahead.y = 0.0
+	ahead = ahead.normalized()
+	var out := Vector3(ahead.z, 0.0, -ahead.x)
+	if out.dot(wheel.global_position - jeep.global_position) < 0.0:
+		out = -out
+	var under := wheel.global_position + out * _dust_rng.randf_range(-0.1, 0.1) + ahead * _dust_rng.randf_range(-0.2, 0.2)
+	var throw := -ahead * WHEEL_THROW.x * _dust_rng.randf_range(0.7, 1.3) \
+			+ out * WHEEL_THROW.y * 1.4 * _dust_rng.randf()
+	_raise_cloud(under, 1.0, size, life, null, 0.0, "jeep%d" % int(rig.side), throw)
 
 
 # Where the cursor points at the ground (or null, pointing over it), how fast
@@ -1574,6 +1967,10 @@ func reset_launch() -> void:
 	_oldest = 0
 	for i in CLOUD_POOL:
 		_dust_mesh.multimesh.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO))
+	_veils.clear()
+	_oldest_veil = 0
+	for i in VEIL_POOL:
+		_veil_mesh.multimesh.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO))
 
 
 # A launched jeep along its way: out of where it stood towards LAUNCH_PASS on
@@ -1600,12 +1997,10 @@ func _drive_off(rig: Dictionary, delta: float) -> void:
 		(rig.wheels[k] as Node3D).transform = Transform3D(wheel_rest.basis * Basis(Vector3.RIGHT, run / WHEEL_RADIUS),
 				wheel_rest.origin)
 	rig.dust_run += step
-	while rig.dust_run >= WHEEL_DUST_STEP:
-		rig.dust_run -= WHEEL_DUST_STEP
-		for wheel in rig.rear:
-			var under: Vector3 = (wheel as Node3D).global_position
-			_raise_cloud(under + Vector3(_dust_rng.randf_range(-0.2, 0.2), 0.0, _dust_rng.randf_range(-0.3, 0.3)),
-					1.0, WHEEL_CLOUD.x, WHEEL_CLOUD.y)
+	var dust_step := _wheel_step(WHEEL_DUST_STEP)
+	while rig.dust_run >= dust_step:
+		rig.dust_run -= dust_step
+		_wheel_dust(rig, WHEEL_CLOUD.x, WHEEL_CLOUD.y)
 
 
 # The sun as far up as the rise has it (RISE_*), eased in and out.
@@ -1616,6 +2011,12 @@ func _show_rise() -> void:
 	_environment.ambient_light_energy = lerpf(AMBIENT_ENERGY, RISEN_AMBIENT, t)
 	_sky_material.set_shader_parameter("sink", lerpf(SINK, RISEN_SINK, t))
 	_sky_material.set_shader_parameter("dawn", t)
+	if _veil_paint != null:
+		_veil_paint.set_shader_parameter("colour", VEIL_COLOUR.lerp(RISEN_VEIL_COLOUR, t))
+	_dust_tones = [DUST_BODY.lerp(RISEN_DUST_BODY, t), DUST_LIT.lerp(RISEN_DUST_LIT, t)]
+	if _dust_paint != null:
+		_dust_paint.set_shader_parameter("body", DUST_BODY.lerp(RISEN_DUST_BODY, t))
+		_dust_paint.set_shader_parameter("lit", DUST_LIT.lerp(RISEN_DUST_LIT, t))
 	if _ground_paint != null:
 		_ground_paint.set_shader_parameter("albedo", GROUND_COLOUR.lerp(RISEN_GROUND, t))
 		_ground_paint.set_shader_parameter("glow", Color.BLACK.lerp(RISEN_GLOW, t))

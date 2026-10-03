@@ -53,17 +53,42 @@ const ROLL_GAIN := 0.04
 const LEAN_MOST := 0.3
 const LEAN_TIME := 0.3
 # Its rotors' wash raises dust under it below WASH_HEIGHT metres, up to
-# WASH_RATE clouds a second on the ground, WASH_RING metres out from under
-# it, blown out at WASH_SPEED m/s; WASH_CLOUD as WHEEL_CLOUD. More and
+# WASH_RATE clouds a second on the ground -- not under it but at the edge of
+# its hull (_hull_edge), WASH_OUT metres out and HOVER_OUT more for each metre
+# it is up, where the air the rotors drive down comes out along the ground
+# from under it -- each born WASH_BORN of its size and growing as it rolls
+# out, thrown away from the hull at WASH_SPEED m/s; WASH_CLOUD as
+# WHEEL_CLOUD. Raised all round it under it, from a ring about its middle,
+# they stood through the hull and rose out of the ground beside it full
+# grown; the wash is a wall of air coming out from under, and its dust is
+# born small at the edge and swells as it goes. More and
 # smaller clouds than a gust's: at 1.3 of a wind cloud's radius, 2 m across
 # and more out where the Chinook lands (_raise_cloud grows them with the
 # distance), they were blobs as broad as its cabin once the camera came in
 # after the jeeps (CHASE_*).
 const WASH_HEIGHT := 7.0
 const WASH_RATE := 18.0
-const WASH_RING := Vector2(3.0, 8.0)
+const WASH_OUT := 0.4
+const HOVER_OUT := 0.6
+const WASH_BORN := 0.1
 const WASH_SPEED := Vector2(2.5, 5.0)
 const WASH_CLOUD := Vector2(0.75, 0.5)
+# Thrown out at twice WASH_SPEED, slowing over WASH_THROW_TIME: the wash
+# hits the ground and rolls out, and stops.
+const WASH_THROW_TIME := 0.8
+# As one cloud (Level3DSplash3D, CEL_*), bigger and CEL_WASH_RATE times as
+# many, so that they overlap into one: at the cards' they were stones.
+const CEL_WASH := Vector2(1.3, 0.5)
+const CEL_WASH_RATE := 1.5
+# And the veil it raises (Level3DSplash3D, VEIL_*): VEIL_RATE sheets a
+# second at the most, from the hull's edge too, blown out at VEIL_SPEED and
+# slowing, VEIL_SIZE metres high at their fullest and VEIL_LONG times as
+# wide, for VEIL_LIFE seconds -- a haze rolling out from under it.
+const VEIL_RATE := 4.0
+const VEIL_SPEED := Vector2(2.0, 4.0)
+const VEIL_SIZE := Vector2(2.0, 3.0)
+const VEIL_LONG := 2.0
+const VEIL_LIFE := Vector2(3.5, 5.5)
 const ROTOR_SOUND := Level3DChinook.SOUND
 # Heard at full this close, and falling off as one over the distance past it.
 const SOUND_NEAR := 25.0
@@ -208,6 +233,7 @@ var _rate := 1.0             # how fast _flight goes
 var _hurry := 0.0            # 0 to 1, the way from 1 to ARRIVE_HURRY
 var _lean := Vector2.ZERO    # its pitch and roll now, coming round (LEAN_TIME)
 var _wash := 0.0             # clouds of wash owed
+var _veil_owed := 0.0        # sheets of the veil owed
 var _chase_to := CAMERA_AT.z  # where the camera is headed (CHASE_*), forward only
 var _ramp_state := ""        # "", "opening", "open", "closing", "shut"
 var _ramp_open_at := 0.0
@@ -339,16 +365,94 @@ func _raise_wash(delta: float) -> void:
 	var height: float = _chinook.position.y - under.y
 	if height > WASH_HEIGHT or not _chinook.visible:
 		return
-	var at := Vector3(_chinook.position.x, 0.0, _chinook.position.z)
-	_wash += WASH_RATE * (1.0 - height / WASH_HEIGHT) * delta
+	var cel := _dust_style == "cel"
+	var out_by := WASH_OUT + HOVER_OUT * maxf(height, 0.0)
+	var puff: Vector2 = CEL_WASH if cel else WASH_CLOUD
+	_wash += WASH_RATE * (CEL_WASH_RATE if cel else 1.0) * (1.0 - height / WASH_HEIGHT) * delta
 	while _wash >= 1.0:
 		_wash -= 1.0
-		var angle := _dust_rng.randf() * TAU
-		var out := Vector3(cos(angle), 0.0, sin(angle))
-		# The rotors are fore and aft: the wash is long along the Chinook.
-		var reach := _dust_rng.randf_range(WASH_RING.x, WASH_RING.y)
-		var cloud := _raise_cloud(at + out * reach * Vector3(0.7, 0.0, 1.3), 1.0, WASH_CLOUD.x, WASH_CLOUD.y)
-		cloud.drift = out * _dust_rng.randf_range(WASH_SPEED.x, WASH_SPEED.y) + WIND * 0.5
+		var edge := _hull_edge(out_by)
+		_raise_cloud(edge[0], 1.0, puff.x, puff.y, WIND * 0.5, 0.0, "wash",
+				edge[1] * _dust_rng.randf_range(WASH_SPEED.x, WASH_SPEED.y) * 2.0, WASH_THROW_TIME,
+				{"born": WASH_BORN, "grow_time": WASH_THROW_TIME * 1.5})
+	if not _veil_on:
+		return
+	_veil_owed += VEIL_RATE * (1.0 - height / WASH_HEIGHT) * delta
+	while _veil_owed >= 1.0:
+		_veil_owed -= 1.0
+		var edge := _hull_edge(out_by)
+		var from: Vector3 = edge[0]
+		from.y = 0.0
+		_raise_veil(from, edge[1] * _dust_rng.randf_range(VEIL_SPEED.x, VEIL_SPEED.y) + WIND * 0.5,
+				_dust_rng.randf_range(VEIL_SIZE.x, VEIL_SIZE.y), VEIL_LONG,
+				_dust_rng.randf_range(VEIL_LIFE.x, VEIL_LIFE.y))
+
+
+# A point at the edge of the Chinook's hull on the ground, `out` metres
+# outside it, and the way out from there, flat: on the outline of
+# Level3DChinook.HULL_BOXES seen from above -- the cabin and the sponsons --
+# by its length, the way out the side's own, turned a little from the
+# middle at random so that the puffs off one side do not run in a row.
+func _hull_edge(out: float) -> Array:
+	var boxes := Level3DChinook.HULL_BOXES
+	var basis := _chinook.transform.basis
+	for attempt in 16:
+		var box: AABB = boxes[_dust_rng.randi() % boxes.size()]
+		var a := Vector2(box.position.x, box.position.z)
+		var b := Vector2(box.end.x, box.end.z)
+		var side := b - a
+		var t := _dust_rng.randf() * 2.0 * (side.x + side.y)
+		var p: Vector2
+		var n: Vector2
+		if t < side.x:
+			p = Vector2(a.x + t, a.y)
+			n = Vector2(0.0, -1.0)
+		elif t < side.x + side.y:
+			p = Vector2(b.x, a.y + t - side.x)
+			n = Vector2(1.0, 0.0)
+		elif t < 2.0 * side.x + side.y:
+			p = Vector2(b.x - (t - side.x - side.y), b.y)
+			n = Vector2(0.0, 1.0)
+		else:
+			p = Vector2(a.x, b.y - (t - 2.0 * side.x - side.y))
+			n = Vector2(-1.0, 0.0)
+		# On the outline of the two together, not inside the other one.
+		var inside := false
+		for other in boxes:
+			if other != box and p.x > other.position.x + 0.01 and p.x < other.end.x - 0.01 \
+					and p.y > other.position.z + 0.01 and p.y < other.end.z - 0.01:
+				inside = true
+		if inside:
+			continue
+		var at := _chinook.transform * Vector3(p.x, 0.0, p.y)
+		var way := basis * Vector3(n.x, 0.0, n.y)
+		way.y = 0.0
+		var spread := basis * Vector3(p.x, 0.0, p.y)
+		spread.y = 0.0
+		way = (way.normalized() * 0.75 + spread.normalized() * 0.25
+				+ way.normalized().cross(Vector3.UP) * _dust_rng.randf_range(-0.3, 0.3)).normalized()
+		return [at + way * out, way]
+	var away := Vector3(_dust_rng.randf_range(-1.0, 1.0), 0.0, _dust_rng.randf_range(-1.0, 1.0)).normalized()
+	return [_chinook.position + away * out, away]
+
+
+# A puff thinned by the Chinook's hull (Level3DChinook.HULL_BOXES), as the
+# tank bench's CelSolids thins its puffs by the tanks': whole while its
+# middle is a quarter of its radius outside, none half its radius inside,
+# smoothly between, so that a puff the wash throws against the hull shrinks
+# into it rather than stand through it -- as they did -- and a puff pushed
+# out of the nearest face stood over the roof.
+func _thin(at: Vector3, r: float) -> float:
+	if not _chinook.visible:
+		return 1.0
+	var p := _chinook.transform.affine_inverse() * at
+	var radius := r / CHINOOK_SCALE
+	var inside := INF
+	for box in Level3DChinook.HULL_BOXES:
+		var q := (p - box.get_center()).abs() - box.size * 0.5
+		var out := Vector3(maxf(q.x, 0.0), maxf(q.y, 0.0), maxf(q.z, 0.0)).length()
+		inside = minf(inside, out + minf(maxf(q.x, maxf(q.y, q.z)), 0.0))
+	return smoothstep(-0.5 * radius, 0.25 * radius, inside)
 
 
 func _play_sound() -> void:
@@ -510,6 +614,7 @@ func reset_launch() -> void:
 	_rate = 1.0
 	_hurry = 0.0
 	_wash = 0.0
+	_veil_owed = 0.0
 	_launched = false
 	_close_at = INF
 	_lift_at = INF
@@ -628,12 +733,10 @@ func _drive_off(rig: Dictionary, delta: float) -> void:
 				wheel_rest.origin)
 	if run < float(plan.lip) - 1.0:
 		rig.dust_run += step
-		while rig.dust_run >= DUST_STEP:
-			rig.dust_run -= DUST_STEP
-			for wheel in rig.rear:
-				var under: Vector3 = (wheel as Node3D).global_position
-				_raise_cloud(under + Vector3(_dust_rng.randf_range(-0.2, 0.2), 0.0, _dust_rng.randf_range(-0.3, 0.3)),
-						1.0, DUST_CLOUD.x, DUST_CLOUD.y)
+		var dust_step := _wheel_step(DUST_STEP)
+		while rig.dust_run >= dust_step:
+			rig.dust_run -= dust_step
+			_wheel_dust(rig, DUST_CLOUD.x, DUST_CLOUD.y)
 	if run >= float(plan.length) - 0.01 and rig.on:
 		rig.on = false
 		_engine_off(rig, true)
