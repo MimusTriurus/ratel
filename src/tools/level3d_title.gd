@@ -3,8 +3,9 @@
 # reticle where Menu's jeep icon was (Level3DReticle), the same layout in the
 # 1024x960 frame centred in the 2048x1152 one. Its entries are the preview's own: a
 # game for one player or two (the 2D game's "1 player" / "2 players"), the
-# difficulty the 2D game picks under options, the Escape menu's settings,
-# and quit. Written in the HUD's font (Level3DFont), so that it follows the
+# mode -- 8-bit or modern, the Escape menu's Game tab (Level3DSettings.Preset),
+# here too since it is what a game is played as --, the difficulty the 2D
+# game picks under options, the Escape menu's settings, and quit. Written in the HUD's font (Level3DFont), so that it follows the
 # settings as the HUD does.
 #
 # The preview shows it at the start, and from the Escape menu's "Main menu",
@@ -15,11 +16,14 @@
 #
 # Keys as on the 2D game's menus: up and down (the arrows, and the keys
 # bound to the BTR's), Enter, Space or the gun to pick, and left and right to
-# change the difficulty; the mouse picks an entry by aiming the reticle at it.
+# change the mode or the difficulty; the mouse picks an entry by aiming the reticle at it.
 class_name Level3DTitle
 extends CanvasLayer
 
-enum Entry { ONE_PLAYER, TWO_PLAYERS, DIFFICULTY, SETTINGS, QUIT }
+enum Entry { ONE_PLAYER, TWO_PLAYERS, MODE, DIFFICULTY, SETTINGS, QUIT }
+# The mode's names, by Level3DSettings.Preset; custom is a mode changed on the
+# settings' own tabs, which picking the mode here leaves.
+const MODE_NAMES := ["8-bit", "modern", "custom"]
 
 # Where IntroMode draws them in its 1024x960 frame (title at 128,192, 25x8
 # tiles of 32 px, Menu at
@@ -157,8 +161,8 @@ func game_ready() -> void:
 
 
 func _entries() -> Array[String]:
-	return ["1 player", "2 players", "difficulty: " + ("hard" if settings.hard else "normal"),
-			"settings", "quit"]
+	return ["1 player", "2 players", "mode: " + MODE_NAMES[settings.preset()],
+			"difficulty: " + ("hard" if settings.hard else "normal"), "settings", "quit"]
 
 
 func _process(delta: float) -> void:
@@ -204,6 +208,8 @@ func _pick() -> void:
 			else:
 				_launching = true
 				_begin(count)
+		Entry.MODE:
+			_toggle_mode()
 		Entry.DIFFICULTY:
 			_toggle_difficulty()
 		Entry.SETTINGS:
@@ -237,6 +243,17 @@ func _begin(count: int) -> void:
 	_launching = false
 	_veil.color.a = 0.0
 	start.call(count)
+
+
+# 8-bit and modern by turns, custom going to modern; the settings saved and
+# applied, the sound, the font and the look with them.
+func _toggle_mode() -> void:
+	var to := Level3DSettings.Preset.EIGHT_BIT if settings.preset() == Level3DSettings.Preset.MODERN \
+			else Level3DSettings.Preset.MODERN
+	settings.apply_preset(to)
+	if changed.is_valid():
+		changed.call()
+	_redraw()
 
 
 func _toggle_difficulty() -> void:
@@ -278,6 +295,8 @@ func _input(event: InputEvent) -> void:
 		elif code in [KEY_LEFT, KEY_RIGHT, settings.key("left"), settings.key("right")]:
 			if _selected == Entry.DIFFICULTY:
 				_toggle_difficulty()
+			elif _selected == Entry.MODE:
+				_toggle_mode()
 		elif code in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE, settings.key("gun")]:
 			_pick()
 		else:
