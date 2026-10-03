@@ -45,6 +45,8 @@ const DEFAULT_KEYS := {
 	"gun": KEY_L, "rocket": KEY_P, "turret_left": KEY_Q, "turret_right": KEY_E,
 }
 
+# The title screen's difficulty (Level3DTitle, Level3DMap.hard).
+var hard := false
 var camera := Camera.TILTED
 var look := Look.MODERN
 # The CRT monitor, over either look.
@@ -183,6 +185,7 @@ func load_saved() -> void:
 	var config := ConfigFile.new()
 	if config.load(SAVE_PATH) != OK:
 		return
+	hard = config.get_value("game", "hard", hard)
 	camera = clampi(config.get_value("graphics", "camera", camera), 0, Camera.size() - 1)
 	resolution = clampi(config.get_value("graphics", "resolution", resolution), 0, Resolution.size() - 1)
 	if config.has_section_key("graphics", "render"):
@@ -249,6 +252,7 @@ static func _rate(saved) -> float:
 
 func save() -> void:
 	var config := ConfigFile.new()
+	config.set_value("game", "hard", hard)
 	config.set_value("graphics", "camera", camera)
 	config.set_value("graphics", "render", look)
 	config.set_value("graphics", "resolution", resolution)

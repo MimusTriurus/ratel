@@ -362,7 +362,7 @@ func _process_triggers(top: float, view: Rect2) -> void:
 	var row := (int(top) >> 5) - 1
 	if row < 0:
 		return
-	var triggers: Array = map.stage.trigger_map[0]
+	var triggers: Array = map.triggers()
 	while _trigger_y > row:
 		_trigger_y -= 1
 		for t in triggers[_trigger_y]:

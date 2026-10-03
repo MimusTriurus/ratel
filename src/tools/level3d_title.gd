@@ -1,0 +1,239 @@
+# The 3D preview's title screen, the 2D game's (IntroMode's title and its
+# Menu) over the stage: the same title art out of large-5, the jeep sliding
+# between the entries as Menu's icon does, the same layout in the 1024x960
+# frame centred in the 2048x1152 one. Its entries are the preview's own: a
+# game for one player or two (the 2D game's "1 player" / "2 players"), the
+# difficulty the 2D game picks under options, the Escape menu's settings,
+# and quit. Written in the HUD's font (Level3DFont), so that it follows the
+# settings as the HUD does.
+#
+# The preview shows it at the start, and from the Escape menu's "Main menu",
+# with the tree paused under it and the stage hidden by its black; a game
+# picked on it starts the run again from the Chinook (Level3DPreview.
+# _start_game). Not shown for a --shot, or when the level editor's Play
+# started the preview, which is there to try the level out.
+#
+# Keys as on the 2D game's menus: up and down (the arrows, and the keys
+# bound to the BTR's), Enter, Space or the gun to pick, and left and right to
+# change the difficulty; the mouse picks an entry by pointing at it.
+class_name Level3DTitle
+extends CanvasLayer
+
+enum Entry { ONE_PLAYER, TWO_PLAYERS, DIFFICULTY, SETTINGS, QUIT }
+
+# Where IntroMode draws them in its 1024x960 frame (title at 128,192, Menu at
+# 416,608, an entry each 64 px, the icon 72 px to the left of the text and
+# 16 px down), and where that frame is in the 2048x1152 one.
+const FRAME := Vector2(512, 96)
+const TITLE_AT := Vector2(128, 192)
+const MENU_AT := Vector2(416, 608)
+const ROW := 64
+const ICON_X := -72
+const GLYPH := 32.0
+# Menu's: the icon speeds up over the first half of the way and slows over the
+# second, SELECT_TIME frames of the 2D game's 100 Hz in all.
+const SELECT_TIME := 0.08
+
+var settings: Level3DSettings
+# `start.call(players)`: a game for one player or two, at settings.hard.
+var start: Callable
+# `open_settings.call()`: the Escape menu's settings over the title, coming
+# back here when they are left (Level3DMenu.open_settings); `settings_open`
+# says whether they are, and have the keys.
+var open_settings: Callable
+var settings_open: Callable
+# `changed.call()`: settings.hard changed, to be saved.
+var changed: Callable
+
+var _selected := 0
+var _icon_y := 16.0
+var _from_y := 16.0
+var _moving := 1.0           # 0 to 1 of the icon's way, 1 when it stands
+var _title_tiles: Array[Spr] = []
+var _title_map: Array = []   # [y] -> PackedInt32Array of tile indices
+var _jeep: Spr
+var _art: Control            # the title and the jeep, nearest
+var _text: Control           # the entries, in the font's filter
+
+
+func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	visible = false
+	_load_title()
+	_jeep = SpriteBank.new(Main.SPRITES).get_sprite("player-green-0.png")
+	var black := ColorRect.new()
+	black.color = Color.BLACK
+	black.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(black)
+	_art = Control.new()
+	_art.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_art.draw.connect(_draw_art)
+	add_child(_art)
+	_text = Control.new()
+	_text.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_text.draw.connect(_draw_text)
+	add_child(_text)
+
+
+func is_open() -> bool:
+	return visible
+
+
+func open() -> void:
+	visible = true
+	_place_icon()
+	_redraw()
+
+
+func close() -> void:
+	visible = false
+
+
+# The title as Main.load_large_image reads it: title.dat's grid of tiles,
+# each named title-NNN.png in large-5's sheet.
+func _load_title() -> void:
+	var f := Main._open(Main.IMAGES + "title.dat")
+	if f == null:
+		return
+	var width := Main._s16(f)
+	var height := Main._s16(f)
+	var tile_count := Main._s16(f)
+	for y in height:
+		var row := PackedInt32Array()
+		row.resize(width)
+		for x in width:
+			row[x] = Main._s16(f)
+		_title_map.append(row)
+	f.close()
+	var atlas := Atlas.new(Main.IMAGES + "large-5.png", Main.IMAGES + "large-5.xml")
+	for i in tile_count:
+		_title_tiles.append(atlas.get_sprite("title-%03d.png" % i))
+
+
+func _entries() -> Array[String]:
+	return ["1 player", "2 players", "difficulty: " + ("hard" if settings.hard else "normal"),
+			"settings", "quit"]
+
+
+func _process(delta: float) -> void:
+	if not visible or _moving >= 1.0:
+		return
+	_moving = minf(_moving + delta / SELECT_TIME, 1.0)
+	var t := _moving
+	var eased := 2.0 * t * t if t < 0.5 else 1.0 - 2.0 * (1.0 - t) * (1.0 - t)
+	_icon_y = lerpf(_from_y, _target_y(), eased)
+	_art.queue_redraw()
+
+
+func _target_y() -> float:
+	return 16.0 + _selected * ROW
+
+
+func _place_icon() -> void:
+	_moving = 1.0
+	_icon_y = _target_y()
+
+
+func _select(index: int) -> void:
+	index = clampi(index, 0, Entry.size() - 1)
+	if index == _selected:
+		return
+	_selected = index
+	_from_y = _icon_y
+	_moving = 0.0
+
+
+func _pick() -> void:
+	match _selected:
+		Entry.ONE_PLAYER, Entry.TWO_PLAYERS:
+			close()
+			start.call(_selected + 1)
+		Entry.DIFFICULTY:
+			_toggle_difficulty()
+		Entry.SETTINGS:
+			open_settings.call()
+		Entry.QUIT:
+			get_tree().quit()
+
+
+func _toggle_difficulty() -> void:
+	settings.hard = not settings.hard
+	if changed.is_valid():
+		changed.call()
+	_redraw()
+
+
+func _redraw() -> void:
+	_art.queue_redraw()
+	_text.queue_redraw()
+	_text.texture_filter = Level3DFont.filter()
+
+
+func _input(event: InputEvent) -> void:
+	# The settings over the title have the keys while they are open.
+	if not visible or settings_open.is_valid() and settings_open.call():
+		return
+	var key := event as InputEventKey
+	if key != null and key.pressed and not key.echo:
+		var code := key.keycode
+		if code in [KEY_UP, settings.key("up")]:
+			_select(_selected - 1)
+		elif code in [KEY_DOWN, settings.key("down")]:
+			_select(_selected + 1)
+		elif code in [KEY_LEFT, KEY_RIGHT, settings.key("left"), settings.key("right")]:
+			if _selected == Entry.DIFFICULTY:
+				_toggle_difficulty()
+		elif code in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE, settings.key("gun")]:
+			_pick()
+		else:
+			return
+		get_viewport().set_input_as_handled()
+		return
+	var motion := event as InputEventMouseMotion
+	if motion != null:
+		var at := _entry_at()
+		if at >= 0:
+			_select(at)
+		return
+	var click := event as InputEventMouseButton
+	if click != null and click.pressed and click.button_index == MOUSE_BUTTON_LEFT:
+		var at := _entry_at()
+		if at >= 0:
+			_select(at)
+			_place_icon()
+			_pick()
+			get_viewport().set_input_as_handled()
+
+
+# The entry under the mouse, or -1: the row the text is on, from where the
+# icon would be to the end of the longest entry.
+func _entry_at() -> int:
+	var p := _text.get_local_mouse_position() - FRAME - MENU_AT
+	if p.x < ICON_X - 48 or p.x > 640:
+		return -1
+	var row := floori((p.y + 16.0) / ROW)
+	return row if row >= 0 and row < Entry.size() else -1
+
+
+func _draw_art() -> void:
+	var at := FRAME + TITLE_AT
+	for y in _title_map.size():
+		var row: PackedInt32Array = _title_map[y]
+		for x in row.size():
+			var sp: Spr = _title_tiles[row[x]]
+			if sp != null:
+				_art.draw_texture_rect_region(sp.tex, Rect2(at + Vector2(x << 5, y << 5), Vector2(sp.w, sp.h)), sp.region)
+	if _jeep != null:
+		var centre := FRAME + MENU_AT + Vector2(ICON_X, _icon_y)
+		_art.draw_texture_rect_region(_jeep.tex, Rect2(centre - Vector2(_jeep.w, _jeep.h) * 0.5,
+				Vector2(_jeep.w, _jeep.h)), _jeep.region)
+
+
+func _draw_text() -> void:
+	var entries := _entries()
+	for i in entries.size():
+		Level3DFont.draw(_text, entries[i], FRAME.x + MENU_AT.x, FRAME.y + MENU_AT.y + i * ROW, GLYPH,
+				Level3DFont.GRAY)

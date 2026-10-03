@@ -43,6 +43,17 @@ const STAGE_ROWS := 359
 # and any length.
 static var file := ""
 static var rows := STAGE_ROWS
+# The difficulty the title screen picked (Level3DTitle): the hard trigger list
+# rather than the normal one, as GameMode.set_stage picks it. Hard brings more
+# soldiers, tanks and boats; the POW buildings, the landing port and the boss
+# are on both lists, so what reads them once (buildings, Level3DRescue's
+# port, Level3DBoss' trigger row) reads the normal one.
+static var hard := false
+
+
+# The spawn triggers of the difficulty being played, [row] -> [[type, x, y]].
+func triggers() -> Array:
+	return stage.trigger_map[1 if hard else 0]
 
 
 static func level_path() -> String:

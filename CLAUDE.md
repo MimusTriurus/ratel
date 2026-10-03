@@ -571,6 +571,16 @@ that does not leave when an entry is picked, so its labels carry the state and
 `Menu`'s one-shot `selection_made` latch is released after every toggle. The
 same trick drives the in-game menu's options page.
 
+The 3D preview opens on a title screen, `Level3DTitle`
+(`src/tools/level3d_title.gd`): the 2D game's title art and jeep cursor,
+laid out as `IntroMode` lays them out, with 1 player, 2 players, the
+difficulty, the settings and quit, in the HUD's font, over the stage with
+the tree paused. A game picked there starts the run from the Chinook with the
+start jingle; the Escape menu's "Main menu" goes back to it. Hard is the
+stage's hard trigger list, as `GameMode.set_stage` picks it
+(`Level3DMap.hard`, `Level3DMap.triggers()`, saved as `Level3DSettings.hard`):
+more soldiers, tanks and boats. A --shot and the level editor's Play skip it.
+
 The 3D preview's Escape menu opens its settings on a Game tab: 8-bit or
 modern, each a preset of the sound mode, the driving, the firing, the reach,
 the font, the look and the CRT (`Level3DSettings.PRESETS`). The mode is not

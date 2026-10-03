@@ -37,7 +37,8 @@
 # or free, a throttle and a wheel:
 #
 #   Esc                    the menu (level3d_menu.gd): continue, settings,
-#                          quit. The settings -- camera, look (modern or
+#                          main menu (the title screen, level3d_title.gd,
+#                          which the preview opens on), quit. The settings -- camera, look (modern or
 #                          pixels, a CRT over either), the HUD, keys, driving,
 #                          firing, reach (the game's, long or unlimited), and the
 #                          cheats: infinite lives, wall hack, bullet hack,
@@ -271,6 +272,8 @@ var tilted := true      # Tab; the top view is the game's
 var settings := Level3DSettings.new()
 var _persist := false
 var _menu: Level3DMenu
+# The title screen (level3d_title.gd): at the start, and from the menu.
+var _title: Level3DTitle
 var _pixels: ColorRect
 var _crt: ColorRect
 # A click that closed the menu is not a round fired: the left button is not
@@ -302,6 +305,7 @@ func _ready() -> void:
 	_persist = not (run_args.has("--shot") or run_args.has("--obstacle-map"))
 	if _persist:
 		settings.load_saved()
+	Level3DMap.hard = settings.hard
 	get_tree().node_added.connect(_toon)
 	# First, so that everything added after it has something to be heard
 	# through (Level3DAudio.play is a no-op until then).
@@ -389,10 +393,16 @@ func _ready() -> void:
 	_update_camera()
 	_live = true
 
-	# intro_song, IntroMapMode's: the start jingle running on into stage 1.
-	Level3DAudio.play_music("intro")
-	if args.has("--intro") or not (args.has("--shot") or args.has("--obstacle-map")):
-		_start_intro()
+	# The title screen first, which starts the run when a game is picked;
+	# not for a --shot, nor for the level editor's Play, there to try the
+	# level out.
+	if _persist and not args.has("--editor") and not args.has("--intro"):
+		_show_title()
+	else:
+		# intro_song, IntroMapMode's: the start jingle running on into stage 1.
+		Level3DAudio.play_music("intro")
+		if args.has("--intro") or not (args.has("--shot") or args.has("--obstacle-map")):
+			_start_intro()
 	_screenshot_mode()
 
 
@@ -2377,7 +2387,7 @@ func _update_banners() -> void:
 func _crosshair_wanted() -> bool:
 	return _live and settings.hud_crosshair \
 			and settings.firing != Level3DSettings.Firing.CLASSIC \
-			and not _menu.is_open() and chinook == null and crews[0].respawning == 0 and not crews[0].out
+			and not _menu.is_open() and not _title.is_open() and chinook == null and crews[0].respawning == 0 and not crews[0].out
 
 
 # V and M: the modes on the HUD line for MODES_FLASH_TIME after the last press
@@ -2413,7 +2423,37 @@ func _make_menu() -> void:
 		_set_players(count)
 		_restart()
 		_menu.close()
+	_menu.main_menu = _show_title
+	# Over the HUD, so that its black hides it, and under the CRT's glass.
+	_title = Level3DTitle.new()
+	_title.layer = HUD_LAYER
+	_title.settings = settings
+	_title.start = _start_game
+	# The settings over it, back to it: open again, in the font they leave.
+	_title.open_settings = func(): _menu.open_settings(_title.open)
+	_title.settings_open = _menu.is_open
+	_title.changed = _settings_changed
+	add_child(_title)
 	add_child(_menu)
+
+
+# The title screen over the stage, the tree paused under it and the music
+# stopped, as the 2D game's title stops its song.
+func _show_title() -> void:
+	_menu.leave()
+	get_tree().paused = true
+	Level3DAudio.stop_music()
+	_title.open()
+
+
+# A game picked on the title screen: the run from the top, with the start
+# jingle, for `count` players at the difficulty picked there.
+func _start_game(count: int) -> void:
+	Level3DMap.hard = settings.hard
+	get_tree().paused = false
+	_gun_locked = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	_set_players(count)
+	_restart(true)
 
 
 # A rect on a layer of its own drawing the frame through the shader's `mode`.
@@ -3046,7 +3086,8 @@ func _unhandled_input(event: InputEvent) -> void:
 # R, and the last life lost: the BTR flown in again, everything blown up
 # rebuilt and every enemy back, the score and the lives as they started --
 # both players', both in again.
-func _restart() -> void:
+# `jingle`: the start's intro_song, for a game from the title screen.
+func _restart(jingle := false) -> void:
 	_place_crews()
 	following = true
 	for building in destructibles:
@@ -3087,7 +3128,7 @@ func _restart() -> void:
 	_saw_boss = false
 	_show_state()
 	# stage_song0, the Chinook's after a continue: no start jingle again.
-	Level3DAudio.play_music("stage")
+	Level3DAudio.play_music("intro" if jingle else "stage")
 	_start_intro()
 
 

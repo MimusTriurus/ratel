@@ -89,6 +89,12 @@ var new_game: Callable
 # Started by the level editor's Play (--editor): leaving is going back to it,
 # which is waiting for this process to end.
 var from_editor := false
+# `main_menu.call()`: the title screen (Level3DTitle), the run given up. None
+# from the level editor, which has no title.
+var main_menu: Callable
+# Where the settings' Back goes when they were opened over the title
+# (open_settings) rather than from the first page.
+var _back: Callable
 
 var _main_page: Control
 var _settings_page: Control
@@ -165,6 +171,7 @@ func _ready() -> void:
 	for state in ["checked", "checked_disabled"]:
 		theme.set_icon(state, "CheckBox", _box_icon(true))
 	theme.set_constant("h_separation", "CheckBox", 10)
+	_frame_styles(theme)
 	var root := Control.new()
 	root.theme = theme
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -194,6 +201,21 @@ func open() -> void:
 	_show_main()
 
 
+# The settings page alone, over the title screen, whose tree is already
+# paused: Back and Escape hide it and call `back`.
+func open_settings(back: Callable) -> void:
+	_back = back
+	visible = true
+	_show_settings()
+
+
+# Out of sight with the tree left paused, for the title screen.
+func leave() -> void:
+	_waiting = ""
+	visible = false
+	Level3DAudio.end_music_audition()
+
+
 func close() -> void:
 	_waiting = ""
 	visible = false
@@ -208,6 +230,12 @@ func close() -> void:
 func _show_main() -> void:
 	_waiting = ""
 	_apply_font()
+	if _back.is_valid():
+		var back := _back
+		_back = Callable()
+		leave()
+		back.call()
+		return
 	_settings_page.visible = false
 	_main_page.visible = true
 	_continue.grab_focus()
@@ -310,6 +338,8 @@ func _make_main_page() -> Control:
 	_button(box, "New game: 1 player", func(): new_game.call(1))
 	_button(box, "New game: 2 players", func(): new_game.call(2))
 	_button(box, "Settings", _show_settings)
+	if not from_editor:
+		_button(box, "Main menu", func(): main_menu.call())
 	_button(box, "Back to the editor" if from_editor else "Quit", func(): get_tree().quit())
 	return panel
 
@@ -856,6 +886,20 @@ func _apply_font() -> void:
 	_theme.default_font_size = _scaled(FONT_SIZE)
 	for entry in _font_sizes:
 		(entry[0] as Control).add_theme_font_size_override("font_size", _scaled(FONT_SIZE + entry[1]))
+	_fit_width.call_deferred()
+
+
+# The settings as wide as their widest tab, and a little more, whichever tab
+# is up: a TabContainer is as wide as the tab it shows, and the panel grew and
+# shrank from tab to tab. Again for each font, whose widths differ, once the
+# new sizes have been laid out.
+const WIDTH_SLACK := 40
+
+func _fit_width() -> void:
+	var widest := _tabs.get_tab_bar().get_combined_minimum_size().x
+	for i in _tabs.get_tab_count():
+		widest = maxf(widest, _tabs.get_tab_control(i).get_combined_minimum_size().x)
+	_tabs.custom_minimum_size.x = widest + WIDTH_SLACK
 
 
 # A volume, 0 to `top` % on the slider and 0 to top / 100 to `moved`, with
@@ -905,6 +949,56 @@ func _check(parent: Control, text: String, toggled: Callable) -> CheckBox:
 		_changed())
 	parent.add_child(check)
 	return check
+
+
+# Frames, which the default theme has not: its panels and buttons are near
+# black, and over the title screen's black there was nothing to see where a
+# panel or a button ended. The panels have a light frame, the buttons, lists
+# and tabs a grey one, white under the mouse and ACCENT on the one the keys
+# are on; square, as the rest of the game's art is.
+const FRAME := Color(0.85, 0.85, 0.85)
+const FRAME_DIM := Color(0.5, 0.5, 0.5)
+const FRAME_OFF := Color(0.28, 0.28, 0.28)
+
+
+func _frame_styles(theme: Theme) -> void:
+	theme.set_stylebox("panel", "PanelContainer", _box(Color(0.08, 0.08, 0.08, 0.97), FRAME, 3, 0))
+	theme.set_stylebox("panel", "TabContainer", _box(Color(0.11, 0.11, 0.11), FRAME_DIM, 2, 0))
+	theme.set_stylebox("panel", "PopupMenu", _box(Color(0.1, 0.1, 0.1), FRAME, 2, 6))
+	theme.set_stylebox("hover", "PopupMenu", _box(Color(0.25, 0.25, 0.25), Color.TRANSPARENT, 0, 0))
+	for type in ["Button", "OptionButton"]:
+		theme.set_stylebox("normal", type, _box(Color(0.14, 0.14, 0.14), FRAME_DIM, 2, 8))
+		theme.set_stylebox("hover", type, _box(Color(0.22, 0.22, 0.22), Color.WHITE, 2, 8))
+		theme.set_stylebox("pressed", type, _box(Color(0.3, 0.26, 0.15), ACCENT, 2, 8))
+		theme.set_stylebox("hover_pressed", type, _box(Color(0.3, 0.26, 0.15), ACCENT, 2, 8))
+		theme.set_stylebox("disabled", type, _box(Color(0.1, 0.1, 0.1), FRAME_OFF, 2, 8))
+		theme.set_stylebox("focus", type, _box(Color.TRANSPARENT, ACCENT, 3, 8))
+	# A check box is a Button too, and stays a box and a label, with only the
+	# keys' frame round it.
+	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+		theme.set_stylebox(state, "CheckBox", StyleBoxEmpty.new())
+	theme.set_stylebox("focus", "CheckBox", _box(Color.TRANSPARENT, ACCENT, 2, 2))
+	theme.set_stylebox("tab_unselected", "TabContainer", _box(Color(0.1, 0.1, 0.1), FRAME_OFF, 2, 10, true))
+	theme.set_stylebox("tab_hovered", "TabContainer", _box(Color(0.2, 0.2, 0.2), FRAME_DIM, 2, 10, true))
+	theme.set_stylebox("tab_selected", "TabContainer", _box(Color(0.11, 0.11, 0.11), FRAME, 2, 10, true))
+	theme.set_stylebox("tab_focus", "TabContainer", _box(Color.TRANSPARENT, ACCENT, 3, 10, true))
+	theme.set_stylebox("tab_disabled", "TabContainer", _box(Color(0.1, 0.1, 0.1), FRAME_OFF, 2, 10, true))
+
+
+# A square box: `fill`, a `frame` `width` px wide, `pad` px inside it; a
+# tab's with no frame along its bottom, which is the page's.
+static func _box(fill: Color, frame: Color, width: int, pad: int, tab := false) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = fill
+	box.border_color = frame
+	box.set_border_width_all(width)
+	if tab:
+		box.border_width_bottom = 0
+	box.content_margin_left = pad + width
+	box.content_margin_right = pad + width
+	box.content_margin_top = pad / 2 + width
+	box.content_margin_bottom = pad / 2 + width
+	return box
 
 
 # A check box's icon, drawn rather than the default theme's, which is black on
