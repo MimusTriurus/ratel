@@ -308,6 +308,15 @@ func done() -> bool:
 	return state == DONE
 
 
+# The rotors' wash, for Level3DWash: the hull as it is drawn -- at the
+# original's scale for its height in the top view -- and its boxes; nothing
+# once it has gone.
+func wash() -> Dictionary:
+	if _model == null or state == DONE:
+		return {}
+	return {"key": "chinook", "hull": _model.global_transform, "boxes": HULL_BOXES}
+
+
 # The top of the model, for the top camera, which has to be above it.
 func top() -> float:
 	if _model == null:

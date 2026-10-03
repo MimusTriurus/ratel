@@ -621,6 +621,15 @@ moved the camera.
 `--splash-veil` stands it in a thin haze the wash raises (`VEIL_*`, soft
 cards faded into the ground off the depth texture), off by default. `--splash-puffs` draws each puff as a card of
 its own (`DUST_SHADER`), `--splash-motes` as soft motes (`MOTE_*`).
+On the stage, under `--landing-dust` (off by default), the Chinook's rotors
+raise the same kind of cloud round its hull as it comes down, stands and
+climbs away (`Level3DWash`,
+`src/tools/level3d_wash.gd`): one body rolling out from the hull, as a
+helicopter's dust is, its puffs growing with the way they have gone
+(`GROW`) so that the ring does not break up as it widens; lit by the
+stage's two-tone light rather than painted in tones, so that it follows
+the light preset, in the colour of the ground under it, its depth kept
+out of the ground (`set_ground`), and orthographic in the top view.
 So that the risen disc is not cut off, the splash is rendered the whole screen
 big (`SCREEN`, the camera as wide as the focused frame's `FOCUS_ZOOM` needs):
 the title shows the middle of it, exactly the old frame (`_region`), and the
