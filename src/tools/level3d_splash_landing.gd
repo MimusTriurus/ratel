@@ -80,6 +80,15 @@ const CABIN_GAP := 0.4
 const JEEP_LENGTH := 3.98      # Level3DBtr.VEHICLES' jeep body, 1:1
 const JEEP_HALF_WIDTH := 1.33
 const AXLES := Vector2(1.2, -1.1)  # front, rear, along the jeep (ramp_axles)
+# Their heading: the way between the points HEADING_SPAN metres either side of
+# them along their way, fewer behind them as they set off -- the window
+# clamped at the start turned them by the first 0.3 m of the U-turn, five
+# degrees, in the frame they moved -- and eased in off where they stood over
+# that first HEADING_SPAN. The U-turn and the bend onto the Chinook's line
+# are ARC_STEPS straight steps each, short enough that a turn at speed does
+# not lurch from one to the next, as it did at 32 and 24.
+const HEADING_SPAN := 0.6
+const ARC_STEPS := 96
 # Their speed: up to DRIVE_SPEED at DRIVE_ACCEL, down to RAMP_SPEED at
 # DRIVE_BRAKE by the lip, and to a stop at their places -- or, the ramp not
 # down yet, to a stop HOLD_BACK metres short of the lip, to wait for it.
@@ -308,8 +317,8 @@ func _plan(rig: Dictionary, index: int) -> Dictionary:
 	var sweep := fposmod(atan2(-across.y, -ahead.y), TAU)
 	var radius := (out_x - from.x) / (across.x * (1.0 - cos(sweep)) + ahead.x * sin(sweep))
 	var centre := from + across * radius
-	for k in 33:
-		var a := sweep * k / 32.0
+	for k in ARC_STEPS + 1:
+		var a := sweep * k / ARC_STEPS
 		points.append(centre - across * radius * cos(a) + ahead * radius * sin(a))
 	var turned := points[points.size() - 1]
 	# Straight on past the rocks.
@@ -320,8 +329,8 @@ func _plan(rig: Dictionary, index: int) -> Dictionary:
 			* cos(Level3DChinook._ramp_down())) * CHINOOK_SCALE
 	var line := Vector2(LANDING.x, lip_z + APPROACH)
 	var bend := (past.y - line.y) * 0.5
-	for k in range(1, 25):
-		var u := k / 24.0
+	for k in range(1, ARC_STEPS + 1):
+		var u := float(k) / ARC_STEPS
 		var w := 1.0 - u
 		points.append(past * w * w * w + (past + Vector2(0.0, -bend)) * 3.0 * w * w * u
 				+ (line + Vector2(0.0, bend)) * 3.0 * w * u * u + line * u * u * u)
@@ -499,15 +508,18 @@ func _drive_off(rig: Dictionary, delta: float) -> void:
 	run += step
 	rig.run = run
 	var at := _place_at(plan, run)
-	var way := _place_at(plan, run + 0.6) - _place_at(plan, run - 0.6)
-	var yaw := atan2(way.x, way.y)
+	var span := minf(run, HEADING_SPAN)
+	var way := _place_at(plan, run + span) - _place_at(plan, run - span)
+	var yaw := atan2(way.x, way.y) if span > 0.0 else 0.0
+	var stood := (rig.jeep_rest as Transform3D).basis.get_euler().y
+	yaw = lerp_angle(stood, yaw, smoothstep(0.0, HEADING_SPAN, run))
 	var ahead := Vector3(sin(yaw), 0.0, cos(yaw))
 	var centre := Vector3(at.x, 0.0, at.y)
 	var front := _surface(centre + ahead * AXLES.x)
 	var rear := _surface(centre + ahead * AXLES.y)
-	var span := AXLES.x - AXLES.y
-	centre.y = rear + (front - rear) * -AXLES.y / span
-	var pitch := atan2(front - rear, span)
+	var wheelbase := AXLES.x - AXLES.y
+	centre.y = rear + (front - rear) * -AXLES.y / wheelbase
+	var pitch := atan2(front - rear, wheelbase)
 	var jeep := rig.jeep as Node3D
 	jeep.transform = Transform3D(Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -pitch), centre)
 	for k in rig.wheels.size():
