@@ -598,8 +598,8 @@ day, Blender's light and the default, or golden hour, dusk and sunrise, the
 title splash's palette as far as a stage can be read in it (Graphics -> Light,
 or `--light day|golden|dusk|sunrise`, which a --shot takes too). The time of
 day does not change in a stage: the title's sun rises instead, once a game is
-picked (`Level3DSplash3D`, `RISE_*`: the disc out of the horizon, the sky
-and the ground lit -- the ground by a glow of its own, since a sun light
+picked (`Level3DSplash3D`, `RISE_*`: the disc out of the horizon and yellower, its glow golden, the sky going from the dawn's red to a morning's gold, rose and pale blue (`MORNING_*`),
+and the ground lit, to a burnt orange towards the stage's sand -- the ground by a glow of its own, since a sun light
 raised with the disc turned the rolling ground's facets lit one by one, and
 the sun taken off the ground as it rises), and the title fades on it into the
 day. Over the Chinook the camera follows the jeeps in as they go

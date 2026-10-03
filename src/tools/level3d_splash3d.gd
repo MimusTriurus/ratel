@@ -184,9 +184,13 @@ const RISEN_AMBIENT := 0.42
 # and the sun going off it as the glow comes, since the camera follows the
 # jeeps in over it (Level3DSplashLanding, CHASE_*) and the facets the sun just
 # under the horizon catches were angular patches of light all over the
-# ground near to.
-const RISEN_GROUND := Color(0.36, 0.16, 0.08)
-const RISEN_GLOW := Color(0.16, 0.075, 0.035)
+# ground near to. Burnt orange, towards the stage's sand (hue 35 degrees,
+# which the title fades into) though a good deal darker, so that what stands
+# on it is still a silhouette: some 27 degrees and 0.17 lightness at the
+# end. A red brown (19 degrees, 0.09), it was the frame's one colour the
+# stage has nothing of; at 32 degrees, that dark, it was olive.
+const RISEN_GROUND := Color(0.5, 0.27, 0.08)
+const RISEN_GLOW := Color(0.3, 0.155, 0.03)
 const GROUND_SUN_OFF := 0.35   # of the rise, the sun off the ground by then
 
 # Dark, so that the faces the low sun catches are a glint and not a stripe.
@@ -805,11 +809,30 @@ uniform float breath = 7.0;
 uniform float swell = 0.012;
 uniform float brighten = 0.05;
 // The sunrise (RISE_TIME), 0 to 1: the sky over the horizon lit, orange low
-// and violet higher up, and the far ground with it.
+// and violet higher up, and the far ground with it; and the sun yellower as
+// it climbs out of the thick of the air -- its heart to RISEN_HEART, its rim
+// from red to orange (RISEN_EDGE), its glow golden rather than red and
+// GLOW_SHRINK tighter -- yellow and orange rather than white, since it ends
+// only some 7 degrees up (RISEN_SINK). Its setting colours all through, it
+// came up as red as it had gone down.
 uniform float dawn = 0.0;
+const vec3 RISEN_HEART = vec3(255.0, 240.0, 150.0) / 255.0;
+const vec3 RISEN_EDGE = vec3(252.0, 140.0, 20.0) / 255.0;
+const float RISEN_GLOW_GREEN = 0.5;   // of the glow's red, risen
+const float GLOW_SHRINK = 0.25;
 const vec3 DAWN_LOW = vec3(0.62, 0.22, 0.07);
 const vec3 DAWN_HIGH = vec3(0.20, 0.09, 0.16);
-const vec3 DAWN_GROUND = vec3(0.07, 0.03, 0.02);
+// And over the second half of it the morning's: gold over the horizon, a
+// rose peach by MORNING_MID up and a pale blue from MORNING_TOP (of the way
+// straight up) -- the sky of a sun some degrees up, and the stage's sand and
+// sea, which the title fades into. Red low and violet high to the end, the
+// sky was the night coming rather than the day.
+const vec3 MORNING_LOW = vec3(0.86, 0.52, 0.22);
+const vec3 MORNING_MID_COLOUR = vec3(0.74, 0.47, 0.42);
+const vec3 MORNING_HIGH = vec3(0.40, 0.55, 0.74);
+const float MORNING_MID = 0.22;
+const float MORNING_TOP = 0.6;
+const vec3 DAWN_GROUND = vec3(0.08, 0.04, 0.012);
 // sRGB, 0..1.
 const vec3 HEART = vec3(253.0, 227.0, 6.0) / 255.0;
 const vec3 EDGE = vec3(246.0, 58.0, 1.0) / 255.0;
@@ -820,10 +843,13 @@ const float GLOW_RED[7] = float[](235.0, 209.0, 146.0, 91.0, 40.0, 8.0, 0.0);
 const float GLOW_GREEN[7] = float[](36.0, 25.0, 8.0, 6.0, 2.0, 0.0, 0.0);
 
 vec3 glow(float r) {
+	r = 1.0 + (r - 1.0) * (1.0 + GLOW_SHRINK * dawn);
 	for (int i = 0; i < 6; i++) {
 		if (r < GLOW_R[i + 1]) {
 			float t = (r - GLOW_R[i]) / (GLOW_R[i + 1] - GLOW_R[i]);
-			return vec3(mix(GLOW_RED[i], GLOW_RED[i + 1], t), mix(GLOW_GREEN[i], GLOW_GREEN[i + 1], t), 0.0) / 255.0;
+			float red = mix(GLOW_RED[i], GLOW_RED[i + 1], t);
+			float green = mix(mix(GLOW_GREEN[i], GLOW_GREEN[i + 1], t), red * RISEN_GLOW_GREEN, dawn);
+			return vec3(red, green, 0.0) / 255.0;
 		}
 	}
 	return vec3(0.0);
@@ -834,9 +860,19 @@ void sky() {
 	vec3 sun = normalize(vec3(0.0, -sin(sink), -cos(sink)));
 	float b = 0.5 - 0.5 * cos(TIME * TAU / breath);
 	float r = acos(clamp(dot(d, sun), -1.0, 1.0)) / (radius * (1.0 + swell * b));
-	vec3 c = r < 1.0 ? mix(HEART, EDGE, clamp((r - 0.47) / 0.53, 0.0, 1.0)) : glow(r);
+	vec3 heart = mix(HEART, RISEN_HEART, dawn);
+	vec3 edge = mix(EDGE, RISEN_EDGE, dawn);
+	vec3 c = r < 1.0 ? mix(heart, edge, clamp((r - 0.47) / 0.53, 0.0, 1.0)) : glow(r);
 	c *= 1.0 + brighten * b;
-	c = max(c, mix(DAWN_LOW, DAWN_HIGH, clamp(d.y * 2.5, 0.0, 1.0)) * dawn);
+	vec3 early = mix(DAWN_LOW, DAWN_HIGH, clamp(d.y * 2.5, 0.0, 1.0));
+	vec3 late = d.y < MORNING_MID ? mix(MORNING_LOW, MORNING_MID_COLOUR, max(d.y, 0.0) / MORNING_MID)
+			: mix(MORNING_MID_COLOUR, MORNING_HIGH, clamp((d.y - MORNING_MID) / (MORNING_TOP - MORNING_MID), 0.0, 1.0));
+	vec3 lit = mix(early, late, smoothstep(0.4, 1.0, dawn)) * dawn;
+	// The disc over the sky, whole; the glow screened onto it, lightening it
+	// in its own gold. The larger of the two, channel by channel, took the
+	// sun's red and the morning's blue, the disc's rim and the glow round it
+	// pink. On the black sky before the sunrise, the glow as it was.
+	c = r < 1.0 ? c : 1.0 - (1.0 - clamp(c, 0.0, 1.0)) * (1.0 - lit);
 	// Below the horizon only past the far ground's edge: as dark as it.
 	c = d.y < 0.0 ? GROUND + DAWN_GROUND * dawn : c;
 	// The Compatibility renderer takes the sky's colour as sRGB as it is.
