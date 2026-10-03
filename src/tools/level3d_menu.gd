@@ -131,6 +131,7 @@ var _font_style := -1        # the Level3DFont.Style the menu is drawn in
 var _game_mode: OptionButton
 var _camera: OptionButton
 var _look: OptionButton
+var _light: OptionButton
 var _crt: CheckBox
 var _resolution: OptionButton
 var _driving: OptionButton
@@ -381,6 +382,7 @@ func refresh() -> void:
 	_game_mode.select(int(settings.preset()))
 	_camera.select(settings.camera)
 	_look.select(settings.look)
+	_light.select(settings.light)
 	_crt.set_pressed_no_signal(settings.crt)
 	_resolution.select(settings.resolution)
 	_driving.select(settings.driving)
@@ -516,6 +518,8 @@ func _make_graphics_tab() -> Control:
 			func(i: int): settings.camera = i)
 	_look = _choice(grid, "Look", ["Modern", "Pixels"],
 			func(i: int): settings.look = i)
+	_light = _choice(grid, "Light", Level3DLighting.LABELS,
+			func(i: int): settings.light = i)
 	_resolution = _choice(grid, "3D resolution", ["Native", "2048×1152 (as the game)", "1920×1080", "1280×720"],
 			func(i: int): settings.resolution = i)
 	_crt = _check(tab, "CRT monitor", func(on: bool): settings.crt = on)
