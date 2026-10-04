@@ -1,6 +1,5 @@
-# The 3D preview's Escape menu: continue, a new game for one player or two,
-# settings, quit, over the stage
-# frozen by pausing the tree. The settings are seven tabs: six of
+# The 3D preview's Escape menu: continue, settings, the main menu, quit, over
+# the stage frozen by pausing the tree. The settings are seven tabs: six of
 # Level3DSettings -- game (8-bit or modern, a preset of the others: the sound,
 # the font, the look, the driving and firing), graphics (the camera and the
 # look), interface (what the
@@ -107,9 +106,6 @@ const ACTION_NAMES := {
 var settings: Level3DSettings
 var changed: Callable        # after every change, with the menu still open
 var resumed: Callable        # once the menu has closed
-# `new_game.call(players)`: the run started again for one player or two (the
-# preview's co-op); the preview closes the menu.
-var new_game: Callable
 # Started by the level editor's Play (--editor): leaving is going back to it,
 # which is waiting for this process to end.
 var from_editor := false
@@ -463,8 +459,6 @@ func _make_main_page() -> Control:
 	_font_size(title, 8)
 	box.add_child(title)
 	_continue = _button(box, "Continue", close)
-	_button(box, "New game: 1 player", func(): new_game.call(1))
-	_button(box, "New game: 2 players", func(): new_game.call(2))
 	_button(box, "Settings", _show_settings)
 	if not from_editor:
 		_button(box, "Main menu", func(): main_menu.call())

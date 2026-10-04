@@ -2602,11 +2602,6 @@ func _make_menu() -> void:
 	_menu.from_editor = OS.get_cmdline_user_args().has("--editor")
 	_menu.changed = _settings_changed
 	_menu.resumed = func(): _gun_locked = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
-	# A new game, for one player or two: the run started again with them.
-	_menu.new_game = func(count: int):
-		_set_players(count)
-		_restart()
-		_menu.close()
 	_menu.main_menu = _show_title
 	# Over the HUD, so that its black hides it, and under the CRT's glass.
 	_title = Level3DTitle.new()

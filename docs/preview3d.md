@@ -81,8 +81,8 @@ chroma left as they were.
 
 ## Two players
 
-The 3D preview has the same co-op, from the Escape menu's "New game: 2 players"
-or `--players 2`; it always starts with one. Everything one player's
+The 3D preview has the same co-op, from the title's "2 players" (a new game
+is picked only there, not in the Escape menu) or `--players 2`; it always starts with one. Everything one player's
 is a `Crew` in `level3d_preview.gd` -- vehicle, gun, launcher, HUD line, and a
 `Level3DFriends.Carrier` for the prisoners and the weapon; `btr`, `gun` and
 `launcher` are still the first's, which the mouse, the --shot options and the
