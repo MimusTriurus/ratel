@@ -94,14 +94,22 @@ float wind_time() {
 }
 
 
+// The gust at level `xz` at time `t`: 1 at a full gust, down to 1 - 2 *
+// WIND_LULL between them.
+float wind_gust(vec2 xz, float t) {
+	vec2 to = normalize(WIND_TO);
+	float along = dot(xz, to);
+	float across = dot(xz, vec2(-to.y, to.x));
+	float wave = sin(TAU * (along - t * WIND_GUST_SPEED) / WIND_GUST_LENGTH);
+	return (1.0 - WIND_LULL) + WIND_LULL * wave * (0.7 + 0.3 * sin(across * 0.09 + t * 0.21));
+}
+
+
 vec3 wind_moved(vec3 vertex, mat4 model) {
 	float t = wind_time();
 	vec3 origin = model[3].xyz;
 	vec2 to = normalize(WIND_TO);
-	float along = dot(origin.xz, to);
-	float across = dot(origin.xz, vec2(-to.y, to.x));
-	float wave = sin(TAU * (along - t * WIND_GUST_SPEED) / WIND_GUST_LENGTH);
-	float gust = (1.0 - WIND_LULL) + WIND_LULL * wave * (0.7 + 0.3 * sin(across * 0.09 + t * 0.21));
+	float gust = wind_gust(origin.xz, t);
 	// A plant's own phase, from where it stands.
 	float phase = fract(sin(dot(origin.xz, vec2(12.9898, 78.233))) * 43758.5453) * TAU;
 

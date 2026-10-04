@@ -133,7 +133,8 @@ few seconds.
 - **Where it comes from.** `resources/3d/jackal_boot_hill.blend`, its `GameOver`
   scene, built by the text block `jackal_boot_hill.py` (`build_game_over()`),
   exports `resources/3d/jackal_game_over.glb` (`export_game_over()`): the
-  ground, trees, bushes, rocks, the grass as one mesh, the camera, and under
+  ground, trees and bushes (in Godot an oak each and nothing), rocks, the grass
+  as one mesh, the camera, and under
   `Props` what the scene places itself, as many as the run wants -- the two
   graves, the mound under them, a prisoner's cross. The layout constants
   (`GRAVE_*`, `GUARD_*`, `FIELD_*`) are the script's, in its Blender metres:
@@ -148,10 +149,47 @@ few seconds.
   `docs/cel-shading.md`.** Picked over the stage's two tones and over three,
   after a reference picture: a slope's light runs over it smoothly and the
   hills and crowns have their volume. The 3 px contour stays (`Level3DHull`),
-  on everything with one baked; not on the ground or the grass. The scene's
+  on everything with one baked; not on the ground or the grass (the oaks' is
+  drawn over the frame, below). The scene's
   viewport carries `Level3DGameOver.SOFT_LIGHT`, which `_toon` passes by, and
   its materials are copies with Lambert's diffuse -- the prisoners' are shared
   with the stage's, which `_toon` has already stepped.
+- **The oaks are BlenderMCP's** (`resources/3d/oaks/`, three of the six its
+  `pipeline/tree_gen.py` made, each with its `tree.json`), in place of the
+  stage's faceted trees, which the glb still carries only to say where a tree
+  stands and how tall (`_plant_oaks`); the faceted bushes are dropped, out of
+  place beside them. The oak's twigs (shown once it has burnt) and its root
+  plate are not drawn. Each is sunk to the lowest ground round its trunk's
+  foot, less 5 cm, so that on a slope no side of the foot stands in the air
+  -- checked per twelfth of the way round: every side's lowest bark is at or
+  under the ground. The crown (`level3d_leaf_wind.gdshader`) is lit as
+  BlenderMCP's board lights it: the file's normals, the crown's own volume, on
+  both sides of a leaf, and no sun shadow on it, which speckled it. Its
+  palette was picked for BlenderMCP's board light and came out olive-brown
+  here, the grass's colour (41,38,5 on average); `OAK_TINT` turns it green,
+  27,66,28. **Their outline is drawn over the frame** (`_outline_oaks`), as
+  BlenderMCP does it, not grown round the mesh: a leaf is an open plane, which
+  `Level3DHull`'s shell cannot ring. A second viewport renders the same world
+  from the same camera with each oak replaced by a flat double in its own
+  colour (`level3d_oak_mask.gdshader`, on `MASK_LAYER`, which the scene's
+  camera leaves out, as the mask's leaves out the oaks' `OAK_LAYER`), swaying
+  as the oak does; the scene's frame is then drawn through
+  `level3d_oak_ink.gdshader`, which inks an oak's pixel within 3 px of
+  anything in the mask that is not that oak -- the silhouette's edge, every
+  gap the sky shows through, the line between two oaks, and where something
+  stands in front of one, since that is in the mask as it is. The cost is
+  the scene rendered twice, without its smoothing the second time.
+- **Wind.** The oaks sway on the stage's wind (`level3d_wind.gdshaderinc`, its
+  gusts from the same quarter), the trunk in `level3d_wind_soft.gdshader`, the
+  crown in the leaf shader; an oak is in real metres, 7 m tall, and the bend
+  goes by the square of the height, so `OAK_GIVE` is 0.3 of a palm's, its top
+  some 0.3 m. The grass and the flowers, one mesh, bend from their feet
+  (`level3d_grass_wind.gdshader`): each vertex's height over the ground goes
+  into UV2 on load, off the hill's triangles, and its normal is a dome's over
+  its tuft rather than its blade's own (`dome`, as BlenderMCP's cel tufts):
+  under 0.2 s for all of it. On the scene's own clock -- `Level3DWind`'s is
+  the preview's, which stops with the stage paused under it; stepped with the
+  stage's (G), still under `--no-wind`.
 - **Light**, the Blender scene's: a low warm sun from behind the camera's left
   and a warm ambient, the summer grass faded so that the green uniforms stand
   out. Compatibility lights it about 2.2 times as bright as the energies say
