@@ -126,6 +126,8 @@
 # of the shop's upgrades (Level3DShopCatalog's ids: twin, armor, zip, nitro,
 # radar, mines, loopholes, airstrike), their parts on the jeep. --shop opens
 # the shop between rounds at once (Level3DShop), as if a round were won.
+# --log-rounds prints what each player earned in a round and what the shop
+# left him with, for setting the prices.
 # --summary shows the mission's summary that many seconds in, as if the boss
 # were beaten. --strip takes that many
 # frames instead of one, that many seconds apart from the first, and lays the
@@ -3727,7 +3729,24 @@ func _restore(run: Level3DRun) -> void:
 # The boss beaten and its summary closed: the shop (Level3DShop), the stage
 # paused under it, and from it the next round.
 func _round_won() -> void:
+	_log_round("won")
 	_open_shop()
+
+
+# --log-rounds, for the prices (docs/shop-implementation.md, step 10): what
+# each player earned in the round now over and, after the shop, what it left
+# him with -- one line each, on the console.
+func _log_round(what: String) -> void:
+	if not OS.get_cmdline_user_args().has("--log-rounds") or _saved == null:
+		return
+	for c in crews:
+		var before: Level3DRun.Kit = _saved.kits[mini(c.index, _saved.kits.size() - 1)]
+		if what == "won":
+			print("round %d %dP: earned %d, score %d, lives %d" % [_round, c.index + 1, c.score - before.score,
+					c.score, c.lives])
+		else:
+			print("round %d %dP: shop left %d, lives %d, launcher %d, upgrades %s, slot %s" % [_round,
+					c.index + 1, c.score, c.lives, before.weapon(), ",".join(c.upgrades), c.device])
 
 
 var _shop: Level3DShop
@@ -3755,6 +3774,7 @@ func _shop_done(run: Level3DRun) -> void:
 	_round += 1
 	_start_round()
 	_saved = _capture()
+	_log_round("shop")
 
 
 # A round from its start: the BTR flown in again, everything blown up rebuilt
@@ -4039,6 +4059,9 @@ func _screenshot_mode() -> void:
 			if crews[0].respawning == 0:
 				_explode_btr(crews[0], "--die"))
 		args = args.slice(0, die) + args.slice(die + 2)
+	var log_rounds := args.find("--log-rounds")
+	if log_rounds >= 0:
+		args.remove_at(log_rounds)
 	for flag in ["--level", "--file", "--players", "--light", "--round", "--upgrades"]:
 		var at := args.find(flag)
 		if at >= 0:
