@@ -93,7 +93,7 @@
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
 #            [--at <x,z>] [--free] [--hold <keys>@<from>-<to>[,...]] [--weapon <0-3>]
 #            [--intro] [--pows <n>] [--score <n>] [--summary <seconds>] [--strip <frames>,<seconds>[,<px>]] [--die <seconds>]
-#            [--game-over <n>[,<n>][:<total>]]
+#            [--game-over <n>[,<n>][:<total>]] [--round <n>]
 #
 # The bunkers' guns, the enemy soldiers, the two boats on the river, the two
 # brown tanks and the boss's four heavy tanks at the top of the stage fight back
@@ -118,8 +118,11 @@
 # are checked; a span after 2: is the second player's (2:s@0-3). --weapon starts with what the prisoners would have given: 0 the
 # grenade, 1 to 3 the missile and its two upgrades. --pows starts with that
 # many prisoners aboard, every player, for the rescue helicopter, and --score
-# with that score, for the extra life at 20000. --lives starts every player
+# with that score, for the shop. --lives starts every player
 # with that many spare lives: --lives 0 with --die is the game over.
+# --round starts every run on that round of the stage, harder from the
+# second (_start_round): the summary's close, or ROUND_HOLD after the boss
+# with none, goes on to the next.
 # --summary shows the mission's summary that many seconds in, as if the boss
 # were beaten. --strip takes that many
 # frames instead of one, that many seconds apart from the first, and lays the
@@ -458,6 +461,8 @@ func _ready() -> void:
 		move_child(_menu, -1)
 		_title.game_ready()
 	else:
+		_round = _first_round()
+		Level3DMap.hard = settings.hard or _round > 1
 		# intro_song, IntroMapMode's: the start jingle running on into stage 1.
 		Level3DAudio.play_music("intro")
 		if args.has("--intro") or not (args.has("--shot") or args.has("--obstacle-map")):
@@ -550,6 +555,12 @@ class Crew:
 	# The weapon's level last shown, for the POWER UP over it (_show_state):
 	# -1 before the first.
 	var weapon_shown := -1
+	# What the shop sold him (docs/shop-plan.md): the lives bought so far,
+	# which price the next; the upgrades, Level3DShopCatalog's ids; the device
+	# in the slot, "" for none. Level3DRun.Kit carries them between rounds.
+	var lives_bought := 0
+	var upgrades: Array[String] = []
+	var device := ""
 
 
 # Every key event to HumanInput.key_event, the Escape menu or not (it pauses
@@ -1884,10 +1895,12 @@ const BLAST_PATH := "res://resources/3d/jackal_fx_blast.glb"
 
 var _immortal := false  # --immortal: rounds pass the BTR by, for --shot runs
 var _hud: CanvasLayer
-# The spare lives, as Main.extra_lives: the game's four on normal (Crew.lives).
-# The last one lost -- with two players, the last one lost of both -- is the
-# game over (_game_over), whose CONTINUE starts the stage again as R does.
-# The infinite lives cheat spends none.
+# The spare lives, as Main.extra_lives: the game's four on normal (Crew.lives),
+# to start a run with. No more come with the score, as the game's do; the
+# shop between rounds sells them (_add_points). The last one lost -- with two
+# players, the last one lost of both -- is the game over (_game_over), whose
+# CONTINUE starts the round again with the run as the last shop left it. The
+# infinite lives cheat spends none.
 const EXTRA_LIVES := 4
 var _blast_scene: PackedScene
 # --hold: [key, from tick, to tick, player], and the ticks since the preview
@@ -1906,17 +1919,12 @@ func _crew_pop(c: Crew, text: String) -> void:
 				text, _crew_colour(c.index))
 
 
-# PlayerState.add_points: the points, and a life at 20000 and every 50000
-# after it, which the preview went without until the HUD showed lives coming.
+# PlayerState.add_points: the points -- and nothing else. The game's gives a
+# life at 20000 and every 50000 after it; here the score is what the shop
+# between rounds takes, and lives are bought there (docs/shop-plan.md), so
+# points earn none: a deliberate departure.
 func _add_points(c: Crew, points: int) -> void:
-	var before := c.score
 	c.score += points
-	if (before < 20000 and c.score >= 20000) 			or ((before - 20000) / 50000 != (c.score - 20000) / 50000):
-		c.lives += 1
-		Level3DAudio.play("extra_life")
-		_crew_pop(c, "1UP")
-		if guns.verbose:
-			print("%dP extra life at %d, %d lives" % [c.index + 1, c.score, c.lives])
 	_show_state()
 
 
@@ -2254,6 +2262,7 @@ func _make_hud() -> void:
 	_score_pops = Level3DScorePops.new()
 	layer.add_child(_score_pops)
 	_summary = Level3DSummary.new()
+	_summary.closed = _round_won
 	layer.add_child(_summary)
 	_hints = Level3DHints.new()
 	layer.add_child(_hints)
@@ -2557,7 +2566,7 @@ func _update_banners() -> void:
 	var on := settings.hud
 	var flying := chinook != null
 	if flying and not _saw_chinook and on and settings.banner_stage:
-		_banners.stage(1)
+		_banners.stage(1, _round)
 	elif not flying and _saw_chinook:
 		_banners.stage_over()
 		_mission_from = _ticks
@@ -2575,7 +2584,14 @@ func _update_banners() -> void:
 		_summary_tick = -1
 	if forced or defeated and not _saw_defeat and on and settings.banner_mission:
 		_summary.show_summary(_rescued_by, friends.prisoners_total(), _ticks - _mission_from)
+	elif defeated and not _saw_defeat:
+		_won_at = _ticks
 	_saw_defeat = defeated
+	# The next round: when the summary is closed (_summary.closed), or with
+	# none, ROUND_HOLD after the boss.
+	if _won_at >= 0 and _ticks - _won_at >= roundi(ROUND_HOLD * Engine.physics_ticks_per_second):
+		_won_at = -1
+		_round_won()
 
 
 # The run's end (Level3DGameOverScreen): the cemetery, the rescued saluting
@@ -3118,12 +3134,17 @@ func _game_over() -> bool:
 	return false
 
 
-# The game over's CONTINUE, under its black: ContinueMode's yes, the stage
-# again from the Chinook with fresh lives and no score, every player in.
+# The game over's CONTINUE, under its black: ContinueMode's yes, the round
+# again from the Chinook, every player in, with the run as the last shop left
+# it (_saved) -- on the first round, fresh lives and no score, as the game's.
 func _continue_game() -> void:
 	get_tree().paused = false
 	_gun_locked = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
-	_restart()
+	if _saved == null:
+		_restart()
+		return
+	_restore(_saved)
+	_start_round()
 
 
 # Its END: ContinueMode's no, the title screen, over the game over's black.
@@ -3347,11 +3368,87 @@ func _unhandled_input(event: InputEvent) -> void:
 				focus.y += 2.0 / zoom
 
 
-# R, and the last life lost: the BTR flown in again, everything blown up
-# rebuilt and every enemy back, the score and the lives as they started --
-# both players', both in again.
+# R, and a game from the title screen: the run from nothing, round 1 (or
+# --round's), the score and the lives as they started, the launcher back to
+# the grenade, nothing bought -- both players', both in again.
 # `jingle`: the start's intro_song, for a game from the title screen.
 func _restart(jingle := false) -> void:
+	_round = _first_round()
+	for c in crews:
+		c.lives = EXTRA_LIVES
+		c.score = 0
+		c.lives_bought = 0
+		c.upgrades.clear()
+		c.device = ""
+		c.carrier.reset()
+	_start_round(jingle)
+	_saved = _capture()
+
+
+# The run (Level3DRun): the round of the stage this is -- the stage again
+# after its boss, harder (docs/shop-plan.md) -- and the run as the last shop
+# left it, which the game over's CONTINUE goes back to. Null before a run
+# from R or the title screen: a --shot's CONTINUE starts from nothing.
+var _round := 1
+var _saved: Level3DRun
+# The tick the boss went down on with no summary to close (the HUD's or
+# its banner_mission off), -1 otherwise: the next round is ROUND_HOLD on.
+var _won_at := -1
+const ROUND_HOLD := 4.0
+
+# --round <n>'s, or 1: the round every run starts on, R's and the title
+# screen's as well, as --boss's start is.
+static func _first_round() -> int:
+	var args := OS.get_cmdline_user_args()
+	var at := args.find("--round")
+	return maxi(int(args[at + 1]), 1) if at >= 0 and at + 1 < args.size() else 1
+
+
+func _capture() -> Level3DRun:
+	var run := Level3DRun.new()
+	run.round = _round
+	for c in crews:
+		var k := Level3DRun.Kit.new()
+		k.score = c.score
+		k.lives = c.lives
+		k.lives_bought = c.lives_bought
+		k.has_missiles = c.carrier.has_missiles
+		k.missile_power = c.carrier.missile_power
+		k.upgrades = c.upgrades.duplicate()
+		k.device = c.device
+		run.kits.append(k)
+	return run
+
+
+# `run` back onto the players; a player it has no kit for keeps his own.
+func _restore(run: Level3DRun) -> void:
+	_round = run.round
+	for i in mini(crews.size(), run.kits.size()):
+		var c := crews[i]
+		var k := run.kits[i]
+		c.score = k.score
+		c.lives = k.lives
+		c.lives_bought = k.lives_bought
+		c.carrier.has_missiles = k.has_missiles
+		c.carrier.missile_power = k.missile_power
+		c.upgrades = k.upgrades.duplicate()
+		c.device = k.device
+	_show_state()
+
+
+# The boss beaten and its summary closed: the stage again, the next round.
+func _round_won() -> void:
+	_round += 1
+	_start_round()
+	_saved = _capture()
+
+
+# A round from its start: the BTR flown in again, everything blown up rebuilt
+# and every enemy back -- the hard list of them from the second round on, or
+# from the first at the title's hard -- and the players in again with what
+# they have: score, lives and launcher are left as they are.
+func _start_round(jingle := false) -> void:
+	Level3DMap.hard = settings.hard or _round > 1
 	_place_crews()
 	following = true
 	for building in destructibles:
@@ -3367,17 +3464,23 @@ func _restart(jingle := false) -> void:
 	puffs.reset()
 	wash.reset()
 	Level3DWind.reset()
+	# Level3DFriends.reset empties every carrier, the launcher with the
+	# prisoners; the launcher is the run's and goes on.
+	var weapons := crews.map(func(c: Crew): return [c.carrier.has_missiles, c.carrier.missile_power])
 	friends.reset()
+	for i in crews.size():
+		crews[i].carrier.has_missiles = weapons[i][0]
+		crews[i].carrier.missile_power = weapons[i][1]
+		crews[i].weapon_shown = -1
 	rescue.reset()
 	map.reset()
 	for c in crews:
 		c.respawning = 0
 		c.invincible = 0
-		c.lives = EXTRA_LIVES
-		c.score = 0
 		c.out = false
 		c.btr.visible = true
 		c.btr.blink(true)
+	_won_at = -1
 	_banners.clear()
 	_summary.clear()
 	_hints.clear()
@@ -3610,7 +3713,7 @@ func _screenshot_mode() -> void:
 			if crews[0].respawning == 0:
 				_explode_btr(crews[0], "--die"))
 		args = args.slice(0, die) + args.slice(die + 2)
-	for flag in ["--level", "--file", "--players", "--light"]:
+	for flag in ["--level", "--file", "--players", "--light", "--round"]:
 		var at := args.find(flag)
 		if at >= 0:
 			args = args.slice(0, at) + args.slice(at + 2)  # read in _ready

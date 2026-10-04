@@ -26,9 +26,9 @@
 #     score: the HUD has it on the screen under the plate;
 #   * and it waits for a press (`dismiss`), any key or button -- the gun
 #     alone was one more thing to know at the end -- PRESS ANY KEY
-#     blinking: the game moved on to its next stage after its lines, and
-#     the preview has none.
-#     A press while it is still coming shows it all at once.
+#     blinking. Closed, it says so (`closed`): the preview goes on to the
+#     stage's next round, as the game moved on to its next stage after its
+#     lines. A press while it is still coming shows it all at once.
 #
 # On the HUD's layer and in its font, as the HUD is (Level3DHud), on a plate
 # ringed as its icons are, white with a thin black line, across the frame
@@ -64,6 +64,8 @@ const FADE_TIME := 0.3
 var icons := {}
 var scale_factor := 1.0
 var shown := false
+# Called once it has faded out after a press -- not by `clear`.
+var closed: Callable
 
 var _sound: AudioStreamPlayer
 var _lost_layer: Node2D
@@ -179,6 +181,8 @@ func _process(delta: float) -> void:
 		modulate.a = clampf(1.0 - _closing / FADE_TIME, 0.0, 1.0)
 		if _closing >= FADE_TIME:
 			clear()
+			if closed.is_valid():
+				closed.call()
 			return
 	# A letter's sound as it is typed, then a rescued prisoner's as he comes.
 	var letters := mini(int(_time / TYPE_TIME) + 1, TITLE.length())

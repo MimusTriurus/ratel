@@ -101,6 +101,27 @@ godot --path . --windowed --resolution 1280x720 src/game3d/level3d_preview.tscn 
 ```
 
 
+## Rounds and the run
+
+The stage does not end with its boss: once the mission's summary is closed
+(`Level3DSummary.closed`), or `ROUND_HOLD` (4 s) after the boss with the summary
+off, the same stage starts again from the Chinook as its next round, STAGE 1-2,
+1-3 and so on (`_round_won`, `_start_round`). From the second round on it plays
+the level file's hard list of enemies (`Level3DMap.hard`), as the first already
+does at the title's hard. `--round <n>` starts every run on that round. The
+shop between the rounds is planned in `docs/shop-plan.md`; its steps and their
+state are in `docs/shop-implementation.md`.
+
+What a round leaves a player for the next is the run's (`Level3DRun`): his
+score, his lives, his launcher's step and what the shop sold him. What lives in
+a round -- the prisoners aboard, the stage's enemies -- starts again. The
+preview keeps the run as it was at the round's start (`_saved`), which is what
+the game over's CONTINUE goes back to.
+
+**Lives are bought, not earned.** The score is the shop's money, so points no
+longer give a life at 20000 and every 50000 as the game's `PlayerState` does
+(`_add_points`): a deliberate departure. A run starts with the game's four.
+
 ## Game over
 
 The end of a run as a scene of its own (`Level3DGameOver`,
@@ -124,9 +145,10 @@ few seconds.
   KEY, which any key, mouse button or pad button answers, as the summary's
   does. Then in its place CONTINUE and END, picked as the title's entries
   are, with its reticle and tints. CONTINUE is `ContinueMode`'s yes: the
-  black lifts off the stage started again from the Chinook, fresh lives, no
-  score, every player in -- what the last life lost did at once before, which
-  is what R still does. END is its no: the title screen. The cemetery is
+  black lifts off the round started again from the Chinook, every player in,
+  with the run as it was when the round started (`_saved`) -- on the first
+  round fresh lives and no score, as the game's; R starts the run from
+  nothing. END is its no: the title screen. The cemetery is
   made the first time it is wanted, under the black, not at the preview's
   start. `--lives 0 --die 1` with `--shot` runs into it.
 

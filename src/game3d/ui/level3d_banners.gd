@@ -39,7 +39,7 @@ var _kind := NONE
 var _text := ""
 var _time := 0.0                # since the banner came up
 var _ending := -1.0             # when it starts to fade, -1 while it holds
-var _stage_waiting := -1        # a STAGE that came under GAME OVER, -1 none
+var _stage_waiting := ""        # a STAGE's text that came under GAME OVER, "" none
 
 
 func _init() -> void:
@@ -49,20 +49,23 @@ func _init() -> void:
 
 func clear() -> void:
 	_kind = NONE
-	_stage_waiting = -1
+	_stage_waiting = ""
 	queue_redraw()
 
 
-func stage(number: int) -> void:
+# `round`: the stage's round (level3d_preview.gd, _round): STAGE 1 on the
+# first, STAGE 1-2 on the second and so on.
+func stage(number: int, round := 1) -> void:
+	var text := "STAGE %d" % number if round <= 1 else "STAGE %d-%d" % [number, round]
 	if _kind == GAME_OVER:
-		_stage_waiting = number
+		_stage_waiting = text
 		return
-	_start(STAGE, "STAGE %d" % number)
+	_start(STAGE, text)
 
 
 # The STAGE banner's end: fades from now, if it is still up.
 func stage_over() -> void:
-	_stage_waiting = -1
+	_stage_waiting = ""
 	if _kind == STAGE and _ending < 0.0:
 		_ending = _time
 
@@ -98,8 +101,8 @@ func _process(delta: float) -> void:
 	if _ending >= 0.0 and _time >= _ending + FADE_TIME:
 		var waiting := _stage_waiting
 		clear()
-		if waiting >= 0:
-			stage(waiting)
+		if waiting != "":
+			_start(STAGE, waiting)
 		return
 	queue_redraw()
 
