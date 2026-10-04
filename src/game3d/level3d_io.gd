@@ -698,6 +698,9 @@ static func check(doc: Dictionary, catalog: Dictionary) -> PackedStringArray:
 		if found != 1:
 			problems.append("%s has %d %s objects belonging to it; it needs one" % [e["id"], found, wanted])
 
+	if doc.get("bridges", []).size() > Level3DStructures.WATER_SHADOW_BRIDGES:
+		problems.append("%d bridges: the water draws its own shadows for the first %d, the rest cast straight ones"
+				% [doc["bridges"].size(), Level3DStructures.WATER_SHADOW_BRIDGES])
 	problems.append_array(_check_ground(doc, ids))
 	return problems
 

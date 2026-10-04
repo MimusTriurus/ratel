@@ -149,12 +149,36 @@ uniform vec3 sky = vec3(0.041, 0.066, 0.12);
 // water under the bridge.
 uniform float shade = 0.3;
 
+// The bridges' shadows on the water, drawn here rather than read from the
+// sun's shadow map: the deck's is a straight line across the river, and
+// Compatibility reads that map where the vertex is, so LIGHT_VERTEX does not
+// move it. Each deck is a box from `bridge_ends` .xy to .zw, `bridge_half`
+// to either side, between deck_heights' .x and .y (curbs and all); a point of
+// water is in its shadow if the way to the sun from it passes through the
+// box at either height. Its edge is pushed by the crumple, as the surf's is,
+// shadow_ripple metres at most, in lobes shadow_lobe per metre; within
+// shadow_reach of it the water takes this shadow from the sun and not the
+// map's (Level3DPreview._set_bridge_shadows sets them all, and sun_toward
+// with the light).
+uniform int bridge_count = 0;
+uniform vec4 bridge_ends[8];
+uniform float bridge_half[8];
+uniform vec2 deck_heights = vec2(0.0, 0.32);
+uniform vec3 sun_toward = vec3(0.0, 1.0, 0.0);
+uniform float shadow_ripple = 0.2;
+uniform float shadow_lobe = 1.1;
+uniform float shadow_soft = 0.03;
+uniform float shadow_reach = 0.6;
+
 varying vec3 world;
 varying float shore;
 varying float open_sea;
 // Handed on to light(): how much of the fragment is bare water for the sun to
 // glint on.
 varying float bare;
+// The bridges' shadow, 1 lit, and how much of the sun's it stands for, 0..1.
+varying float deck_lit;
+varying float deck_own;
 
 float hash12(vec2 p) {
 	uvec2 q = uvec2(ivec2(p)) * uvec2(1597334677u, 3812015801u);
@@ -285,6 +309,35 @@ float whitecap(vec2 xz, float t, float speck) {
 	return cap;
 }
 
+// Metres from `q` to bridge i's footprint, negative inside it.
+float deck_distance(vec2 q, int i) {
+	vec2 a = bridge_ends[i].xy;
+	vec2 along = bridge_ends[i].zw - a;
+	float half_length = length(along) * 0.5;
+	along /= max(half_length * 2.0, 1e-4);
+	vec2 r = q - a;
+	vec2 local = vec2(dot(r, along) - half_length, dot(r, vec2(-along.y, along.x)));
+	vec2 k = abs(local) - vec2(half_length, bridge_half[i]);
+	return length(max(k, 0.0)) + min(max(k.x, k.y), 0.0);
+}
+
+// Metres from `w`'s way to the sun to the nearest deck, at its bottom or its
+// top; negative in a shadow.
+float deck_shadow(vec3 w) {
+	float nearest = 1e6;
+	if (sun_toward.y <= 0.01) {
+		return nearest;
+	}
+	for (int i = 0; i < bridge_count; i++) {
+		for (int j = 0; j < 2; j++) {
+			float h = j == 0 ? deck_heights.x : deck_heights.y;
+			vec2 q = w.xz + sun_toward.xz * ((h - w.y) / sun_toward.y);
+			nearest = min(nearest, deck_distance(q, i));
+		}
+	}
+	return nearest;
+}
+
 void vertex() {
 	world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	shore = COLOR.r * shore_scale;
@@ -373,6 +426,17 @@ void fragment() {
 	EMISSION = bottom * seen * (1.0 - foam) + albedo * sky;
 	ROUGHNESS = mix(roughness_open, roughness_foam, foam);
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
+
+	deck_own = 0.0;
+	deck_lit = 1.0;
+	if (bridge_count > 0) {
+		float d = deck_shadow(world);
+		if (d < shadow_ripple + shadow_reach) {
+			deck_own = 1.0;
+			deck_lit = smoothstep(-shadow_soft, shadow_soft,
+					d + crumple(world.xz * shadow_lobe, t) * shadow_ripple);
+		}
+	}
 }
 
 void light() {
@@ -395,11 +459,17 @@ void light() {
 	// glowing. The lift made it worse: on an omni light ATTENUATION is its
 	// fall-off with distance as well, so every bit of water in its reach took a
 	// third of its full light, and sun_gain, on ALBEDO, doubled it.
+	// The sun's shadow, or the bridges' where they cast it; the fill, the
+	// other directional light, has none.
+	float lit = ATTENUATION;
+	if (LIGHT_IS_DIRECTIONAL && dot(LIGHT, normalize((VIEW_MATRIX * vec4(sun_toward, 0.0)).xyz)) > 0.999) {
+		lit = mix(ATTENUATION, deck_lit, deck_own);
+	}
 	if (LIGHT_IS_DIRECTIONAL) {
-		DIFFUSE_LIGHT += LIGHT_COLOR * (fdv * fdl * cndl / PI) * mix(shade, 1.0, ATTENUATION);
+		DIFFUSE_LIGHT += LIGHT_COLOR * (fdv * fdl * cndl / PI) * mix(shade, 1.0, lit);
 	}
 
 	float spark = pow(max(dot(NORMAL, half_v), 0.0), gloss) * glint;
 	vec3 hue = LIGHT_COLOR / max(max(LIGHT_COLOR.r, LIGHT_COLOR.g), max(LIGHT_COLOR.b, 1e-4));
-	SPECULAR_LIGHT += hue * spark * ATTENUATION * bare;
+	SPECULAR_LIGHT += hue * spark * lit * bare;
 }

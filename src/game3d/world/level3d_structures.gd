@@ -29,6 +29,12 @@ const PIER_END := 1.2
 const PLATE_STEP := 0.92
 const CURB := 0.3
 const DECK_TOP := 0.2
+# Over the deck, as build_level.py's CURB: the top of what a bridge shades
+# the water with.
+const CURB_HEIGHT := 0.12
+# As many bridges as the water draws its own shadows for (level3d_ocean.gdshader's
+# bridge_ends); past them, the shadow map's straight edge.
+const WATER_SHADOW_BRIDGES := 8
 const PIER_DEPTH := -1.24
 # Along the bridge; across, a pier is the deck less its two curbs. As
 # build_level.py's PIER and CURB, which build it.

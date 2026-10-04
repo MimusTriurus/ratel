@@ -974,6 +974,8 @@ func _apply_lighting() -> void:
 	# Its shadows lifted as the land's are, or they are black: the sun is all
 	# the light the water has.
 	_water.set_shader_parameter("shade", shade)
+	# Which way the bridges' shadows fall on it (_set_bridge_shadows).
+	_water.set_shader_parameter("sun_toward", sun.global_basis.z)
 
 
 func _replace_ocean(level: Node) -> void:
@@ -987,9 +989,31 @@ func _replace_ocean(level: Node) -> void:
 	# (_apply_lighting), set when the sun is made.
 	_water = water
 	ocean.material_override = water
+	_set_bridge_shadows(water)
 	# The water is drawn in the transparent pass, because it reads the screen;
 	# it casts nothing either way.
 	ocean.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+# The level file's bridges, for the shadows the water draws of them itself
+# (level3d_ocean.gdshader): their ends, their half-widths and the heights of
+# the deck, which the builder builds at the same height whatever the ground.
+func _set_bridge_shadows(water: ShaderMaterial) -> void:
+	var bridges: Array = Level3DIO.read_path(Level3DMap.level_path()).get("bridges", [])
+	var count := mini(bridges.size(), Level3DStructures.WATER_SHADOW_BRIDGES)
+	var ends := PackedVector4Array()
+	var halves := PackedFloat32Array()
+	ends.resize(Level3DStructures.WATER_SHADOW_BRIDGES)
+	halves.resize(Level3DStructures.WATER_SHADOW_BRIDGES)
+	for i in count:
+		var b: Dictionary = bridges[i]
+		ends[i] = Vector4(float(b["from"][0]), float(b["from"][1]), float(b["to"][0]), float(b["to"][1]))
+		halves[i] = float(b["width"]) * 0.5
+	water.set_shader_parameter("bridge_count", count)
+	water.set_shader_parameter("bridge_ends", ends)
+	water.set_shader_parameter("bridge_half", halves)
+	water.set_shader_parameter("deck_heights",
+			Vector2(0.0, Level3DStructures.DECK_TOP + Level3DStructures.CURB_HEIGHT))
 
 
 # Which of the water is the sea rather than the river, for the ocean shader's
