@@ -230,7 +230,16 @@ few seconds.
   `level3d_oak_ink.gdshader`, which inks an oak's pixel within 3 px of
   anything in the mask that is not that oak -- the silhouette's edge, every
   gap the sky shows through, the line between two oaks, and where something
-  stands in front of one, since that is in the mask as it is. The cost is
+  stands in front of one, since that is in the mask as it is. The ink is
+  hazed as the scene is: drawn over the finished frame it was black at any
+  distance, where the rocks' and the crosses' shells are fogged with
+  everything else, and an oak's line stood out against a rock's beside it.
+  The double writes how much haze is in front of it (Godot's
+  `1 - exp(-distance * density)`) into the mask's green, and the ink is mixed
+  toward the fog's colour by it -- in linear light, as Godot fogs: mixed as
+  sRGB, the same haze left the oaks' line half as light, 36,38,41 against a
+  cross's 73,77,83 at the same distance. Now the left oak's trunk measures
+  74,78,84. The cost is
   the scene rendered twice, without its smoothing the second time.
 - **Wind.** The oaks sway on the stage's wind (`level3d_wind.gdshaderinc`, its
   gusts from the same quarter), the trunk in `level3d_wind_soft.gdshader`, the
@@ -243,6 +252,18 @@ few seconds.
   under 0.2 s for all of it. On the scene's own clock -- `Level3DWind`'s is
   the preview's, which stops with the stage paused under it; stepped with the
   stage's (G), still under `--no-wind`.
+- **Rain** (`Level3DRain`, `src/game3d/world/level3d_rain.gd`), for a gloomier
+  end: the sunset the scene was made under turned overcast -- a grey sky
+  (`RAIN_SKY`), the sun at 0.4 of its energy and cold, its shadows at 0.45, a
+  cold ambient brighter than the sunset's, a haze (`RAIN_FOG`) -- and 7000
+  drops falling through the frame, slanting with the wind's way, with
+  splashes at the guard's feet. CPU particles, the project being on
+  Compatibility; each drop a quad stretched along its fall
+  (`level3d_rain.gdshader`). They start over the hill's crest and stop 3 m
+  short of the camera, where one crossed the lens as a thick white bar. The
+  rain is on a render layer of its own that the oaks' mask leaves out, or a
+  drop over a crown would ink a streak across it. `--no-rain` gives the
+  sunset back.
 - **Light**, the Blender scene's: a low warm sun from behind the camera's left
   and a warm ambient, the summer grass faded so that the green uniforms stand
   out. Compatibility lights it about 2.2 times as bright as the energies say

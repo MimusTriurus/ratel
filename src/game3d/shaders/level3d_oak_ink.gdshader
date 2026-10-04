@@ -8,26 +8,42 @@
 // what stands in front of an oak hides it there too. A pixel of an oak gets
 // the ink when within `pixels` of it the mask is not that oak: inside the
 // silhouette, round every leaf on the crown's edge and every gap the sky
-// shows through, and between two oaks one in front of the other.
+// shows through, and between two oaks one in front of the other. The ink
+// hazed as the scene is (`fog_colour`, the mask's green): drawn over the
+// finished frame, it would be black at any distance, while the rocks' and
+// the crosses' shells are fogged with everything else.
 shader_type canvas_item;
 
 uniform sampler2D mask : filter_nearest;
 uniform float pixels = 3.0;
 uniform vec4 ink : source_color = vec4(0.0, 0.0, 0.0, 1.0);
+// The fog's colour as the environment has it, sRGB: mixed in linear light,
+// as Godot fogs the scene's shells -- mixed as sRGB, the same haze left the
+// oaks' line half as light as a cross's beside them.
+uniform vec4 fog_colour = vec4(0.0, 0.0, 0.0, 1.0);
 
-// Which oak a mask pixel is, 0 for none: red full, green none, blue its
-// number in sixteenths.
+// Which oak a mask pixel is, 0 for none: red full, green no more than half
+// (the haze), blue its number in sixteenths.
 float oak_of(vec3 c) {
-	if (c.r < 0.98 || c.g > 0.02) {
+	if (c.r < 0.98 || c.g > 0.51) {
 		return 0.0;
 	}
 	return floor(c.b * 16.0 + 0.5) + 1.0;
 }
 
+vec3 to_linear(vec3 c) {
+	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+
+vec3 to_srgb(vec3 c) {
+	return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
 void fragment() {
 	COLOR = texture(TEXTURE, UV);
 	vec2 px = 1.0 / vec2(textureSize(mask, 0));
-	float own = oak_of(texture(mask, UV).rgb);
+	vec3 here = texture(mask, UV).rgb;
+	float own = oak_of(here);
 	if (own > 0.0) {
 		float reach = pixels;
 		bool edge = false;
@@ -43,7 +59,8 @@ void fragment() {
 			}
 		}
 		if (edge) {
-			COLOR = vec4(ink.rgb, 1.0);
+			float haze = clamp(here.g * 2.0, 0.0, 1.0);
+			COLOR = vec4(to_srgb(mix(to_linear(ink.rgb), to_linear(fog_colour.rgb), haze)), 1.0);
 		}
 	}
 }

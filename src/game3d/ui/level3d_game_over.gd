@@ -44,6 +44,12 @@
 # runs while it is shown: the preview's, Level3DWind's, stops with the stage
 # paused under it. Stepped with the stage's (Level3DWind.is_stepped); still
 # under --no-wind.
+#
+# And it rains (`rain`, Level3DRain): the sunset that the scene was made
+# under turned to an overcast evening -- a grey sky, a weak cold sun whose
+# shadows are pale, a cold ambient, a haze in the distance -- and the drops
+# falling through the frame, splashing at the guard's feet. Gloomier, as the
+# end of a run is. The sunset is still there under --no-rain.
 class_name Level3DGameOver
 extends TextureRect
 
@@ -108,9 +114,9 @@ const SHADOW_DISTANCE := 45.0
 const SKY_SHADER := """
 shader_type sky;
 
-const vec3 HORIZON = vec3(1.0, 0.77, 0.57);
-const vec3 ROSE = vec3(0.93, 0.70, 0.70);
-const vec3 HIGH = vec3(0.51, 0.58, 0.81);
+uniform vec3 HORIZON = vec3(1.0, 0.77, 0.57);
+uniform vec3 ROSE = vec3(0.93, 0.70, 0.70);
+uniform vec3 HIGH = vec3(0.51, 0.58, 0.81);
 
 void sky() {
 	float up = EYEDIR.y;
@@ -119,6 +125,28 @@ void sky() {
 	COLOR = up < 0.0 ? HORIZON : c;
 }
 """
+
+# The rain's overcast, in place of the sunset's light and sky (the header):
+# the sky's three bands, sRGB, grey from a paler horizon up; a sun from the
+# same quarter at RAIN_SUN of its energy, cold, its shadows RAIN_SHADOW
+# opaque; an ambient as cold, brighter than the sunset's, which is most of
+# the light under a cloud; a haze RAIN_FOG thick, the sky's colour.
+const RAIN_SKY: Array[Vector3] = [Vector3(0.60, 0.62, 0.64), Vector3(0.50, 0.53, 0.57), Vector3(0.34, 0.37, 0.43)]
+const RAIN_SUN := 0.4
+const RAIN_SUN_COLOUR := Color(0.80, 0.86, 0.96)
+const RAIN_SHADOW := 0.45
+const RAIN_AMBIENT := Color(0.60, 0.66, 0.78)
+const RAIN_AMBIENT_ENERGY := 0.85
+const RAIN_FOG := 0.022
+const RAIN_FOG_COLOUR := Color(0.55, 0.58, 0.62)
+# Where the drops start, the scene's metres: over the frame from the hill's
+# crest to 3 m short of the camera -- nearer, a drop crossed the lens as a
+# thick white bar; further off they are under a pixel, and the haze is the
+# rain there. The ground the splashes come off, x and z, round the guard and
+# the graves.
+const RAIN_BOX := AABB(Vector3(-12.0, 3.0, -16.0), Vector3(24.0, 9.0, 22.0))
+const SPLASH_AREA := Rect2(-7.0, -6.0, 14.0, 14.0)
+static var rain := true
 
 var viewport: SubViewport
 var shown := false
@@ -170,7 +198,11 @@ const OAK_MASK_SHADER := preload("res://src/game3d/shaders/level3d_oak_mask.gdsh
 const OAK_INK_SHADER := preload("res://src/game3d/shaders/level3d_oak_ink.gdshader")
 const OAK_LAYER := 1 << 1
 const MASK_LAYER := 1 << 2
+# The rain's, which the mask's camera leaves out as well: a drop over a crown
+# would cut the crown in the mask, and ink every streak across it.
+const RAIN_LAYER := 1 << 3
 var _mask: SubViewport
+var _fog_density := 0.0          # the rain's haze, 0 without it: the oaks' ink is hazed by it too
 var _mask_camera: Camera3D
 var _wind: Array[ShaderMaterial] = []
 var _wind_made := {}         # a mesh -> its surfaces' wind materials, null where none
@@ -200,7 +232,7 @@ func _init() -> void:
 	_mask.set_meta(SOFT_LIGHT, true)
 	add_child(_mask)
 	_mask_camera = Camera3D.new()
-	_mask_camera.cull_mask = 0xFFFFF & ~OAK_LAYER
+	_mask_camera.cull_mask = 0xFFFFF & ~OAK_LAYER & ~RAIN_LAYER
 	_mask.add_child(_mask_camera)
 	_build()
 	visible = false
@@ -220,6 +252,11 @@ func _build() -> void:
 	sky_shader.code = SKY_SHADER
 	var sky_material := ShaderMaterial.new()
 	sky_material.shader = sky_shader
+	var wet := rain and not OS.get_cmdline_user_args().has("--no-rain")
+	if wet:
+		sky_material.set_shader_parameter("HORIZON", RAIN_SKY[0])
+		sky_material.set_shader_parameter("ROSE", RAIN_SKY[1])
+		sky_material.set_shader_parameter("HIGH", RAIN_SKY[2])
 	var sky := Sky.new()
 	sky.sky_material = sky_material
 	sky.radiance_size = Sky.RADIANCE_SIZE_32
@@ -230,15 +267,23 @@ func _build() -> void:
 	environment.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	var gain := LIGHT_GAIN_COMPATIBILITY if _is_compatibility() else 1.0
-	environment.ambient_light_color = AMBIENT.linear_to_srgb()
-	environment.ambient_light_energy = AMBIENT_ENERGY * gain
+	environment.ambient_light_color = (RAIN_AMBIENT if wet else AMBIENT).linear_to_srgb()
+	environment.ambient_light_energy = (RAIN_AMBIENT_ENERGY if wet else AMBIENT_ENERGY) * gain
+	if wet:
+		environment.fog_enabled = true
+		environment.fog_light_color = RAIN_FOG_COLOUR
+		environment.fog_density = RAIN_FOG
+		_fog_density = RAIN_FOG
+		environment.fog_sky_affect = 0.0
 	var world_environment := WorldEnvironment.new()
 	world_environment.environment = environment
 	_world.add_child(world_environment)
 
 	var sun := DirectionalLight3D.new()
-	sun.light_color = SUN_COLOUR.linear_to_srgb()
-	sun.light_energy = SUN_ENERGY * gain
+	sun.light_color = (RAIN_SUN_COLOUR if wet else SUN_COLOUR).linear_to_srgb()
+	sun.light_energy = SUN_ENERGY * gain * (RAIN_SUN if wet else 1.0)
+	if wet:
+		sun.shadow_opacity = RAIN_SHADOW
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = SHADOW_DISTANCE
 	sun.basis = Basis.looking_at(SUN_TRAVEL, Vector3.UP)
@@ -260,6 +305,10 @@ func _build() -> void:
 	_soften(scene)
 	_plant_oaks(scene)
 	_add_wind(scene)
+	if wet:
+		var weather := Level3DRain.new()
+		weather.build(RAIN_BOX, SPLASH_AREA, func(x: float, z: float) -> float: return _ground_at(x, -z), RAIN_LAYER)
+		_world.add_child(weather)
 	_world.add_child(scene)
 	_camera = scene.find_child("GO_Camera*", true, false) as Camera3D
 	if _camera != null:
@@ -501,6 +550,7 @@ func _plant_oaks(scene: Node) -> void:
 		ink.shader = OAK_INK_SHADER
 		ink.set_shader_parameter("mask", _mask.get_texture())
 		ink.set_shader_parameter("pixels", Level3DHull.PIXELS)
+		ink.set_shader_parameter("fog_colour", RAIN_FOG_COLOUR)
 		material = ink
 
 
@@ -565,6 +615,7 @@ func _outline_oak(oak: MeshInstance3D) -> void:
 		var source := oak.mesh.surface_get_material(surface) as BaseMaterial3D
 		var material := _wind_material(OAK_MASK_SHADER)
 		material.set_shader_parameter("mask_colour", Color(1.0, 0.0, (number % 16) / 16.0))
+		material.set_shader_parameter("fog_density", _fog_density)
 		if source != null and source.albedo_texture != null:
 			material.set_shader_parameter("albedo_tex", source.albedo_texture)
 			material.set_shader_parameter("scissor", source.alpha_scissor_threshold)
