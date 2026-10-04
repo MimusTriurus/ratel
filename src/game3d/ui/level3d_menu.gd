@@ -71,7 +71,7 @@ const SOUND_GROUPS := [
 			["player_explodes", "BTR destroyed"], ["soldier_death_gun", "Soldier killed: machine gun"],
 			["soldier_death_blast", "Soldier killed: rocket or mine"],
 			["soldier_death_run_over", "Soldier run over"]]],
-	["Engines", [["btr_idle", "BTR idling"], ["btr_drive", "BTR driving"], ["tank_engine", "Tanks"],
+	["Engines", [["btr_idle", "BTR engine"], ["btr_drive", "BTR driving"], ["tank_engine", "Tanks"],
 			["boat_engine", "Boats"], ["chinook", "Chinook"], ["rescue_rotor", "Rescue helicopter"]]],
 	["Title", [["jeep_start", "Jeeps: engine start"], ["jeep_idle", "Jeeps: engine running"]]],
 	["Interface", [["pickup", "Prisoner picked up"], ["rescue_pickup", "Prisoner aboard the helicopter"],

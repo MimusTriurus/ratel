@@ -320,6 +320,8 @@ var _live := false
 # The music's edge (_update_music): the boss armed.
 var _saw_boss := false
 const ENGINE_RISE := 2.5         # the mix's travel a second, 0 to 1
+const ENGINE_REV_PITCH := 1.5    # Level3DSplash3D.REV_PITCH
+const ENGINE_AT_REST := 0.8      # the idle alone's volume at rest, of its top
 var _forced_aim = null  # --fire's or --rocket's target
 var _hold_fire := false # --fire: the gun's trigger held throughout
 # How much longer a right click waits to be a rocket (Crew.rocket_wanted); see
@@ -3057,7 +3059,10 @@ func _update_music() -> void:
 # The BTR's engine: idling at rest, pulling as it goes, the pull's pitch up
 # with the speed. Quiet while the Chinook has it and while it is a wreck. The
 # classic drive's speed jumps from nothing to top in a tick, so the mix
-# follows it at ENGINE_RISE rather than jumping with it.
+# follows it at ENGINE_RISE rather than jumping with it. With no pull of its
+# own, as now -- btr_drive has no file, and btr_idle is the title jeep's
+# running engine -- the idle is the whole engine and goes up as the title's
+# does on the move: to ENGINE_REV_PITCH at top speed, and a little louder.
 #
 # Looked up every frame, not kept: a change of the sound's mode replaces them,
 # and with no file in the mode's folder there are none.
@@ -3070,7 +3075,11 @@ func _update_engine_sound(delta: float) -> void:
 		var running := c.btr.visible and c.respawning == 0 and not c.out and chinook == null
 		var ratio := clampf(absf(c.btr.speed) / c.btr.top_speed(), 0.0, 1.0) if running else 0.0
 		c.engine_level = move_toward(c.engine_level, ratio, ENGINE_RISE * delta)
-		if idle != null:
+		if idle != null and drive == null:
+			idle.stream_paused = not running
+			idle.volume_db = Level3DAudio.volume_db("btr_idle") 					+ linear_to_db(lerpf(ENGINE_AT_REST, 1.0, c.engine_level))
+			idle.pitch_scale = lerpf(1.0, ENGINE_REV_PITCH, c.engine_level)
+		elif idle != null:
 			idle.stream_paused = not running
 			idle.volume_db = Level3DAudio.volume_db("btr_idle") + linear_to_db(1.0 - 0.7 * c.engine_level)
 		if drive != null:
