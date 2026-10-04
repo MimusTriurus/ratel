@@ -18,8 +18,7 @@
 #   asset in the catalogue, every "entity" an entity, every group the one the
 #   game would probe for.
 #
-# Until the level editor writes these files the first two can only fail by a
-# bug in Level3DIO or tools/level_from_stage.gd. Once it does, the second
+# The first can only fail by a bug in Level3DIO. The second
 # says how far a level has moved from the 2D stage -- which is allowed, and
 # will then be reported rather than failed.
 extends SceneTree

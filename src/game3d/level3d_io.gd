@@ -5,8 +5,7 @@
 # A level file holds what is authored about a level, not its geometry: the
 # gameplay grid (nav, groups, entities) in metres on the game's own grid, and
 # the placed scenery. Nothing in the 2D game reads it; the stage maps under
-# assets/maps are its source for stage 0 (tools/level_from_stage.gd) and are
-# not written back.
+# assets/maps were its source for stage 0, once, and are not written back.
 #
 # The layout is fixed, one entity or grid row to a line, so that saving a level
 # nobody edited leaves no diff and moving one bunker touches one line --

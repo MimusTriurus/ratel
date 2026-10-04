@@ -3,10 +3,10 @@
 # transform between those pixels and level metres.
 #
 # The grid, the groups and the triggers come from the level file,
-# assets/level3d/stage-0.json (Level3DIO), which tools/level_from_stage.gd
-# made out of the game's stage-0.json and tools/verify_level3d.gd holds to it:
-# the Stage filled from either is the same. The level editor will write that
-# file; the game's map stays as it is.
+# assets/level3d/stage-0.json (Level3DIO), which was made out of the game's
+# stage-0.json and tools/verify_level3d.gd holds to it: the Stage filled from
+# either is the same. The level editor writes that file; the game's map stays
+# as it is.
 #
 # Nothing here is part of the game. The level was modelled from screenshots,
 # not from the map, but it lines up with it: the fifteen bunkers and nine

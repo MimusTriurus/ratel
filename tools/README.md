@@ -54,7 +54,6 @@ WindowsApps). Blender — Store-сборка, запускается через
 
 | файл | что делает | запуск |
 |---|---|---|
-| `level_from_stage.gd` | пишет `assets/level3d/stage-0.json` из карты игры и `jackal_stage1.glb`; перезаписывает файл | `godot --path . --headless --script tools/level_from_stage.gd` |
 | `level_ground_rasters.gd` | даёт уровню растры земли и высоты из его полигонов, один раз на уровень | `godot --path . --headless --script tools/level_ground_rasters.gd -- 0` |
 | `level_terrain_from_glb.gd` | без аргументов сравнивает землю файла с собранным glb; с `--glb` трассирует землю с ручного уровня | `godot --path . --headless --script tools/level_terrain_from_glb.gd` |
 | `level_structures_from_base.gd` | кладёт в файл уровня стены, мост и ворота, снятые `extract_structures.py` | `godot --path . --headless --script tools/level_structures_from_base.gd` |

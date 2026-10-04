@@ -18,14 +18,12 @@ group named outright rather than probed), and the placed scenery as
 asset is. `Level3DMap` reads the grid from it, not from the game's
 `stage-0.json`, and nothing in the 2D game reads it at all.
 
-`tools/level_from_stage.gd` wrote stage 0's out of `assets/maps/stage-0.json`
-and `jackal_stage1.glb`, and overwrites it when run again. The check holds it
-to the game's map — round trip, nav, groups, both trigger lists in order, the
-`Stage` it fills — and to the catalogue:
-
-```bash
-godot --path . --headless --script tools/level_from_stage.gd
-```
+Stage 0's was written once, out of `assets/maps/stage-0.json` and the
+hand-built `jackal_stage1.glb`, by `tools/level_from_stage.gd`; the file is
+the source now and the glb is built from it, so that tool is gone (in git up to
+`6093955`). The check holds the file to the game's map —
+round trip, nav, groups, both trigger lists in order, the `Stage` it fills —
+and to the catalogue:
 
 ```bash
 godot --path . --headless --script tools/verify_level3d.gd
@@ -43,8 +41,7 @@ source from now on (`Level3DGround`, `src/game3d/world/level3d_ground.gd`, part 
 the plan); `verify_level3d.gd` checks that the two still agree, and
 `tools/level_ground_rasters.gd -- N` gave stage 0 its rasters off its
 polygons, once. Stage 0's was traced off the
-hand-built glb, by a tool that keeps everything else in the file, as
-`level_from_stage.gd` keeps the ground. The glb is built from the file now,
+hand-built glb, by a tool that keeps everything else in the file. The glb is built from the file now,
 so run bare the tool only compares the file with it; its header says how
 to trace the hand-built one, which is in git at `7d0abb6`, again:
 
