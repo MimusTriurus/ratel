@@ -136,6 +136,7 @@ func _ready() -> void:
 	_text.draw.connect(_draw_text)
 	add_child(_text)
 	_reticle = Level3DReticle.new()
+	_reticle.carries_mouse = true
 	add_child(_reticle)
 	_veil = ColorRect.new()
 	_veil.color = Color(0, 0, 0, 0)

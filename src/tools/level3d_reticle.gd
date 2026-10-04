@@ -13,6 +13,11 @@
 # own motion events, coming with the focus, took it to wherever the pointer
 # happened to sit. A pick closes it in and flashes it (fire).
 #
+# With `carries_mouse` the hidden system pointer goes with the keys: put at
+# once where they glide it to, so that the mouse, taking it again, starts from
+# the entry rather than throwing it in one frame to wherever the pointer was
+# left. Not while the window is out of focus, whose pointer is the user's.
+#
 # The owner hides the system pointer while it is `shown`, and says so to
 # Level3DCrosshair, which owns the mouse mode.
 class_name Level3DReticle
@@ -30,6 +35,7 @@ const MOUSE_TAKES := 8.0
 
 var shown := true
 var by_mouse := false          # the mouse has it, rather than the keys
+var carries_mouse := false     # the keys take the system pointer along
 
 var _at := Vector2.ZERO
 var _from := Vector2.ZERO      # where its glide started
@@ -95,6 +101,10 @@ func _process(delta: float) -> void:
 		_at = get_local_mouse_position()
 	elif _target.is_valid():
 		var goal: Vector2 = _target.call()
+		if carries_mouse and get_window().has_focus() \
+				and get_local_mouse_position().distance_to(goal) > 2.0:
+			get_viewport().warp_mouse(get_global_transform_with_canvas() * goal)
+			_parked = goal
 		if _moving < 1.0:
 			_moving = minf(_moving + delta / GLIDE, 1.0)
 			var t := _moving
