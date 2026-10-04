@@ -216,6 +216,8 @@ func step(delta: float) -> void:
 
 
 func _fire() -> void:
+	# The twin gun's barrels in turn (Level3DBtr.cycle_muzzle).
+	btr.cycle_muzzle()
 	var muzzle := btr.muzzle()
 	var from := muzzle.origin
 	var bearing := Vector3(muzzle.basis.x.x, 0.0, muzzle.basis.x.z).normalized()

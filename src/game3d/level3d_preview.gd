@@ -93,7 +93,7 @@
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
 #            [--at <x,z>] [--free] [--hold <keys>@<from>-<to>[,...]] [--weapon <0-3>]
 #            [--intro] [--pows <n>] [--score <n>] [--summary <seconds>] [--strip <frames>,<seconds>[,<px>]] [--die <seconds>]
-#            [--game-over <n>[,<n>][:<total>]] [--round <n>]
+#            [--game-over <n>[,<n>][:<total>]] [--round <n>] [--upgrades <id>,...]
 #
 # The bunkers' guns, the enemy soldiers, the two boats on the river, the two
 # brown tanks and the boss's four heavy tanks at the top of the stage fight back
@@ -122,7 +122,9 @@
 # with that many spare lives: --lives 0 with --die is the game over.
 # --round starts every run on that round of the stage, harder from the
 # second (_start_round): the summary's close, or ROUND_HOLD after the boss
-# with none, goes on to the next.
+# with none, goes on to the next. --upgrades starts every player with those
+# of the shop's upgrades (Level3DShopCatalog's ids: twin, armor, zip, nitro,
+# radar, mines, loopholes, airstrike), their parts on the jeep.
 # --summary shows the mission's summary that many seconds in, as if the boss
 # were beaten. --strip takes that many
 # frames instead of one, that many seconds apart from the first, and lays the
@@ -463,6 +465,9 @@ func _ready() -> void:
 	else:
 		_round = _first_round()
 		Level3DMap.hard = settings.hard or _round > 1
+		for c in crews:
+			c.upgrades = _flag_upgrades()
+		_dress_crews()
 		# intro_song, IntroMapMode's: the start jingle running on into stage 1.
 		Level3DAudio.play_music("intro")
 		if args.has("--intro") or not (args.has("--shot") or args.has("--obstacle-map")):
@@ -3378,7 +3383,7 @@ func _restart(jingle := false) -> void:
 		c.lives = EXTRA_LIVES
 		c.score = 0
 		c.lives_bought = 0
-		c.upgrades.clear()
+		c.upgrades = _flag_upgrades()
 		c.device = ""
 		c.carrier.reset()
 	_start_round(jingle)
@@ -3402,6 +3407,24 @@ static func _first_round() -> int:
 	var args := OS.get_cmdline_user_args()
 	var at := args.find("--round")
 	return maxi(int(args[at + 1]), 1) if at >= 0 and at + 1 < args.size() else 1
+
+
+# --upgrades <id>,<id>'s, or none: what every player starts every run with,
+# as if the shop had sold it (Level3DShopCatalog's ids).
+static func _flag_upgrades() -> Array[String]:
+	var args := OS.get_cmdline_user_args()
+	var at := args.find("--upgrades")
+	var out: Array[String] = []
+	if at >= 0 and at + 1 < args.size():
+		for id in args[at + 1].split(",", false):
+			out.append(id)
+	return out
+
+
+# Each player's jeep with what he has bought on it (Level3DBtr.set_upgrades).
+func _dress_crews() -> void:
+	for c in crews:
+		c.btr.set_upgrades(c.upgrades)
 
 
 func _capture() -> Level3DRun:
@@ -3480,6 +3503,7 @@ func _start_round(jingle := false) -> void:
 		c.out = false
 		c.btr.visible = true
 		c.btr.blink(true)
+	_dress_crews()
 	_won_at = -1
 	_banners.clear()
 	_summary.clear()
@@ -3713,7 +3737,7 @@ func _screenshot_mode() -> void:
 			if crews[0].respawning == 0:
 				_explode_btr(crews[0], "--die"))
 		args = args.slice(0, die) + args.slice(die + 2)
-	for flag in ["--level", "--file", "--players", "--light", "--round"]:
+	for flag in ["--level", "--file", "--players", "--light", "--round", "--upgrades"]:
 		var at := args.find(flag)
 		if at >= 0:
 			args = args.slice(0, at) + args.slice(at + 2)  # read in _ready

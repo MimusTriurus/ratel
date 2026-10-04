@@ -80,6 +80,12 @@
 #     builder) on a spring of its own, pushed by the hull's acceleration --
 #     the change of its velocity, so the classic mode's starts, stops and
 #     turns in a tick kick them -- and dragged by the hull's tilt.
+#
+# The jeep carries the shop's upgrades as well (docs/shop-plan.md,
+# UPGRADE_PARTS): a part each, hidden until `set_upgrades` shows what was
+# bought -- the twin gun in the single one's place, firing from each barrel
+# in turn (`cycle_muzzle`), the armour, the spares' box, the nitro, the radar
+# with its dish turning, the mines, the rifles' rests. The BTR has none.
 class_name Level3DBtr
 extends Node3D
 
@@ -137,6 +143,16 @@ const VEHICLES := {
 			# Under the tail, on the right, where a jeep's pipe ends.
 			"exhausts": [Vector3(-0.6, 0.4, -2.0)]},
 }
+# The shop's upgrades that show on the vehicle: the shop's id (Level3DShopCatalog)
+# -> its part's root in the model, without the prefix -- jackal_jeep.py's
+# UPGRADES, each built in a collection of its own and exported with the rest.
+const UPGRADE_PARTS := {"twin": "UpTwin", "armor": "UpArmor", "zip": "UpZip", "nitro": "UpNitro",
+		"radar": "UpRadar", "mines": "UpMines", "loopholes": "UpLoopholes"}
+# The twin gun's two bores, under UpTwin, and the radar's dish, which turns.
+const TWIN_BORES := ["UpTwinBoreL", "UpTwinBoreR"]
+const RADAR_DISH := "UpRadarDish"
+const RADAR_TURN := TAU / 2.5      # rad/s
+
 # Sideways acceleration, m/s^2, that leans the body over by all its roll gain:
 # the free mode's tightest turn at its top speed.
 const ROLL_FULL := 8.0
@@ -276,6 +292,16 @@ var _velocity := Vector3.ZERO
 var _aerials := []
 # VEHICLES' exhausts, as points on the hull, so that they ride with it.
 var _exhausts: Array[Node3D] = []
+# The shop's upgrades on the model (UPGRADE_PARTS): id -> part, and what the
+# twin gun swaps -- the single gun, the bores in the pivot's frame, the one
+# that fires next -- and the radar's dish.
+var _upgrade_parts := {}
+var _gun_single: Node3D
+var _single_bore := Vector3.ZERO
+var _twin_bores: Array[Vector3] = []
+var _twin := false
+var _next_bore := 0
+var _radar_dish: Node3D
 
 
 func _ready() -> void:
@@ -306,6 +332,18 @@ func _ready() -> void:
 	_turret_pivot.add_child(_bore)
 	_bore.position = _turret_pivot.global_transform.affine_inverse() * bore.global_position
 	_bore.basis = Basis(Vector3.UP, -vehicle.facing)
+	_single_bore = _bore.position
+	_gun_single = _turret_pivot.find_child(prefix + "Gun", true, false) as Node3D
+	for id in UPGRADE_PARTS:
+		var part := _model.find_child(prefix + UPGRADE_PARTS[id], true, false) as Node3D
+		if part != null:
+			_upgrade_parts[id] = part
+			part.visible = false
+	for name in TWIN_BORES:
+		var twin_bore := _model.find_child(prefix + name, true, false) as Node3D
+		if twin_bore != null:
+			_twin_bores.append(_turret_pivot.global_transform.affine_inverse() * twin_bore.global_position)
+	_radar_dish = _model.find_child(prefix + RADAR_DISH, true, false) as Node3D
 	for spare in vehicle.get("spare_fits", []):
 		var fit := _hull.find_child(prefix + spare, true, false) as Node3D
 		if fit != null:
@@ -401,6 +439,51 @@ static func tint_model(model: Node, min_hue: float, max_hue: float, shift: float
 # The model as it stands, for the wreck to copy (Level3DWreck).
 func model_node() -> Node3D:
 	return _model
+
+
+# Every upgrade's part in `model` hidden: the vehicle as it comes, as the
+# splash and the HUD's icons show it.
+static func hide_upgrades(model: Node, prefix: String) -> void:
+	for id in UPGRADE_PARTS:
+		var part := model.find_child(prefix + UPGRADE_PARTS[id], true, false) as Node3D
+		if part != null:
+			part.visible = false
+
+
+# The parts of the upgrades in `ids` shown, the rest hidden; with the twin
+# gun, the single one hidden and the rounds leaving from either barrel.
+func set_upgrades(ids: Array) -> void:
+	for id in _upgrade_parts:
+		(_upgrade_parts[id] as Node3D).visible = ids.has(id)
+	_twin = ids.has("twin") and _twin_bores.size() == 2
+	if _gun_single != null:
+		_gun_single.visible = not _twin
+	_next_bore = 0
+	_bore.position = _twin_bores[0] if _twin else _single_bore
+
+
+# An upgrade's part, for the shop to show on trial; null for one the model
+# has none of.
+func upgrade_part(id: String) -> Node3D:
+	return _upgrade_parts.get(id)
+
+
+func has_twin() -> bool:
+	return _twin
+
+
+# Before a round leaves: with the twin gun, the bore moved to the barrel whose
+# turn it is, the muzzle's flash with it; with one gun, nothing.
+func cycle_muzzle() -> void:
+	if not _twin:
+		return
+	_bore.position = _twin_bores[_next_bore]
+	_next_bore = 1 - _next_bore
+
+
+func _process(delta: float) -> void:
+	if _radar_dish != null and _radar_dish.is_visible_in_tree():
+		_radar_dish.rotate_object_local(Vector3.UP, RADAR_TURN * delta)
 
 
 # The gun's bore: where rounds leave from, its +X the way they go.

@@ -55,6 +55,9 @@ func render_all(vehicle: Dictionary, height: int, hues := Vector3.ZERO) -> Dicti
 	var spare: Array[String] = []
 	for name in vehicle.get("spare_fits", []):
 		spare.append(prefix + name)
+	# Nor the shop's upgrades (Level3DBtr.UPGRADE_PARTS).
+	for name in Level3DBtr.UPGRADE_PARTS.values():
+		spare.append(prefix + name)
 
 	# The vehicle bare: none of its mounts, which change with the weapon.
 	var body := _turned(scene.instantiate(), vehicle.facing)

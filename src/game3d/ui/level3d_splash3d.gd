@@ -1255,6 +1255,7 @@ func _jeep() -> Node3D:
 	var shown := jeep.find_child(prefix + SHOWN_FIT, true, false) as Node3D
 	if shown != null:
 		shown.visible = true
+	Level3DBtr.hide_upgrades(jeep, prefix)
 	for node in jeep.find_children("*", "MeshInstance3D", true, false):
 		_dress(node as MeshInstance3D)
 	# The model is modelled along +Z already, facing the camera.
