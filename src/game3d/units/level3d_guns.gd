@@ -626,6 +626,11 @@ func targets() -> Array[Vector2]:
 	return out
 
 
+# Gun `i`'s place as targets() gives it.
+func targets_of(i: int) -> Vector2:
+	return _box(guns[i], HIT).get_center()
+
+
 # RotatingGun's solid box, 64 px either side: what the soldiers walk round.
 # Level x, z.
 func solid_boxes() -> Array[Rect2]:

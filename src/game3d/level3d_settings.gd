@@ -39,10 +39,12 @@ enum Reach { CLASSIC, UNLIMITED, LONG }
 # are in DEFAULT_KEYS but not here: the mouse aims it now, and Q and E stay
 # as fixed keys for turning it by hand (level3d_preview.gd, _turret_key), not
 # bound, not saved.
-const ACTIONS: Array[String] = ["up", "down", "left", "right", "gun", "rocket"]
+# "device" sets off what the shop's slot holds (docs/shop-plan.md): nitro,
+# mines, the airstrike.
+const ACTIONS: Array[String] = ["up", "down", "left", "right", "gun", "rocket", "device"]
 const DEFAULT_KEYS := {
 	"up": KEY_W, "down": KEY_S, "left": KEY_A, "right": KEY_D,
-	"gun": KEY_L, "rocket": KEY_P, "turret_left": KEY_Q, "turret_right": KEY_E,
+	"gun": KEY_L, "rocket": KEY_P, "device": KEY_K, "turret_left": KEY_Q, "turret_right": KEY_E,
 }
 
 # The title screen's difficulty (Level3DTitle, Level3DMap.hard).

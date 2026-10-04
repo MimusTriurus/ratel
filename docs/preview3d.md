@@ -155,6 +155,20 @@ gun's does, a soldier dead, the rest chipped, the points the player's. The
 radar (`Level3DRadar`): a small arrow at the frame's edge for each gun and
 tank off it within 26 m, in the buyer's colour.
 
+**The device** in the slot goes off on its key -- the settings' Device, K to
+start with, rebound in the menu's keys; right Shift for the second player,
+whose other keys are the 2D game's mapping, which has no such button -- and
+the HUD's line names it after the prisoners, dimmed while it cannot go off.
+Nitro dashes the jeep ahead for 0.6 s at twice its speed, the way it faces
+with no key held (`Level3DBtr.dash`; classic, the game's move twice a tick,
+each through its sensors), then reloads for 5 s. Mines: one down behind the
+jeep every 3 s, three of a player's at most, the oldest taken up; one goes
+off under an enemy tank or a boss tank, the player's blast round it. The
+airstrike blows up every enemy in the frame but the boss's tanks for 2000,
+4000 the next call in the round, 8000 the next, the dead worth nothing,
+prisoners and buildings left alone, and is dimmed while the boss holds the
+camera or the score cannot pay for it.
+
 What a round leaves a player for the next is the run's (`Level3DRun`): his
 score, his lives, his launcher's step and what the shop sold him. What lives in
 a round -- the prisoners aboard, the stage's enemies -- starts again. The

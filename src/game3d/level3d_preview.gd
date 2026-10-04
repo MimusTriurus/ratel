@@ -570,6 +570,13 @@ class Crew:
 	var device := ""
 	# The loopholes' ticks to their next shot (_loopholes).
 	var loophole_wait := 0
+	# The device (_use_device): ticks till it can go off again, its key last
+	# tick, the airstrikes called this round (which price the next), the
+	# mines down.
+	var device_wait := 0
+	var device_held := false
+	var strikes := 0
+	var mines: Array[Node3D] = []
 
 
 # Every key event to HumanInput.key_event, the Escape menu or not (it pauses
@@ -582,13 +589,21 @@ class KeySides:
 	func _ready() -> void:
 		process_mode = Node.PROCESS_MODE_ALWAYS
 
+	# The second player's device key, right Shift: not one of the 2D game's
+	# buttons, so not in its mapping (ButtonMapping), which the 2D game reads.
+	static var device_2 := false
+
 	func _input(event: InputEvent) -> void:
 		if event is InputEventKey:
 			HumanInput.key_event(event)
+			var key := event as InputEventKey
+			if key.keycode == KEY_SHIFT and key.location == KEY_LOCATION_RIGHT and not key.echo:
+				device_2 = key.pressed
 
 	func _notification(what: int) -> void:
 		if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 			HumanInput.release_all()
+			device_2 = false
 
 
 # Main.button_mapping and button_mapping_2, as the game last saved them.
@@ -1933,6 +1948,8 @@ func _crew_pop(c: Crew, text: String) -> void:
 # between rounds takes, and lives are bought there (docs/shop-plan.md), so
 # points earn none: a deliberate departure.
 func _add_points(c: Crew, points: int) -> void:
+	if _no_points:
+		return
 	c.score += points
 	_show_state()
 
@@ -2358,6 +2375,9 @@ func _show_state() -> void:
 		line.score = c.score
 		line.lives = -1 if settings.infinite_lives else c.lives
 		line.pows = c.carrier.pows
+		line.parts["device"] = on and not c.out
+		line.device = _device_text(c)
+		line.device_ready = c.device_wait == 0 and (c.device != "airstrike" or _airstrike_ready(c))
 		var weapon := 1 + c.carrier.missile_power if c.carrier.has_missiles else 0
 		if weapon > c.weapon_shown and c.weapon_shown >= 0:
 			_crew_pop(c, "POWER UP")
@@ -2372,6 +2392,19 @@ func _show_state() -> void:
 						FIRING_NAMES[settings.firing]]
 			line.cheats = _cheats_text() if on and settings.hud_cheats else ""
 		line.show_state()
+
+
+# The device as the HUD's line writes it: its name, the airstrike's with the
+# next call's price.
+func _device_text(c: Crew) -> String:
+	match c.device:
+		"nitro":
+			return "NITRO"
+		"mines":
+			return "MINES"
+		"airstrike":
+			return "AIR %d" % _airstrike_price(c)
+	return ""
 
 
 # The cheats that are on, in words the font has and short enough for the
@@ -2451,7 +2484,7 @@ var _saw_defeat := false
 # it is first wanted and until it is done: once a run of the preview, R or
 # not -- "<player>:<hint>" in `_hints_done`. `_hints_up` is each player's up,
 # {"name", "hint", "from" -- where the jeep was when it came up}.
-const HINTS := ["move", "fire", "rocket"]
+const HINTS := ["move", "fire", "rocket", "device"]
 # The fire hint comes with an enemy within HINT_REACH of the gun's reach; the
 # rocket's with a POW building or a gate within the launcher's, and the BTR
 # turned to it to within HINT_FACING -- or a round thudding on one.
@@ -2481,7 +2514,7 @@ func _update_hints() -> void:
 		for name in HINTS:
 			if _hints_done.has("%d:%s" % [c.index, name]) or not _hint_wanted(c, name):
 				continue
-			var words := {"move": "MOVE", "fire": "FIRE", "rocket": "ROCKET"}
+			var words := {"move": "MOVE", "fire": "FIRE", "rocket": "ROCKET", "device": _device_text(c)}
 			var btr_of := c.btr
 			_hints_up[c.index] = {"name": name, "from": c.btr.position, "rockets": c.rockets,
 					"hint": _hints.show_hint(_hint_keys(c, name), words[name],
@@ -2498,6 +2531,8 @@ func _hint_wanted(c: Crew, name: String) -> bool:
 	match name:
 		"move":
 			return true
+		"device":
+			return c.device != "" and _hints_done.has("%d:move" % c.index)
 		"fire":
 			if not _hints_done.has("%d:move" % c.index):
 				return false
@@ -2554,6 +2589,8 @@ func _hint_done(c: Crew, up: Dictionary) -> bool:
 			return c.gun.trigger
 		"rocket":
 			return c.rockets > up.rockets
+		"device":
+			return c.device_wait > 0 or c.strikes > 0
 	return true
 
 
@@ -2571,6 +2608,10 @@ func _hint_keys(c: Crew, name: String) -> Array:
 				return ["LMB"] if mouse else [_key_name(settings.key("gun"))]
 			"rocket":
 				return ["RMB"] if mouse else [_key_name(settings.key("rocket"))]
+			"device":
+				return [_key_name(settings.key("device"))]
+	if name == "device":
+		return [_key_name(KEY_SHIFT, KEY_LOCATION_RIGHT)]
 	var m := _mapping_2
 	match name:
 		"move":
@@ -3042,6 +3083,8 @@ func _physics_process(delta: float) -> void:
 		_fire(c, gone[c], cursor, delta)
 		if not gone[c]:
 			_loopholes(c)
+		_use_device(c, gone[c])
+	_tick_mines()
 	for c in crews:
 		if gone[c]:
 			continue
@@ -3483,6 +3526,126 @@ func _gun_rate(c: Crew) -> float:
 	return settings.gun_rate * (2.0 if c.upgrades.has("twin") else 1.0)
 
 
+# The device in the slot (docs/shop-plan.md), on its key's press -- the
+# settings' "device" for the first player, right Shift for the second:
+#   nitro      the jeep dashes ahead (Level3DBtr.dash), NITRO_RELOAD to the next
+#   mines      a mine down behind the jeep, MINE_RELOAD to the next, MAX_MINES
+#              of a player's at once; it goes off under an enemy tank
+#   airstrike  every enemy in the frame but the boss's tanks blown up, for
+#              AIRSTRIKE_PRICE, twice that the next call in the round and so
+#              on; the dead are worth no points, the prisoners and the
+#              buildings are left alone, and it is not to be had while the
+#              boss holds the camera.
+const NITRO_RELOAD := 500
+const MINE_RELOAD := 300
+const MAX_MINES := 3
+const MINE_BEHIND := 0.9
+const MINE_REACH := 0.45          # level metres: a tank's middle this near sets it off
+const AIRSTRIKE_PRICE := 2000
+const AIRSTRIKE_BLASTS := 0.12    # seconds between the strike's blasts
+var _no_points := false           # an airstrike's kills: worth nothing
+
+func _use_device(c: Crew, gone: bool) -> void:
+	if c.device_wait > 0:
+		c.device_wait -= 1
+	var held := (_key("device") if c.input == null else KeySides.device_2) or _held_key("device", c.index)
+	var pressed := held and not c.device_held
+	c.device_held = held
+	if not pressed or gone or c.device == "" or c.device_wait > 0:
+		return
+	match c.device:
+		"nitro":
+			c.btr.dash = Level3DBtr.DASH_TICKS
+			c.device_wait = NITRO_RELOAD
+			Level3DAudio.play("rocket_launch", c.btr.position)
+			puffs.cloud(c.btr.position, Vector3.RIGHT, -c.btr.forward(), 0.3, 6)
+		"mines":
+			_drop_mine(c)
+			c.device_wait = MINE_RELOAD
+		"airstrike":
+			if not _airstrike_ready(c):
+				Level3DAudio.play("hit_dull", c.btr.position)
+				return
+			c.score -= _airstrike_price(c)
+			c.strikes += 1
+			_airstrike(c)
+	_show_state()
+
+
+func _airstrike_price(c: Crew) -> int:
+	return AIRSTRIKE_PRICE << c.strikes
+
+
+func _airstrike_ready(c: Crew) -> bool:
+	return c.score >= _airstrike_price(c) and not (boss != null and boss.camera_top() >= 0.0)
+
+
+# A mine down behind the jeep, the oldest of MAX_MINES taken up.
+func _drop_mine(c: Crew) -> void:
+	if c.mines.size() >= MAX_MINES:
+		c.mines.pop_front().queue_free()
+	var mine := MeshInstance3D.new()
+	var disc := CylinderMesh.new()
+	disc.top_radius = 0.16
+	disc.bottom_radius = 0.18
+	disc.height = 0.07
+	mine.mesh = disc
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(0.3, 0.33, 0.16)
+	mine.material_override = material
+	var at := c.btr.position - c.btr.forward() * MINE_BEHIND
+	var ground: Dictionary = _ground_at(at.x, at.z)
+	mine.position = Vector3(at.x, (ground.height if ground.hit else at.y) + 0.035, at.z)
+	add_child(mine)
+	c.mines.append(mine)
+	Level3DAudio.play("pickup", mine.position)
+
+
+# Every mine: an enemy tank, or one of the boss's, over it sets it off.
+func _tick_mines() -> void:
+	for c in crews:
+		for mine in c.mines.duplicate():
+			var at: Vector3 = mine.position
+			var to: Vector3 = at + Vector3(0.01, 0.0, 0.0)
+			guns.acting = c
+			var found := _nearest([tanks.intercept(at, to, MINE_REACH / Level3DMap.PX),
+					boss.intercept(at, to, MINE_REACH / Level3DMap.PX)])
+			if found.is_empty():
+				continue
+			c.mines.erase(mine)
+			mine.queue_free()
+			if found.has("tank"):
+				tanks.attack(found)
+			else:
+				boss.attack(found)
+			guns.explode(at, true)
+			_spawn_blast(at, 1.0, 0.0)
+
+
+# Every enemy in the frame blown up, a blast on each in turn, none of it
+# worth a point.
+func _airstrike(c: Crew) -> void:
+	var view := _view_frame()
+	var hits: Array[Vector2] = []
+	for at in soldiers.targets() + guns.targets() + tanks.targets() + boats.targets():
+		if view.has_point(at):
+			hits.append(at)
+	_no_points = true
+	guns.acting = c
+	soldiers.explosion_hit(view, false)
+	tanks.explosion_hit(view, false)
+	boats.explosion_hit(view, false)
+	for i in guns.guns.size():
+		if hits.has(guns.targets_of(i)):
+			guns.attack(i)
+	_no_points = false
+	Level3DAudio.play("warning")
+	_shake(SHAKE_PIXELS * 2.0)
+	for k in hits.size():
+		var at := hits[k]
+		_spawn_blast(Vector3(at.x, 0.0, at.y), 1.2, AIRSTRIKE_BLASTS * k)
+
+
 # The loopholes (docs/shop-plan.md): every prisoner aboard fires at the
 # nearest enemy within a soldier's reach (LOOPHOLE_REACH: EnemySoldier's
 # round's flight), at a soldier's pace --
@@ -3631,6 +3794,12 @@ func _start_round(jingle := false) -> void:
 		c.out = false
 		c.btr.visible = true
 		c.btr.blink(true)
+		c.btr.dash = 0
+		c.device_wait = 0
+		c.strikes = 0
+		for mine in c.mines:
+			mine.queue_free()
+		c.mines.clear()
 	_dress_crews()
 	_won_at = -1
 	_banners.clear()
@@ -3788,7 +3957,8 @@ func _screenshot_mode() -> void:
 		_show_state()
 	var hold := args.find("--hold")
 	if hold >= 0:
-		const KEYS := {"w": "up", "a": "left", "s": "down", "d": "right", "l": "gun", "p": "rocket"}
+		const KEYS := {"w": "up", "a": "left", "s": "down", "d": "right", "l": "gun", "p": "rocket",
+				"k": "device"}
 		for span in args[hold + 1].split(","):
 			# 2:wd@0-1 is the second player's.
 			var index := 1 if span.begins_with("2:") else 0

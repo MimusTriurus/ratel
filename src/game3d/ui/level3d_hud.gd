@@ -106,7 +106,12 @@ var lives := 0              # spare lives; -1 for the infinite lives cheat
 var pows := 0
 var modes := ""             # "" for none
 var cheats := ""            # the cheats on, "" for none or not shown
-var parts := {"score": true, "lives": true, "pows": true}
+var parts := {"score": true, "lives": true, "pows": true, "device": true}
+# The device in the shop's slot, as the line writes it ("" none), and whether
+# it can go off now: dimmed while it reloads, or while the airstrike cannot
+# be paid for or is not to be had.
+var device := ""
+var device_ready := true
 var bottom := false         # the bottom left corner rather than the top left
 var right := false          # the right-hand corner, the second player's
 # Which of the icons is this player's vehicle: the second's is blue.
@@ -278,7 +283,7 @@ func _line(x: float, top: float, g: float, row: float, which := ALL) -> float:
 	var groups := 0
 	var show := parts.duplicate()
 	if which == SCORE:
-		show = {"score": parts.score, "lives": false, "pows": false}
+		show = {"score": parts.score, "lives": false, "pows": false, "device": false}
 	elif which == REST:
 		show.score = false
 	if show.score:
@@ -299,6 +304,10 @@ func _line(x: float, top: float, g: float, row: float, which := ALL) -> float:
 		var hop := _hop(_pows_time, g)
 		x = _icon(icons.get("pow"), POW_SPRITE, x, top - hop, row, dim) + g * 0.25
 		x = _text(str(pows), x, y - hop, g, WHITE if pows > 0 else GRAY, 1.0, _flash(_pows_time))
+	if show.get("device", false) and device != "":
+		x = _gap(x, g, groups)
+		groups += 1
+		x = _text(device, x, y, g, WHITE if device_ready else GRAY, 1.0 if device_ready else DIM)
 	return x
 
 

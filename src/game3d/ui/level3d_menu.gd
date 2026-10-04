@@ -100,7 +100,7 @@ const MIX_STEP_DB := 0.5
 const REACH_ORDER := [Level3DSettings.Reach.CLASSIC, Level3DSettings.Reach.LONG, Level3DSettings.Reach.UNLIMITED]
 const ACTION_NAMES := {
 	"up": "Forward / up", "down": "Back / down", "left": "Left", "right": "Right",
-	"gun": "Machine gun", "rocket": "Rocket",
+	"gun": "Machine gun", "rocket": "Rocket", "device": "Device",
 }
 
 var settings: Level3DSettings

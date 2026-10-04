@@ -152,6 +152,10 @@ const UPGRADE_PARTS := {"twin": "UpTwin", "armor": "UpArmor", "zip": "UpZip", "n
 const TWIN_BORES := ["UpTwinBoreL", "UpTwinBoreR"]
 const RADAR_DISH := "UpRadarDish"
 const RADAR_TURN := TAU / 2.5      # rad/s
+# The nitro's dash (`dash`): its length, ticks, and how much faster -- classic,
+# the game's move made DASH_STEPS times a tick, each through the sensors.
+const DASH_TICKS := 60
+const DASH_STEPS := 2
 
 # Sideways acceleration, m/s^2, that leans the body over by all its roll gain:
 # the free mode's tightest turn at its top speed.
@@ -302,6 +306,9 @@ var _twin_bores: Array[Vector3] = []
 var _twin := false
 var _next_bore := 0
 var _radar_dish: Node3D
+# The nitro's dash: the ticks of it left. Ahead whatever the keys say, unless
+# they say somewhere, then that way; faster either way.
+var dash := 0
 
 
 func _ready() -> void:
@@ -512,7 +519,16 @@ func recoil(direction: Vector3, kick: float) -> void:
 
 
 func top_speed() -> float:
-	return CLASSIC_SPEED if classic else TOP_SPEED
+	return (CLASSIC_SPEED if classic else TOP_SPEED) * (DASH_STEPS if dash > 0 else 1)
+
+
+# The classic keys for the way the hull faces, the dash's when none is held.
+func _dash_keys() -> void:
+	var a := posmod(angle, 360)
+	key_right = a in [315, 0, 45]
+	key_down = a in [45, 90, 135]
+	key_left = a in [135, 180, 225]
+	key_up = a in [225, 270, 315]
 
 
 func corner_speed() -> float:
@@ -664,14 +680,29 @@ func step(delta: float) -> void:
 	var was := position
 	var heading_was := heading
 	var keys := key_up or key_down or key_left or key_right
-	if classic and (keys or waypoints.is_empty()):
-		if keys:
+	var dashing := dash > 0
+	if dashing:
+		dash -= 1
+	if classic and (keys or waypoints.is_empty() or dashing):
+		if keys or dashing:
 			waypoints.clear()
 			backing = false
-		_drive_classic(delta)
+		var held := [key_up, key_down, key_left, key_right]
+		if dashing and not keys:
+			_dash_keys()
+		for k in (DASH_STEPS if dashing else 1):
+			_drive_classic(delta)
+		key_up = held[0]
+		key_down = held[1]
+		key_left = held[2]
+		key_right = held[3]
 	else:
 		_classic_synced = false
+		var was_throttle := throttle
+		if dashing and throttle <= 0.0:
+			throttle = 1.0
 		_step_free(delta)
+		throttle = was_throttle
 	if position.z < z_limits.x and position.z < was.z:
 		position.z = maxf(position.z, minf(z_limits.x, was.z))
 		speed = 0.0
