@@ -114,9 +114,9 @@ const SHEETS := [
 ]
 
 # The level's buildings the stage's POW buildings are, by the kind of
-# destructible each is (its jackal_dest_<kind>.glb) -- stage 1's by their own
-# names, another level's by the catalogue's Barracks and Hangar objects: which
-# one is which trigger is found by where they stand.
+# destructible each is (its jackal_dest_<kind>.glb), from the level's
+# Barracks* and Hangar* objects: which one is which trigger is found by where
+# they stand.
 const HUT_KINDS: Array[String] = ["Barracks", "BarracksN", "BarracksN2", "BarracksN3"]
 const HOUSE_KINDS: Array[String] = ["Hangar_E", "Hangar_N", "Hangar_W"]
 

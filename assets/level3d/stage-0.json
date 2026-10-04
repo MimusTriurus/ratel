@@ -1224,6 +1224,13 @@
     {"id": "SandbagNest_4", "asset": "SandbagNest", "pos": [0.940, 0.000, -66.339], "yaw": 0.000, "scale": 1.000},
     {"id": "SandbagNest_5", "asset": "SandbagNest", "pos": [-4.700, 0.000, -59.859], "yaw": 0.000, "scale": 1.000},
     {"id": "SandbagNest_6", "asset": "SandbagNest", "pos": [-6.600, 0.000, -57.939], "yaw": 0.000, "scale": 1.000},
+    {"id": "Barracks", "asset": "Barracks", "pos": [5.850, 0.000, 10.550], "yaw": 0.000, "scale": 1.000},
+    {"id": "BarracksN", "asset": "BarracksN", "pos": [9.400, 0.000, -17.600], "yaw": 0.000, "scale": 1.000},
+    {"id": "BarracksN2", "asset": "BarracksN2", "pos": [-9.400, 0.000, -54.140], "yaw": 0.000, "scale": 1.000},
+    {"id": "BarracksN3", "asset": "BarracksN3", "pos": [-11.227, 0.000, -102.000], "yaw": 0.000, "scale": 1.000},
+    {"id": "Hangar_E", "asset": "Hangar", "pos": [11.240, 0.000, -13.100], "yaw": 0.000, "scale": 1.000},
+    {"id": "Hangar_N", "asset": "Hangar_N", "pos": [3.740, 0.000, -16.800], "yaw": 0.000, "scale": 1.000},
+    {"id": "Hangar_W", "asset": "Hangar_W", "pos": [-1.860, 0.000, -13.100], "yaw": 0.000, "scale": 1.000},
     {"id": "Gate", "asset": "Gate", "pos": [5.600, 0.000, -10.360], "yaw": 0.000, "scale": 1.000, "entity": "gate_0"}
   ],
   "walls": [

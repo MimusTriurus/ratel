@@ -87,6 +87,8 @@
     "BarracksN": {"pivot": [9.4, -17.6], "destructible": "BarracksN", "collision": "none"},
     "BarracksN2": {"pivot": [-9.4, -54.14], "destructible": "BarracksN2", "collision": "none"},
     "BarracksN3": {"pivot": [-11.227, -102.0], "destructible": "BarracksN3", "collision": "none"},
-    "Hangar": {"pivot": [11.24, -13.1], "destructible": "Hangar_E", "collision": "none"}
+    "Hangar": {"pivot": [11.24, -13.1], "destructible": "Hangar_E", "collision": "none"},
+    "Hangar_N": {"pivot": [3.74, -16.8], "destructible": "Hangar_N", "collision": "none"},
+    "Hangar_W": {"pivot": [-1.86, -13.1], "destructible": "Hangar_W", "collision": "none"}
   }
 }

@@ -109,7 +109,7 @@
 # The frame is taken that many seconds later; with waypoints the BTR is sent
 # along them first (level coordinates: x across, z up the stage is negative)
 # and the camera follows it. --destroy sets the named buildings off at the
-# start -- DESTRUCTIBLE_NAMES has the names -- --fire aims at x,z and holds
+# start -- the ids of their objects in the level file -- --fire aims at x,z and holds
 # the trigger down from the start, and --rocket aims at x,z and sends one
 # rocket as soon as the launcher has come round, or that many seconds in.
 # --at puts the BTR at x,z to begin with instead of at START. --free drives
@@ -154,8 +154,8 @@
 # --file <res:// path> plays another level file than stage 1's, one the level
 # editor made (src/editors/level_editor.tscn), with --level its built glb: its
 # grid, its entities, its frame, and a start and a landing as far from its
-# south end as stage 1's are from its own. Stage 1's own buildings that are
-# blown up are not in it; its Gate, Barracks* and Hangar objects are.
+# south end as stage 1's are from its own. Its buildings that are blown up
+# are its Gate, Barracks* and Hangar* objects, as stage 1's are.
 #
 # The stage opens as the game's does: a Chinook flies the BTR in, backs it out
 # down its ramp and flies off; the BTR is the player's, at IntroPlayer's spot
@@ -1605,8 +1605,6 @@ func _solid_at(pose: Transform3D, half: Vector3) -> bool:
 # so a body follows its mesh's animated transform: the gate's leaves stop the
 # BTR until they shrink away, and the stubs left at either side start to when
 # they appear.
-const DESTRUCTIBLE_NAMES: Array[String] = ["Barracks", "BarracksN", "BarracksN2",
-		"BarracksN3", "Hangar_E", "Hangar_N", "Hangar_W", "Gate"]
 const DESTRUCTIBLE_PATH := "res://resources/3d/jackal_dest_%s.glb"
 const DESTRUCTION_ANIMATION := "Scene"
 # Longer than any destruction animation (2.6 s).
@@ -1620,12 +1618,14 @@ var destructibles := {}
 # The buildings that are blown up, each {"name" (what destructibles and
 # --destroy call it), "kind" (its jackal_dest_<kind>.glb), "move" (from where
 # stage 1 has it), "group" (the destruction group a gate opens, or -1)}.
-# Stage 1 has all of DESTRUCTIBLE_NAMES where they are; another level has one
-# for every object whose asset the catalogue calls destructible -- a gate for
-# every Gate object (the destructible part of it: the builder builds its
-# frame), a barracks or a hangar for every Barracks* or Hangar one -- turned
-# and moved from the catalogue's pivot, where stage 1 has it, to the object's
-# place, and named by the object's id. Every gate opens the group of
+# A level has one for every object whose asset the catalogue calls
+# destructible -- a gate for every Gate object (the destructible part of it:
+# the builder builds its frame), a barracks or a hangar for every Barracks* or
+# Hangar* one -- turned and moved from the catalogue's pivot, where stage 1
+# has it, to the object's place, and named by the object's id. Stage 1's own
+# file has its eight that way, each at its pivot and named as its glb is, so a
+# copy of it keeps them; until it did they were a list here, and a copy had
+# its gate alone. Every gate opens the group of
 # the GATE entity its object belongs to, which is the group Gate would probe
 # for (Level3DIO.check holds the two together), stage 1's gate_0 group 6.
 static func _destructibles_here() -> Array:
@@ -1634,13 +1634,6 @@ static func _destructibles_here() -> Array:
 	var groups := {}
 	for e in doc["entities"]:
 		groups[e["id"]] = int(e.get("group", -1))
-	if Level3DMap.is_stage_one():
-		var gate_group := -1
-		for o in doc["objects"]:
-			if o["asset"] == "Gate":
-				gate_group = groups.get(o.get("entity", ""), -1)
-		return DESTRUCTIBLE_NAMES.map(func(n): return {"name": n, "kind": n, "move": Transform3D.IDENTITY,
-				"group": gate_group if n == "Gate" else -1})
 	var out: Array = []
 	for o in doc["objects"]:
 		var asset: Dictionary = catalog["assets"].get(o["asset"], {})

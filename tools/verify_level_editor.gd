@@ -546,9 +546,9 @@ func _run() -> void:
 			"on stage 1 the brush paints the grid itself")
 	editor._undo_step(editor._undo, editor._redo)
 	_expect(editor.doc["nav"][stage_tile.y] == row_before, "and undo puts the row back")
-	_expect(editor.doc["entities"].size() == 120 and editor.doc["objects"].size() == 727
+	_expect(editor.doc["entities"].size() == 120 and editor.doc["objects"].size() == 734
 			and editor.doc["walls"].size() == 10 and editor.doc["bridges"].size() == 1,
-			"stage 1 opens with its 120 entities, 727 objects, 10 walls and its bridge")
+			"stage 1 opens with its 120 entities, 734 objects, 10 walls and its bridge")
 	editor.dirty = false
 
 	if shots:
