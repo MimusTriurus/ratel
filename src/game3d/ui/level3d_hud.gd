@@ -323,10 +323,17 @@ func _ring_reach() -> float:
 
 
 func _draw_rings(on: Node2D, which: int) -> void:
-	var white := _ring_white()
-	var black := _ring_reach()
-	for ring in [[Color.BLACK, black], [Color.WHITE, white]]:
-		for icon in _rings[which]:
+	stamp_rings(on, _rings[which], _ring_white(), _ring_reach())
+
+
+# Each of `icons` ([texture, rect, region or null]) ringed `white` px in white
+# and out to `reach` in black: its silhouette stamped round it, on `on`, whose
+# material is TINT_SHADER's and which is in a CanvasGroup, so that the stamps
+# over each other come out as one. The mission's summary rings its prisoners
+# so too (Level3DSummary).
+static func stamp_rings(on: Node2D, icons: Array, white: float, reach: float) -> void:
+	for ring in [[Color.BLACK, reach], [Color.WHITE, white]]:
+		for icon in icons:
 			for r in range(1, int(ring[1]) + 1):
 				for k in 16:
 					var a := TAU * k / 16.0

@@ -15,7 +15,10 @@
 #     who brought him in (the HUD's icons, "pow" and "pow_2"), the rest dark
 #     -- left in a house, wandering, or lost with a jeep -- one every
 #     ICON_TIME, the rescued with the helicopter's pickup sound: the row says
-#     how many and how many not before the numbers do;
+#     how many and how many not before the numbers do. Each ringed as the
+#     HUD's icons are (Level3DHud.stamp_rings), thinner, ICON_RING: on the
+#     dark plate the rescued's own black line was lost and the rest were grey
+#     blots; the ring of the ones not rescued dimmed with them, LOST_RING;
 #   * the count, all the players' together -- the row's colours say whose --
 #     and the time from the BTR's handing over to the boss's end. Not the
 #     score: the HUD has it on the screen under the plate;
@@ -44,6 +47,9 @@ const PLATE := Color(0.0, 0.0, 0.0, 0.75)    # blended in linear light, which re
 const RING := 3.0
 const RING_LINE := 1.0
 const LOST := Color(0.42, 0.42, 0.42)     # the ones not rescued, as a silhouette
+const ICON_RING := 2.0          # the prisoners' white ring, px at 100%
+const ICON_RING_LINE := 1.0     # the black line outside it
+const LOST_RING := Level3DHud.DIM   # the alpha of the ring round one not rescued
 const TYPE_TIME := MissionAccomplished.TYPE_TIME / 100.0
 const ICON_TIME := 0.08
 const STEP_TIME := 0.35         # between the row's end and each line under it
@@ -60,6 +66,10 @@ var _lost_layer: Node2D
 var _lost: Array[Rect2] = []    # this frame's places for the ones not rescued
 var _icon_layer: Node2D         # the rescued, nearest whatever the font is drawn with
 var _rescued: Array = []        # this frame's [texture, rect]
+# Under them, the rings: [rescued, not], each this frame's [texture, rect,
+# null] stamped in a CanvasGroup of its own, the second dimmed.
+var _ring_groups: Array[CanvasGroup] = []
+var _rings: Array = [[], []]
 var _time := 0.0
 var _closing := -1.0            # seconds since the press that closes it, -1 open
 var _icons_from := 0.0          # when the row starts, the title typed
@@ -74,13 +84,27 @@ var _rescued_played := 0
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# The ones not rescued, over the plate as grey silhouettes of the icon:
-	# dimmed, the icon stayed a dark green, one of the rescued in shadow.
 	var shader := Shader.new()
 	shader.code = Level3DHud.TINT_SHADER
+	var silhouette := ShaderMaterial.new()
+	silhouette.shader = shader
+	for i in 2:
+		var group := CanvasGroup.new()
+		group.self_modulate.a = 1.0 if i == 0 else LOST_RING
+		var stamps := Node2D.new()
+		stamps.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		stamps.material = silhouette
+		stamps.draw.connect(func():
+			var white := maxf(roundf(ICON_RING * scale_factor), 1.0)
+			var reach := white + maxf(roundf(ICON_RING_LINE * scale_factor), 1.0)
+			Level3DHud.stamp_rings(stamps, _rings[i], white, reach))
+		group.add_child(stamps)
+		add_child(group)
+		_ring_groups.append(group)
+	# The ones not rescued, over the plate as grey silhouettes of the icon:
+	# dimmed, the icon stayed a dark green, one of the rescued in shadow.
 	_lost_layer = Node2D.new()
-	_lost_layer.material = ShaderMaterial.new()
-	(_lost_layer.material as ShaderMaterial).shader = shader
+	_lost_layer.material = silhouette
 	_lost_layer.draw.connect(func():
 		var icon := icons.get("pow") as Texture2D
 		if icon != null:
@@ -167,8 +191,11 @@ func _draw() -> void:
 	texture_filter = Level3DFont.filter()
 	_lost.clear()
 	_rescued.clear()
+	_rings = [[], []]
 	_lost_layer.queue_redraw()
 	_icon_layer.queue_redraw()
+	for group in _ring_groups:
+		group.get_child(0).queue_redraw()
 	if not shown:
 		return
 	var s := scale_factor
@@ -179,7 +206,9 @@ func _draw() -> void:
 	var icon := icons.get("pow") as Texture2D
 	var icon_h := roundf(ICON_HEIGHT * s)
 	var icon_w := roundf(icon.get_width() * icon_h / icon.get_height()) if icon != null else roundf(icon_h * 0.5)
-	var icon_step := icon_w + roundf(4.0 * s)
+	# Apart by their rings as well, which would run into one band.
+	var ring_reach := maxf(roundf(ICON_RING * s), 1.0) + maxf(roundf(ICON_RING_LINE * s), 1.0)
+	var icon_step := icon_w + roundf(4.0 * s) + ring_reach * 2.0
 	var rows := ceili(float(_total) / ICONS_PER_ROW)
 	var per_row := mini(_total, ICONS_PER_ROW)
 
@@ -210,8 +239,10 @@ func _draw() -> void:
 			var own: Texture2D = icons.get("pow_2" if _rescued_by[i] > 0 else "pow", icon)
 			if own != null:
 				_rescued.append([own, at])
+				_rings[0].append([own, at, null])
 		elif icon != null:
 			_lost.append(at)
+			_rings[1].append([icon, at, null])
 	y += rows * (icon_h + gap)
 	# The lines under it, one every STEP_TIME once the row is in.
 	var row_done := _icons_from + _total * ICON_TIME
