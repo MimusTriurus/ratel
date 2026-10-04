@@ -716,6 +716,15 @@ func intercept(from: Vector3, to: Vector3, margin: float, in_frame := false) -> 
 	return best
 
 
+# Where each one stands, level x, z: what the shop's radar marks and the
+# loopholes aim at (level3d_preview.gd).
+func targets() -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	for t in tanks:
+		out.append(_hit_box(t, 0.0).get_center())
+	return out
+
+
 # Enemy.bullet_attack: four rounds, and the ones before the fourth knock it
 # about and leave it smoking.
 func bullet_attack(found: Dictionary) -> void:

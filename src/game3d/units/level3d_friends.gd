@@ -171,6 +171,12 @@ class Carrier:
 	var releaseable_pows := 0
 	var has_missiles := false
 	var missile_power := 0
+	# The shop's upgrades that change what a death costs (docs/shop-plan.md):
+	# the spares, the launcher down a step rather than to the grenade; the
+	# armour, every prisoner aboard out alive. Set by the preview from what
+	# the player bought; a reset leaves them.
+	var spares := false
+	var armor := false
 	var rescued := 0
 	var drop_off_delay := 45
 
@@ -756,18 +762,26 @@ func bump(player_box: Rect2, c: Carrier) -> void:
 # Player.explode's half about the prisoners: with more than one aboard, some
 # scatter where he blew up -- one of them carrying the weapon, sometimes --
 # and he loses the lot, and the weapon. `c` is the carrier of the player who
-# blew up.
+# blew up. With the shop's armour every one aboard scatters alive, not all
+# but one and four at most; with its spares the weapon goes down a step
+# rather than to the grenade.
 func player_died(at: Vector3, c: Carrier) -> void:
-	if c.releaseable_pows > 1:
+	if c.releaseable_pows > 1 or c.armor and c.releaseable_pows > 0:
 		var weapon_carrier := c.has_missiles and _rng.randi_range(0, 4) == 3
 		if weapon_carrier:
 			c.releaseable_pows += 1
-		var release := mini(c.releaseable_pows - 2, 3)
+		var release := c.releaseable_pows - 1 if c.armor else mini(c.releaseable_pows - 2, 3)
 		var p := Level3DMap.to_map(Vector2(at.x, at.z))
 		for i in range(release, -1, -1):
 			_spawn(p.x, p.y, FriendlySoldierType.WEAPON_CARRIER_WANDERER if (weapon_carrier and i == 0)
 					else FriendlySoldierType.WANDERER)
 	c.pows = 0
 	c.releaseable_pows = 0
+	if c.spares and c.has_missiles:
+		if c.missile_power > 0:
+			c.missile_power -= 1
+		else:
+			c.has_missiles = false
+		return
 	c.missile_power = 0
 	c.has_missiles = false

@@ -568,6 +568,8 @@ class Crew:
 	var lives_bought := 0
 	var upgrades: Array[String] = []
 	var device := ""
+	# The loopholes' ticks to their next shot (_loopholes).
+	var loophole_wait := 0
 
 
 # Every key event to HumanInput.key_event, the Escape menu or not (it pauses
@@ -2264,6 +2266,8 @@ func _make_hud() -> void:
 	# The players' lines are added with them (_add_crew).
 	_pad_arrow = Level3DArrow.new()
 	layer.add_child(_pad_arrow)
+	_radar = Level3DRadar.new()
+	layer.add_child(_radar)
 	_callouts = Level3DCallouts.new()
 	layer.add_child(_callouts)
 	_score_pops = Level3DScorePops.new()
@@ -2396,6 +2400,27 @@ static func _rate_text(rate: float) -> String:
 # and it is there, or on its way, to take them. Every frame, after the camera
 # has moved; the arrow itself hides while the pad is in the frame.
 var _pad_arrow: Level3DArrow
+# The shop's radar (Level3DRadar): the guns and tanks off the frame, for the
+# players who bought it, in the first buyer's colour.
+var _radar: Level3DRadar
+
+func _update_radar() -> void:
+	var owner: Crew = null
+	for c in crews:
+		if c.upgrades.has("radar") and not c.out:
+			owner = c
+			break
+	_radar.shown = owner != null and settings.hud and chinook == null
+	if _radar.shown:
+		_radar.camera = camera
+		_radar.colour = owner.hud.colour
+		_radar.bottom_inset = _hud_bottom_inset()
+		var middle := _follow_point()
+		_radar.middle = Vector3(middle.x, 0.0, middle.y)
+		_radar.targets.clear()
+		for at in guns.targets() + tanks.targets():
+			_radar.targets.append(Vector3(at.x, 0.0, at.y))
+	_radar.queue_redraw()
 # The prisoners' HELP, the game's and the calls (Level3DFriends.help_marks).
 var _callouts: Level3DCallouts
 # The points over the rescue helicopter for each prisoner it takes.
@@ -2774,7 +2799,7 @@ func _apply_settings() -> void:
 		c.launcher.unlimited = c.gun.unlimited
 		c.gun.long_reach = settings.reach == Level3DSettings.Reach.LONG
 		c.launcher.long_reach = c.gun.long_reach
-		c.gun.rate = settings.gun_rate
+		c.gun.rate = _gun_rate(c)
 		c.launcher.rate = settings.launcher_rate
 	_apply_resolution()
 	_pixels.visible = settings.look == Level3DSettings.Look.PIXELS
@@ -3015,6 +3040,8 @@ func _physics_process(delta: float) -> void:
 	for c in crews:
 		guns.acting = c
 		_fire(c, gone[c], cursor, delta)
+		if not gone[c]:
+			_loopholes(c)
 	for c in crews:
 		if gone[c]:
 			continue
@@ -3258,6 +3285,7 @@ func _process(delta: float) -> void:
 	_update_engine_sound(delta)
 	_update_music()
 	_update_pad_arrow()
+	_update_radar()
 	_update_banners()
 
 
@@ -3438,10 +3466,67 @@ static func _first_device(upgrades: Array[String]) -> String:
 	return devices[0] if not devices.is_empty() else ""
 
 
-# Each player's jeep with what he has bought on it (Level3DBtr.set_upgrades).
+# Each player's jeep with what he has bought on it (Level3DBtr.set_upgrades),
+# and what it does: the twin gun's rate, the spares and the armour that
+# change what a death costs (Level3DFriends.player_died).
 func _dress_crews() -> void:
 	for c in crews:
 		c.btr.set_upgrades(c.upgrades)
+		c.gun.rate = _gun_rate(c)
+		c.carrier.spares = c.upgrades.has("zip")
+		c.carrier.armor = c.upgrades.has("armor")
+
+
+# The gun's rate: the cheat's, twice that with the twin gun -- each barrel
+# at the single one's, in turn (Level3DBtr.cycle_muzzle).
+func _gun_rate(c: Crew) -> float:
+	return settings.gun_rate * (2.0 if c.upgrades.has("twin") else 1.0)
+
+
+# The loopholes (docs/shop-plan.md): every prisoner aboard fires at the
+# nearest enemy within a soldier's reach (LOOPHOLE_REACH: EnemySoldier's
+# round's flight), at a soldier's pace --
+# LOOPHOLE_DELAY between one man's shots, so a shot every LOOPHOLE_DELAY over
+# the prisoners aboard. A round of the jeep's gun's, which hits as its do
+# (Level3DGun.intercept and struck): a soldier dies, the rest are chipped.
+const LOOPHOLE_DELAY := 150
+const LOOPHOLE_HEIGHT := 0.25
+const LOOPHOLE_REACH := EnemySoldier.BULLET_TRAVEL_TIME * EnemyBullet.SPEED * Level3DMap.PX
+
+func _loopholes(c: Crew) -> void:
+	if not c.upgrades.has("loopholes") or c.carrier.pows == 0:
+		c.loophole_wait = 0
+		return
+	if c.loophole_wait > 0:
+		c.loophole_wait -= 1
+		return
+	var from := c.btr.position + Vector3.UP * LOOPHOLE_HEIGHT
+	var reach := LOOPHOLE_REACH
+	var best := Vector2.ZERO
+	var best_d := INF
+	for target in soldiers.targets() + guns.targets() + tanks.targets() + boats.targets() + boss.targets():
+		var d := target.distance_to(Vector2(from.x, from.z))
+		if d < best_d:
+			best_d = d
+			best = target
+	if best_d > reach:
+		return
+	c.loophole_wait = maxi(LOOPHOLE_DELAY / c.carrier.pows, 1)
+	var to := Vector3(best.x, from.y, best.y)
+	guns.acting = c
+	var found: Dictionary = c.gun.intercept.call(from, to)
+	var hit := to if found.is_empty() else from.lerp(to, found.t)
+	var node := Level3DFx.take_round(self, false)
+	var fly := func(k: float): Level3DFx.aim_round(node, from.lerp(hit, k), hit - from)
+	fly.call(0.0)
+	Level3DAudio.play("gun", from)
+	var tween := node.create_tween()
+	tween.tween_method(fly, 0.0, 1.0, from.distance_to(hit) / Level3DGun.CLASSIC_ROUND_SPEED)
+	tween.tween_callback(func():
+		Level3DFx.give_round(node)
+		if not found.is_empty():
+			guns.acting = c
+			c.gun.struck.call(found))
 
 
 func _capture() -> Level3DRun:

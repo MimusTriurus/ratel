@@ -143,6 +143,18 @@ with the jeep and hidden; `Level3DBtr.set_upgrades` shows the bought ones, in
 the shop and on the stage. `--upgrades twin,radar,...` starts every player
 with them.
 
+**What they do in a round.** The spares (`zip`): a death takes the launcher
+down one step rather than to the grenade. The armour: every prisoner aboard
+jumps out alive -- the game's death loses one and lets four out at most
+(`Level3DFriends.player_died`). The twin gun: twice the gun's rate, each
+round from the next barrel (`Level3DBtr.cycle_muzzle`), the in-flight cap
+growing with it as the rate cheat's does. The loopholes: every prisoner
+aboard fires at the nearest enemy within a soldier's reach, at a soldier's
+pace -- a round every 1.5 s over the prisoners aboard -- that hits as the
+gun's does, a soldier dead, the rest chipped, the points the player's. The
+radar (`Level3DRadar`): a small arrow at the frame's edge for each gun and
+tank off it within 26 m, in the buyer's colour.
+
 What a round leaves a player for the next is the run's (`Level3DRun`): his
 score, his lives, his launcher's step and what the shop sold him. What lives in
 a round -- the prisoners aboard, the stage's enemies -- starts again. The

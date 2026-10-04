@@ -665,6 +665,15 @@ func intercept(from: Vector3, to: Vector3, margin: float) -> Dictionary:
 	return best
 
 
+# Where each one stands, level x, z: what the shop's radar marks and the
+# loopholes aim at (level3d_preview.gd).
+func targets() -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	for s in soldiers:
+		out.append(_hit_box(s, 0.0).get_center())
+	return out
+
+
 func bullet_attack(found: Dictionary) -> void:
 	var i := soldiers.find(found.soldier)
 	if i >= 0:

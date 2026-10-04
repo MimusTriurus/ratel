@@ -616,6 +616,16 @@ func travel(at: Vector3, direction: Vector2) -> void:
 			"velocity": direction * TravelingExplosion.VELOCITY * PX, "by": acting})
 
 
+# Where each one stands, level x, z: what the shop's radar marks and the
+# loopholes aim at (level3d_preview.gd).
+func targets() -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	for gun in guns:
+		if gun.spawned and not gun.dead:
+			out.append(_box(gun, HIT).get_center())
+	return out
+
+
 # RotatingGun's solid box, 64 px either side: what the soldiers walk round.
 # Level x, z.
 func solid_boxes() -> Array[Rect2]:
