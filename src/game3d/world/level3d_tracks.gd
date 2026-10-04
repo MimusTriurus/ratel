@@ -9,9 +9,15 @@
 # the way in and the way out, so a quad is written a step behind the wheel,
 # once the way out is known; an edge cut square to the way in twisted the
 # quad on the inside of a sharp turn into a dark bow tie. Its width is the
-# tyre's or the track's; each edge sits LIFT over the ground under it. A trail ends where its wheel leaves the
-# ground -- up a ramp over a ruin, on the Chinook's ramp -- or jumps further
-# than BREAK, as the player does when it is put back.
+# tyre's or the track's; each edge sits LIFT over the ground under it. A trail ends where its wheel leaves what
+# it stands on (`stands_on`) -- on the Chinook's ramp -- or jumps further than
+# BREAK, as the player does when it is put back. What it stands on is not
+# what the mark is laid on: up the ramp over a bunker whose gun is gone
+# (Level3DPreview._add_bunker_ramp) the wheel is on the ramp, and the mark
+# goes on the sand under it, the slope being one nobody sees -- on the slab,
+# under the concrete. Judged by the sand alone, a wheel was off it already
+# while the hull tipped onto the slope, and the trail broke off short of the
+# bunker on the way up and began again well away from it on the way down.
 #
 # The fading is level3d_tracks.gdshader's, off the time each vertex was laid,
 # so a quad is written once and never touched again. Quads go into meshes of
@@ -28,14 +34,21 @@ const SHADER := preload("res://src/game3d/shaders/level3d_tracks.gdshader")
 const STEP := 0.08
 const BREAK := 0.6
 const LIFT := 0.012
-# A contact this far over the ground under it is off it.
-const AIRBORNE := 0.08
+# A contact this far over what it stands on is off it. Not less: the hull
+# follows the ground on a spring (Level3DBtr._settle), and coming down off a
+# bunker's slab its rear wheels hang up to 0.3 m over the ramp for a moment;
+# at 0.08 the trail broke off from the slab's edge to where they landed.
+const AIRBORNE := 0.4
 const HOLD := 5.0 / 3.0
 const FADE := 5.0
 const CHUNK := 256
 
-# `ground.call(x, z)` -> {"height", "hit", ...}, the preview's ground layer.
+# `ground.call(x, z)` -> {"height", "hit", ...}, the preview's ground layer:
+# what the marks are laid on.
 var ground: Callable
+# The same for what a wheel stands on, the ramps too (Level3DPreview.
+# _hull_ground_at); `ground` when not given.
+var stands_on: Callable
 # Each is called once a tick and gives the contacts on the ground now, one
 # for every wheel or track that leaves a mark: {"key", "at" (Vector3, the
 # middle of where it touches), "width", "pitch" (metres a tread repeats in),
@@ -115,8 +128,11 @@ func _process(_delta: float) -> void:
 
 func _follow(contact: Dictionary) -> void:
 	var at: Vector3 = contact.at
+	var on: Dictionary = (stands_on if stands_on.is_valid() else ground).call(at.x, at.z)
+	if not on.hit or at.y - on.height > AIRBORNE:
+		return
 	var under: Dictionary = ground.call(at.x, at.z)
-	if not under.hit or at.y - under.height > AIRBORNE:
+	if not under.hit:
 		return
 	at.y = under.height
 	var trail: Trail = _trails.get(contact.key)

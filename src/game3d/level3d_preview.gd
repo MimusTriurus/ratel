@@ -1976,6 +1976,7 @@ func _add_guns(level: Node) -> void:
 	# What their wheels and tracks leave behind, and the player's.
 	tracks = Level3DTracks.new()
 	tracks.ground = _ground_at
+	tracks.stands_on = _hull_ground_at
 	tracks.sources = [btr.wheel_tracks, tanks.track_contacts, boss.track_contacts]
 	add_child(tracks)
 	# And the dust they raise, and everything's exhaust.
