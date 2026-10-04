@@ -12,7 +12,9 @@
 #     every TYPE_TIME with the well-done sound;
 #   * then a prisoner for every one the level held (Level3DFriends.
 #     prisoners_total), the rescued first, each in the colour of the player
-#     who brought him in (the HUD's icons, "pow" and "pow_2"), the rest dark
+#     who brought him in (the HUD's icons, "pow" and "pow_2") -- the first
+#     player's together, then the second's, not as they came, which mixed
+#     the two colours along the row -- the rest dark
 #     -- left in a house, wandering, or lost with a jeep -- one every
 #     ICON_TIME, the rescued with the helicopter's pickup sound: the row says
 #     how many and how many not before the numbers do. Each ringed as the
@@ -126,11 +128,13 @@ func _init() -> void:
 	visible = false
 
 
-# `rescued_by` the player of each prisoner rescued, in the order they were;
+# `rescued_by` the player of each prisoner rescued, in any order: shown by
+# player, the first's first;
 # `total` every prisoner the level held; `ticks` the mission's time, logic
 # ticks.
 func show_summary(rescued_by: Array[int], total: int, ticks: int) -> void:
 	_rescued_by = rescued_by.duplicate()
+	_rescued_by.sort()
 	_total = maxi(total, rescued_by.size())
 	_ticks = ticks
 	_time = 0.0
