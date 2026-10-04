@@ -2054,6 +2054,8 @@ func _add_guns(level: Node) -> void:
 	guns.player_position = func(from: Vector2) -> Vector2:
 		var c := _target(from)
 		return Vector2(c.btr.position.x, c.btr.position.z)
+	# The enemies' fire quieter the further it is from the nearest BTR.
+	Level3DAudio.set_nearest_player(guns.player_position)
 	guns.blast = _spawn_blast
 	guns.scored = func(points: int):
 		_add_points(_credited(), points)

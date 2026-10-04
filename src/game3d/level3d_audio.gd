@@ -70,6 +70,8 @@
 #     gap        seconds: a second play inside it is dropped (CLASSIC takes
 #                the longer of it and Main's 125 ms)
 #     flat       not positional: the HUD's and the player's own
+#     near       quieter the further it is from the nearest player (near_db),
+#                over and above frame_gain: the enemies' fire
 #     mixed      a loop whose volume its owner sets (the BTR's engine), which
 #                the frame's gain is left to (_process)
 #     classic, modern
@@ -118,6 +120,17 @@ const ENEMY_FIRE_BUS := &"EnemyFire"
 const LISTENER_HEIGHT := 8.0
 const PANNING := 0.6
 const OFFSCREEN_FADE := 15.0
+# Except for the enemies' fire ("near"): a frame of soldiers, bunkers and
+# tanks all firing at full gain was one din, the gun at the BTR's side no
+# louder than the one across the screen. Theirs is at full gain within
+# NEAR_FULL metres of the nearest player, NEAR_FAR_DB down at NEAR_FAR and
+# beyond, and in between linearly in dB. From the player, not the listener:
+# what is shooting at you is what you want to hear. nearest_player is the
+# preview's (Level3DGuns.player_position, set_nearest_player); without one, as on the title,
+# nothing is turned down.
+const NEAR_FULL := 5.0
+const NEAR_FAR := 18.0
+const NEAR_FAR_DB := -15.0
 
 const SOUNDS := {
 	# The player's weapons. The modern gun's gain brings its loudest 50 ms
@@ -156,9 +169,9 @@ const SOUNDS := {
 	# for the soldiers, a cannon for the bunkers and boats and a heavier one
 	# for the tanks, the boss's too, on EnemyFire, to sit well under the
 	# BTR's gun.
-	"enemy_mg": {"bus": &"EnemyFire", "pitch": 0.06, "voices": 4, "gap": 0.05},
-	"enemy_cannon": {"bus": &"EnemyFire", "pitch": 0.05, "voices": 4, "gap": 0.05},
-	"tank_cannon": {"bus": &"EnemyFire", "pitch": 0.05, "voices": 4, "gap": 0.05},
+	"enemy_mg": {"bus": &"EnemyFire", "pitch": 0.06, "voices": 4, "gap": 0.05, "near": true},
+	"enemy_cannon": {"bus": &"EnemyFire", "pitch": 0.05, "voices": 4, "gap": 0.05, "near": true},
+	"tank_cannon": {"bus": &"EnemyFire", "pitch": 0.05, "voices": 4, "gap": 0.05, "near": true},
 	# Blasts. A grenade's and the mortar's are explode_sound2, a missile's
 	# explode_sound3; both at 0.65. The modern ones' gains bring their loudest
 	# 50 ms (RMS) to the originals', which keeps the missile's under the
@@ -315,6 +328,10 @@ static var _resolved := {}
 
 # The frame, level x, z (listen); empty until the preview has said.
 static var _frame := Rect2()
+# `nearest_player.call(at)`: the level x, z of the player nearest the level
+# x, z `at` (NEAR_FULL). The node's, not a static: a static holding the
+# preview's lambda outlived the preview and crashed the game on its way out.
+var _nearest_player: Callable
 var _listener: AudioListener3D
 var _music: AudioStreamPlayer
 var _song: Array = []       # the parts still to come, file names
@@ -505,6 +522,23 @@ static func _outside_gain(at: Vector2, frame: Rect2, fade: float) -> float:
 	var outside := Vector2(maxf(maxf(frame.position.x - at.x, at.x - frame.end.x), 0.0),
 			maxf(maxf(frame.position.y - at.y, at.y - frame.end.y), 0.0)).length()
 	return clampf(1.0 - outside / fade, 0.0, 1.0)
+
+
+# Where the players are, for near_db: `nearest.call(at)` the level x, z of
+# the one nearest the level x, z `at`.
+static func set_nearest_player(nearest: Callable) -> void:
+	if _current != null:
+		_current._nearest_player = nearest
+
+
+# How far down a "near" sound at `at` is for its distance from the nearest
+# player, in dB: 0 to NEAR_FAR_DB (NEAR_FULL).
+static func near_db(at: Vector3) -> float:
+	if _current == null or not _current._nearest_player.is_valid():
+		return 0.0
+	var player: Vector2 = _current._nearest_player.call(Vector2(at.x, at.z))
+	var far := player.distance_to(Vector2(at.x, at.z))
+	return NEAR_FAR_DB * clampf(inverse_lerp(NEAR_FULL, NEAR_FAR, far), 0.0, 1.0)
 
 
 static func _gain_db(g: float) -> float:
@@ -1097,6 +1131,8 @@ func _play(name: String, at: Variant) -> void:
 	if not flat:
 		(player as AudioStreamPlayer3D).global_position = at
 	player.volume_db = volume_db(name) + _gain_db(where)
+	if not flat and spec.get("near", false):
+		player.volume_db += near_db(at)
 	player.play()
 	if spec.get("with", "") != "":
 		_play(spec.with, at)
