@@ -449,6 +449,7 @@ func _ready() -> void:
 	# placed after it, or it would sit on nothing.
 	await get_tree().physics_frame
 	await get_tree().physics_frame
+	_add_pier_foam(level)
 	var args := OS.get_cmdline_user_args()
 	var players := args.find("--players")
 	# One player unless asked for two: the menu's game for two lasts the run.
@@ -1042,6 +1043,69 @@ func _mark_sea(level: Node) -> void:
 	water.set_shader_parameter("sea_mask", ImageTexture.create_from_image(
 			Image.create_from_data(size.x, size.y, false, Image.FORMAT_L8, cells)))
 	water.set_shader_parameter("sea_box", Vector4(lo.x, lo.y, size.x * SEA_TEXEL, size.y * SEA_TEXEL))
+
+
+# Foam round a bridge's piers where they stand in the water. The water's own
+# surf is measured from the shore in Blender (level3d_ocean.gdshader), and a
+# pier is no shore, so the river ran past them clean. A quad of the boats'
+# foam (level3d_foam.gdshader, mode 2) round each pier, from the level file's
+# bridges, which is what the builder built them from: on the water, PIER_FOAM_UP
+# over it, if the ground just round the pier is water at any of
+# PIER_FOAM_PROBES points -- the bridge itself left out, which is over all of
+# them. A pier half on the bank gets its whole ring; the bank, above the
+# water, hides that half.
+const PIER_FOAM_BAND := 0.3
+const PIER_FOAM_UP := 0.02
+const PIER_FOAM_PROBE := 0.15
+const PIER_FOAM_PROBES := 8
+
+func _add_pier_foam(level: Node) -> void:
+	var bridges: Array = Level3DIO.read_path(Level3DMap.level_path()).get("bridges", [])
+	if bridges.is_empty():
+		return
+	var deck: Array[RID] = []
+	for node in level.find_children("Bridge*", "MeshInstance3D", true, false):
+		for body in node.find_children("*", "StaticBody3D", false, false):
+			deck.append((body as StaticBody3D).get_rid())
+	var space := get_world_3d().direct_space_state
+	for b in bridges:
+		var from := Vector2(float(b["from"][0]), float(b["from"][1]))
+		var along := (Vector2(float(b["to"][0]), float(b["to"][1])) - from).normalized()
+		var half := Vector2(Level3DStructures.PIER_LENGTH, float(b["width"]) - 2.0 * Level3DStructures.CURB) * 0.5
+		var material := ShaderMaterial.new()
+		material.shader = Level3DBoats.FOAM_SHADER
+		material.render_priority = 1
+		material.set_shader_parameter("mode", 2)
+		material.set_shader_parameter("band", PIER_FOAM_BAND)
+		material.set_shader_parameter("waterline", Vector3(half.x, half.y, 0.0))
+		var x_axis := Vector3(along.x, 0.0, along.y)
+		var basis := Basis(x_axis, Vector3.UP, x_axis.cross(Vector3.UP))
+		for at in b["piers"]:
+			var middle := from + along * float(at)
+			var water := -INF
+			for k in PIER_FOAM_PROBES:
+				var angle := TAU * k / PIER_FOAM_PROBES
+				var local := Vector2(cos(angle), sin(angle))
+				# Onto the box's edge, then out past it.
+				local = local / maxf(absf(local.x) / half.x, absf(local.y) / half.y)
+				local += local.normalized() * PIER_FOAM_PROBE
+				var probe := middle + along * local.x + Vector2(-along.y, along.x) * local.y
+				var query := PhysicsRayQueryParameters3D.create(Vector3(probe.x, RAY_TOP, probe.y),
+						Vector3(probe.x, RAY_BOTTOM, probe.y), GROUND_LAYER, deck)
+				var hit := space.intersect_ray(query)
+				if not hit.is_empty() and _kinds.get(hit.rid, "") == "water":
+					water = maxf(water, hit.position.y)
+			if water == -INF:
+				continue
+			var plane := PlaneMesh.new()
+			plane.size = (half + Vector2.ONE * PIER_FOAM_BAND * 2.0) * 2.0
+			var ring := MeshInstance3D.new()
+			ring.name = "PierFoam"
+			ring.mesh = plane
+			ring.material_override = material
+			ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			ring.transform = Transform3D(basis, Vector3(middle.x, water + PIER_FOAM_UP, middle.y))
+			add_child(ring)
 
 
 # `cells`, size.x across, with only the set cells joined to its west column

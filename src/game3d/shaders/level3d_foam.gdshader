@@ -1,5 +1,6 @@
 // The foam round the green boats of the 3D stage 1 preview (level3d_boats.gd):
-// the white water at the hull and the wake it leaves. Both are flat, on the
+// the white water at the hull and the wake it leaves; and round a bridge's
+// piers where they stand in the water (Level3DPreview._add_pier_foam). Both are flat, on the
 // water, and drawn after it -- the water reads the screen, so it is in the
 // transparent pass, and this has a higher render priority than it.
 //
@@ -14,6 +15,9 @@
 //      age 0..1. A churned line down the middle, where the screws are, and the
 //      two arms of the wave at its edges, both breaking up and thinning as it
 //      ages.
+//   2  a pier's: a quad round it, its vertices in metres from its middle, x
+//      along the bridge. A band round the box `waterline.xy` is the half of,
+//      lapping as the hull's does at rest.
 // The noise is the ocean shader's (level3d_ocean.gdshader), in world metres, so
 // the foam does not slide with the boat.
 shader_type spatial;
@@ -83,6 +87,16 @@ float hull_foam(vec2 p, float n) {
 	return 1.0 - smoothstep(edge * 0.6, edge, off);
 }
 
+// The pier's: a band `band` wide round a box of half-size `waterline.xy`, at
+// a point `p` of the quad, metres. Its corners are round: water does not keep
+// to a box's.
+float pier_foam(vec2 p, float n) {
+	vec2 d = abs(p) - waterline.xy;
+	float off = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+	float edge = band * (0.75 + 0.5 * n);
+	return 1.0 - smoothstep(edge * 0.6, edge, off);
+}
+
 // The wake's: across -1..1, age 0..1.
 float wake_foam(float across, float age, float n) {
 	float fade = 1.0 - age;
@@ -98,6 +112,8 @@ void fragment() {
 	float body;
 	if (mode == 0) {
 		body = hull_foam(local.xz, n);
+	} else if (mode == 2) {
+		body = pier_foam(local.xz, n);
 	} else {
 		body = wake_foam(UV.x * 2.0 - 1.0, UV.y, n);
 	}
@@ -108,6 +124,7 @@ void fragment() {
 	float foam = smoothstep(0.35, 0.55, body + n * (mix(0.75, 0.45, speed) + 0.4 * churn))
 			* smoothstep(0.02, 0.2, body);
 	ALBEDO = foam_colour;
-	// COLOR.a is the wake's tail fading out; the hull's quad has none, white.
+	// COLOR.a is the wake's tail fading out; the hull's and the pier's quads
+	// have none, white.
 	ALPHA = foam * strength * 0.85 * COLOR.a;
 }

@@ -30,6 +30,9 @@ const PLATE_STEP := 0.92
 const CURB := 0.3
 const DECK_TOP := 0.2
 const PIER_DEPTH := -1.24
+# Along the bridge; across, a pier is the deck less its two curbs. As
+# build_level.py's PIER and CURB, which build it.
+const PIER_LENGTH := 0.56
 # A gate's footprint is 6 x 4 tiles, and blowing it opens the four in the
 # middle: stage 1's group 6.
 const GATE_PASSAGE := Rect2i(1, 0, 4, 4)
