@@ -73,6 +73,12 @@ ships with no maps or sprite indices and dies on the loading screen. Verify a
 build really carries them with `--export-pack` and a grep for `stage-0.json` in
 the `.pck`.
 
+`build/` is scratch output, kept out of the export by `exclude_filter`. Its
+subfolders carry a local `.gdignore` so that Godot does not import them — all
+but `build/level3d/`, whose `.glb` the level editor builds and the preview
+`load()`s, which needs it imported. A tool writing a new folder there should
+add one. `docs/` is under `.gdignore` too: screenshots and renders go there.
+
 ## Architecture (2D game)
 
 The original is a fixed-logic-rate game drawn with immediate-mode OpenGL, and is
