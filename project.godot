@@ -33,7 +33,7 @@ project/assembly_name="Jackal"
 
 [editor]
 
-run/main_run_args="-- --splash-landing"
+run/main_run_args="-- --no-chinook --intro --shop --players 2 --score 40000"
 
 [filesystem]
 
