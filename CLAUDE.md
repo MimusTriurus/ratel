@@ -222,6 +222,8 @@ instead of fading in, because the Java original passes its fade value into
   and dust, its co-op. Options: `docs/preview3d-options.md`.
 - `docs/audio3d.md` — the 3D preview's effects and music, the three sound
   modes, the adaptive boss music, the mix, debugging silence.
+- `docs/shop-plan.md` — the planned shop between rounds: points as currency,
+  bought lives, upgrades, the device key.
 - `docs/level-editor-plan.md`, `docs/level3d-pipeline.md`,
   `docs/cel-shading.md`, `docs/soldier-pipeline.md`, `docs/boat-pipeline.md`.
 - `README.md` — rationale for the controls and how spawning was measured.
