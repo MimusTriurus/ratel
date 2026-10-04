@@ -2311,13 +2311,10 @@ func _show_state() -> void:
 	for c in crews:
 		var line := c.hud
 		line.parts = {"score": on and settings.hud_score, "lives": on and settings.hud_lives and not c.out,
-				"pows": on and settings.hud_pows and friends != null and not c.out,
-				"weapon": on and settings.hud_weapon and friends != null and not c.out}
+				"pows": on and settings.hud_pows and friends != null and not c.out}
 		line.score = c.score
 		line.lives = -1 if settings.infinite_lives else c.lives
 		line.pows = c.carrier.pows
-		line.has_missiles = c.carrier.has_missiles
-		line.missile_power = c.carrier.missile_power
 		var weapon := 1 + c.carrier.missile_power if c.carrier.has_missiles else 0
 		if weapon > c.weapon_shown and c.weapon_shown >= 0:
 			_crew_pop(c, "POWER UP")

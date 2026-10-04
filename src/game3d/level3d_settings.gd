@@ -76,7 +76,6 @@ var hud := true
 var hud_score := true
 var hud_lives := true
 var hud_pows := true
-var hud_weapon := true
 var hud_modes := false
 var hud_pad_arrow := true   # to the rescue helicopter, prisoners aboard
 var hud_cheats := true      # a line saying which cheats are on
@@ -212,7 +211,6 @@ func load_saved() -> void:
 	hud_score = config.get_value("interface", "score", hud_score)
 	hud_lives = config.get_value("interface", "lives", hud_lives)
 	hud_pows = config.get_value("interface", "pows", hud_pows)
-	hud_weapon = config.get_value("interface", "weapon", hud_weapon)
 	hud_modes = config.get_value("interface", "modes", hud_modes)
 	hud_pad_arrow = config.get_value("interface", "pad_arrow", hud_pad_arrow)
 	hud_help = config.get_value("interface", "help", hud_help)
@@ -274,7 +272,6 @@ func save() -> void:
 	config.set_value("interface", "score", hud_score)
 	config.set_value("interface", "lives", hud_lives)
 	config.set_value("interface", "pows", hud_pows)
-	config.set_value("interface", "weapon", hud_weapon)
 	config.set_value("interface", "modes", hud_modes)
 	config.set_value("interface", "pad_arrow", hud_pad_arrow)
 	config.set_value("interface", "help", hud_help)

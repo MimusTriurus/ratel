@@ -5,7 +5,7 @@
 #     CHEATS: LIVES  WALLS  GUN X2
 #     CLASSIC DRIVE  CURSOR FIRE
 #     004500
-#     [jeep] 3   [prisoner] 3   [missile]
+#     [jeep] 3   [prisoner] 3
 #
 #   * the score as GameMode._draw_score writes it, the number without its
 #     "1P", in the font's white (the sheet calls it black: white glyphs, dark
@@ -30,13 +30,9 @@
 #     prisoner gained flashes its count and hops it and its icon as points
 #     do the score; one lost does not, the jeep's blast or the helicopter
 #     taking him being what is watched then;
-#   * the weapon as its round -- the mortar's bomb, the missile, the heavy
-#     missile, the staged one -- each its own outline, so the level needs
-#     nothing beside it. An upgrade -- the only way it is noticed -- hops it
-#     as the counts hop and washes it in the player's colour, a silhouette
-#     of it over it (TINT_SHADER) at WEAPON_TINT, fading as their tint does.
-#     It used to blink for a second and a half, which read as something wrong
-#     beside the counts' flash; a weapon lost is not marked, as a life is not;
+#   * not the weapon, which had an icon of its own, its round, until it was
+#     taken off: an upgrade is said by the "POWER UP" over the vehicle
+#     (Level3DPreview._crew_pop);
 #   * every icon ringed in white with a thin black line outside it, as the
 #     pops over the stage are (Level3DScorePops): the vehicle and the
 #     prisoner are the forest's green and went into it, and the white alone
@@ -83,19 +79,16 @@ const ICON_HEIGHT := 1.5                # glyphs: the line's height
 const ICON_PIXEL := 1.0                 # frame pixels to an icon's pixel
 const LIFE_SPRITE := "player-green-2.png"
 const POW_SPRITE := "friendly-soldier-green-1.png"
-const GRENADE_SPRITE := "grenade-large.png"
-const MISSILE_SPRITE := "player-missile-1.png"
 const COLOURS := [Level3DFont.WHITE, Level3DFont.GRAY]
 enum { WHITE, GRAY }
 # The glyphs' shadow, under the infinity: white on the font's dark, since
 # stage 1's sand is the font's orange, near enough.
 const SHADOW := Color(0.2, 0.2, 0.2)
-const WEAPON_TINT := 0.8               # the colour's alpha over the icon, at its height
 const OUTLINE := 3.0                    # the icons' white ring, frame px at 100%
 const OUTLINE_LINE := 1.0               # the black line outside it
 const DIM := 0.45                       # a dimmed icon's alpha
 const ROW_GAP := 0.25                   # glyphs between the score's row and the rest's
-# An icon as a silhouette in the colour it is drawn with, for the weapon's.
+# An icon as a silhouette in the colour it is drawn with, for its ring.
 const TINT_SHADER := """
 shader_type canvas_item;
 varying vec4 tint;
@@ -111,11 +104,9 @@ const HOP_TIME := 0.2
 var score := 0
 var lives := 0              # spare lives; -1 for the infinite lives cheat
 var pows := 0
-var has_missiles := false
-var missile_power := 0
 var modes := ""             # "" for none
 var cheats := ""            # the cheats on, "" for none or not shown
-var parts := {"score": true, "lives": true, "pows": true, "weapon": true}
+var parts := {"score": true, "lives": true, "pows": true}
 var bottom := false         # the bottom left corner rather than the top left
 var right := false          # the right-hand corner, the second player's
 # Which of the icons is this player's vehicle: the second's is blue.
@@ -126,16 +117,12 @@ var two_rows := true
 # The player's, its vehicle's: the score flashes in it (ROLL_TIME).
 var colour := Color.WHITE
 var scale_factor := 1.0
-# Level3DIcons.render_all's: {"lives", "pow", "weapons": [4]}, or empty.
+# Level3DIcons.render_all's: {"lives", "pow", ...}, or empty.
 var icons := {}
 
 var _sprites := {}          # sprite name -> Spr, until the icons come
-var _weapon_was := -1       # the weapon's level last shown, -1 before the first
-var _weapon_time := INF     # seconds since an upgrade, as _roll_time
-var _tint_layer: Control    # over the line, the weapon's colour wash
-var _tints: Array = []      # this frame's [texture, rect, region or null, colour]
 var _icon_layer: Control
-var _icon_draws: Array = [] # this frame's icons, as _tints
+var _icon_draws: Array = [] # this frame's [texture, rect, region or null, colour]
 # The icons' rings, under the line: [lit, dimmed], each a CanvasGroup with a
 # Node2D in it drawing this frame's [texture, rect, region or null] of `_rings`.
 var _ring_groups: Array[CanvasGroup] = []
@@ -154,8 +141,7 @@ var _pows_time := INF       # and a prisoner
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# The icons, nearest however the font is drawn (Level3DFont.filter), under
-	# the weapon's wash.
+	# The icons, nearest however the font is drawn (Level3DFont.filter).
 	_icon_layer = Control.new()
 	_icon_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_icon_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -167,29 +153,23 @@ func _init() -> void:
 			else:
 				_icon_layer.draw_texture_rect_region(d[0], d[1], d[2], d[3]))
 	add_child(_icon_layer)
-	_tint_layer = Control.new()
-	_tint_layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_tint_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_tint_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var shader := Shader.new()
 	shader.code = TINT_SHADER
-	_tint_layer.material = ShaderMaterial.new()
-	(_tint_layer.material as ShaderMaterial).shader = shader
-	_tint_layer.draw.connect(_draw_tints)
-	add_child(_tint_layer)
+	var silhouette := ShaderMaterial.new()
+	silhouette.shader = shader
 	for i in 2:
 		var group := CanvasGroup.new()
 		group.z_index = -1
 		group.self_modulate.a = 1.0 if i == 0 else DIM
 		var stamps := Node2D.new()
 		stamps.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		stamps.material = _tint_layer.material
+		stamps.material = silhouette
 		stamps.draw.connect(_draw_rings.bind(stamps, i))
 		group.add_child(stamps)
 		add_child(group)
 		_ring_groups.append(group)
 	var bank := SpriteBank.new(Main.SPRITES)
-	for name in [LIFE_SPRITE, POW_SPRITE, GRENADE_SPRITE, MISSILE_SPRITE]:
+	for name in [LIFE_SPRITE, POW_SPRITE]:
 		_sprites[name] = bank.get_sprite(name)
 
 
@@ -208,10 +188,6 @@ func icon_pixels() -> int:
 
 func show_state() -> void:
 	var new_run := score < _rolled_to
-	var weapon := _weapon_level()
-	if weapon > _weapon_was and _weapon_was >= 0 and not new_run:
-		_weapon_time = 0.0
-	_weapon_was = weapon
 	if new_run:
 		_shown = score
 		_roll_time = INF
@@ -235,16 +211,14 @@ func _process(delta: float) -> void:
 		var t := clampf(_roll_time / ROLL_TIME, 0.0, 1.0)
 		_shown = lerpf(_roll_from, score, 1.0 - (1.0 - t) * (1.0 - t))
 		queue_redraw()
-	if _lives_time < ROLL_TIME + FLASH_FADE or _pows_time < ROLL_TIME + FLASH_FADE 			or _weapon_time < ROLL_TIME + FLASH_FADE:
+	if _lives_time < ROLL_TIME + FLASH_FADE or _pows_time < ROLL_TIME + FLASH_FADE:
 		_lives_time += delta
 		_pows_time += delta
-		_weapon_time += delta
 		queue_redraw()
 
 
 func _draw() -> void:
 	texture_filter = Level3DFont.filter()
-	_tints.clear()
 	_icon_draws.clear()
 	_rings = [[], []]
 	var g := GLYPH * scale_factor
@@ -269,7 +243,6 @@ func _draw() -> void:
 			_measuring = false
 		_line(x, r[0], g, r[1], r[2])
 	var left := MARGIN.x if not right else size.x - MARGIN.x - _measure(rows, g)
-	_tint_layer.queue_redraw()
 	_icon_layer.queue_redraw()
 	for group in _ring_groups:
 		group.get_child(0).queue_redraw()
@@ -305,7 +278,7 @@ func _line(x: float, top: float, g: float, row: float, which := ALL) -> float:
 	var groups := 0
 	var show := parts.duplicate()
 	if which == SCORE:
-		show = {"score": parts.score, "lives": false, "pows": false, "weapon": false}
+		show = {"score": parts.score, "lives": false, "pows": false}
 	elif which == REST:
 		show.score = false
 	if show.score:
@@ -326,14 +299,6 @@ func _line(x: float, top: float, g: float, row: float, which := ALL) -> float:
 		var hop := _hop(_pows_time, g)
 		x = _icon(icons.get("pow"), POW_SPRITE, x, top - hop, row, dim) + g * 0.25
 		x = _text(str(pows), x, y - hop, g, WHITE if pows > 0 else GRAY, 1.0, _flash(_pows_time))
-	if show.weapon:
-		x = _gap(x, g, groups)
-		groups += 1
-		var level := _weapon_level()
-		var rounds: Array = icons.get("weapons", [])
-		x = _icon(rounds[level] if level < rounds.size() else null,
-				MISSILE_SPRITE if has_missiles else GRENADE_SPRITE, x, top - _hop(_weapon_time, g), row, 1.0,
-				_flash_amount(_weapon_time) * WEAPON_TINT)
 	return x
 
 
@@ -346,11 +311,6 @@ func _flash(time: float) -> Color:
 # How much of the player's colour there is `time` seconds after, 1 to 0.
 static func _flash_amount(time: float) -> float:
 	return clampf((ROLL_TIME + FLASH_FADE - time) / FLASH_FADE, 0.0, 1.0)
-
-
-# The grenade 0, the missile 1 and its two upgrades 2 and 3: the icon's index.
-func _weapon_level() -> int:
-	return 1 + missile_power if has_missiles else 0
 
 
 # The ring's white reach and the black line's outside it, frame px.
@@ -378,14 +338,6 @@ func _draw_rings(on: Node2D, which: int) -> void:
 						on.draw_texture_rect_region(icon[0], rect, icon[2], ring[0])
 
 
-func _draw_tints() -> void:
-	for t in _tints:
-		if t[2] == null:
-			_tint_layer.draw_texture_rect(t[0], t[1], false, t[3])
-		else:
-			_tint_layer.draw_texture_rect_region(t[0], t[1], t[2], t[3])
-
-
 # How far up it is `time` seconds after: HOP font pixels and back over HOP_TIME.
 static func _hop(time: float, g: float) -> float:
 	return roundf(sin(PI * clampf(time / HOP_TIME, 0.0, 1.0)) * HOP) * g / 32.0
@@ -404,10 +356,8 @@ func _text(text: String, x: float, y: float, g: float, colour: int, alpha := 1.0
 
 
 # A rendered icon at the line's height, its own proportions kept, or the
-# game's sprite at the glyphs' until the icons are there, and `tint` of the
-# player's colour washed over it. Returns where it ends.
-func _icon(icon: Texture2D, sprite: String, x: float, top: float, row: float, alpha: float,
-		tint := 0.0) -> float:
+# game's sprite at the glyphs' until the icons are there. Returns where it ends.
+func _icon(icon: Texture2D, sprite: String, x: float, top: float, row: float, alpha: float) -> float:
 	# Room for the ring on either side, so that it does not run into the count.
 	var ring := _ring_reach()
 	x += ring
@@ -418,8 +368,6 @@ func _icon(icon: Texture2D, sprite: String, x: float, top: float, row: float, al
 			_icon_draws.append([icon, Rect2(x, top, w, row), null, Color(1, 1, 1, alpha)])
 			if alpha > 0.0:
 				_rings[0 if alpha >= 1.0 else 1].append([icon, Rect2(x, top, w, row), null])
-			if tint > 0.0:
-				_tints.append([icon, Rect2(x, top, w, row), null, Color(colour, tint)])
 		return x + w + ring
 	var s: Spr = _sprites.get(sprite)
 	if s == null:
@@ -431,8 +379,6 @@ func _icon(icon: Texture2D, sprite: String, x: float, top: float, row: float, al
 	_icon_draws.append([s.tex, Rect2(x, top + (row - h) * 0.5, sw, h), s.region, Color(1, 1, 1, alpha)])
 	if alpha > 0.0:
 		_rings[0 if alpha >= 1.0 else 1].append([s.tex, Rect2(x, top + (row - h) * 0.5, sw, h), s.region])
-	if tint > 0.0:
-		_tints.append([s.tex, Rect2(x, top + (row - h) * 0.5, sw, h), s.region, Color(colour, tint)])
 	return x + sw + ring
 
 

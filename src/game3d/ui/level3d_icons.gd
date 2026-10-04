@@ -1,11 +1,7 @@
 # The HUD's icons (Level3DHud), rendered from the preview's own models rather
 # than cut from the game's sprite sheets: the vehicle the preview drives for
-# the lives, the model-sheet trooper as a prisoner for the prisoners aboard,
-# and the rounds of the four weapon mounts on the vehicle's hull -- the
-# mortar's bomb, the missile, the heavy missile, the staged one, the weapon's
-# four levels (Level3DLauncher.FITS) -- for the weapon. The rounds, not the
-# mounts: at this size the mounts came out four alike columns, and each round
-# has an outline of its own, which says the level without anything beside it.
+# the lives and the model-sheet trooper as a prisoner for the prisoners
+# aboard. The weapon had one too, its round, until the HUD stopped showing it.
 #
 # Each model is put in a SubViewport of its own, with a world of its own so
 # that none of the level is in it, and seen in three quarters, all from the
@@ -37,9 +33,6 @@ const POW_FACING := PI / 2.0          # +Z, his front, onto +X
 const ELEVATION := deg_to_rad(38.0)
 const AZIMUTH := deg_to_rad(-50.0)    # of the camera, round +Y from +Z
 const HEADING := deg_to_rad(165.0)
-# The rounds are seen as the vehicle is, and as wide as two of the line's
-# height at most -- a missile is five or six times as long as thick.
-const ROUND_ASPECT := 2.0
 const PAD := 1                        # pixels round the model, for the line
 const PROBE := 256                    # the loose frame's size, to measure on
 const ALPHA_CUT := 0.5
@@ -50,7 +43,7 @@ var shade := 0.3
 
 # Every icon at `height` pixels (the widest may be up to `max_aspect` times
 # that across), for `vehicle` -- Level3DBtr.VEHICLES' entry: {"lives": Texture,
-# "pow": Texture, "weapons": [Texture x4]}, and "lives_2" too, the vehicle
+# "pow": Texture}, and "lives_2" too, the vehicle
 # turned by Level3DBtr.tint's `hues` (min, max, shift), when they are given:
 # the second player's. Takes a few frames.
 func render_all(vehicle: Dictionary, height: int, hues := Vector3.ZERO) -> Dictionary:
@@ -101,44 +94,7 @@ func render_all(vehicle: Dictionary, height: int, hues := Vector3.ZERO) -> Dicti
 				player.play(POW_POSE)
 				player.seek(POW_POSE_AT, true)
 				player.pause())
-
-	# Each weapon as its round -- the mortar's bomb, the missile, the heavy
-	# missile, the staged one -- off the mount's pivot.
-	var weapons: Array[Texture2D] = []
-	var source: Node3D = scene.instantiate()
-	for fit in Level3DLauncher.FITS:
-		weapons.append(await _render_round(source, prefix, fit, height))
-	source.free()
-	icons["weapons"] = weapons
 	return icons
-
-
-# One of Level3DLauncher.FITS' rounds, copied off `source`'s pivot, laid level
-# -- its axis, tail to nose, turned onto +X -- and then turned by HEADING, its
-# nose where the vehicle's is.
-func _render_round(source: Node3D, prefix: String, fit: Dictionary, height: int) -> Texture2D:
-	var named := func(key: String) -> String: return prefix + String(fit[key]).trim_prefix("BTR_")
-	var pivot := source.find_child(named.call("pivot"), true, false) as Node3D
-	if pivot == null:
-		return null
-	var round_prefix: String = named.call("round")
-	var nose := pivot.get_node_or_null(NodePath(named.call("nose"))) as Node3D
-	var tail := pivot.get_node_or_null(NodePath(named.call("tail"))) as Node3D
-	var holder := Node3D.new()
-	for child in pivot.get_children():
-		if child is MeshInstance3D and String(child.name).begins_with(round_prefix):
-			holder.add_child(child.duplicate())
-	if holder.get_child_count() == 0:
-		holder.free()
-		return null
-	var axis := Vector3.RIGHT
-	if nose != null and tail != null and not nose.position.is_equal_approx(tail.position):
-		axis = (nose.position - tail.position).normalized()
-	holder.basis = Basis(Quaternion(axis, Vector3.RIGHT))
-	var level := Node3D.new()
-	level.add_child(holder)
-	level.rotation.y = HEADING
-	return await render(level, height, ROUND_ASPECT)
 
 
 # The model under a pivot that turns it to face +X, then HEADING on.

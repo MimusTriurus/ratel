@@ -142,7 +142,6 @@ var _hud: CheckBox
 var _hud_score: CheckBox
 var _hud_lives: CheckBox
 var _hud_pows: CheckBox
-var _hud_weapon: CheckBox
 var _hud_modes: CheckBox
 var _hud_pad_arrow: CheckBox
 var _hud_help: CheckBox
@@ -412,7 +411,6 @@ func refresh() -> void:
 	_hud_score.set_pressed_no_signal(settings.hud_score)
 	_hud_lives.set_pressed_no_signal(settings.hud_lives)
 	_hud_pows.set_pressed_no_signal(settings.hud_pows)
-	_hud_weapon.set_pressed_no_signal(settings.hud_weapon)
 	_hud_modes.set_pressed_no_signal(settings.hud_modes)
 	_hud_pad_arrow.set_pressed_no_signal(settings.hud_pad_arrow)
 	_hud_help.set_pressed_no_signal(settings.hud_help)
@@ -451,7 +449,7 @@ func refresh() -> void:
 	_mixer_mode.select(SOUND_MODES.find(settings.sound_mode))
 	_refresh_mixer()
 	# Greyed out, not hidden, with the HUD off: what it would show stays set.
-	for widget in [_hud_score, _hud_lives, _hud_pows, _hud_weapon, _hud_modes, _hud_cheats, _hud_pad_arrow,
+	for widget in [_hud_score, _hud_lives, _hud_pows, _hud_modes, _hud_cheats, _hud_pad_arrow,
 			_hud_help, _hud_hints, _banner_stage, _banner_warning, _banner_mission, _hud_corner, _hud_rows, _hud_scale]:
 		widget.disabled = not settings.hud
 	for action in _key_buttons:
@@ -547,7 +545,6 @@ func _make_interface_tab() -> Control:
 	_hud_score = _check(tab, "Score", func(on: bool): settings.hud_score = on)
 	_hud_lives = _check(tab, "Lives", func(on: bool): settings.hud_lives = on)
 	_hud_pows = _check(tab, "Prisoners aboard", func(on: bool): settings.hud_pows = on)
-	_hud_weapon = _check(tab, "Weapon", func(on: bool): settings.hud_weapon = on)
 	_hud_modes = _check(tab, "Driving and firing modes", func(on: bool): settings.hud_modes = on)
 	_note(tab, "Off: a mode is shown for a couple of seconds when V or M changes it.")
 	_hud_cheats = _check(tab, "Active cheats", func(on: bool): settings.hud_cheats = on)
