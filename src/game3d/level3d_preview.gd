@@ -93,7 +93,7 @@
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
 #            [--at <x,z>] [--free] [--hold <keys>@<from>-<to>[,...]] [--weapon <0-3>]
 #            [--intro] [--pows <n>] [--score <n>] [--summary <seconds>] [--strip <frames>,<seconds>[,<px>]] [--die <seconds>]
-#            [--game-over <n>[,<n>][:<total>]] [--round <n>] [--upgrades <id>,...]
+#            [--game-over <n>[,<n>][:<total>]] [--round <n>] [--upgrades <id>,...] [--shop]
 #
 # The bunkers' guns, the enemy soldiers, the two boats on the river, the two
 # brown tanks and the boss's four heavy tanks at the top of the stage fight back
@@ -124,7 +124,8 @@
 # second (_start_round): the summary's close, or ROUND_HOLD after the boss
 # with none, goes on to the next. --upgrades starts every player with those
 # of the shop's upgrades (Level3DShopCatalog's ids: twin, armor, zip, nitro,
-# radar, mines, loopholes, airstrike), their parts on the jeep.
+# radar, mines, loopholes, airstrike), their parts on the jeep. --shop opens
+# the shop between rounds at once (Level3DShop), as if a round were won.
 # --summary shows the mission's summary that many seconds in, as if the boss
 # were beaten. --strip takes that many
 # frames instead of one, that many seconds apart from the first, and lays the
@@ -467,6 +468,7 @@ func _ready() -> void:
 		Level3DMap.hard = settings.hard or _round > 1
 		for c in crews:
 			c.upgrades = _flag_upgrades()
+			c.device = _first_device(c.upgrades)
 		_dress_crews()
 		# intro_song, IntroMapMode's: the start jingle running on into stage 1.
 		Level3DAudio.play_music("intro")
@@ -2276,7 +2278,7 @@ func _make_hud() -> void:
 	var crosshair := Level3DCrosshair.new()
 	crosshair.wanted = _crosshair_wanted
 	crosshair.hide_pointer = func(): return _title != null and _title.pointer_hidden() \
-			or _menu != null and _menu.pointer_hidden() or _game_over_screen.pointer_hidden()
+			or _menu != null and _menu.pointer_hidden() or _game_over_screen.pointer_hidden() 			or _shop.pointer_hidden()
 	layer.add_child(crosshair)
 	# Over the HUD, a layer of its own after it; the title and the Escape menu
 	# are put over it again (_ready, _make_menu).
@@ -2285,6 +2287,10 @@ func _make_hud() -> void:
 	_game_over_screen.continue_game = _continue_game
 	_game_over_screen.end_game = _end_game
 	add_child(_game_over_screen)
+	# The shop between rounds, over the HUD as well (Level3DShop).
+	_shop = Level3DShop.new()
+	_shop.done = _shop_done
+	add_child(_shop)
 
 
 # The lines' corner and size, from Level3DSettings (Level3DHud draws them),
@@ -2329,6 +2335,7 @@ func _render_icons() -> void:
 			c.hud.icons = rendered
 			c.hud.queue_redraw()
 		_summary.icons = rendered
+		_shop.icons = rendered
 
 
 const FIRING_NAMES := ["CLASSIC", "CURSOR", "COMBINED"]
@@ -3378,13 +3385,14 @@ func _unhandled_input(event: InputEvent) -> void:
 # the grenade, nothing bought -- both players', both in again.
 # `jingle`: the start's intro_song, for a game from the title screen.
 func _restart(jingle := false) -> void:
+	_shop.close()
 	_round = _first_round()
 	for c in crews:
 		c.lives = EXTRA_LIVES
 		c.score = 0
 		c.lives_bought = 0
 		c.upgrades = _flag_upgrades()
-		c.device = ""
+		c.device = _first_device(c.upgrades)
 		c.carrier.reset()
 	_start_round(jingle)
 	_saved = _capture()
@@ -3419,6 +3427,15 @@ static func _flag_upgrades() -> Array[String]:
 		for id in args[at + 1].split(",", false):
 			out.append(id)
 	return out
+
+
+# The device that goes in the slot of a player with `upgrades`: the first of
+# them in the shop's order, "" for none.
+static func _first_device(upgrades: Array[String]) -> String:
+	var kit := Level3DRun.Kit.new()
+	kit.upgrades = upgrades
+	var devices := Level3DShopCatalog.devices(kit)
+	return devices[0] if not devices.is_empty() else ""
 
 
 # Each player's jeep with what he has bought on it (Level3DBtr.set_upgrades).
@@ -3459,8 +3476,34 @@ func _restore(run: Level3DRun) -> void:
 	_show_state()
 
 
-# The boss beaten and its summary closed: the stage again, the next round.
+# The boss beaten and its summary closed: the shop (Level3DShop), the stage
+# paused under it, and from it the next round.
 func _round_won() -> void:
+	_open_shop()
+
+
+var _shop: Level3DShop
+
+# The shop over the stage for the run as it stands: `at_once` with no fade
+# from the stage, for --shop.
+func _open_shop(at_once := false) -> void:
+	_shop.settings = settings
+	_shop.inputs.assign(crews.map(func(c: Crew): return c.input))
+	_shop.colours.assign(crews.map(func(c: Crew): return c.hud.colour))
+	_shop.tints.assign(crews.map(func(c: Crew): return BLUE_HUES if c.index > 0 else Vector3.ZERO))
+	_shop.icons = crews[0].hud.icons
+	get_tree().paused = true
+	Level3DAudio.fade_music(Level3DShop.FADE_OUT)
+	_shop.open(_capture(), at_once)
+
+
+# Every player ready in the shop, under its black: the run as bought, and
+# the stage again, its next round. What it starts with is what CONTINUE
+# goes back to.
+func _shop_done(run: Level3DRun) -> void:
+	get_tree().paused = false
+	_gun_locked = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	_restore(run)
 	_round += 1
 	_start_round()
 	_saved = _capture()
@@ -3727,6 +3770,10 @@ func _screenshot_mode() -> void:
 		else:
 			crews[0].rocket_wanted = INF
 		args = args.slice(0, rocket) + args.slice(rocket + 2)
+	var shop := args.find("--shop")
+	if shop >= 0:
+		_open_shop(true)
+		args.remove_at(shop)
 	var game_over := args.find("--game-over")
 	if game_over >= 0:
 		_test_game_over(args[game_over + 1])

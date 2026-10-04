@@ -109,8 +109,39 @@ off, the same stage starts again from the Chinook as its next round, STAGE 1-2,
 1-3 and so on (`_round_won`, `_start_round`). From the second round on it plays
 the level file's hard list of enemies (`Level3DMap.hard`), as the first already
 does at the title's hard. `--round <n>` starts every run on that round. The
-shop between the rounds is planned in `docs/shop-plan.md`; its steps and their
-state are in `docs/shop-implementation.md`.
+plan behind it is `docs/shop-plan.md`; its steps and their state are in
+`docs/shop-implementation.md`.
+
+**The shop** (`Level3DShop`, `src/game3d/shop/level3d_shop.gd`) stands between
+the rounds: the summary closed, the stage goes to black and pauses, and the
+shop comes up out of it. The players' jeeps stand on turntables at the frame's
+edges with what they have bought on them; between them the goods, a matrix out
+of `Level3DShopCatalog` (`level3d_shop_catalog.gd`) -- weapons, protection,
+devices, three of each, and a life across the bottom. Both players shop at
+once, each with a frame of his own colour for a cursor, the first's outside
+the second's on one tile. A tile says on each player's side what it is to him:
+its price, red when he is short of it, OWNED, IN SLOT, MAX.
+
+- Fire buys (the gun, Enter or Space, a left click, a pad's A); fire on a
+  device already owned puts it in the slot. The rocket (P, a right click,
+  right Ctrl, a pad's B) takes back the last of that tile bought in this
+  visit. Fire on READY under the matrix is a player's word that he is done;
+  the next round starts, from the Chinook, when every player has given it.
+- The jeep turns on its table to show the part its player's tile is about,
+  the part on trial standing on it see-through and pulsing.
+- Escape does nothing there: the Escape menu would unpause the stage under it.
+- Everything is on sale at once; price is the balance. Lives cost 15000, each
+  one 5000 more, up to 9; the launcher's steps 10000, 15000, 20000.
+- `--shop` opens it at once over the stage, as if a round were won;
+  `src/game3d/shop/level3d_shop.tscn` runs it on its own (F6) with made-up
+  players, to lay it out.
+
+**The upgrades on the jeep.** `jackal_jeep.py`'s `upgrades()` builds a part for
+each that shows -- the twin gun, the armour, the spares' box, the nitro, the
+radar, the mines, the rifles' rests -- in a collection of its own, exported
+with the jeep and hidden; `Level3DBtr.set_upgrades` shows the bought ones, in
+the shop and on the stage. `--upgrades twin,radar,...` starts every player
+with them.
 
 What a round leaves a player for the next is the run's (`Level3DRun`): his
 score, his lives, his launcher's step and what the shop sold him. What lives in
