@@ -4,7 +4,7 @@
 shader_type spatial;
 render_mode unshaded, cull_front, shadows_disabled;
 
-#include "res://src/tools/level3d_hull.gdshaderinc"
+#include "res://src/game3d/shaders/level3d_hull.gdshaderinc"
 
 void vertex() {
 	vec3 corner = VERTEX;

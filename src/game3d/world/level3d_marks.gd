@@ -16,7 +16,7 @@ extends RefCounted
 # The last SOOT_KEPT soots and POCKS_KEPT pocks are kept, the oldest going
 # first, the pocks apart so that a burst does not wipe out a rocket's soot.
 
-const SHADER := preload("res://src/tools/level3d_marked.gdshader")
+const SHADER := preload("res://src/game3d/shaders/level3d_marked.gdshader")
 # What a round or a rocket that strikes them marks: the kinds of
 # level3d_preview.gd's _kind_of and _add_targets.
 const KINDS: Array[String] = ["wall", "building"]

@@ -24,7 +24,7 @@ extends RefCounted
 # both ends, the parts that have no lines at all (Level3DHull); not an open
 # edge, nor one shared by more than two faces.
 
-const SHADER := preload("res://src/tools/level3d_crease.gdshader")
+const SHADER := preload("res://src/game3d/shaders/level3d_crease.gdshader")
 const ANGLE := deg_to_rad(40.0)
 const WIDTH := 0.011  # OUTLINE, docs/cel-shading.md, section 6
 const LIFT := 0.002

@@ -119,7 +119,7 @@ func _bake(index: int, out_dir: String, chunk: int, water: bool,
 	MapIO.load_stage(index, stage, sizes)
 
 	# Main owns the tile sheets, and load_tiles is the only thing needed off it
-	# -- as in src/tools/map_editor.gd. Never in the tree, so nothing else runs.
+	# -- as in src/editors/map_editor.gd. Never in the tree, so nothing else runs.
 	var main := Main.new()
 	main.load_tiles(index, stage)
 	main.free()

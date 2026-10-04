@@ -1,6 +1,6 @@
 # TODO — the map editor
 
-State: `src/tools/map_editor.tscn` edits all four things a stage file holds —
+State: `src/editors/map_editor.tscn` edits all four things a stage file holds —
 the tile grid, the collision grid, the spawn triggers and the destruction
 groups — and writes `assets/maps/stage-N.json` back with a diff no larger than
 the edit. `FlowField` rebuilds `dirs-N.dat` from the collision grid. Four checks

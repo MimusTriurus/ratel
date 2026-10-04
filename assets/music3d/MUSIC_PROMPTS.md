@@ -1,6 +1,6 @@
 # Музыка 3D-превью: промпты для SUNO
 
-Пять частей музыки из `Level3DAudio.MUSIC` (`src/tools/level3d_audio.gd`), по
+Пять частей музыки из `Level3DAudio.MUSIC` (`src/game3d/level3d_audio.gd`), по
 папке на режим: `assets/music3d/classic/` — оригинал с NES, не меняется;
 `assets/music3d/modern/` — то, что заменяется, файл за файлом, под тем же
 именем. Звуковые эффекты описаны в

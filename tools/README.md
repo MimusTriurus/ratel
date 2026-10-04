@@ -77,8 +77,8 @@ WindowsApps). Blender — Store-сборка, запускается через
 
 ## Не здесь
 
-Программы, а не скрипты, лежат в `src/tools/` и открываются как сцены:
-`map_editor.tscn` (2D-редактор карт), `level_editor.tscn` (редактор
-3D-уровней), `level3d_preview.tscn` (3D-превью игры). Исходники музыки
+Программы, а не скрипты, открываются как сцены: `src/editors/map_editor.tscn`
+(2D-редактор карт), `src/editors/level_editor.tscn` (редактор 3D-уровней),
+`src/game3d/level3d_preview.tscn` (3D-превью игры). Исходники музыки
 (`build/music3d_pogonya/`, `build/music3d_boss/`) лежат в `build/`, который
 не попадает в git.

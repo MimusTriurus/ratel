@@ -1,7 +1,7 @@
 # The level editor: a program of its own for the 3D levels, not a plugin in
 # Godot's editor (docs/level-editor-plan.md, part 2).
 #
-#     godot --path . src/tools/level_editor.tscn
+#     godot --path . src/editors/level_editor.tscn
 #
 # New makes a level of a given length, the game's 64 tiles across, with the
 # Chinook that flies the player in; Open reads any level file under
@@ -59,8 +59,8 @@
 #
 # Level -> Build saves, then runs the Blender builder in the background on
 # the level file, into build/level3d/<name>.glb, and imports what it made;
-# Play opens the preview on the level and that glb (src/tools/level3d_preview
-# .tscn, --file and --level), building it first when the level is newer, and
+# Play opens the preview on the level and that glb (src/game3d/
+# level3d_preview.tscn, --file and --level), building it first when the level is newer, and
 # the editor waits minimised until the game is left (--editor: its menu's
 # exit is "back to the editor"). Check lists what Level3DIO.check finds, and on
 # stage 1 Rebuild flow field writes its assets/level3d/dirs-0.dat from the
@@ -117,7 +117,7 @@ const SNAP := 0.05
 const BASE_BLEND := "res://resources/3d/jackal_stage1_lowpoly.blend"
 const BUILDER := "res://tools/blender/build_level.py"
 const BUILD_DIR := "res://build/level3d/"
-const PREVIEW := "res://src/tools/level3d_preview.tscn"
+const PREVIEW := "res://src/game3d/level3d_preview.tscn"
 
 var doc := {}
 var path := ""

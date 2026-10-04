@@ -2,7 +2,7 @@
 
 Как был сделан `resources/3d/jackal_boat_lowpoly.blend` — боевой катер по листу
 «Boat (combat speedboat)» — и как он попал в 3D-превью
-(`src/tools/level3d_preview.tscn`) как `GreenBoat` игры. Документ описывает
+(`src/game3d/level3d_preview.tscn`) как `GreenBoat` игры. Документ описывает
 катер. Общие для всех водных юнитов шаги собраны в раздел 11.
 
 Суша здесь та же, что у солдата (`docs/soldier-pipeline.md`): лист, скрипт в
@@ -217,7 +217,7 @@
 
 ## 9. В превью
 
-Код — `Level3DBoats` (`src/tools/level3d_boats.gd`). Создаётся в
+Код — `Level3DBoats` (`src/game3d/units/level3d_boats.gd`). Создаётся в
 `Level3DPreview._add_guns`, тикает в `_physics_process`, сбрасывается по R.
 Правила — `jackal.GreenBoat` игры, в пикселях карты и тиках:
 
@@ -284,7 +284,7 @@
 Проверка — снимками превью:
 
 ```bash
-godot --path . --windowed --resolution 1280x720 src/tools/level3d_preview.tscn -- --shot out.png x,z zoom top|tilt seconds --at x,z --immortal --fire x,z --rocket x,z@s
+godot --path . --windowed --resolution 1280x720 src/game3d/level3d_preview.tscn -- --shot out.png x,z zoom top|tilt seconds --at x,z --immortal --fire x,z --rocket x,z@s
 ```
 
 `verbose` в режиме снимка печатает появление, выстрелы (с координатами дула),

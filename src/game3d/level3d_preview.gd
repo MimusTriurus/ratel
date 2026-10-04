@@ -1,7 +1,7 @@
 # A look at the low-poly 3D remake of stage 1 inside Godot, on its own scene
 # rather than in the game, with the BTR driving on it:
 #
-#     godot --path . src/tools/level3d_preview.tscn
+#     godot --path . src/game3d/level3d_preview.tscn
 #
 # Nothing here is part of the game, which stays 2D. The level is built from
 # its level file, assets/level3d/stage-0.json, by tools/blender/build_level.py
@@ -88,7 +88,7 @@
 # Like the map editor it can render one view and quit (a real window is needed,
 # --headless has no framebuffer to read back):
 #
-#     godot --path . --windowed --resolution 1280x720 src/tools/level3d_preview.tscn \
+#     godot --path . --windowed --resolution 1280x720 src/game3d/level3d_preview.tscn \
 #         -- --shot out.png <position 0-1 or x,z> <zoom> <top|tilt> [<seconds> <x,z> ...] \
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
 #            [--at <x,z>] [--free] [--hold <keys>@<from>-<to>[,...]] [--weapon <0-3>]
@@ -137,7 +137,7 @@
 # (level3d_rescue.gd).
 #
 # --file <res:// path> plays another level file than stage 1's, one the level
-# editor made (src/tools/level_editor.tscn), with --level its built glb: its
+# editor made (src/editors/level_editor.tscn), with --level its built glb: its
 # grid, its entities, its frame, and a start and a landing as far from its
 # south end as stage 1's are from its own. Stage 1's own buildings that are
 # blown up are not in it; its Gate, Barracks* and Hangar objects are.
@@ -185,9 +185,9 @@ extends Node3D
 
 const LEVEL_PATH := "res://resources/3d/jackal_stage1.glb"
 var level_path := LEVEL_PATH
-const OCEAN_SHADER := preload("res://src/tools/level3d_ocean.gdshader")
-const Btr := preload("res://src/tools/level3d_btr.gd")
-const SCREEN_SHADER := preload("res://src/tools/level3d_screen.gdshader")
+const OCEAN_SHADER := preload("res://src/game3d/shaders/level3d_ocean.gdshader")
+const Btr := preload("res://src/game3d/units/level3d_btr.gd")
+const SCREEN_SHADER := preload("res://src/game3d/shaders/level3d_screen.gdshader")
 
 # From the Blender scene: J_Sun points along this (Blender axes), strength 3.
 const SUN_DIRECTION_BLENDER := Vector3(0.4265, -0.5212, -0.7392)
@@ -1156,8 +1156,8 @@ func _cast_both_sides_of_planes(root: Node) -> void:
 const GROUND_MATERIALS: Array[String] = ["J_Sand", "J_BeachBrown", "J_BeachGreen", "J_ForestFloor",
 		"J_Earth", "J_RiverBed"]
 const PAINTED_ON_GROUND: Array[String] = ["Shore_Lines", "HangarPad_Dash"]
-const GROUND_SHADER := preload("res://src/tools/level3d_ground.gdshader")
-const GROUND_CONTOUR_SHADER := preload("res://src/tools/level3d_ground_contour.gdshader")
+const GROUND_SHADER := preload("res://src/game3d/shaders/level3d_ground.gdshader")
+const GROUND_CONTOUR_SHADER := preload("res://src/game3d/shaders/level3d_ground_contour.gdshader")
 var _ground_materials: Array[ShaderMaterial] = []
 
 #
@@ -3386,7 +3386,7 @@ func _jump_to_boss() -> void:
 # the look of a strike go by. Needs no window -- physics runs headless -- so it
 # is the check for _add_collision:
 #
-#     godot --path . --headless src/tools/level3d_preview.tscn -- --obstacle-map out.png
+#     godot --path . --headless src/game3d/level3d_preview.tscn -- --obstacle-map out.png
 const OBSTACLE_STEP := 0.25
 const OBSTACLE_COLOURS := {
 	"ground": Color(0.62, 0.58, 0.50), "water": Color(0.15, 0.35, 0.85),

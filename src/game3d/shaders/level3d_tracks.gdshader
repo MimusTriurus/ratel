@@ -12,7 +12,7 @@ shader_type spatial;
 render_mode blend_mul, unshaded, cull_disabled, depth_draw_never, shadows_disabled;
 
 // Not over a crater's hole, where the ground they lie on is gone.
-#include "res://src/tools/level3d_holes.gdshaderinc"
+#include "res://src/game3d/shaders/level3d_holes.gdshaderinc"
 
 uniform float now = 0.0;
 uniform float hold = 1.667;

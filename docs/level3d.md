@@ -9,7 +9,7 @@ Moved out of `CLAUDE.md`. The format, decisions and stages are in
 `assets/level3d/stage-N.json` is what the 3D preview plays and what the
 Blender builder is to build from — the start of the level editor in
 `docs/level-editor-plan.md`, which has the format, the decisions and the
-stages. `Level3DIO` (`src/tools/level3d_io.gd`) reads and writes it with a
+stages. `Level3DIO` (`src/game3d/level3d_io.gd`) reads and writes it with a
 fixed layout, as `MapIO` does. It holds the gameplay grid (`nav`, in the
 `types` legend), the destruction groups, the triggers of both difficulties
 as one ordered list of `entities` (metres, centre of the footprint, with the
@@ -35,11 +35,11 @@ godot --path . --headless --script tools/verify_level3d.gd
 
 The ground is in the file too: land polygons along the brow, water polygons
 along the waterline, a measured slope profile between them, and forest
-polygons with a scatter rule (`Level3DTerrain`, `src/tools/level3d_terrain.gd`). The polygons are traced off two
+polygons with a scatter rule (`Level3DTerrain`, `src/game3d/world/level3d_terrain.gd`). The polygons are traced off two
 rasters the file names, `assets/level3d/rasters/stage-N-ground.png` (red land,
 blue water, half blue a river, green forest) and `-height.png` (the rise of
 the ground, 5 cm a step), which are what the level editor paints and the
-source from now on (`Level3DGround`, `src/tools/level3d_ground.gd`, part 2 of
+source from now on (`Level3DGround`, `src/game3d/world/level3d_ground.gd`, part 2 of
 the plan); `verify_level3d.gd` checks that the two still agree, and
 `tools/level_ground_rasters.gd -- N` gave stage 0 its rasters off its
 polygons, once. Stage 0's was traced off the
@@ -105,7 +105,7 @@ blender-launcher -b build/level3d/jackal_stage1_gen.blend --python tools/blender
 
 ## The level editor
 
-The level editor is a program of its own, `src/tools/level_editor.tscn`
+The level editor is a program of its own, `src/editors/level_editor.tscn`
 (`level_editor.gd`; `Level3DGroundView` draws its ground, `LevelEditorItems`
 what stands on it): File -> New, Open, Save, and four modes. Ground paints
 land, sea, river, forest and the rise of the ground; Nav paints the grid;
@@ -123,7 +123,7 @@ a drag from end to end, and walls as paths, a click to a point -- straight
 or smooth, open or closed, through gates (`"paths"` in the file, with what
 they make, their runs and merlons, kept beside them as the ground's
 polygons are, so that the builder builds the curve the editor drew) -- laid
-out as stage 1's are (`Level3DStructures`, `src/tools/level3d_structures.gd`);
+out as stage 1's are (`Level3DStructures`, `src/game3d/world/level3d_structures.gd`);
 a picked one has handles on its points, and a bridge's end by its handle
 lays its piers out again; a gate put down by a path goes into it, a path
 through a gate follows it, and a gate deleted closes the wall; a GATE entity
@@ -153,7 +153,7 @@ without anyone at it -- with a window it also writes what it drew to
 `build/level_editor/`, and `-- --build` builds through the menu too:
 
 ```bash
-godot --path . src/tools/level_editor.tscn
+godot --path . src/editors/level_editor.tscn
 ```
 
 ```bash

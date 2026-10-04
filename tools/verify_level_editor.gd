@@ -1,4 +1,4 @@
-# Drives the level editor (src/tools/level_editor.tscn) without anyone at it:
+# Drives the level editor (src/editors/level_editor.tscn) without anyone at it:
 # a new level, a stroke of every brush, undo and redo, a save, and the file
 # read back.
 #
@@ -45,7 +45,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	var editor: Node3D = (load("res://src/tools/level_editor.tscn") as PackedScene).instantiate()
+	var editor: Node3D = (load("res://src/editors/level_editor.tscn") as PackedScene).instantiate()
 	root.add_child(editor)
 	await process_frame
 	var shots := DisplayServer.get_name() != "headless"

@@ -1513,7 +1513,7 @@ func _toon_wind_shader(still: Shader) -> Shader:
 	if not _wind_shaders.has(still):
 		var shader := Shader.new()
 		shader.code = still.code.replace("shader_type spatial;\n", "shader_type spatial;\n"
-				+ "#include \"res://src/tools/level3d_wind.gdshaderinc\"\n").replace("void fragment() {",
+				+ "#include \"res://src/game3d/shaders/level3d_wind.gdshaderinc\"\n").replace("void fragment() {",
 				"void vertex() {\n\tVERTEX = wind_moved(VERTEX, MODEL_MATRIX);\n}\nvoid fragment() {")
 		_wind_shaders[still] = shader
 	return _wind_shaders[still]

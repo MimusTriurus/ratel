@@ -1,4 +1,4 @@
-# Checks the 3D preview's sound (src/tools/level3d_audio.gd) in its three
+# Checks the 3D preview's sound (src/game3d/level3d_audio.gd) in its three
 # modes. Each mode's folder, assets/sfx3d/original/, classic/ and modern/,
 # holds nothing that is no sound's in Level3DAudio.SOUNDS; the original's
 # must be what tools/sfx3d_classic.gd made, <name>_0.ogg alone, the sound's

@@ -36,7 +36,7 @@ they must come out identical. See Image backdrops.
 godot --path . --windowed --resolution 1280x720 --script tools/verify_backdrop.gd
 ```
 
-`src/tools/map_editor.tscn` shows a stage the way the game draws it, with the
+`src/editors/map_editor.tscn` shows a stage the way the game draws it, with the
 collision types, destruction groups and spawn triggers over the top — including
 the row each trigger actually fires on, which is the thing about the map format
 that is impossible to see in the game. It edits all four things a stage file
@@ -47,19 +47,19 @@ footprint, so a group that has drifted off that cell silently fires group 0
 instead:
 
 ```bash
-godot --path . src/tools/map_editor.tscn
+godot --path . src/editors/map_editor.tscn
 ```
 
 It can also render one view and quit, which is how it gets checked (a real
 window is required, `--headless` has no framebuffer to read back):
 
 ```bash
-godot --path . --windowed --resolution 1280x720 src/tools/map_editor.tscn -- --shot out.png 3 0.6 150 "tiles,overlay,types,triggers"
+godot --path . --windowed --resolution 1280x720 src/editors/map_editor.tscn -- --shot out.png 3 0.6 150 "tiles,overlay,types,triggers"
 ```
 
 ## Data
 
-Stage maps are `assets/maps/stage-N.json`, read by `MapIO` (`src/core/map_io.gd`)
+Stage maps are `assets/maps/stage-N.json`, read by `MapIO` (`src/game2d/core/map_io.gd`)
 into a `Stage`. One file holds everything authored about a stage:
 
 - `types` — the collision grid, one character per tile (`#` solid, `.` empty,

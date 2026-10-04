@@ -40,7 +40,7 @@ extends RefCounted
 # The hull's material's name ends as the glbs' did, so that what passes the
 # contour by -- the two-tone light (_toon), the tanks' charring -- still does.
 const HULL_NAME := "Hull_Contour"
-const SHADER := preload("res://src/tools/level3d_hull.gdshader")
+const SHADER := preload("res://src/game3d/shaders/level3d_hull.gdshader")
 # How far a part's line may reach, as a share of the part's size: a part
 # shrinking to nothing takes its line with it (level3d_hull.gdshaderinc).
 const REACH := 1.0 / 6.0

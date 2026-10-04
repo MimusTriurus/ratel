@@ -31,8 +31,8 @@ extends RefCounted
 #
 # Smooth, or stepped to STEPPED_FPS (stepped), for all of them at once.
 
-const SHADER := preload("res://src/tools/level3d_wind.gdshader")
-const HULL_SHADER := preload("res://src/tools/level3d_hull_wind.gdshader")
+const SHADER := preload("res://src/game3d/shaders/level3d_wind.gdshader")
+const HULL_SHADER := preload("res://src/game3d/shaders/level3d_hull_wind.gdshader")
 # Held poses, this many a second: a cartoon's twos at 24 would be 12; the
 # plants are scenery, and slower reads as more deliberate.
 const STEPPED_FPS := 8.0

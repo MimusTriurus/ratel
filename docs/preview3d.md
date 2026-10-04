@@ -1,13 +1,13 @@
 # The 3D preview
 
-Moved out of `CLAUDE.md`. `src/tools/level3d_preview.tscn` is the project's main
+Moved out of `CLAUDE.md`. `src/game3d/level3d_preview.tscn` is the project's main
 scene. Every command-line option is in `preview3d-options.md`; its sound is in
 `audio3d.md`.
 
 ## Title screen, settings and light
 
 The 3D preview opens on a title screen, `Level3DTitle`
-(`src/tools/level3d_title.gd`): the 2D game's title art and jeep cursor,
+(`src/game3d/ui/level3d_title.gd`): the 2D game's title art and jeep cursor,
 laid out as `IntroMode` lays them out, with 1 player, 2 players, the
 difficulty, the settings and quit, in the HUD's font, over the stage with
 the tree paused. Over the sun is the game's name, RATEL SQUAD
@@ -28,7 +28,7 @@ it as "Custom". The menu is in English, drawn in the HUD's font from the
 .ttf files its sheets were baked from: Press Start 2P (scaled by 2/3 to fit
 the panels) for both classic styles, Black Ops One for modern.
 
-The stage's light is a preset, `Level3DLighting` (`src/tools/level3d_lighting.gd`):
+The stage's light is a preset, `Level3DLighting` (`src/game3d/look/level3d_lighting.gd`):
 day, Blender's light and the default, or golden hour, dusk and sunrise, the
 title splash's palette as far as a stage can be read in it (Graphics -> Light,
 or `--light day|golden|dusk|sunrise`, which a --shot takes too). The time of
@@ -42,7 +42,7 @@ day. Over the Chinook the camera follows the jeeps in as they go
 over a few more low rocks and two palms (`SCATTER`, `SCATTER_PALMS`) -- not in
 `ROCKS`, which the jeeps' way goes round. Its dust is one cloud a source --
 each jeep, the Chinook's wash, each gust -- in the models' look
-(`Level3DCelCloud`, `src/tools/level3d_cel_cloud.gd`, a port of the tank
+(`Level3DCelCloud`, `src/game3d/fx/level3d_cel_cloud.gd`, a port of the tank
 bench's `CelCloud` in `BlenderMCP/godot`): puffs as spheres flowed into one
 shape by a smooth union, one ink line round it, eaten from the rim, in the
 camera's tangent plane since our camera is a perspective one; a cloud is one
@@ -59,7 +59,7 @@ its own (`DUST_SHADER`), `--splash-motes` as soft motes (`MOTE_*`).
 On the stage, under `--landing-dust` (off by default), the Chinook's rotors
 raise the same kind of cloud round its hull as it comes down, stands and
 climbs away (`Level3DWash`,
-`src/tools/level3d_wash.gd`): one body rolling out from the hull, as a
+`src/game3d/fx/level3d_wash.gd`): one body rolling out from the hull, as a
 helicopter's dust is, its puffs growing with the way they have gone
 (`GROW`) so that the ring does not break up as it widens; lit by the
 stage's two-tone light rather than painted in tones, so that it follows
@@ -97,6 +97,6 @@ keep theirs as `by`), the frame follows the middle of the two and
 drives the second with `2:` spans, which is how it was checked:
 
 ```bash
-godot --path . --windowed --resolution 1280x720 src/tools/level3d_preview.tscn -- --shot out.png 0 1 top 8 --players 2 --immortal --hold w@0-8,2:l@0-8
+godot --path . --windowed --resolution 1280x720 src/game3d/level3d_preview.tscn -- --shot out.png 0 1 top 8 --players 2 --immortal --hold w@0-8,2:l@0-8
 ```
 

@@ -9,8 +9,8 @@
 shader_type spatial;
 render_mode cull_disabled, diffuse_toon, specular_disabled;
 
-#include "res://src/tools/level3d_holes.gdshaderinc"
-#include "res://src/tools/level3d_scorch.gdshaderinc"
+#include "res://src/game3d/shaders/level3d_holes.gdshaderinc"
+#include "res://src/game3d/shaders/level3d_scorch.gdshaderinc"
 
 uniform vec4 albedo : source_color = vec4(1.0);
 

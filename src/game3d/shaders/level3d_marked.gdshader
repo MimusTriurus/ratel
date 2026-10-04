@@ -6,7 +6,7 @@
 shader_type spatial;
 render_mode diffuse_toon, specular_disabled, cull_disabled;
 
-#include "res://src/tools/level3d_marks.gdshaderinc"
+#include "res://src/game3d/shaders/level3d_marks.gdshaderinc"
 
 uniform vec4 albedo : source_color = vec4(1.0);
 // _toon's TOON_EDGE: the step between the two tones, as sharp as it goes.

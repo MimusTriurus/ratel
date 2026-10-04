@@ -2,7 +2,7 @@
 
 Как был сделан `resources/3d/jackal_soldier_lowpoly.blend` — солдат по листу
 «Low-poly soldiers, model reference» — и как он попал в 3D-превью
-(`src/tools/level3d_preview.tscn`) вместо фигуры из спрайта. Из одного шаблона
+(`src/game3d/level3d_preview.tscn`) вместо фигуры из спрайта. Из одного шаблона
 собраны двое: враг и пленный (раздел 2a).
 
 Он заменил первую фигуру, снятую со спрайта `enemy-soldier-brown.png`:
@@ -365,7 +365,7 @@
 - **Импорт.** В `jackal_trooper.glb.import` стоит `animation/fps=24`: по
   умолчанию Godot ставит 30, и клипы съезжали бы с кадров Blender. После
   первого `--headless --import` поправить `.import` и импортировать ещё раз.
-- **В превью** это `Level3DSoldiers` (`src/tools/level3d_soldiers.gd`).
+- **В превью** это `Level3DSoldiers` (`src/game3d/units/level3d_soldiers.gd`).
   Поведение — `EnemySoldier` игры, как и раньше. Всё, чем модели отличаются,
   собрано в `MODELS`:
 
@@ -389,7 +389,7 @@
   - **Какие клипы нужны превью.** Превью играет `Walk`, `Aim`, `Shoot` и
     `Death`. `Idle`, `Run`, `Crouch`, `Prone` и `Hit` есть в glb, но у
     `EnemySoldier` нет состояний для них.
-- **Пленный** — `Level3DFriends` (`src/tools/level3d_friends.gd`), с таким же
+- **Пленный** — `Level3DFriends` (`src/game3d/units/level3d_friends.gd`), с таким же
   `MODELS`. Масштаб 0,55, шаг по пройденному пути: пленный ходит 1 px за тик,
   на выходе из казармы 2 px. Отличия от врага:
   - **Взмах руки по часам:** один за `wave_seconds`, 1 с. У спрайта два кадра

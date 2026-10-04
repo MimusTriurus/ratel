@@ -35,9 +35,12 @@ only ever fires north. The choice is saved with the key bindings.
 ```
 godot/
   assets/          images, maps, music, soundeffects — copied verbatim
-  src/core/        engine layer: Main, atlases, data loading, audio, input
-  src/game/        GameMode, Player and every game element
-  src/modes/       title, map, cutscenes, menus
+  src/game2d/      the 2D game, its scene main.tscn:
+    core/          engine layer: Main, atlases, data loading, audio, input
+    game/          GameMode, Player and every game element
+    modes/         title, map, cutscenes, menus
+  src/game3d/      the 3D preview, its scene level3d_preview.tscn
+  src/editors/     the map editor and the 3D level editor
 ```
 
 Every GDScript file names the `jackal.*` class it came from in its header

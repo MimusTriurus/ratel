@@ -30,7 +30,7 @@
 shader_type spatial;
 render_mode unshaded, cull_disabled, shadows_disabled;
 
-#include "res://src/tools/level3d_fire.gdshaderinc"
+#include "res://src/game3d/shaders/level3d_fire.gdshaderinc"
 
 const float FRAMES = 14.0;
 

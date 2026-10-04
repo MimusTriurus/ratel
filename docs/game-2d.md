@@ -6,12 +6,12 @@ header.
 
 ## Mode state machine
 
-`Modes` (`src/core/modes.gd`) lists the 14 modes; `Main.request_mode(int)`
+`Modes` (`src/game2d/core/modes.gd`) lists the 14 modes; `Main.request_mode(int)`
 constructs one and `set_mode` calls `init(main)` then `update()`. Modes are
 duck-typed, not an interface: `init/update/render`, plus optional `input_event`
 (only `InputMode` needs raw events, for key remapping), `fade_completed`
-(`IFadeListener`) and `pan_complete`. `src/modes/` holds title/map/cutscene/menu
-modes; `GameMode` in `src/game/` is the gameplay mode.
+(`IFadeListener`) and `pan_complete`. `src/game2d/modes/` holds title/map/cutscene/menu
+modes; `GameMode` in `src/game2d/game/` is the gameplay mode.
 
 Startup is `Main._ready` → `load_all()` → `INTRO`, the title screen. Loading
 used to be a mode of its own: `LoadingMode` called `load_next()` once a tick and
@@ -24,7 +24,7 @@ is what requests `INTRO`, which is what ends `load_all`'s loop.
 
 ## Entities
 
-`GameElement` → `HitElement` → `Enemy` (`src/game/`), held in
+`GameElement` → `HitElement` → `Enemy` (`src/game2d/game/`), held in
 `GameMode.elements[8]` — eight draw layers, with the player drawn between layers
 3 and 4. `GameMode.add()` also files enemies into the parallel `enemies` /
 `solids` / `mines` lists.
@@ -95,7 +95,7 @@ the three brown-tank frames. 140 atlases, 264 sprites, and the total canvas
 area went *down* (1.96 Mpx against 2.36 Mpx), because the sheets no longer pad
 to 512x512.
 
-`SpriteBank` (`src/core/sprite_bank.gd`) resolves a name against all of them
+`SpriteBank` (`src/game2d/core/sprite_bank.gd`) resolves a name against all of them
 through the generated `sprites/index.xml`, loading each texture on first use,
 so no loader names an atlas and the physical grouping can be changed again
 without touching GDScript. It returns `null` for an unknown name, like
@@ -126,7 +126,7 @@ which one the code means:
 - "the edge of the visible frame" -- `is_outside_of_frame`, camera margins,
   enemies turning at the edge, boss spawn spread -> `SCREEN_WIDTH`.
 - "where on the title screen / menu / cutscene does this go" -> `DISPLAY_WIDTH`.
-  `JeepYeahPlane` lives in `src/game` but is a cutscene actor, so it is the one
+  `JeepYeahPlane` lives in `src/game2d/game` but is a cutscene actor, so it is the one
   file there still on `DISPLAY_WIDTH`.
 
 `Main._draw` centres every non-`GameMode` mode by `PILLAR_X` and wraps it in
@@ -288,7 +288,7 @@ swaps it.
 
 Three buses, not one. Everything used to play on `Master`, which is why the
 pause key — the only thing that ever silenced anything — muted the effects
-along with the music. `AudioSettings` (`src/core/audio_settings.gd`) adds
+along with the music. `AudioSettings` (`src/game2d/core/audio_settings.gd`) adds
 `Music` and `Sfx`, both routed to `Master`, at `_ready` and before the first
 stream loads; `Sfx` and `Song.make_player` name them. The three controls are
 then three separate things: mute one bus, mute the other, set the gain on the

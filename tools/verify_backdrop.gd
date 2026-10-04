@@ -53,7 +53,7 @@ func _initialize() -> void:
 	if not args.is_empty():
 		out_dir = args[0]
 
-	main_node = load("res://src/main.tscn").instantiate()
+	main_node = load("res://src/game2d/main.tscn").instantiate()
 	root.add_child(main_node)
 
 	for stage_index in 6:

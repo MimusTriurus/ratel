@@ -5,7 +5,7 @@ Moved out of `CLAUDE.md`. The 2D game reads `assets/soundeffects/` and
 
 ## Effects and music
 
-The 3D preview has its own sound, `Level3DAudio` (`src/tools/level3d_audio.gd`):
+The 3D preview has its own sound, `Level3DAudio` (`src/game3d/level3d_audio.gd`):
 one table, `SOUNDS`, of every effect it plays, with its bus (sub-buses of
 `Sfx`; the enemies' guns on `EnemyFire` under `Weapons`), gain, variants and
 whether it is positional; engines and rotors are loops on the unit, heard
@@ -163,7 +163,7 @@ volume, and every app's mute in the volume mixer. Windows remembers a mute per
 executable, so muting the editor once mutes every game it runs.
 
 ```bash
-godot --path . --windowed --resolution 1280x720 src/tools/level3d_preview.tscn -- --audio-debug
+godot --path . --windowed --resolution 1280x720 src/game3d/level3d_preview.tscn -- --audio-debug
 ```
 
 ```bash

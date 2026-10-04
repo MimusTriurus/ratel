@@ -1,14 +1,14 @@
 # Параметры запуска 3D-превью
 
-3D-превью — `src/tools/level3d_preview.tscn`, главная сцена проекта (её же
+3D-превью — `src/game3d/level3d_preview.tscn`, главная сцена проекта (её же
 открывают F5 и сборка). Параметры превью пишутся после `--`, параметры самого
 Godot — до него:
 
 ```bash
-godot --path . src/tools/level3d_preview.tscn -- --players 2 --boss
+godot --path . src/game3d/level3d_preview.tscn -- --players 2 --boss
 ```
 
-Подробные комментарии к каждому — в шапке `src/tools/level3d_preview.gd`.
+Подробные комментарии к каждому — в шапке `src/game3d/level3d_preview.gd`.
 
 ## Игра
 
@@ -51,7 +51,7 @@ godot --path . src/tools/level3d_preview.tscn -- --players 2 --boss
 кадрового буфера.
 
 ```bash
-godot --path . --windowed --resolution 1280x720 src/tools/level3d_preview.tscn -- --shot out.png 0.5 1 top 8
+godot --path . --windowed --resolution 1280x720 src/game3d/level3d_preview.tscn -- --shot out.png 0.5 1 top 8
 ```
 
 `--shot <файл> <позиция> <зум> <top|tilt> [<секунды> <x,z> …]`
@@ -87,7 +87,7 @@ godot --path . --windowed --resolution 1280x720 src/tools/level3d_preview.tscn -
 ## Карта столкновений
 
 ```bash
-godot --path . --headless src/tools/level3d_preview.tscn -- --obstacle-map out.png
+godot --path . --headless src/game3d/level3d_preview.tscn -- --obstacle-map out.png
 ```
 
 Рисует столкновения уровня картинкой (земля, вода, лес, стены) и выходит —

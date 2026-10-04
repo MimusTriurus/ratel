@@ -12,7 +12,7 @@ config_version=5
 
 config/name="Jackal"
 config/description="Port of meatfighter.com's Java remake of Konami's Jackal (LGPL v3)."
-run/main_scene="res://src/tools/level3d_preview.tscn"
+run/main_scene="res://src/game3d/level3d_preview.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 run/max_fps=60
 boot_splash/show_image=false

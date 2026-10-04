@@ -24,7 +24,7 @@
 class_name Level3DTracks
 extends Node3D
 
-const SHADER := preload("res://src/tools/level3d_tracks.gdshader")
+const SHADER := preload("res://src/game3d/shaders/level3d_tracks.gdshader")
 const STEP := 0.08
 const BREAK := 0.6
 const LIFT := 0.012

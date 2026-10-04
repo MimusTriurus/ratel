@@ -41,7 +41,7 @@ class_name Level3DBoats
 extends Node3D
 
 const BOAT_PATH := "res://resources/3d/jackal_boat.glb"
-const FOAM_SHADER := preload("res://src/tools/level3d_foam.gdshader")
+const FOAM_SHADER := preload("res://src/game3d/shaders/level3d_foam.gdshader")
 const PX := Level3DMap.PX
 # The model is an 8 m boat; the sprite's hull is some 150 px long, 2.2 m on
 # the level's scale. A little over that, so the turret reads from above.

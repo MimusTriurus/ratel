@@ -18,10 +18,10 @@ class_name Level3DFx
 extends RefCounted
 
 const CONTOUR := 0.014
-const CONTOUR_SHADER := preload("res://src/tools/level3d_contour.gdshader")
-const FIRE_SHADER := preload("res://src/tools/level3d_fire.gdshader")
-const FIRE_CONTOUR_SHADER := preload("res://src/tools/level3d_fire_contour.gdshader")
-const RIPPLE_SHADER := preload("res://src/tools/level3d_ripple.gdshader")
+const CONTOUR_SHADER := preload("res://src/game3d/shaders/level3d_contour.gdshader")
+const FIRE_SHADER := preload("res://src/game3d/shaders/level3d_fire.gdshader")
+const FIRE_CONTOUR_SHADER := preload("res://src/game3d/shaders/level3d_fire_contour.gdshader")
+const RIPPLE_SHADER := preload("res://src/game3d/shaders/level3d_ripple.gdshader")
 # A round's colours, the sprite's core, ring and rim, by EnemyBullet's `white`:
 # the yellow round, which the player fires too, is the fire's white, yellow
 # and red; the white one is the sprite's white and grey, the grey a little
@@ -99,7 +99,7 @@ const FLASH_WIDTH := 0.22
 # Rounds come and go nine a second from the jeep alone, so they are pooled,
 # a pool for each parent and colour: take_round hands out a hidden one or
 # makes one, give_round hides it again for the next.
-const ROUND_SHADER := preload("res://src/tools/level3d_round.gdshader")
+const ROUND_SHADER := preload("res://src/game3d/shaders/level3d_round.gdshader")
 const ROUND_SHAPE := "ball"
 const ROUND_WIDTH := 0.27
 const ROUND_LENGTH := 24.0 * Level3DMap.PX

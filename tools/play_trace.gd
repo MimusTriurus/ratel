@@ -26,7 +26,7 @@ var started := false
 
 
 func _initialize() -> void:
-	main = load("res://src/main.tscn").instantiate()
+	main = load("res://src/game2d/main.tscn").instantiate()
 	root.add_child(main)
 
 

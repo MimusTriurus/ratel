@@ -5,7 +5,7 @@
 shader_type spatial;
 render_mode unshaded, cull_front, shadows_disabled;
 
-#include "res://src/tools/level3d_fire.gdshaderinc"
+#include "res://src/game3d/shaders/level3d_fire.gdshaderinc"
 
 uniform vec4 colour : source_color = vec4(0.0, 0.0, 0.0, 1.0);
 uniform float width = 0.014;

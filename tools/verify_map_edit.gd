@@ -15,7 +15,7 @@ var failures := 0
 
 
 func _init() -> void:
-	var editor: Control = load("res://src/tools/map_editor.gd").new()
+	var editor: Control = load("res://src/editors/map_editor.gd").new()
 	editor.trigger_sizes = MapIO.load_trigger_sizes()
 	editor._load_trigger_meta()
 

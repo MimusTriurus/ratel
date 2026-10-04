@@ -23,7 +23,7 @@ Level3DFont.name_of gives. Two colours, as the 3D preview uses of the game's:
 
 the shadow one font pixel down and to the right, under the letter. Whether it
 is drawn sharp or smoothed is Level3DFont.style's, not the sheet's. The 2D game
-keeps the game's own font; only src/tools reads this one (Level3DFont).
+keeps the game's own font; only src/game3d reads this one (Level3DFont).
 """
 
 import json

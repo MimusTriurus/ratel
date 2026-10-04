@@ -2,7 +2,7 @@
 # the destruction groups and the spawn triggers laid over the top, and brushes
 # for the two grids.
 #
-#     godot --path . src/tools/map_editor.tscn
+#     godot --path . src/editors/map_editor.tscn
 #
 # Nothing here is part of the game. It loads the same data the game does --
 # MapIO for assets/maps/stage-N.json, Main.load_tiles for the tile sheets -- so
@@ -1938,7 +1938,7 @@ func _hover_parts() -> Array[String]:
 # window to click in -- which is how this editor gets checked, and the closest
 # thing to a visual regression test the project has:
 #
-#     godot --path . --windowed --resolution 1280x720 src/tools/map_editor.tscn \
+#     godot --path . --windowed --resolution 1280x720 src/editors/map_editor.tscn \
 #         -- --shot out.png <stage 0-5> <zoom> <top row> <layer,layer,...> <tool>
 #
 # Everything after the PNG is optional. It needs a real window: --headless has

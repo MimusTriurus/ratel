@@ -28,15 +28,15 @@ There is no test suite, linter, or build script. Godot is not on `PATH` in this
 environment; substitute the actual editor path.
 
 ```bash
-godot --path . src/main.tscn
+godot --path . src/game2d/main.tscn
 ```
 
-The project's main scene is the 3D preview (`src/tools/level3d_preview.tscn`),
+The project's main scene is the 3D preview (`src/game3d/level3d_preview.tscn`),
 so a bare run, F5 and an export open that; the 2D game is run by naming
-`src/main.tscn`, as above.
+`src/game2d/main.tscn`, as above.
 
 ```bash
-godot --path . --headless --check-only --script src/core/main.gd
+godot --path . --headless --check-only --script src/game2d/core/main.gd
 ```
 
 A fresh clone has no `.godot/`, so `class_name` globals are unresolved and any
@@ -83,7 +83,7 @@ add one. `docs/` is under `.gdignore` too: screenshots and renders go there.
 
 The original is a fixed-logic-rate game drawn with immediate-mode OpenGL, and is
 reproduced as such. There is exactly one node: `Main` (`Node2D`) in
-`src/main.tscn`. Everything else is a plain `RefCounted` — no `Area2D`, no
+`src/game2d/main.tscn`. Everything else is a plain `RefCounted` — no `Area2D`, no
 physics server, no scene tree, no signals except `AudioStreamPlayer.finished`.
 Collision is the original's hand-written AABB tests (`HitElement.overlap` and the
 `hit_*` / `is_solid_*` / `is_mine_*` families), not Godot collision.
@@ -105,9 +105,9 @@ Moving work between `_physics_process` and `_process` changes game speed.
 
 ### Modes and entities
 
-`Modes` (`src/core/modes.gd`) lists the modes; `Main.request_mode(int)` builds
+`Modes` (`src/game2d/core/modes.gd`) lists the modes; `Main.request_mode(int)` builds
 one. Modes are duck-typed (`init/update/render`, optional `input_event`,
-`fade_completed`, `pan_complete`). `GameMode` (`src/game/`) is gameplay;
+`fade_completed`, `pan_complete`). `GameMode` (`src/game2d/game/`) is gameplay;
 requesting any mode destroys it and the run with it.
 
 `GameElement` → `HitElement` → `Enemy`, held in `GameMode.elements[8]` (eight
@@ -165,7 +165,7 @@ pause with `set_music_on(true)`.
 
 ## 3D preview and level files
 
-`src/tools/level3d_preview.tscn` plays `assets/level3d/stage-N.json`; nothing
+`src/game3d/level3d_preview.tscn` plays `assets/level3d/stage-N.json`; nothing
 in the 2D game reads that. `resources/3d/jackal_stage1.glb` is *built* from the
 level file by `tools/blender/build_level.py`, so the base blend's `export_all()`
 must not be run — it would write the hand-built level back over it
