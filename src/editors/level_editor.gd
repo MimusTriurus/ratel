@@ -56,13 +56,16 @@
 #   F1-F4             modes         F            the whole level
 #   Ctrl+Z, Ctrl+Y    undo, redo    Ctrl+N/O/S   new, open, save
 #   Ctrl+B            build         F5           play
+#                                   Shift+F5     play, no landing
 #
 # Level -> Build saves, then runs the Blender builder in the background on
 # the level file, into build/level3d/<name>.glb, and imports what it made;
 # Play opens the preview on the level and that glb (src/game3d/
 # level3d_preview.tscn, --file and --level), building it first when the level is newer, and
 # the editor waits minimised until the game is left (--editor: its menu's
-# exit is "back to the editor"). Check lists what Level3DIO.check finds, and on
+# exit is "back to the editor"). Play, no landing is the same with
+# --no-chinook: the BTR is simply at the start, as Space has it, on every
+# restart too. Check lists what Level3DIO.check finds, and on
 # stage 1 Rebuild flow field writes its assets/level3d/dirs-0.dat from the
 # grid (another level's is built when the preview loads it). Blender is the
 # Store build's launcher unless user://level_editor.cfg says otherwise
@@ -235,6 +238,8 @@ var _job := {}
 # Play: a build it is waiting for, and the game while it runs -- its pid and
 # the window mode the editor is given back in when it ends.
 var _play_after_build := false
+# Whether the play waiting for its build skips the Chinook's landing.
+var _play_no_landing := false
 var _game := {}
 
 
@@ -1684,8 +1689,10 @@ func _key(key: InputEventKey) -> void:
 			_build()
 		KEY_F1, KEY_F2, KEY_F3, KEY_F4:
 			_set_mode(key.keycode - KEY_F1)
+		KEY_F5 when key.shift_pressed:
+			_play(true)
 		KEY_F5:
-			_play()
+			_play(false)
 		KEY_BRACKETLEFT:
 			if mode == Mode.OBJECTS:
 				_scale_selected(1.0 / 1.1)
@@ -1990,9 +1997,10 @@ func _poll_job() -> void:
 # the preview inside this one: the preview keeps state in statics
 # (Level3DMap.file, the audio buses, the tree's pause, the mouse mode) that
 # nothing would put back for the editor afterwards.
-func _play() -> void:
+func _play(no_landing := _play_no_landing) -> void:
 	if not _game.is_empty():
 		return
+	_play_no_landing = no_landing
 	if not _job.is_empty():
 		_play_after_build = true
 		_footer.text = "Playing once the build is done ..."
@@ -2006,9 +2014,11 @@ func _play() -> void:
 		if _job.is_empty():
 			_play_after_build = false
 		return
-	var pid := OS.create_process(OS.get_executable_path(), PackedStringArray([
-		"--path", ProjectSettings.globalize_path("res://"), PREVIEW, "--",
-		"--file", path, "--level", _built_glb(), "--editor"]))
+	var args := PackedStringArray(["--path", ProjectSettings.globalize_path("res://"), PREVIEW, "--",
+		"--file", path, "--level", _built_glb(), "--editor"])
+	if no_landing:
+		args.append("--no-chinook")
+	var pid := OS.create_process(OS.get_executable_path(), args)
 	if pid <= 0:
 		_tell("Could not start the preview.")
 		return
@@ -2111,13 +2121,16 @@ func _build_header() -> void:
 	level.name = "Level"
 	level.add_item("Build in Blender  Ctrl+B", 0)
 	level.add_item("Play              F5", 1)
+	level.add_item("Play, no landing  Shift+F5", 4)
 	level.add_separator()
 	level.add_item("Check", 2)
 	level.add_item("Rebuild flow field (stage 1)", 3)
 	level.set_item_tooltip(0, "Saves, then builds the level in Blender into build/level3d/, "
 			+ "and imports it -- half a minute or so")
 	level.set_item_tooltip(1, "Opens the preview on the level as it was last built")
-	level.set_item_tooltip(2, "What Level3DIO.check finds: an enemy in a wall, a building off "
+	level.set_item_tooltip(level.get_item_index(4), "As Play, with the BTR at the start "
+			+ "rather than flown in by the Chinook")
+	level.set_item_tooltip(level.get_item_index(2), "What Level3DIO.check finds: an enemy in a wall, a building off "
 			+ "its group, an asset the catalogue does not know, no Chinook")
 	level.id_pressed.connect(_on_level_menu)
 	bar.add_child(level)
@@ -2151,7 +2164,9 @@ func _on_level_menu(id: int) -> void:
 		0:
 			_build()
 		1:
-			_play()
+			_play(false)
+		4:
+			_play(true)
 		2:
 			_check()
 		3:
