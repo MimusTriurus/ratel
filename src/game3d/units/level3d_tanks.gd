@@ -578,7 +578,7 @@ func _fire(t: Tank) -> void:
 	var muzzle := _muzzle(t)
 	guns.enemy_bullet(Vector2(muzzle.x, muzzle.z), t.direction * EnemyBullet.SPEED,
 			BrownTank.BULLET_TRAVEL_TIME, muzzle.y, true, true)
-	guns.muzzle_flash(muzzle, Vector3(t.direction.x, 0.0, t.direction.y), Level3DGuns.TANK_FLASH)
+	guns.muzzle_flash(muzzle, Vector3(t.direction.x, 0.0, t.direction.y), Level3DGuns.TANK_FLASH, "tank_cannon")
 	var weapon: AnimationPlayer = t.players.weapon
 	weapon.play("Shoot")
 	weapon.seek(0.0, true)

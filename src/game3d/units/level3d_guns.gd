@@ -330,11 +330,13 @@ func _fire(gun: Gun) -> void:
 # the jeep's machine gun, and each enemy has its own (BUNKER_FLASH and the
 # rest). The round that sets off with it is kept out of sight until it is out
 # (enemy_bullet's `behind_flash`): drawn over everything, it would sit on the
-# flame's root.
-func muzzle_flash(at: Vector3, direction: Vector3, size := 1.0) -> void:
+# flame's root. `sound` is the shot's, for a gun that has its own: the tanks'.
+func muzzle_flash(at: Vector3, direction: Vector3, size := 1.0, sound := "") -> void:
 	# Every enemy's shot comes through here: the soldiers' is a machine gun's,
 	# as their rounds come in the game's stream, the rest a cannon's.
-	Level3DAudio.play("enemy_mg" if size <= RIFLE_FLASH else "enemy_cannon", at)
+	if sound == "":
+		sound = "enemy_mg" if size <= RIFLE_FLASH else "enemy_cannon"
+	Level3DAudio.play(sound, at)
 	var ahead := at + direction * Level3DFx.FLASH_LENGTH * 0.4 * size
 	var holder := Node3D.new()
 	add_child(holder)

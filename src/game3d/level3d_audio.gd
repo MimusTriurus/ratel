@@ -153,10 +153,12 @@ const SOUNDS := {
 	# and missile went off the same on armour as on sand.
 	"hit_armor_blast": {"bus": &"Explosions", "pitch": 0.08, "voices": 4},
 	# The enemies' guns, which the original fired in silence: a machine gun
-	# for the soldiers, a cannon for the bunkers, tanks and boats, on
-	# EnemyFire, to sit well under the BTR's gun.
+	# for the soldiers, a cannon for the bunkers and boats and a heavier one
+	# for the tanks, the boss's too, on EnemyFire, to sit well under the
+	# BTR's gun.
 	"enemy_mg": {"bus": &"EnemyFire", "pitch": 0.06, "voices": 4, "gap": 0.05},
 	"enemy_cannon": {"bus": &"EnemyFire", "pitch": 0.05, "voices": 4, "gap": 0.05},
+	"tank_cannon": {"bus": &"EnemyFire", "pitch": 0.05, "voices": 4, "gap": 0.05},
 	# Blasts. A grenade's and the mortar's are explode_sound2, a missile's
 	# explode_sound3; both at 0.65. The modern ones' gains bring their loudest
 	# 50 ms (RMS) to the originals', which keeps the missile's under the
