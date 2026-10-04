@@ -3191,10 +3191,12 @@ static func _axis(negative: Key, positive: Key) -> float:
 func _unhandled_input(event: InputEvent) -> void:
 	if not _live:
 		return
-	# The summary waits for a press: the gun, Enter or Space, or a click.
-	if _summary.shown and ((event is InputEventKey and event.pressed and not event.echo
-			and event.keycode in [settings.key("gun"), KEY_ENTER, KEY_KP_ENTER, KEY_SPACE])
-			or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT)):
+	# The summary waits for a press: any key, Escape too, any button of the
+	# mouse but its wheel, which is not pressed but turned, or of a pad.
+	if _summary.shown and ((event is InputEventKey and event.pressed and not event.echo)
+			or (event is InputEventMouseButton and event.pressed and event.button_index not in [
+				MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT])
+			or (event is InputEventJoypadButton and event.pressed)):
 		_summary.dismiss()
 		get_viewport().set_input_as_handled()
 		return

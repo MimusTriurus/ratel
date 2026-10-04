@@ -6,7 +6,7 @@
 #     [p][p][p][p][p][p][p][p][p][p][p][p][-][-][-]
 #     RESCUED 19 OF 24
 #     TIME 07:42
-#     PRESS FIRE
+#     PRESS ANY KEY
 #
 #   * the title typed as jackal.MissionAccomplished types its lines, a letter
 #     every TYPE_TIME with the well-done sound;
@@ -22,8 +22,10 @@
 #   * the count, all the players' together -- the row's colours say whose --
 #     and the time from the BTR's handing over to the boss's end. Not the
 #     score: the HUD has it on the screen under the plate;
-#   * and it waits for a press (`dismiss`), PRESS FIRE blinking: the game
-#     moved on to its next stage after its lines, and the preview has none.
+#   * and it waits for a press (`dismiss`), any key or button -- the gun
+#     alone was one more thing to know at the end -- PRESS ANY KEY
+#     blinking: the game moved on to its next stage after its lines, and
+#     the preview has none.
 #     A press while it is still coming shows it all at once.
 #
 # On the HUD's layer and in its font, as the HUD is (Level3DHud), on a plate
@@ -35,7 +37,7 @@ extends Control
 
 const SOUND_PATH := "res://assets/soundeffects/well_done.ogg"
 const TITLE := "MISSION ACCOMPLISHED!"
-const PROMPT := "PRESS FIRE"
+const PROMPT := "PRESS ANY KEY"
 const TITLE_GLYPH := 48.0
 const GLYPH := 32.0
 const PROMPT_GLYPH := 24.0
