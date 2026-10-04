@@ -90,7 +90,7 @@ var settings_open: Callable
 var changed: Callable
 
 var _selected := 0
-var _splash: Control         # Level3DSplash, or Level3DSplash3D under --splash-3d
+var _splash: Control         # Level3DSplashLanding, Level3DSplash3D or Level3DSplash
 var _veil: ColorRect         # the fade to black over the launch
 var _launching := false
 var _launch: Tween           # the hold and the fade
@@ -112,18 +112,20 @@ func _ready() -> void:
 	black.color = Color.BLACK
 	black.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(black)
-	# In place of the title art (level3d_splash.gd): as wide as it, in the
-	# picture's own proportions rather than its, centred on where it was.
-	# --splash-3d puts the scene there instead, a prototype
-	# (level3d_splash3d.gd), and --splash-landing the scene with the Chinook
-	# (level3d_splash_landing.gd).
+	# In place of the title art: as wide as it, in the scene's own proportions
+	# rather than its, centred on where it was. The scene with the Chinook
+	# (level3d_splash_landing.gd); --splash-3d the jeeps' scene alone, the
+	# prototype it grew from (level3d_splash3d.gd), and --splash-picture the
+	# sunset as a still (level3d_splash.gd), the first of them.
+	# --splash-landing, which picked the Chinook before it was the default,
+	# is still taken and changes nothing.
 	var splash: Control
-	if OS.get_cmdline_user_args().has("--splash-landing"):
-		splash = Level3DSplashLanding.new()
+	if OS.get_cmdline_user_args().has("--splash-picture"):
+		splash = Level3DSplash.new()
 	elif OS.get_cmdline_user_args().has("--splash-3d"):
 		splash = Level3DSplash3D.new()
 	else:
-		splash = Level3DSplash.new()
+		splash = Level3DSplashLanding.new()
 	splash.place(FRAME + TITLE_AT + TITLE_SIZE * 0.5 + Vector2(0.0, SCENE_DROP), TITLE_SIZE.x)
 	add_child(splash)
 	_splash = splash

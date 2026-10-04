@@ -1,5 +1,6 @@
-# The title's other 3D scene, under --splash-landing: Level3DSplash3D's
-# sunset, ground and jeeps, and a Chinook. It comes in over the camera as the
+# The title's scene, the default (--splash-3d and --splash-picture the
+# others): Level3DSplash3D's sunset, ground and jeeps, and a Chinook. It
+# comes in over the camera as the
 # title opens, flies off into the sun slowing, and sets down in front of it,
 # tail to the camera, in a cloud of its own dust, and lowers its ramp. A game
 # picked turns the jeeps it is for round at once and drives them up into it,
