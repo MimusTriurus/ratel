@@ -100,3 +100,60 @@ drives the second with `2:` spans, which is how it was checked:
 godot --path . --windowed --resolution 1280x720 src/game3d/level3d_preview.tscn -- --shot out.png 0 1 top 8 --players 2 --immortal --hold w@0-8,2:l@0-8
 ```
 
+
+## Game over
+
+The end of a run as a scene of its own (`Level3DGameOver`,
+`src/game3d/ui/level3d_game_over.gd`): the prisoners each player rescued, their
+backs to the camera, saluting the players' graves -- a wooden cross for the
+first, a headstone for the second with two players -- and up the slope behind
+them a cross in a concrete block for every prisoner the run did not rescue.
+Cannon Fodder's Boot Hill turned round. `--game-over 7,4:24` opens it at
+once over the stage, and `tools/game_over_shot.gd` shoots it on its own in a
+few seconds.
+
+- **The run's end** (`Level3DGameOverScreen`,
+  `src/game3d/ui/level3d_game_over_screen.gd`), the 2D game's `ContinueMode`
+  in the cemetery. Every player out, the GAME OVER banner stands over the
+  stage, which plays on with no one in it, for `GAME_OVER_HOLD` (2.5 s); then
+  the stage goes to black with its song and pauses, and the cemetery comes up
+  out of the black with `continue_song`. Once the guard has saluted, the
+  summary's plate across the top of the frame, over the sky and the hill's
+  crest rather than the guard: GAME OVER, each player's line -- his "1P" in
+  his HUD colour, his score, the prisoners he brought in -- and PRESS ANY
+  KEY, which any key, mouse button or pad button answers, as the summary's
+  does. Then in its place CONTINUE and END, picked as the title's entries
+  are, with its reticle and tints. CONTINUE is `ContinueMode`'s yes: the
+  black lifts off the stage started again from the Chinook, fresh lives, no
+  score, every player in -- what the last life lost did at once before, which
+  is what R still does. END is its no: the title screen. The cemetery is
+  made the first time it is wanted, under the black, not at the preview's
+  start. `--lives 0 --die 1` with `--shot` runs into it.
+
+- **Where it comes from.** `resources/3d/jackal_boot_hill.blend`, its `GameOver`
+  scene, built by the text block `jackal_boot_hill.py` (`build_game_over()`),
+  exports `resources/3d/jackal_game_over.glb` (`export_game_over()`): the
+  ground, trees, bushes, rocks, the grass as one mesh, the camera, and under
+  `Props` what the scene places itself, as many as the run wants -- the two
+  graves, the mound under them, a prisoner's cross. The layout constants
+  (`GRAVE_*`, `GUARD_*`, `FIELD_*`) are the script's, in its Blender metres:
+  Blender's (x, y, z) is (x, z, -y) here. Everything stands on the ground under
+  it, found off the hill's own triangles (`TriangleMesh.intersect_ray`).
+- **The guard** is the prisoners' own `jackal_trooper_pow.glb` at 0.54, on
+  `Pow_Attention` and then `Pow_Salute` (`docs/soldier-pipeline.md`, section 7),
+  saluting from the aisle out. Each player's rescued stand in a block either
+  side of the aisle the graves are seen down; one player's are split between
+  the two. A block deeper than three ranks takes the camera back 1.8 m a rank.
+- **Soft light, not two tones -- a deliberate departure from
+  `docs/cel-shading.md`.** Picked over the stage's two tones and over three,
+  after a reference picture: a slope's light runs over it smoothly and the
+  hills and crowns have their volume. The 3 px contour stays (`Level3DHull`),
+  on everything with one baked; not on the ground or the grass. The scene's
+  viewport carries `Level3DGameOver.SOFT_LIGHT`, which `_toon` passes by, and
+  its materials are copies with Lambert's diffuse -- the prisoners' are shared
+  with the stage's, which `_toon` has already stepped.
+- **Light**, the Blender scene's: a low warm sun from behind the camera's left
+  and a warm ambient, the summer grass faded so that the green uniforms stand
+  out. Compatibility lights it about 2.2 times as bright as the energies say
+  (`LIGHT_GAIN_COMPATIBILITY`, measured against the Blender render) and reads
+  the ground's vertex colours as sRGB, so they are turned to it on load.

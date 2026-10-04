@@ -20,7 +20,11 @@ screen, over and over -- in modern a heavy cover of «От героев былы
 времён», in classic its notes on the chips (`build/music3d_officers/`), in
 original the 2D game's `title_song` -- `intro_song` at the start,
 `stage_song0` after a restart, `boss_song` from the boss's trigger, stopped
-when it is beaten or the last life goes. A song's parts are not chained
+when it is beaten or the last life goes. The game over screen
+(`Level3DGameOverScreen`) plays `continue_song` once, as `ContinueMode` does
+(`MUSIC_ONCE`): the 2D game's `continue.ogg` in all three folders for now --
+the 8-bit original is classic's as it is, and modern has no song of its own
+yet. A song's parts are not chained
 through `finished` as `Song` chains them, which left about 20 ms of silence
 between two (measured on WASAPI): `_next_part` puts every part still to come
 into one `AudioStreamInteractive`, each auto-advancing into the next and the

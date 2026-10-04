@@ -239,7 +239,13 @@ const MUSIC := {
 	# (Хозак, «Офицеры»), its guitar intro and three verses, and in CLASSIC
 	# the same notes on the NES and VRC6 (build/music3d_officers/).
 	"title": ["title.ogg"],
+	# The game over's (Level3DGameOverScreen), ContinueMode's continue_song,
+	# once, as the game plays it: the 2D game's in every mode for now, the
+	# 8-bit original being classic's as it is.
+	"continue": ["continue.ogg"],
 }
+# MUSIC's songs whose last part is played once rather than looped.
+const MUSIC_ONCE: Array[String] = ["continue"]
 
 # The modern mode's songs that follow the fight, in place of MUSIC's song of
 # the same name. An intro, then a loop of layers playing together (an
@@ -1229,7 +1235,7 @@ func _next_part() -> void:
 	var files: Array = []
 	var clips: Array[AudioStream] = []
 	for i in _song.size():
-		var clip := _music_stream(_song[i], i == _song.size() - 1)
+		var clip := _music_stream(_song[i], i == _song.size() - 1 and not MUSIC_ONCE.has(_song_name))
 		if clip == null:
 			push_warning("Level3DAudio: no music %s%s" % [MUSIC_DIRS[mode], _song[i]])
 			break

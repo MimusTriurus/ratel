@@ -93,6 +93,7 @@
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
 #            [--at <x,z>] [--free] [--hold <keys>@<from>-<to>[,...]] [--weapon <0-3>]
 #            [--intro] [--pows <n>] [--score <n>] [--summary <seconds>] [--strip <frames>,<seconds>[,<px>]] [--die <seconds>]
+#            [--game-over <n>[,<n>][:<total>]]
 #
 # The bunkers' guns, the enemy soldiers, the two boats on the river, the two
 # brown tanks and the boss's four heavy tanks at the top of the stage fight back
@@ -117,12 +118,18 @@
 # are checked; a span after 2: is the second player's (2:s@0-3). --weapon starts with what the prisoners would have given: 0 the
 # grenade, 1 to 3 the missile and its two upgrades. --pows starts with that
 # many prisoners aboard, every player, for the rescue helicopter, and --score
-# with that score, for the extra life at 20000. --summary shows the mission's
-# summary that many seconds in, as if the boss were beaten. --strip takes that many
+# with that score, for the extra life at 20000. --lives starts every player
+# with that many spare lives: --lives 0 with --die is the game over.
+# --summary shows the mission's summary that many seconds in, as if the boss
+# were beaten. --strip takes that many
 # frames instead of one, that many seconds apart from the first, and lays the
 # middle <px> square of each (512 unless given) out four to a row in the one
 # file: a blast from start to finish, which one frame never catches. --die
 # blows the BTR up that many seconds in, for its wreck (level3d_wreck.gd).
+# --game-over opens the game over screen (Level3DGameOverScreen) at once,
+# the cemetery and its choice: each player's rescued, and after a colon the
+# prisoners there were, the stage's if not; tools/game_over_shot.gd shows it
+# without the stage, quicker.
 #
 # The BTR's rear wheels and the tanks' tracks leave marks on the ground that
 # fade in under seven seconds (level3d_tracks.gd); the game leaves none. They
@@ -1060,6 +1067,9 @@ func _toon(node: Node) -> void:
 	var mesh_instance := node as MeshInstance3D
 	if mesh_instance == null:
 		return
+	# The game over's world is lit its own way, soft (Level3DGameOver).
+	if mesh_instance.get_viewport().has_meta(Level3DGameOver.SOFT_LIGHT):
+		return
 	var materials: Array[Material] = [mesh_instance.material_override]
 	if mesh_instance.mesh != null:
 		for surface in mesh_instance.mesh.get_surface_count():
@@ -1875,9 +1885,9 @@ const BLAST_PATH := "res://resources/3d/jackal_fx_blast.glb"
 var _immortal := false  # --immortal: rounds pass the BTR by, for --shot runs
 var _hud: CanvasLayer
 # The spare lives, as Main.extra_lives: the game's four on normal (Crew.lives).
-# The last one lost starts the stage again, as R does -- with two players, the
-# last one lost of both -- and the game's continue screen is not here. The
-# infinite lives cheat spends none.
+# The last one lost -- with two players, the last one lost of both -- is the
+# game over (_game_over), whose CONTINUE starts the stage again as R does.
+# The infinite lives cheat spends none.
 const EXTRA_LIVES := 4
 var _blast_scene: PackedScene
 # --hold: [key, from tick, to tick, player], and the ticks since the preview
@@ -2252,8 +2262,15 @@ func _make_hud() -> void:
 	var crosshair := Level3DCrosshair.new()
 	crosshair.wanted = _crosshair_wanted
 	crosshair.hide_pointer = func(): return _title != null and _title.pointer_hidden() \
-			or _menu != null and _menu.pointer_hidden()
+			or _menu != null and _menu.pointer_hidden() or _game_over_screen.pointer_hidden()
 	layer.add_child(crosshair)
+	# Over the HUD, a layer of its own after it; the title and the Escape menu
+	# are put over it again (_ready, _make_menu).
+	_game_over_screen = Level3DGameOverScreen.new()
+	_game_over_screen.layer = HUD_LAYER
+	_game_over_screen.continue_game = _continue_game
+	_game_over_screen.end_game = _end_game
+	add_child(_game_over_screen)
 
 
 # The lines' corner and size, from Level3DSettings (Level3DHud draws them),
@@ -2264,6 +2281,7 @@ func _layout_hud() -> void:
 	_hints.scale_factor = settings.hud_scale
 	_banners.scale_factor = settings.hud_scale
 	_summary.scale_factor = settings.hud_scale
+	_game_over_screen.scale_factor = settings.hud_scale
 	_score_pops.scale_factor = settings.hud_scale
 	for c in crews:
 		c.hud.bottom = settings.hud_corner == Level3DSettings.HudCorner.BOTTOM
@@ -2558,6 +2576,30 @@ func _update_banners() -> void:
 	if forced or defeated and not _saw_defeat and on and settings.banner_mission:
 		_summary.show_summary(_rescued_by, friends.prisoners_total(), _ticks - _mission_from)
 	_saw_defeat = defeated
+
+
+# The run's end (Level3DGameOverScreen): the cemetery, the rescued saluting
+# the players' graves, and CONTINUE or END.
+var _game_over_screen: Level3DGameOverScreen
+# The tick every player was out on, -1 while one is in (_game_over).
+var _over_at := -1
+
+# --game-over's `spec`: each player's rescued, "7" or "7,4", and after a colon
+# the prisoners there were, "7,4:24" -- the stage's (Level3DFriends) if not.
+# The screen at once, its scores the players'.
+func _test_game_over(spec: String) -> void:
+	var parts := spec.split(":")
+	var rescued: Array[int] = []
+	for n in parts[0].split(","):
+		rescued.append(int(n))
+	var total := int(parts[1]) if parts.size() > 1 else friends.prisoners_total()
+	var scores: Array[int] = []
+	var colours: Array[Color] = []
+	for i in rescued.size():
+		var c: Crew = crews[mini(i, crews.size() - 1)]
+		scores.append(c.score)
+		colours.append(c.hud.colour)
+	_game_over_screen.open(scores, rescued, colours, total, true)
 
 
 # The reticle: while the mouse aims something and there is a BTR to aim it --
@@ -3049,13 +3091,44 @@ func _gone(c: Crew) -> bool:
 	return true
 
 
-# Every player out: the stage again, with GAME OVER over it. Whether it was.
+# Every player out: GAME OVER over the stage, which plays on under it with
+# no one in it, and after GAME_OVER_HOLD the game over screen
+# (Level3DGameOverScreen), the stage paused under it: each player's score and
+# the prisoners he brought in, and the stage's. Whether the tick is over.
+const GAME_OVER_HOLD := 2.5
+
 func _game_over() -> bool:
 	if chinook != null or crews.any(func(c: Crew): return not c.out):
 		return false
+	if _over_at < 0:
+		_over_at = _ticks
+		_banners.game_over()
+	elif _ticks - _over_at >= roundi(GAME_OVER_HOLD * Engine.physics_ticks_per_second) \
+			and not _game_over_screen.is_open():
+		var scores: Array[int] = []
+		var rescued: Array[int] = []
+		var colours: Array[Color] = []
+		for c in crews:
+			scores.append(c.score)
+			rescued.append(_rescued_by.count(c.index))
+			colours.append(c.hud.colour)
+		get_tree().paused = true
+		_game_over_screen.open(scores, rescued, colours, friends.prisoners_total())
+		return true
+	return false
+
+
+# The game over's CONTINUE, under its black: ContinueMode's yes, the stage
+# again from the Chinook with fresh lives and no score, every player in.
+func _continue_game() -> void:
+	get_tree().paused = false
+	_gun_locked = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	_restart()
-	_banners.game_over()
-	return true
+
+
+# Its END: ContinueMode's no, the title screen, over the game over's black.
+func _end_game() -> void:
+	_show_title()
 
 
 # A player's gun and launcher this tick: the triggers, the aim, the weapon the
@@ -3312,6 +3385,7 @@ func _restart(jingle := false) -> void:
 	_hints_off = false
 	_thud = false
 	_rescued_by.clear()
+	_over_at = -1
 	_mission_from = _ticks
 	_score_pops.clear()
 	_saw_chinook = false
@@ -3493,6 +3567,12 @@ func _screenshot_mode() -> void:
 			c.score = int(args[start_score + 1])
 		args = args.slice(0, start_score) + args.slice(start_score + 2)
 		_show_state()
+	var start_lives := args.find("--lives")
+	if start_lives >= 0:
+		for c in crews:
+			c.lives = int(args[start_lives + 1])
+		args = args.slice(0, start_lives) + args.slice(start_lives + 2)
+		_show_state()
 	var start_at := args.find("--at")
 	if start_at >= 0:
 		var xz := args[start_at + 1].split(",")
@@ -3520,6 +3600,10 @@ func _screenshot_mode() -> void:
 		else:
 			crews[0].rocket_wanted = INF
 		args = args.slice(0, rocket) + args.slice(rocket + 2)
+	var game_over := args.find("--game-over")
+	if game_over >= 0:
+		_test_game_over(args[game_over + 1])
+		args = args.slice(0, game_over) + args.slice(game_over + 2)
 	var die := args.find("--die")
 	if die >= 0:
 		get_tree().create_timer(float(args[die + 1])).timeout.connect(func():
