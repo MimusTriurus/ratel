@@ -18,6 +18,11 @@
 # the entry rather than throwing it in one frame to wherever the pointer was
 # left. Not while the window is out of focus, whose pointer is the user's.
 #
+# A list dropped from a menu is a window of its own, drawn over every layer
+# and so over the reticle: in it the menu puts a second one, `mirror` of the
+# first, which stands where the first does, breathes and flashes with it, and
+# is drawn over the list's items.
+#
 # The owner hides the system pointer while it is `shown`, and says so to
 # Level3DCrosshair, which owns the mouse mode.
 class_name Level3DReticle
@@ -36,6 +41,7 @@ const MOUSE_TAKES := 8.0
 var shown := true
 var by_mouse := false          # the mouse has it, rather than the keys
 var carries_mouse := false     # the keys take the system pointer along
+var mirror: Level3DReticle     # the reticle this one copies, from a list's window
 
 var _at := Vector2.ZERO
 var _from := Vector2.ZERO      # where its glide started
@@ -96,6 +102,9 @@ func mouse_has_it() -> bool:
 func _process(delta: float) -> void:
 	if not is_visible_in_tree():
 		return
+	if is_instance_valid(mirror):
+		_copy()
+		return
 	_time += delta
 	if mouse_has_it():
 		_at = get_local_mouse_position()
@@ -113,6 +122,17 @@ func _process(delta: float) -> void:
 		else:
 			_at = goal
 	_fired = minf(_fired + delta / FIRE, 1.0)
+	queue_redraw()
+
+
+# Where `mirror` stands, from its canvas into this window's: the list is
+# embedded in the viewport the menu is drawn in, at its window's position.
+func _copy() -> void:
+	var on_screen := mirror.get_global_transform_with_canvas() * mirror._at
+	_at = get_global_transform_with_canvas().affine_inverse() * (on_screen - Vector2(get_window().position))
+	_time = mirror._time
+	_fired = mirror._fired
+	shown = mirror.shown
 	queue_redraw()
 
 

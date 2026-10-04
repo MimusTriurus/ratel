@@ -179,6 +179,7 @@ var _key_buttons := {}       # action -> Button
 var _waiting := ""           # the action a key prompt is open for
 var _continue: Button
 var _reticle: Level3DReticle
+var _list_reticle: Level3DReticle  # in a dropped list's window (_list_reticle_follow)
 var _last_beside := Vector2.ZERO
 var _hushed := -1            # the frame a pick or a page took the focus in
 var _hovered: Control        # the control the reticle was last over
@@ -253,29 +254,47 @@ func is_open() -> bool:
 
 
 # Whether the system's pointer is hidden, the reticle in its place: while the
-# menu is up and no list is dropped from it. Level3DCrosshair, which owns the
-# mouse mode, asks this too.
+# menu is up, a list dropped from it too, which has a reticle of its own
+# (_list_reticle). Level3DCrosshair, which owns the mouse mode, asks this too.
 func pointer_hidden() -> bool:
-	return visible and not _list_open()
+	return visible
 
 
-func _list_open() -> bool:
+# The list dropped from the menu, or null.
+func _open_list() -> PopupMenu:
 	for window in get_viewport().get_embedded_subwindows():
 		if window is PopupMenu and window.visible:
-			return true
-	return false
+			return window
+	return null
+
+
+# A list is a window drawn over every layer, the reticle's too: a second
+# reticle in it, copying the first (Level3DReticle.mirror), while it is open.
+func _list_reticle_follow() -> void:
+	var list := _open_list()
+	var host: Window = _list_reticle.get_parent() if _list_reticle != null else null
+	if list == host:
+		return
+	if _list_reticle != null:
+		_list_reticle.queue_free()
+		_list_reticle = null
+	if list != null:
+		_list_reticle = Level3DReticle.new()
+		_list_reticle.mirror = _reticle
+		list.add_child(_list_reticle)
 
 
 func _process(_delta: float) -> void:
 	if not visible:
 		return
 	_reticle.shown = pointer_hidden()
+	_list_reticle_follow()
 	var mode := Input.MOUSE_MODE_HIDDEN if pointer_hidden() else Input.MOUSE_MODE_VISIBLE
 	if Input.mouse_mode != mode:
 		Input.mouse_mode = mode
 	# The reticle onto another control: a move.
 	var over: Control = null
-	if pointer_hidden() and _reticle.by_mouse:
+	if pointer_hidden() and _reticle.by_mouse and _open_list() == null:
 		over = get_viewport().gui_get_hovered_control()
 		while over != null and over != _main_page and over != _settings_page \
 				and not (over is BaseButton or over is Slider):
