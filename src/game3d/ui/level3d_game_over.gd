@@ -1,17 +1,22 @@
-# The 3D preview's game over: the prisoners the players rescued, their backs
-# to the camera, saluting the players' graves -- a cross for the first, a
+# The 3D preview's game over: a soldier for every prisoner the players
+# rescued, their backs to the camera, presenting arms at the players' graves
+# -- a cross for the first, a
 # headstone for the second, with two players only -- and up the slope behind
 # them a cross for every prisoner the run did not rescue. Cannon Fodder's
-# Boot Hill turned round: here the graves are the players', and those who
-# stand at them are the ones they brought home.
+# Boot Hill turned round: here the graves are the players', and as many stand
+# at them as they brought home.
 #
 # Built from jackal_game_over.glb, which the GameOver scene of
 # resources/3d/jackal_boot_hill.blend exports (export_game_over() in its
 # jackal_boot_hill.py): the ground, the trees, the bushes, the rocks, the
 # grass and the camera as they stand, and under Props what this places, as
 # many of each as the run wants -- the two graves, the mound under them, a
-# prisoner's cross. The guard is the prisoners' own glb on Pow_Attention and
-# Pow_Salute (jackal_trooper.py). Where it all stands is jackal_boot_hill.py's
+# prisoner's cross. The guard is Kolos Studios' low poly soldier
+# (low_poly_soldier.glb, CC BY 4.0, resources/3d/low_poly_soldier.txt) with
+# his rifle, at order arms (Order) and presenting arms (Present) -- the
+# prisoners stood there at first, saluting with the hand. Its blend's
+# soldier_guard.py makes those, soldier_walk.py his Walk, soldier_export.py
+# the glb. Where it all stands is jackal_boot_hill.py's
 # layout (GRAVE_*, GUARD_*, FIELD_*), in its Blender metres turned to these:
 # its (x, y, z) is (x, z, -y) here. Each thing stands on the ground under it
 # (_ground_at, off the hill's own triangles).
@@ -63,7 +68,7 @@ class_name Level3DGameOver
 extends TextureRect
 
 const SCENE_PATH := "res://resources/3d/jackal_game_over.glb"
-const POW_PATH := "res://resources/3d/jackal_trooper_pow.glb"
+const GUARD_PATH := "res://resources/3d/low_poly_soldier.glb"
 # The viewport's meta that _toon (level3d_preview.gd) leaves alone.
 const SOFT_LIGHT := &"soft_light"
 
@@ -82,32 +87,33 @@ const FIELD_Y := 3.2
 const FIELD_ROW := 1.5
 const FIELD_GAP := 1.3
 const FIELD_PER_ROW := 7
-const POW_SCALE := 0.54      # the prisoner's 1.8 m to the level's metre, as there
+const GUARD_SCALE := 0.54    # his 1.8 m to the level's metre, as the prisoners' are
 const SEED := 7
 
-const ATTENTION := "Pow_Attention"
-const SALUTE := "Pow_Salute"
+const ATTENTION := "Order"
+const SALUTE := "Present"
 const LOOP_PAD := 1.0 / 24.0  # a loop is exported to the frame before it repeats
-# The guard at attention for SALUTE_FROM seconds, then saluting from the aisle
-# out, SALUTE_STEP apart a file and half that a rank.
+# The guard at attention for SALUTE_FROM seconds, then presenting arms from
+# the aisle out, SALUTE_STEP apart a file and half that a rank.
 const SALUTE_FROM := 1.2
 const SALUTE_STEP := 0.08
 const SALUTE_BLEND := 0.12
-# Lowered (lower_salute) in the same order, the salute played back, then at
+# Lowered (lower_salute) in the same order, Present played back, then at
 # attention again, ATTENTION_BLEND into it.
 const ATTENTION_BLEND := 0.2
 # And at END, leaving (disperse): LEAVE_PAUSE after his hands are down a guard
 # turns outward -- the left block to the left, the right to the right -- over
 # TURN seconds, eased, and walks out of the frame at WALK_SPEED, the scene's
-# metres a second (a man 0.97 of them tall: a slow walk), his feet on the
+# metres a second (a man 0.97 of them tall: about the pace his Walk was
+# made for, a little brisker), his feet on the
 # ground under him. File by file, as from a pew: the outermost first, the
 # next LEAVE_FILE after, the rearmost rank first and each before it
 # LEAVE_RANK later, LEAVE_JITTER at random on each. But one: the front rank's
 # man at the first player's grave, who stays LAST_STAYS after the last of the
 # others has turned, alone, and goes last.
-const WALK := "Pow_Walk"
-const WALK_STRIDE := 0.8      # metres a Pow_Walk cycle covers, the model's (Level3DFriends.MODEL)
-const WALK_SPEED := 0.85
+const WALK := "Walk"
+const WALK_STRIDE := 1.05     # metres a Walk cycle covers, the model's (soldier_walk.py's STRIDE)
+const WALK_SPEED := 0.62
 const WALK_BLEND := 0.3
 const TURN := 0.8
 const LEAVE_PAUSE := 0.3
@@ -206,7 +212,7 @@ var _world: Node3D
 var _camera: Camera3D
 var _camera_rest := Transform3D.IDENTITY   # where the glb has it
 var _templates := {}         # Prop_* name -> its node, out of the tree
-var _pow_scene: PackedScene
+var _guard_scene: PackedScene
 var _ground_mesh: TriangleMesh
 var _ground_xform := Transform3D.IDENTITY
 var _soft := {}              # a glb's material -> its soft copy
@@ -275,7 +281,7 @@ func _init() -> void:
 	viewport.set_meta(SOFT_LIGHT, true)
 	add_child(viewport)
 	texture = viewport.get_texture()
-	_pow_scene = load(POW_PATH)
+	_guard_scene = load(GUARD_PATH)
 	# The oaks' mask (_outline_oaks): the same world from the same camera,
 	# without the smoothing, which would blend an oak's colour into its
 	# neighbours'.
@@ -416,7 +422,7 @@ static func _transform_in(node: Node3D, root: Node) -> Transform3D:
 
 # Every mesh under `root`: its contour (Level3DHull), and its materials as
 # soft copies -- Lambert's diffuse, which the preview's _toon may already have
-# stepped on the glb's own (the prisoners' are the stage's too), and no
+# stepped on the glb's own (what the stage loads too), and no
 # specular, as the scene was drawn in Blender. The ground takes its colours
 # from its vertices. The contour's material is left as it is.
 func _soften(root: Node) -> void:
@@ -503,11 +509,11 @@ func show_game_over(rescued: Array, total: int) -> void:
 			var rank := i / PER_RANK
 			var file := i % PER_RANK
 			var x := middle + outward * (file - (PER_RANK - 1) * 0.5) * FILE_GAP
-			var guard := _pow_scene.instantiate() as Node3D
+			var guard := _guard_scene.instantiate() as Node3D
 			_soften(guard)
-			guard.scale = Vector3.ONE * POW_SCALE
+			guard.scale = Vector3.ONE * GUARD_SCALE
 			_put(guard, x, GUARD_Y - rank * RANK_GAP, PI + deg_to_rad(rng.randf_range(-3.0, 3.0)))
-			guard.scale = Vector3.ONE * POW_SCALE
+			guard.scale = Vector3.ONE * GUARD_SCALE
 			_stand(guard, rng, SALUTE_FROM + (file + rank * 0.5) * SALUTE_STEP)
 			if not _guard.is_empty() and _guard.back().node == guard:
 				_guard.back().merge({"out": outward, "file": file, "rank": rank,
@@ -605,13 +611,12 @@ func _leave(g: Dictionary, delta: float) -> void:
 		g.walking = true
 		g.from_yaw = node.rotation.y
 		var walk := player.get_animation(WALK)
-		# The clip is the glb's, shared with the stage's prisoners
-		# (Level3DFriends), which may have looped it already.
+		# The clip is the glb's, shared by the guard: looped once.
 		if walk.loop_mode != Animation.LOOP_LINEAR:
 			walk.length += LOOP_PAD
 			walk.loop_mode = Animation.LOOP_LINEAR
 		player.play(WALK, WALK_BLEND)
-		player.speed_scale = WALK_SPEED * walk.length / (WALK_STRIDE * POW_SCALE)
+		player.speed_scale = WALK_SPEED * walk.length / (WALK_STRIDE * GUARD_SCALE)
 	var turned := smoothstep(0.0, 1.0, clampf((_time - float(g.leave)) / TURN, 0.0, 1.0))
 	node.rotation.y = lerp_angle(float(g.from_yaw), float(g.out) * PI * 0.5, turned)
 	node.position.x += float(g.out) * WALK_SPEED * turned * delta
