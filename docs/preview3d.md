@@ -203,7 +203,20 @@ few seconds.
   MIA: the players are in those graves. The summary's plate it had at first
   -- GAME OVER, each player's score and rescued, PRESS ANY KEY -- covered
   half the frame and broke the burial; the guard says who brought in how
-  many. CONTINUE is `ContinueMode`'s yes: the
+  many. At either pick the words go (`WORDS_OUT`, 0.5 s) and the scene
+  plays on without them. CONTINUE is `ContinueMode`'s yes, played as help coming
+  (`Level3DGameOver.reinforce`, `HELP_*`): the guard's hands down, a
+  Chinook heard coming in from behind the camera and over -- above the
+  frame, the wind in the grass and the oaks up to four times as it passes --
+  then seen going away nose first across the hill's slope, 20 degrees to the
+  right of straight ahead, a dark shape against the light (no haze on it),
+  smaller, and sinking behind the ground's crest on its line; the colour
+  coming back into the print as it goes. The sky over the hill in the frame
+  is a narrow band, which a Chinook fills only well off: nearer, it is out of
+  the top of the frame; further right, behind the oak. It is at the stage's
+  size for it beside the soldiers (`HELP_SIZE`, the BTR's 0.31 against the
+  soldiers' 0.55), some nine soldiers long, not a real Chinook's sixteen. 9 s, long on purpose, a key
+  cutting it short; then the
   black lifts off the round started again from the Chinook, every player in,
   with the run as it was when the round started (`_saved`) -- on the first
   round fresh lives and no score, as the game's; R starts the run from

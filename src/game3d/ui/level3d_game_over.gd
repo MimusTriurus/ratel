@@ -124,6 +124,47 @@ const LEAVE_FILE := 0.45
 const LEAVE_RANK := 0.35
 const LEAVE_JITTER := 0.25
 const LAST_STAYS := 2.0
+# And at CONTINUE, help coming (reinforce): the hands down, and a Chinook
+# heard coming in from behind the camera, over the guard and the graves --
+# low, its rotors' wash taking the wind in the grass and the oaks up to
+# HELP_WIND times its strength as it passes over -- and away across the
+# slope to the side, HELP_HEADING off straight ahead, smaller, until it sinks
+# behind the ground's crest on that line. From HELP_FLY's start to its end
+# along a curve over those (_help_path), at the stage's size for it beside
+# the guard (HELP_SIZE), its rotors turning (Level3DChinook.split_clips),
+# nose first; heard as near as it is
+# (HELP_HEARD metres at full, less as it goes, in over HELP_SOUND_IN at the
+# start). From HELP_COLOUR_AT the print's colour comes back over
+# HELP_COLOUR_IN, as the BTR's run comes again, out of the Chinook. HELP_FOR
+# seconds, then the screen's black, the sound going with it; a key at the
+# screen cuts it short. Long: the player who has seen it skips it.
+const HELP_MODEL := "res://resources/3d/jackal_chinook.glb"
+const HELP_SOUND := "chinook"
+# The stage's Chinook is at the BTR's scale, Level3DBtr.MODEL_SCALE, against
+# the soldiers' 0.55 (Level3DFriends.MODEL): some nine soldiers long, not the
+# real one's sixteen -- the size the player knows it by. Here the soldiers are
+# at GUARD_SCALE, and it at the same share of that.
+const HELP_SIZE := 0.31 / 0.55
+const HELP_FLY := Vector2(0.6, 10.5)
+# Its curve's points, along HELP_HEADING (degrees from straight ahead, to the
+# right) from the middle of the cemetery: behind and over the camera, a
+# little to the other side (HELP_START); HELP_OVER along, above the frame's
+# top -- the sky over the hill in the frame is a narrow band, which a
+# Chinook fills only well off -- then HELP_PAST past the crest on its line
+# and HELP_CLEAR over it; its end HELP_BEHIND past the crest and under it.
+const HELP_HEADING := 20.0
+const HELP_START := Vector3(-3.0, 9.0, 16.0)
+const HELP_OVER := Vector2(10.0, 10.0)        # along, height
+const HELP_CLEAR := 7.0
+const HELP_PAST := 10.0
+const HELP_BEHIND := Vector2(40.0, 5.0)
+const HELP_HEARD := 10.0
+const HELP_SOUND_IN := 1.5
+const HELP_WIND := 4.0
+const HELP_WASH := 22.0       # how far off its wash reaches the plants, metres
+const HELP_COLOUR_AT := 4.5
+const HELP_COLOUR_IN := 2.5
+const HELP_FOR := 9.0
 # The posts: two soldiers with their rifles, one either side of the graves,
 # facing in across them -- seen from the side, the rifle against the sky --
 # at POST_AT (x off the middle, y; Blender metres, as the layout's), in the
@@ -208,6 +249,12 @@ const RAIN_SOUND_IN := 1.5
 var _wet := false
 var _rain_sound: AudioStreamPlayer
 var _rain_fade: Tween
+var _help_from := INF         # _time CONTINUE was picked at, INF until it is
+var _help: Node3D             # the Chinook
+var _help_path: Array[Vector3] = []   # its curve's four points
+var _help_leave := 0.6        # the screen's black's, which the sound goes with
+var _help_sound: AudioStreamPlayer
+var _help_fade: Tween
 
 # The old print over the frame (the header). The players' helmets on their
 # graves kept their colours under it for a while, keyed in the oaks' mask;
@@ -310,6 +357,8 @@ func _init() -> void:
 	add_child(_mask)
 	_rain_sound = AudioStreamPlayer.new()
 	add_child(_rain_sound)
+	_help_sound = AudioStreamPlayer.new()
+	add_child(_help_sound)
 	_mask_camera = Camera3D.new()
 	_mask_camera.cull_mask = 0xFFFFF & ~OAK_LAYER & ~RAIN_LAYER
 	_mask.add_child(_mask_camera)
@@ -674,8 +723,116 @@ func _leave(g: Dictionary, delta: float) -> void:
 		player.stop()
 
 
+# CONTINUE picked (the screen): help coming (the constants' note). The
+# seconds it takes before the screen goes to black over `leave`, which the
+# rotors' sound goes with.
+func reinforce(leave: float) -> float:
+	lower_salute()
+	_help_from = _time
+	_help_leave = leave
+	var model := load(HELP_MODEL) as PackedScene
+	if model != null:
+		_help = model.instantiate() as Node3D
+		_help.scale = Vector3.ONE * GUARD_SCALE * HELP_SIZE
+		_soften(_help)
+		# Against the light, a dark shape: the haze would have it a pale
+		# ghost of the hill's colour at the distance it is seen at.
+		for node in _help.find_children("*", "MeshInstance3D", true, false):
+			var instance := node as MeshInstance3D
+			for surface in instance.get_surface_override_material_count():
+				var material := instance.get_surface_override_material(surface) as BaseMaterial3D
+				if material != null:
+					material.disable_fog = true
+		_world.add_child(_help)
+		Level3DChinook.split_clips(_help)
+		_help_path = _help_course()
+		_place_help()
+	var sound := Level3DAudio.stream(HELP_SOUND)
+	if sound != null:
+		_help_sound.stream = sound
+		_help_sound.bus = Level3DAudio.bus(HELP_SOUND)
+		_help_sound.volume_db = Level3DAudio.SILENT_DB
+		_help_sound.play()
+	if _film != null:
+		_help_fade = create_tween()
+		_help_fade.tween_interval(HELP_COLOUR_AT)
+		_help_fade.tween_method(func(f: float): _film.set_shader_parameter("fade", f), 1.0, 0.0, HELP_COLOUR_IN) \
+				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	return HELP_FOR
+
+
+# A node's meshes' box, in its own space.
+static func _aabb(root: Node3D) -> AABB:
+	var box := AABB()
+	var first := true
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		var instance := node as MeshInstance3D
+		var b := _transform_in(instance, root) * instance.get_aabb()
+		box = b if first else box.merge(b)
+		first = false
+	return box
+
+
+# The Chinook's curve (the constants' note): its crest the highest ground on
+# its line.
+func _help_course() -> Array[Vector3]:
+	var a := deg_to_rad(HELP_HEADING)
+	var way := Vector3(sin(a), 0.0, -cos(a))
+	var crest := Vector2(0.0, -INF)   # (along, height)
+	var along := 0.0
+	while along < 150.0:
+		var p := way * along
+		var h := _ground_at(p.x, -p.z)
+		if h > crest.y:
+			crest = Vector2(along, h)
+		along += 1.0
+	var over := way * HELP_OVER.x + Vector3.UP * HELP_OVER.y
+	var over_crest := way * (crest.x + HELP_PAST) + Vector3.UP * (crest.y + HELP_CLEAR)
+	var behind := way * (crest.x + HELP_BEHIND.x) + Vector3.UP * (crest.y - HELP_BEHIND.y)
+	return [HELP_START, over, over_crest, behind]
+
+
+# The Chinook where it is on its curve now, nose along it, its wash and its
+# sound as near as it is.
+func _place_help() -> void:
+	var e := _time - _help_from
+	var u := clampf((e - HELP_FLY.x) / (HELP_FLY.y - HELP_FLY.x), 0.0, 1.0)
+	# Quick over the camera, slowing as it goes away.
+	u = 1.0 - pow(1.0 - u, 1.3)
+	var at := _bezier(u)
+	var ahead := _bezier(minf(u + 0.01, 1.0)) - at
+	_help.position = at
+	if ahead.length_squared() > 1e-8 and u < 1.0:
+		# The model's nose is its +z.
+		_help.basis = Basis.looking_at(ahead.normalized(), Vector3.UP, true).scaled(_help.scale)
+	var near := (at - Vector3(0.0, 1.0, 3.0)).length()
+	_set_wind_strength(1.0 + (HELP_WIND - 1.0) * clampf(1.0 - near / HELP_WASH, 0.0, 1.0))
+	if _help_sound.playing:
+		var gain := clampf(HELP_HEARD / maxf(near, 0.1), 0.0, 1.0) * clampf(e / HELP_SOUND_IN, 0.0, 1.0)
+		gain *= clampf(1.0 - (e - HELP_FOR) / _help_leave, 0.0, 1.0)
+		_help_sound.volume_db = Level3DAudio.volume_db(HELP_SOUND) + linear_to_db(maxf(gain, 0.0001))
+
+
+func _bezier(u: float) -> Vector3:
+	var p := _help_path
+	var v := 1.0 - u
+	return p[0] * v * v * v + p[1] * 3.0 * v * v * u + p[2] * 3.0 * v * u * u + p[3] * u * u * u
+
+
 func clear() -> void:
 	_rain_sound.stop()
+	_help_sound.stop()
+	if _help_fade != null:
+		_help_fade.kill()
+		_help_fade = null
+	if _help != null:
+		_help.queue_free()
+		_help = null
+	if _help_from != INF:
+		_help_from = INF
+		_set_wind_strength(1.0)
+		if _film != null:
+			_film.set_shader_parameter("fade", 1.0)
 	for node in _placed:
 		node.queue_free()
 	_placed.clear()
@@ -705,6 +862,8 @@ func _process(delta: float) -> void:
 		_film.set_shader_parameter("time", _time)
 	for material in _wind:
 		material.set_shader_parameter("wind_clock", _wind_clock)
+	if _help_from != INF and _help != null:
+		_place_help()
 	for g in _guard:
 		var player := g.player as AnimationPlayer
 		if g.gone:
@@ -1013,6 +1172,14 @@ func _grass(instance: MeshInstance3D, scene: Node) -> void:
 	instance.extra_cull_margin = 0.2
 	for surface in out.get_surface_count():
 		instance.set_surface_override_material(surface, null)
+
+
+# The wind in the grass and the oaks `times` its strength; none under --no-wind.
+func _set_wind_strength(times: float) -> void:
+	if OS.get_cmdline_user_args().has("--no-wind"):
+		return
+	for material in _wind:
+		material.set_shader_parameter("wind_strength", times)
 
 
 func _wind_material(shader: Shader) -> ShaderMaterial:

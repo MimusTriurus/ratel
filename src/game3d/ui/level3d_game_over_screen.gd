@@ -24,7 +24,11 @@
 # before the menu is up brings it up at once. At the pick the guard lowers
 # its hands (Level3DGameOver.lower_salute); then to black, the song fading
 # with it, and `continue_game` or `end_game` under the black; on CONTINUE the
-# black lifts off the stage. END goes slowly (END_*), a farewell: the hands
+# black lifts off the stage. CONTINUE is help coming (Level3DGameOver.reinforce):
+# a Chinook heard coming over, seen going away over the hill and down behind
+# it, the wind up as it passes, the colour back in the print, the stage's own
+# Chinook bringing the BTR out of the black. The words go at either pick
+# (WORDS_OUT): the scene plays on without them. END goes slowly (END_*), a farewell: the hands
 # down first, a long eased fade, a beat of black, the title out of it.
 #
 # Its own layer, over the HUD and under the title (which END opens over it)
@@ -71,6 +75,8 @@ const LIFT := 0.6               # the black off the stage, on CONTINUE
 const END_SEEN := 1.2
 const END_LEAVE := 2.0
 const END_HURRY := 0.6
+# The words gone at the pick, over WORDS_OUT: the scene plays on without them.
+const WORDS_OUT := 0.5
 const END_BLACK := 0.4
 const END_LIFT := 1.6
 
@@ -100,6 +106,7 @@ var _time := 0.0                # since the cemetery came up
 var _menu_from := 0.0           # _time the entries came in from
 var _selected := 0
 var _ending := false            # END picked: the guard leaving, and slowly to black
+var _words := 1.0              # the title's and the entries' share, 0 once picked
 var _hurried := false           # and a key pressed while it went
 var _entry_rects: Array[Rect2] = []   # this frame's, for the mouse
 
@@ -143,6 +150,7 @@ func open(p_rescued: Array[int], p_total: int, at_once := false) -> void:
 	total = p_total
 	_ending = false
 	_hurried = false
+	_words = 1.0
 	visible = true
 	_state = State.DARKENING
 	_kill_fade()
@@ -216,6 +224,7 @@ func _process(delta: float) -> void:
 # black, then the caller's -- slowly for END (END_*).
 func _pick() -> void:
 	_reticle.fire()
+	create_tween().tween_property(self, "_words", 0.0, WORDS_OUT)
 	Level3DAudio.play("menu_pick")
 	_state = State.LEAVING
 	_ending = _selected == 1
@@ -225,7 +234,7 @@ func _pick() -> void:
 		hold = (_scene.disperse() if _scene != null else 0.0) + END_SEEN
 		leave = END_LEAVE
 	elif _scene != null:
-		_scene.lower_salute()
+		hold = _scene.reinforce(leave)
 	_fade_away(hold, leave)
 
 
@@ -293,8 +302,8 @@ func _input(event: InputEvent) -> void:
 	if _state != State.TELLING and _state != State.MENU:
 		if _is_press(event):
 			get_viewport().set_input_as_handled()
-			# END's farewell cut short, once.
-			if _ending and not _hurried and _fade != null:
+			# END's farewell, or CONTINUE's help coming, cut short, once.
+			if not _hurried and _fade != null:
 				_hurried = true
 				_fade_away(0.0, END_HURRY)
 		return
@@ -394,7 +403,7 @@ func _draw_text() -> void:
 	if shown > 0.0:
 		var tg := _whole(TITLE_GLYPH * s)
 		Level3DFont.draw(_text, TITLE, roundf(size.x * 0.5 - Level3DFont.width(TITLE, tg) * 0.5),
-				roundf(TOP * s), tg, Level3DFont.WHITE, Color(1.0, 1.0, 1.0, shown))
+				roundf(TOP * s), tg, Level3DFont.WHITE, Color(1.0, 1.0, 1.0, shown * _words))
 	_entry_rects.clear()
 	if _state != State.MENU and _state != State.LEAVING:
 		return
@@ -409,7 +418,7 @@ func _draw_text() -> void:
 		var w := Level3DFont.width(ENTRIES[i], g)
 		_entry_rects.append(Rect2(x, y, w, g))
 		var tint: Color = PICKED_TINT if i == _selected else OTHER_TINT
-		tint.a *= menu
+		tint.a *= menu * _words
 		Level3DFont.draw(_text, ENTRIES[i], x, y, g, Level3DFont.WHITE, tint)
 		x += w + entry_gap
 
