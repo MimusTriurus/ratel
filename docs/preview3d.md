@@ -299,6 +299,12 @@ few seconds.
   band at the horizon, the guard's shadows long towards us and the ambient
   low, so that the guard reads as figures against the light and its models'
   faces and hands are in their own shadow. `--no-rain` gives the sunset back.
+- **Layers**: the cemetery is drawn on a canvas layer of its own
+  (`CEMETERY_LAYER`, 49) between the stage's grade and the pixels, so that
+  8-bit's look takes it as it takes the stage -- in pixels, under the CRT's
+  glass -- while the plate over it, on the HUD's layer, stays sharp; the HUD
+  itself is hidden while the cemetery stands. On the HUD's layer with the
+  plate, as it was at first, the pixels passed it by.
 - **Film**, over the finished frame (`level3d_game_over_film.gdshader`): an old
   print -- black and white, a grain, the corners dark and soft (by the place
   on the screen: Compatibility has no depth of field). The title hides the

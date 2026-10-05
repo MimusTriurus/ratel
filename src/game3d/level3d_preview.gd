@@ -2394,6 +2394,8 @@ func _make_hud() -> void:
 	# are put over it again (_ready, _make_menu).
 	_game_over_screen = Level3DGameOverScreen.new()
 	_game_over_screen.layer = HUD_LAYER
+	_game_over_screen.scene_layer = CEMETERY_LAYER
+	_game_over_screen.hud = _hud
 	_game_over_screen.continue_game = _continue_game
 	_game_over_screen.end_game = _end_game
 	add_child(_game_over_screen)
@@ -2812,8 +2814,11 @@ func _flash_modes() -> void:
 # preset's grade, the pixels, then the HUD, then the CRT's glass over all of
 # it. The grade is the stage's, so under the HUD. The HUD is over the pixels
 # because they would make it unreadable, and under the glass because it is on
-# the screen.
-const GRADE_LAYER := 49
+# the screen. The game over's cemetery between the grade, which is the
+# stage's light and not its own, and the pixels, which it takes as the stage
+# does; its plate on the HUD's layer.
+const GRADE_LAYER := 48
+const CEMETERY_LAYER := 49
 const PIXELS_LAYER := 50
 const HUD_LAYER := 51
 const CRT_LAYER := 52
