@@ -238,6 +238,10 @@ const SOUNDS := {
 	# Under everything, for as long as the preview runs.
 	"ambient_sea": {"bus": &"Ambient", "loop": true, "flat": true},
 	"ambient_jungle": {"bus": &"Ambient", "loop": true, "flat": true},
+	# The game over's rain (Level3DGameOver), while the cemetery stands:
+	# War Thunder's rain on a tank's armour, a seamless loop (build/sfx3d_rain/), the
+	# same file in classic: the chips have no rain.
+	"ambient_rain": {"bus": &"Ambient", "loop": true, "flat": true},
 }
 const AMBIENCE: Array[String] = ["ambient_sea", "ambient_jungle"]
 

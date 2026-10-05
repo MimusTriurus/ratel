@@ -43,7 +43,8 @@
       "menu_move": 0.0,
       "menu_pick": 0.0,
       "ambient_sea": 0.0,
-      "ambient_jungle": 0.0
+      "ambient_jungle": 0.0,
+      "ambient_rain": 0.0
     },
     "music": {
       "start.ogg": -0.5,
@@ -107,7 +108,8 @@
       "menu_move": 0.0,
       "menu_pick": 0.0,
       "ambient_sea": 0.0,
-      "ambient_jungle": 0.0
+      "ambient_jungle": 0.0,
+      "ambient_rain": 0.0
     },
     "music": {
       "start.ogg": -0.5,
@@ -171,7 +173,8 @@
       "menu_move": 0.0,
       "menu_pick": 0.0,
       "ambient_sea": 0.0,
-      "ambient_jungle": 0.0
+      "ambient_jungle": 0.0,
+      "ambient_rain": 0.0
     },
     "music": {
       "start.ogg": 0.0,

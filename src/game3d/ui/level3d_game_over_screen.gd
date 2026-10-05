@@ -196,6 +196,8 @@ func _pick() -> void:
 	Level3DAudio.play("menu_pick")
 	_state = State.LEAVING
 	Level3DAudio.fade_music(LEAVE)
+	if _scene != null:
+		_scene.fade_rain(LEAVE)
 	var go_on := _selected == 0
 	_kill_fade()
 	_fade = create_tween()

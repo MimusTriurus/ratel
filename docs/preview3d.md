@@ -288,7 +288,11 @@ few seconds.
   splashes at the guard's feet. CPU particles, the project being on
   Compatibility; each drop a quad stretched along its fall
   (`level3d_rain.gdshader`). They start over the hill's crest and stop 3 m
-  short of the camera, where one crossed the lens as a thick white bar. The
+  short of the camera, where one crossed the lens as a thick white bar. It
+  is heard too: `ambient_rain` (War Thunder's rain on a tank's armour, made a
+  seamless loop in `build/sfx3d_rain/`) fading in under the song as the
+  cemetery comes up and out with it, on the Ambient bus, its slider under
+  Ambience; modern and classic alike, none in original. The
   rain is on a render layer of its own that the oaks' mask leaves out, or a
   drop over a crown would ink a streak across it. Under the rain the light
   is turned round: the sun low behind the graves, into the camera, a bright

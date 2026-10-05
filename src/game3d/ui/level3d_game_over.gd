@@ -51,8 +51,9 @@
 # sky, the guard's shadows long towards us, a cold ambient, a warm haze --
 # and the drops falling through the frame, splashing at the guard's feet.
 # Gloomier, as the end of a run is; and the guard against the light is
-# figures, its models' faces and hands in their own shadow. The sunset is
-# still there under --no-rain.
+# figures, its models' faces and hands in their own shadow; and it is heard,
+# Level3DAudio's ambient_rain under the music while the cemetery stands
+# (RAIN_SOUND). The sunset is still there under --no-rain.
 #
 # And the frame an old print (`film`, level3d_game_over_film.gdshader): black
 # and white, a grain, the corners dark and soft -- what hides the models up
@@ -161,6 +162,12 @@ const RAIN_FOG_COLOUR := Color(0.78, 0.70, 0.62)
 const RAIN_BOX := AABB(Vector3(-12.0, 3.0, -16.0), Vector3(24.0, 9.0, 22.0))
 const SPLASH_AREA := Rect2(-7.0, -6.0, 14.0, 14.0)
 static var rain := true
+# The rain heard (the header), in over RAIN_SOUND_IN seconds; the screen
+# fades it with its song (fade_rain).
+const RAIN_SOUND := "ambient_rain"
+const RAIN_SOUND_IN := 1.5
+var _wet := false
+var _rain_sound: AudioStreamPlayer
 
 # The old print over the frame (the header), and what is kept out of it --
 # a grave's helmet, by its materials' names (KEPT_PREFIXES): in its double
@@ -267,6 +274,8 @@ func _init() -> void:
 	_mask.render_target_update_mode = SubViewport.UPDATE_WHEN_PARENT_VISIBLE
 	_mask.set_meta(SOFT_LIGHT, true)
 	add_child(_mask)
+	_rain_sound = AudioStreamPlayer.new()
+	add_child(_rain_sound)
 	_mask_camera = Camera3D.new()
 	_mask_camera.cull_mask = 0xFFFFF & ~OAK_LAYER & ~RAIN_LAYER & ~GRAVE_LAYER
 	_mask.add_child(_mask_camera)
@@ -289,6 +298,7 @@ func _build() -> void:
 	var sky_material := ShaderMaterial.new()
 	sky_material.shader = sky_shader
 	var wet := rain and not OS.get_cmdline_user_args().has("--no-rain")
+	_wet = wet
 	if wet:
 		sky_material.set_shader_parameter("HORIZON", RAIN_SKY[0])
 		sky_material.set_shader_parameter("ROSE", RAIN_SKY[1])
@@ -502,6 +512,9 @@ func show_game_over(rescued: Array, total: int) -> void:
 	_time = 0.0
 	shown = true
 	visible = true
+	# Deferred: built for a screen the tree has not taken in yet, it cannot
+	# play.
+	_start_rain_sound.call_deferred()
 
 
 static func _sum(values: Array) -> int:
@@ -540,6 +553,7 @@ func lower_salute() -> void:
 
 
 func clear() -> void:
+	_rain_sound.stop()
 	for node in _placed:
 		node.queue_free()
 	_placed.clear()
@@ -579,6 +593,28 @@ func _process(delta: float) -> void:
 		elif g.lowered and g.down != INF and _time >= g.down + player.get_animation(SALUTE).length:
 			player.play(ATTENTION, ATTENTION_BLEND)
 			g.down = INF
+
+
+# The rain heard, from nothing: the stream asked for again each time, as the
+# sound mode may have changed since (none in ORIGINAL).
+func _start_rain_sound() -> void:
+	_rain_sound.stop()
+	if not _wet:
+		return
+	var sound := Level3DAudio.stream(RAIN_SOUND)
+	if sound == null:
+		return
+	_rain_sound.stream = sound
+	_rain_sound.bus = Level3DAudio.bus(RAIN_SOUND)
+	_rain_sound.volume_db = Level3DAudio.SILENT_DB
+	_rain_sound.play()
+	create_tween().tween_property(_rain_sound, "volume_db", Level3DAudio.volume_db(RAIN_SOUND), RAIN_SOUND_IN)
+
+
+# The rain heard away over `seconds`, as the screen takes its song away.
+func fade_rain(seconds: float) -> void:
+	if _rain_sound.playing:
+		create_tween().tween_property(_rain_sound, "volume_db", Level3DAudio.SILENT_DB, seconds)
 
 
 # The old print (the header): a rect over the frame, drawn after it and so
