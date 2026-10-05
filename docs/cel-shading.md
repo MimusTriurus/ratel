@@ -656,7 +656,10 @@ glb — плоский цвет, как и требует стиль. После
 ## 9. Что ещё не в этом стиле
 
 Сделаны джип, пикап по листу модели (`jackal_pickup_lowpoly.blend`, скрипт
-`jackal_pickup.py`, устроен как джип; в превью ещё не подключён), БТР,
+`jackal_pickup.py`, устроен как джип; в превью ещё не подключён),
+бронепикап по концепту (`jackal_armored_lowpoly.blend`, скрипт
+`jackal_armored.py`; башня и все шесть пусковых скопированы из файла джипа;
+в превью ещё не подключён), БТР,
 Chinook, Little Bird (`jackal_littlebird_lowpoly.blend`,
 скрипт `jackal_littlebird.py`, устроен как Chinook), солдат по листу модели
 (`jackal_soldier_lowpoly.blend`, враг и пленный), катер, оба танка,
