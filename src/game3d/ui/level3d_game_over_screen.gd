@@ -41,12 +41,12 @@ extends CanvasLayer
 
 const TITLE := "KILLED IN ACTION"
 const ENTRIES: Array[String] = ["CONTINUE", "END"]
-const TITLE_GLYPH := 48.0
-const GLYPH := 24.0             # the entries'
+const TITLE_GLYPH := 64.0
+const GLYPH := 32.0             # the entries'
 const TOP := 72.0               # the title's top from the frame's
 const BOTTOM := 64.0            # the entries' foot from the frame's
-const ENTRY_GAP := 120.0        # between CONTINUE and END
-const RETICLE_X := -44.0        # where the reticle stands before an entry
+const ENTRY_GAP := 160.0        # between CONTINUE and END
+const RETICLE_X := -52.0        # where the reticle stands before an entry
 # The title's tints (Level3DTitle): the entry picked in the sun's yellow, the
 # other a dim copper.
 const PICKED_TINT := Level3DTitle.PICKED_TINT

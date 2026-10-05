@@ -196,7 +196,7 @@ few seconds.
   stage, which plays on with no one in it, for `GAME_OVER_HOLD` (2.5 s); then
   the stage goes to black with its song and pauses, and the cemetery comes up
   out of the black with its song. Over it nothing but KILLED IN ACTION at
-  the top, over the sky, fading in once the guard has presented arms (2.4 s), and a
+  the top, over the sky, fading in once the guard has saluted (2.4 s), and a
   little after (4.4 s), by itself, CONTINUE and END small at the foot of the
   frame, picked as the title's entries are, with its reticle and tints; a
   key, mouse button or pad button before that brings them at once. KIA, not
@@ -228,16 +228,23 @@ few seconds.
   it, found off the hill's own triangles (`TriangleMesh.intersect_ray`).
 - **The guard** is a soldier for every prisoner rescued: Kolos Studios' low
   poly soldier (`low_poly_soldier.glb`, CC BY 4.0, attribution in
-  `resources/3d/low_poly_soldier.txt`) at 0.54, with his rifle, at order arms
-  (`Order`) and then presenting arms (`Present`) from the aisle out; at
-  CONTINUE or END the guard comes back to order arms in the same order,
-  `Present` played back (`lower_salute`). The clips and the glb are made by
-  the scripts in `resources/3d/low_poly_soldier.blend` (`soldier_guard.py`,
-  `soldier_walk.py`, `soldier_rifle.py`, `soldier_export.py`). The prisoners'
-  own model stood there at first, saluting with the hand
-  (`Pow_Attention`, `Pow_Salute`). At END it then leaves (`disperse`): each
-  man turns outward, the left block to the left and the right to the right,
-  and walks out of the frame on `Walk`, his feet on the ground -- the
+  `resources/3d/low_poly_soldier.txt`) at 0.54, his rifle hidden
+  (`GUARD_UNARMED`), at attention (`Attention`) and then saluting with the hand
+  (`Salute`) from the aisle out; at CONTINUE or END it lowers its hands in
+  the same order, `Salute` played back (`lower_salute`). **Two more on post**
+  either side of the graves, facing in across them, with their rifles: order
+  arms (`Order`), presenting arms (`Present`) with the guard's first salute
+  and holding it from then on, the guard's hands down or not; at END they
+  stay. In the gap between
+  the guard's blocks there is room for two: four hid each other and stood
+  behind the guard's inner files. One model for all of them -- the
+  prisoners' own stood in the guard at first, and beside the armed soldiers
+  looked out of place. The clips and the glb are made by the scripts in
+  `resources/3d/low_poly_soldier.blend` (`soldier_guard.py`,
+  `soldier_walk.py`, `soldier_rifle.py`, `soldier_export.py`). At END the
+  guard then leaves (`disperse`): each man turns outward, the left block to
+  the left and the right to the right, and walks out of the frame on
+  `Walk_Unarmed`, his arms swinging, his feet on the ground -- the
   outermost file first, the rearmost rank first, as from a pew; the front
   rank's man at the first player's grave (the second's, if the first brought
   none home) stays 2 s after the last of the others has turned, and goes last. Each player's rescued stand in a block either

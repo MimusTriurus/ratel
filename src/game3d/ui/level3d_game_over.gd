@@ -1,22 +1,23 @@
 # The 3D preview's game over: a soldier for every prisoner the players
-# rescued, their backs to the camera, presenting arms at the players' graves
-# -- a cross for the first, a
-# headstone for the second, with two players only -- and up the slope behind
+# rescued, their backs to the camera, saluting the players' graves -- a cross
+# for the first, a headstone for the second, with two players only -- two
+# more on post beside the graves with their rifles, and up the slope behind
 # them a cross for every prisoner the run did not rescue. Cannon Fodder's
-# Boot Hill turned round: here the graves are the players', and as many stand
-# at them as they brought home.
+# Boot Hill turned round: here the graves are the players', and as many
+# stand at them as they brought home.
 #
 # Built from jackal_game_over.glb, which the GameOver scene of
 # resources/3d/jackal_boot_hill.blend exports (export_game_over() in its
 # jackal_boot_hill.py): the ground, the trees, the bushes, the rocks, the
 # grass and the camera as they stand, and under Props what this places, as
 # many of each as the run wants -- the two graves, the mound under them, a
-# prisoner's cross. The guard is Kolos Studios' low poly soldier
-# (low_poly_soldier.glb, CC BY 4.0, resources/3d/low_poly_soldier.txt) with
-# his rifle, at order arms (Order) and presenting arms (Present) -- the
-# prisoners stood there at first, saluting with the hand. Its blend's
-# soldier_guard.py makes those, soldier_walk.py his Walk, soldier_export.py
-# the glb. Where it all stands is jackal_boot_hill.py's
+# prisoner's cross. The soldiers are Kolos Studios' low poly soldier
+# (low_poly_soldier.glb, CC BY 4.0, resources/3d/low_poly_soldier.txt): the
+# guard without his rifle (hidden, GUARD_UNARMED) on Attention and Salute, the
+# two on post with it (POST_*) on Order and Present -- one model for all, as
+# the prisoners' own, which stood in the guard at first, next to them was not.
+# The blend's scripts make the clips (soldier_guard.py, soldier_walk.py) and
+# the glb (soldier_export.py). Where it all stands is jackal_boot_hill.py's
 # layout (GRAVE_*, GUARD_*, FIELD_*), in its Blender metres turned to these:
 # its (x, y, z) is (x, z, -y) here. Each thing stands on the ground under it
 # (_ground_at, off the hill's own triangles).
@@ -69,6 +70,8 @@ extends TextureRect
 
 const SCENE_PATH := "res://resources/3d/jackal_game_over.glb"
 const GUARD_PATH := "res://resources/3d/low_poly_soldier.glb"
+# The guard's rifle, its meshes in the glb, hidden: the guard salutes.
+const GUARD_UNARMED: Array[String] = ["M4", "M4_Mag"]
 # The viewport's meta that _toon (level3d_preview.gd) leaves alone.
 const SOFT_LIGHT := &"soft_light"
 
@@ -90,29 +93,29 @@ const FIELD_PER_ROW := 7
 const GUARD_SCALE := 0.54    # his 1.8 m to the level's metre, as the prisoners' are
 const SEED := 7
 
-const ATTENTION := "Order"
-const SALUTE := "Present"
+const ATTENTION := "Attention"
+const SALUTE := "Salute"
 const LOOP_PAD := 1.0 / 24.0  # a loop is exported to the frame before it repeats
-# The guard at attention for SALUTE_FROM seconds, then presenting arms from
-# the aisle out, SALUTE_STEP apart a file and half that a rank.
+# The guard at attention for SALUTE_FROM seconds, then saluting from the aisle
+# out, SALUTE_STEP apart a file and half that a rank.
 const SALUTE_FROM := 1.2
 const SALUTE_STEP := 0.08
 const SALUTE_BLEND := 0.12
-# Lowered (lower_salute) in the same order, Present played back, then at
+# Lowered (lower_salute) in the same order, the salute played back, then at
 # attention again, ATTENTION_BLEND into it.
 const ATTENTION_BLEND := 0.2
 # And at END, leaving (disperse): LEAVE_PAUSE after his hands are down a guard
 # turns outward -- the left block to the left, the right to the right -- over
 # TURN seconds, eased, and walks out of the frame at WALK_SPEED, the scene's
-# metres a second (a man 0.97 of them tall: about the pace his Walk was
+# metres a second (a man 0.97 of them tall: about the pace his walk was
 # made for, a little brisker), his feet on the
 # ground under him. File by file, as from a pew: the outermost first, the
 # next LEAVE_FILE after, the rearmost rank first and each before it
 # LEAVE_RANK later, LEAVE_JITTER at random on each. But one: the front rank's
 # man at the first player's grave, who stays LAST_STAYS after the last of the
 # others has turned, alone, and goes last.
-const WALK := "Walk"
-const WALK_STRIDE := 1.05     # metres a Walk cycle covers, the model's (soldier_walk.py's STRIDE)
+const WALK := "Walk_Unarmed"
+const WALK_STRIDE := 1.05     # metres a walk cycle covers, the model's (soldier_walk.py's STRIDE)
 const WALK_SPEED := 0.62
 const WALK_BLEND := 0.3
 const TURN := 0.8
@@ -121,6 +124,18 @@ const LEAVE_FILE := 0.45
 const LEAVE_RANK := 0.35
 const LEAVE_JITTER := 0.25
 const LAST_STAYS := 2.0
+# The posts: two soldiers with their rifles, one either side of the graves,
+# facing in across them -- seen from the side, the rifle against the sky --
+# at POST_AT (x off the middle, y; Blender metres, as the layout's), in the
+# gap between the guard's blocks: four, in a row, by the graves' corners or
+# one behind the other, hid each other and stood behind the guard's inner
+# files. At order arms (Order, the blend's soldier_guard.py), presenting arms
+# (Present) with the guard's first salute and holding it from then on: when
+# the guard lowers its hands, and at END, when it goes and they stay on post.
+# His 1.8 m at the prisoners' scale.
+const POST_ORDER := "Order"
+const POST_PRESENT := "Present"
+const POST_AT := Vector2(1.1, GRAVE_Y + 0.2)
 # The ranks the camera takes in as it stands; a block deeper than that (one
 # player who brought most of them home) and it steps back BACK_PER_RANK for
 # each more, or the last ranks would stand behind it. Twice a rank's depth:
@@ -213,6 +228,8 @@ var _camera: Camera3D
 var _camera_rest := Transform3D.IDENTITY   # where the glb has it
 var _templates := {}         # Prop_* name -> its node, out of the tree
 var _guard_scene: PackedScene
+# {player: AnimationPlayer, presenting}
+var _posts: Array[Dictionary] = []
 var _ground_mesh: TriangleMesh
 var _ground_xform := Transform3D.IDENTITY
 var _soft := {}              # a glb's material -> its soft copy
@@ -510,6 +527,10 @@ func show_game_over(rescued: Array, total: int) -> void:
 			var file := i % PER_RANK
 			var x := middle + outward * (file - (PER_RANK - 1) * 0.5) * FILE_GAP
 			var guard := _guard_scene.instantiate() as Node3D
+			for gun in GUARD_UNARMED:
+				var mesh := guard.find_child(gun, true, false) as Node3D
+				if mesh != null:
+					mesh.visible = false
 			_soften(guard)
 			guard.scale = Vector3.ONE * GUARD_SCALE
 			_put(guard, x, GUARD_Y - rank * RANK_GAP, PI + deg_to_rad(rng.randf_range(-3.0, 3.0)))
@@ -518,6 +539,7 @@ func show_game_over(rescued: Array, total: int) -> void:
 			if not _guard.is_empty() and _guard.back().node == guard:
 				_guard.back().merge({"out": outward, "file": file, "rank": rank,
 						"last": b == 0 and i == 0}, true)
+	_post_soldiers(rng)
 	# The ones not rescued: crosses in rows up the slope behind.
 	var lost := maxi(total - _sum(rescued), 0)
 	for i in lost:
@@ -557,6 +579,28 @@ func _stand(guard: Node3D, rng: RandomNumberGenerator, at: float) -> void:
 	player.seek(rng.randf() * attention.length, true)
 	_guard.append({"node": guard, "player": player, "at": at, "saluting": false, "down": INF, "lowered": false,
 			"out": 1.0, "file": 0, "rank": 0, "last": false, "leave": INF, "walking": false, "gone": false})
+
+
+# The posts (POST_*): either side, facing in.
+func _post_soldiers(rng: RandomNumberGenerator) -> void:
+	for side in [-1.0, 1.0]:
+		for at in [POST_AT]:
+			var post := _guard_scene.instantiate() as Node3D
+			_soften(post)
+			post.scale = Vector3.ONE * GUARD_SCALE
+			_put(post, side * at.x, at.y, -side * PI * 0.5 + deg_to_rad(rng.randf_range(-2.0, 2.0)))
+			post.scale = Vector3.ONE * GUARD_SCALE
+			var player := post.find_child("AnimationPlayer", true, false) as AnimationPlayer
+			if player == null:
+				continue
+			var order := player.get_animation(POST_ORDER)
+			if not order.has_meta(&"looped"):
+				order.length += LOOP_PAD
+				order.loop_mode = Animation.LOOP_LINEAR
+				order.set_meta(&"looped", true)
+			player.play(POST_ORDER)
+			player.seek(rng.randf() * order.length, true)
+			_posts.append({"player": player, "presenting": false})
 
 
 # The guard's hands down, CONTINUE or END picked at the end (the screen's
@@ -636,6 +680,7 @@ func clear() -> void:
 		node.queue_free()
 	_placed.clear()
 	_guard.clear()
+	_posts.clear()
 	shown = false
 	visible = false
 
@@ -675,6 +720,11 @@ func _process(delta: float) -> void:
 		elif g.lowered and g.down != INF and _time >= g.down + player.get_animation(SALUTE).length:
 			player.play(ATTENTION, ATTENTION_BLEND)
 			g.down = INF
+	# The posts present arms with the guard's first salute, and hold it.
+	for p in _posts:
+		if not p.presenting and _time >= SALUTE_FROM:
+			(p.player as AnimationPlayer).play(POST_PRESENT, SALUTE_BLEND)
+			p.presenting = true
 
 
 # The rain heard, from nothing: the stream asked for again each time, as the

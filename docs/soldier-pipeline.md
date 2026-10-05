@@ -321,9 +321,10 @@
 через лицо.
 
 `Pow_Attention` и `Pow_Salute` делались для почётного караула на экране
-game over 3D-превью. Теперь там стоит другой солдат, с автоматом
-(`low_poly_soldier.glb`, клипы `Order` и `Present`, `docs/preview3d.md`), и
-эти клипы ничто не играет. `Level3DFriends` их тоже не играет. Стойка —
+game over 3D-превью. Теперь там стоит другой солдат
+(`low_poly_soldier.glb`, свои клипы `Attention`, `Salute`, `Walk_Unarmed`, а
+у часовых с автоматами `Order` и `Present`, `docs/preview3d.md`), и эти
+клипы ничто не играет. `Level3DFriends` их тоже не играет. Стойка —
 `_attention()`. Отдание чести кончается на позе, а не на цикле: Godot
 держит последний кадр, а проигранный назад клип опускает руку.
 

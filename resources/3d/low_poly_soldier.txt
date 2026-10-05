@@ -19,7 +19,9 @@ Changed from the original glb:
   than to the right hand (soldier_rifle.py), which follows the hand in
   Standing and Walk;
 - Order (order arms, a breathing cycle) and Present (present arms, ending on
-  the pose) added for the game over's honour guard (soldier_guard.py);
+  the pose) added for the game over's two on post, and Attention, Salute
+  (the hand to the helmet) and Walk_Unarmed (the arms swinging) for its
+  guard, whose rifles the game hides (soldier_guard.py, soldier_walk.py);
 - a contour shell (a Solidify in a Soldier_Contour material) on every mesh,
-  and the glb, low_poly_soldier.glb, exported with Order, Present and Walk
+  and the glb, low_poly_soldier.glb, exported with those clips and Walk
   (soldier_export.py).
