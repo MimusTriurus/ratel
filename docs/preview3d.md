@@ -208,7 +208,9 @@ few seconds.
   with the run as it was when the round started (`_saved`) -- on the first
   round fresh lives and no score, as the game's; R starts the run from
   nothing. END is its no: the title screen, slowly -- the guard's hands
-  down first, the cemetery to black over 2 s, eased, with its song and rain,
+  down, and the guard leaving file by file (`disperse`), till one man stands
+  alone at the first grave and goes last; the cemetery to black over 2 s as
+  he walks, eased, with its song and rain, a key cutting it to 0.6 s,
   a beat of black, and the title out of it over 1.6 s, its song coming up
   with it (`Level3DTitle.open_from_black`, `Level3DAudio.fade_in_music`). The cemetery is
   made the first time it is wanted, under the black, not at the preview's
@@ -228,7 +230,12 @@ few seconds.
   `Pow_Attention` and then `Pow_Salute` (`docs/soldier-pipeline.md`, section 7),
   saluting from the aisle out; at CONTINUE or END it lowers its hands in
   the same order, the salute played back, and stands at
-  attention again (`lower_salute`). Each player's rescued stand in a block either
+  attention again (`lower_salute`). At END it then leaves (`disperse`): each
+  man turns outward, the left block to the left and the right to the right,
+  and walks out of the frame on `Pow_Walk`, his feet on the ground -- the
+  outermost file first, the rearmost rank first, as from a pew; the front
+  rank's man at the first player's grave (the second's, if the first brought
+  none home) stays 2 s after the last of the others has turned, and goes last. Each player's rescued stand in a block either
   side of the aisle the graves are seen down; one player's are split between
   the two. A block deeper than three ranks takes the camera back 1.8 m a rank.
 - **Soft light, not two tones -- a deliberate departure from

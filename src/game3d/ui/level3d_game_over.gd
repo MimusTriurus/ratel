@@ -96,6 +96,25 @@ const SALUTE_BLEND := 0.12
 # Lowered (lower_salute) in the same order, the salute played back, then at
 # attention again, ATTENTION_BLEND into it.
 const ATTENTION_BLEND := 0.2
+# And at END, leaving (disperse): LEAVE_PAUSE after his hands are down a guard
+# turns outward -- the left block to the left, the right to the right -- over
+# TURN seconds, eased, and walks out of the frame at WALK_SPEED, the scene's
+# metres a second (a man 0.97 of them tall: a slow walk), his feet on the
+# ground under him. File by file, as from a pew: the outermost first, the
+# next LEAVE_FILE after, the rearmost rank first and each before it
+# LEAVE_RANK later, LEAVE_JITTER at random on each. But one: the front rank's
+# man at the first player's grave, who stays LAST_STAYS after the last of the
+# others has turned, alone, and goes last.
+const WALK := "Pow_Walk"
+const WALK_STRIDE := 0.8      # metres a Pow_Walk cycle covers, the model's (Level3DFriends.MODEL)
+const WALK_SPEED := 0.85
+const WALK_BLEND := 0.3
+const TURN := 0.8
+const LEAVE_PAUSE := 0.3
+const LEAVE_FILE := 0.45
+const LEAVE_RANK := 0.35
+const LEAVE_JITTER := 0.25
+const LAST_STAYS := 2.0
 # The ranks the camera takes in as it stands; a block deeper than that (one
 # player who brought most of them home) and it steps back BACK_PER_RANK for
 # each more, or the last ranks would stand behind it. Twice a rank's depth:
@@ -167,6 +186,7 @@ const RAIN_SOUND := "ambient_rain"
 const RAIN_SOUND_IN := 1.5
 var _wet := false
 var _rain_sound: AudioStreamPlayer
+var _rain_fade: Tween
 
 # The old print over the frame (the header). The players' helmets on their
 # graves kept their colours under it for a while, keyed in the oaks' mask;
@@ -191,7 +211,9 @@ var _ground_mesh: TriangleMesh
 var _ground_xform := Transform3D.IDENTITY
 var _soft := {}              # a glb's material -> its soft copy
 var _placed: Array[Node3D] = []   # this run's graves, mounds, crosses and guard
-# {player: AnimationPlayer, at: seconds, saluting, down: seconds or INF, lowered}
+# {node, player: AnimationPlayer, at: seconds, saluting, down: seconds or INF,
+# lowered, out: -1 or 1 the way he leaves, file, rank, last: the one who stays,
+# leave: seconds or INF, walking, gone}
 var _guard: Array[Dictionary] = []
 var _time := 0.0
 
@@ -487,6 +509,9 @@ func show_game_over(rescued: Array, total: int) -> void:
 			_put(guard, x, GUARD_Y - rank * RANK_GAP, PI + deg_to_rad(rng.randf_range(-3.0, 3.0)))
 			guard.scale = Vector3.ONE * POW_SCALE
 			_stand(guard, rng, SALUTE_FROM + (file + rank * 0.5) * SALUTE_STEP)
+			if not _guard.is_empty() and _guard.back().node == guard:
+				_guard.back().merge({"out": outward, "file": file, "rank": rank,
+						"last": b == 0 and i == 0}, true)
 	# The ones not rescued: crosses in rows up the slope behind.
 	var lost := maxi(total - _sum(rescued), 0)
 	for i in lost:
@@ -524,7 +549,8 @@ func _stand(guard: Node3D, rng: RandomNumberGenerator, at: float) -> void:
 		attention.set_meta(&"looped", true)
 	player.play(ATTENTION)
 	player.seek(rng.randf() * attention.length, true)
-	_guard.append({"player": player, "at": at, "saluting": false, "down": INF, "lowered": false})
+	_guard.append({"node": guard, "player": player, "at": at, "saluting": false, "down": INF, "lowered": false,
+			"out": 1.0, "file": 0, "rank": 0, "last": false, "leave": INF, "walking": false, "gone": false})
 
 
 # The guard's hands down, CONTINUE or END picked at the end (the screen's
@@ -537,6 +563,66 @@ func lower_salute() -> void:
 			g.lowered = true
 		elif g.down == INF:
 			g.down = _time + float(g.at) - SALUTE_FROM
+
+
+# END picked (the screen): the hands down, and the guard leaving (the
+# constants' note). The seconds from now till the last of them turns to go,
+# 0 with no guard.
+func disperse() -> float:
+	lower_salute()
+	if _guard.is_empty():
+		return 0.0
+	var salute := (_guard[0].player as AnimationPlayer).get_animation(SALUTE).length
+	var rng := RandomNumberGenerator.new()
+	rng.seed = SEED
+	var last: Dictionary = {}
+	var ranks := 0
+	for g in _guard:
+		ranks = maxi(ranks, int(g.rank) + 1)
+		if g.last:
+			last = g
+	# No guard at the first grave (the first player brought none home): the
+	# second's nearest stays.
+	if last.is_empty():
+		last = _guard[0]
+	var latest := _time
+	for g in _guard:
+		var down: float = g.down if g.down != INF else _time - salute
+		g.leave = maxf(down + salute, _time) + LEAVE_PAUSE + (PER_RANK - 1 - int(g.file)) * LEAVE_FILE \
+				+ (ranks - 1 - int(g.rank)) * LEAVE_RANK + rng.randf() * LEAVE_JITTER
+		if g != last:
+			latest = maxf(latest, g.leave)
+	last.leave = maxf(latest, float(last.leave)) + LAST_STAYS
+	return float(last.leave) - _time
+
+
+# A guard leaving (disperse): turning outward over TURN, walking from his
+# first step, faster as he comes round; gone once he is out of the frame.
+func _leave(g: Dictionary, delta: float) -> void:
+	var node := g.node as Node3D
+	var player := g.player as AnimationPlayer
+	if not g.walking:
+		g.walking = true
+		g.from_yaw = node.rotation.y
+		var walk := player.get_animation(WALK)
+		# The clip is the glb's, shared with the stage's prisoners
+		# (Level3DFriends), which may have looped it already.
+		if walk.loop_mode != Animation.LOOP_LINEAR:
+			walk.length += LOOP_PAD
+			walk.loop_mode = Animation.LOOP_LINEAR
+		player.play(WALK, WALK_BLEND)
+		player.speed_scale = WALK_SPEED * walk.length / (WALK_STRIDE * POW_SCALE)
+	var turned := smoothstep(0.0, 1.0, clampf((_time - float(g.leave)) / TURN, 0.0, 1.0))
+	node.rotation.y = lerp_angle(float(g.from_yaw), float(g.out) * PI * 0.5, turned)
+	node.position.x += float(g.out) * WALK_SPEED * turned * delta
+	node.position.y = _ground_at(node.position.x, -node.position.z)
+	# His trailing shoulder, a man's height up, out of the frame too.
+	var behind := node.position + Vector3(-float(g.out) * 0.3, 0.9, 0.0)
+	if _camera != null and turned >= 1.0 and not _camera.is_position_in_frustum(behind) \
+			and not _camera.is_position_in_frustum(node.position + Vector3(-float(g.out) * 0.3, 0.0, 0.0)):
+		g.gone = true
+		node.visible = false
+		player.stop()
 
 
 func clear() -> void:
@@ -571,7 +657,11 @@ func _process(delta: float) -> void:
 		material.set_shader_parameter("wind_clock", _wind_clock)
 	for g in _guard:
 		var player := g.player as AnimationPlayer
-		if not g.saluting and _time >= g.at:
+		if g.gone:
+			continue
+		if _time >= g.leave:
+			_leave(g, delta)
+		elif not g.saluting and _time >= g.at:
 			player.play(SALUTE, SALUTE_BLEND)
 			g.saluting = true
 		elif not g.lowered and _time >= g.down:
@@ -595,13 +685,20 @@ func _start_rain_sound() -> void:
 	_rain_sound.bus = Level3DAudio.bus(RAIN_SOUND)
 	_rain_sound.volume_db = Level3DAudio.SILENT_DB
 	_rain_sound.play()
-	create_tween().tween_property(_rain_sound, "volume_db", Level3DAudio.volume_db(RAIN_SOUND), RAIN_SOUND_IN)
+	if _rain_fade != null:
+		_rain_fade.kill()
+	_rain_fade = create_tween()
+	_rain_fade.tween_property(_rain_sound, "volume_db", Level3DAudio.volume_db(RAIN_SOUND), RAIN_SOUND_IN)
 
 
 # The rain heard away over `seconds`, as the screen takes its song away.
 func fade_rain(seconds: float) -> void:
+	if _rain_fade != null:
+		_rain_fade.kill()
+		_rain_fade = null
 	if _rain_sound.playing:
-		create_tween().tween_property(_rain_sound, "volume_db", Level3DAudio.SILENT_DB, seconds)
+		_rain_fade = create_tween()
+		_rain_fade.tween_property(_rain_sound, "volume_db", Level3DAudio.SILENT_DB, seconds)
 
 
 # The old print (the header): a rect over the frame, drawn after it and so

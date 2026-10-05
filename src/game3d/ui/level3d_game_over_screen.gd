@@ -61,12 +61,16 @@ const MENU_AFTER := 4.4
 const MENU_IN := 0.6
 const LEAVE := 0.6              # to black once CONTINUE is picked
 const LIFT := 0.6               # the black off the stage, on CONTINUE
-# END is a farewell, and slower: the guard's hands down first (END_HOLD), the
-# cemetery to black over END_LEAVE, eased, its song and rain with it, a beat
-# of black (END_BLACK), and the title out of the black over END_LIFT
+# END is a farewell, and slower: the guard's hands down and the guard
+# leaving, file by file, till one man stands at the grave, and he goes too
+# (Level3DGameOver.disperse); END_SEEN into his walk the cemetery to black
+# over END_LEAVE, eased, its song and rain with it from the pick, a beat of
+# black (END_BLACK), and the title out of the black over END_LIFT
 # (`end_game`, which the preview's title does: Level3DTitle.open_from_black).
-const END_HOLD := 0.7
+# A key while they go and the black comes over END_HURRY instead.
+const END_SEEN := 1.2
 const END_LEAVE := 2.0
+const END_HURRY := 0.6
 const END_BLACK := 0.4
 const END_LIFT := 1.6
 
@@ -95,6 +99,8 @@ var _fade: Tween
 var _time := 0.0                # since the cemetery came up
 var _menu_from := 0.0           # _time the entries came in from
 var _selected := 0
+var _ending := false            # END picked: the guard leaving, and slowly to black
+var _hurried := false           # and a key pressed while it went
 var _entry_rects: Array[Rect2] = []   # this frame's, for the mouse
 
 
@@ -135,6 +141,8 @@ func pointer_hidden() -> bool:
 func open(p_rescued: Array[int], p_total: int, at_once := false) -> void:
 	rescued = p_rescued.duplicate()
 	total = p_total
+	_ending = false
+	_hurried = false
 	visible = true
 	_state = State.DARKENING
 	_kill_fade()
@@ -210,27 +218,38 @@ func _pick() -> void:
 	_reticle.fire()
 	Level3DAudio.play("menu_pick")
 	_state = State.LEAVING
-	var go_on := _selected == 0
-	var hold := Level3DReticle.FIRE if go_on else END_HOLD
-	var leave := LEAVE if go_on else END_LEAVE
+	_ending = _selected == 1
+	var hold := Level3DReticle.FIRE
+	var leave := LEAVE
+	if _ending:
+		hold = (_scene.disperse() if _scene != null else 0.0) + END_SEEN
+		leave = END_LEAVE
+	elif _scene != null:
+		_scene.lower_salute()
+	_fade_away(hold, leave)
+
+
+# The song, the rain and the cemetery to black after `hold` seconds, over
+# `leave`, eased for END; then the caller's.
+func _fade_away(hold: float, leave: float) -> void:
 	Level3DAudio.fade_music(hold + leave)
 	if _scene != null:
-		_scene.lower_salute()
 		_scene.fade_rain(hold + leave)
 	_kill_fade()
 	_fade = create_tween()
 	_fade.tween_interval(hold)
-	if go_on:
+	if not _ending:
 		_fade.tween_property(_veil, "color:a", 1.0, leave)
 	else:
-		_fade.tween_property(_veil, "color:a", 1.0, leave).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		_fade.tween_property(_veil, "color:a", 1.0, leave * (1.0 - _veil.color.a)) \
+				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 		_fade.tween_interval(END_BLACK)
 	_fade.tween_callback(func():
 		_fade = null
 		if _scene != null:
 			_scene.clear()
 		_text.queue_redraw()
-		if go_on:
+		if not _ending:
 			if continue_game.is_valid():
 				continue_game.call()
 			_lift()
@@ -274,6 +293,10 @@ func _input(event: InputEvent) -> void:
 	if _state != State.TELLING and _state != State.MENU:
 		if _is_press(event):
 			get_viewport().set_input_as_handled()
+			# END's farewell cut short, once.
+			if _ending and not _hurried and _fade != null:
+				_hurried = true
+				_fade_away(0.0, END_HURRY)
 		return
 	if _state == State.TELLING:
 		if not _is_press(event):
