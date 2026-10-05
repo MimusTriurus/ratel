@@ -22,6 +22,9 @@ Changed from the original glb:
   the pose) added for the game over's two on post, and Attention, Salute
   (the hand to the helmet) and Walk_Unarmed (the arms swinging) for its
   guard, whose rifles the game hides (soldier_guard.py, soldier_walk.py);
+- Aim (the rifle in the shoulder, a breathing cycle), Shoot (one round's
+  kick) and Death (thrown back, down onto his back, the rifle dropped beside
+  him) added for the stage's enemy (soldier_fire.py);
 - a contour shell (a Solidify in a Soldier_Contour material) on every mesh,
   and the glb, low_poly_soldier.glb, exported with those clips and Walk
   (soldier_export.py).
