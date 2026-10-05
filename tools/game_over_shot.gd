@@ -1,24 +1,24 @@
 extends SceneTree
 
 # The 3D preview's game over screen (Level3DGameOverScreen, the cemetery of
-# Level3DGameOver under its plate) on its own, without the stage under it, to
-# a PNG: quicker to look at than the preview's --shot with --game-over, which
-# loads the whole stage first. Needs a window (--headless has no framebuffer
-# to read back):
+# Level3DGameOver and KILLED IN ACTION over it) on its own, without the stage
+# under it, to a PNG: quicker to look at than the preview's --shot with
+# --game-over, which loads the whole stage first. Needs a window (--headless
+# has no framebuffer to read back):
 #
 #     godot --path . --windowed --resolution 1920x1080 --script tools/game_over_shot.gd \
-#         -- <out.png> <rescued, "7" or "7,4"[:<total>]> [<seconds>] [<scores, "12300,4500">] [--menu]
+#         -- <out.png> <rescued, "7" or "7,4"[:<total>]> [<seconds>] [--menu]
 #
 # `seconds` (4 if not given) is how long it runs before the shot: the guard
-# salutes from 1.2 s on, the plate comes at 2.4 s. --menu presses a key once
-# it is all in, for CONTINUE / END, and takes the shot half a second after.
+# salutes from 1.2 s on, the title comes in from 2.4 s, CONTINUE / END from
+# 4.4 s. --menu takes the shot once the entries are in, whatever `seconds`.
 
 func _initialize() -> void:
 	var args := Array(OS.get_cmdline_user_args())
 	var menu := args.has("--menu")
 	args.erase("--menu")
 	if args.size() < 2:
-		push_error("usage: -- <out.png> <rescued[,rescued][:total]> [<seconds>] [<scores>] [--menu]")
+		push_error("usage: -- <out.png> <rescued[,rescued][:total]> [<seconds>] [--menu]")
 		quit(1)
 		return
 	var parts := String(args[1]).split(":")
@@ -27,27 +27,12 @@ func _initialize() -> void:
 		rescued.append(int(n))
 	var total := int(parts[1]) if parts.size() > 1 else 24
 	var seconds := float(args[2]) if args.size() > 2 else 4.0
-	# The players' colours as the preview's HUD has them.
-	var preview: GDScript = load("res://src/game3d/level3d_preview.gd")
-	var scores: Array[int] = []
-	var colours: Array[Color] = []
-	for i in rescued.size():
-		scores.append(0)
-		colours.append(preview._crew_colour(i))
-	if args.size() > 3:
-		var given := String(args[3]).split(",")
-		for i in mini(given.size(), scores.size()):
-			scores[i] = int(given[i])
+	if menu:
+		seconds = maxf(seconds, Level3DGameOverScreen.MENU_AFTER + Level3DGameOverScreen.MENU_IN + 0.2)
 	var screen := Level3DGameOverScreen.new()
 	root.add_child(screen)
-	screen.open(scores, rescued, colours, total, true)
+	screen.open(rescued, total, true)
 	await create_timer(seconds).timeout
-	if menu:
-		var press := InputEventKey.new()
-		press.keycode = KEY_ENTER
-		press.pressed = true
-		Input.parse_input_event(press)
-		await create_timer(0.5).timeout
 	for i in 4:
 		await process_frame
 	await RenderingServer.frame_post_draw

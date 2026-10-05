@@ -92,6 +92,7 @@ var changed: Callable
 var _selected := 0
 var _splash: Control         # Level3DSplashLanding, Level3DSplash3D or Level3DSplash
 var _veil: ColorRect         # the fade to black over the launch
+var _from_black: Tween       # open_from_black's
 var _launching := false
 var _launch: Tween           # the hold and the fade
 var _waiting := 0            # players of a game whose fade the splash cannot time yet
@@ -152,6 +153,9 @@ func is_open() -> bool:
 
 
 func open() -> void:
+	if _from_black != null:
+		_from_black.kill()
+		_from_black = null
 	visible = true
 	_launching = false
 	_waiting = 0
@@ -304,9 +308,23 @@ func _hide_menu() -> void:
 		_splash.focus(SCREEN_MIDDLE, MENU_FOCUS)
 
 
+# Opened under black, which lifts off it over `seconds`, eased: from the game
+# over's END (Level3DGameOverScreen), which leaves to black slowly and would
+# otherwise cut to the title at once.
+func open_from_black(seconds: float) -> void:
+	open()
+	_veil.color.a = 1.0
+	_from_black = create_tween()
+	_from_black.tween_property(_veil, "color:a", 0.0, seconds).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_from_black.tween_callback(func(): _from_black = null)
+
+
 # The title fading out over the launch after `hold` seconds, and the run; an
 # infinite hold waits for the splash to say (_process).
 func _fade_out(count: int, hold: float) -> void:
+	if _from_black != null:
+		_from_black.kill()
+		_from_black = null
 	if _launch != null:
 		_launch.kill()
 		_launch = null

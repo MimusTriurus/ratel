@@ -195,17 +195,22 @@ few seconds.
   in the cemetery. Every player out, the GAME OVER banner stands over the
   stage, which plays on with no one in it, for `GAME_OVER_HOLD` (2.5 s); then
   the stage goes to black with its song and pauses, and the cemetery comes up
-  out of the black with `continue_song`. Once the guard has saluted, the
-  summary's plate across the top of the frame, over the sky and the hill's
-  crest rather than the guard: GAME OVER, each player's line -- his "1P" in
-  his HUD colour, his score, the prisoners he brought in -- and PRESS ANY
-  KEY, which any key, mouse button or pad button answers, as the summary's
-  does. Then in its place CONTINUE and END, picked as the title's entries
-  are, with its reticle and tints. CONTINUE is `ContinueMode`'s yes: the
+  out of the black with its song. Over it nothing but KILLED IN ACTION at
+  the top, over the sky, fading in once the guard has saluted (2.4 s), and a
+  little after (4.4 s), by itself, CONTINUE and END small at the foot of the
+  frame, picked as the title's entries are, with its reticle and tints; a
+  key, mouse button or pad button before that brings them at once. KIA, not
+  MIA: the players are in those graves. The summary's plate it had at first
+  -- GAME OVER, each player's score and rescued, PRESS ANY KEY -- covered
+  half the frame and broke the burial; the guard says who brought in how
+  many. CONTINUE is `ContinueMode`'s yes: the
   black lifts off the round started again from the Chinook, every player in,
   with the run as it was when the round started (`_saved`) -- on the first
   round fresh lives and no score, as the game's; R starts the run from
-  nothing. END is its no: the title screen. The cemetery is
+  nothing. END is its no: the title screen, slowly -- the guard's hands
+  down first, the cemetery to black over 2 s, eased, with its song and rain,
+  a beat of black, and the title out of it over 1.6 s, its song coming up
+  with it (`Level3DTitle.open_from_black`, `Level3DAudio.fade_in_music`). The cemetery is
   made the first time it is wanted, under the black, not at the preview's
   start. `--lives 0 --die 1` with `--shot` runs into it.
 
@@ -221,8 +226,8 @@ few seconds.
   it, found off the hill's own triangles (`TriangleMesh.intersect_ray`).
 - **The guard** is the prisoners' own `jackal_trooper_pow.glb` at 0.54, on
   `Pow_Attention` and then `Pow_Salute` (`docs/soldier-pipeline.md`, section 7),
-  saluting from the aisle out; at the key that answers PRESS ANY KEY it
-  lowers its hands in the same order, the salute played back, and stands at
+  saluting from the aisle out; at CONTINUE or END it lowers its hands in
+  the same order, the salute played back, and stands at
   attention again (`lower_salute`). Each player's rescued stand in a block either
   side of the aisle the graves are seen down; one player's are split between
   the two. A block deeper than three ranks takes the camera back 1.8 m a rank.

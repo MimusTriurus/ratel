@@ -447,7 +447,7 @@ func _put(node: Node3D, x: float, y: float, yaw := 0.0, tilt := 0.0) -> Node3D:
 # The run's end: `rescued` each player's rescued prisoners (one entry for one
 # player, two for two), `total` the prisoners there were; the rest are the
 # crosses. The guard comes to attention and salutes (_process), and lowers
-# its hands at the player's key (lower_salute).
+# its hands at the player's pick, CONTINUE or END (lower_salute).
 func show_game_over(rescued: Array, total: int) -> void:
 	clear()
 	var rng := RandomNumberGenerator.new()
@@ -527,7 +527,7 @@ func _stand(guard: Node3D, rng: RandomNumberGenerator, at: float) -> void:
 	_guard.append({"player": player, "at": at, "saluting": false, "down": INF, "lowered": false})
 
 
-# The guard's hands down, the player's key pressed at the end (the screen's
+# The guard's hands down, CONTINUE or END picked at the end (the screen's
 # menu): from the aisle out, as they went up; one that had not saluted yet
 # stays at attention.
 func lower_salute() -> void:

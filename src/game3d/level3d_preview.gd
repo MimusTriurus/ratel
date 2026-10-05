@@ -2774,24 +2774,16 @@ var _over_at := -1
 
 # --game-over's `spec`: each player's rescued, "7" or "7,4", and after a colon
 # the prisoners there were, "7,4:24" -- the stage's (Level3DFriends) if not.
-# The screen at once, its scores the players'.
+# The screen at once.
 func _test_game_over(spec: String) -> void:
 	var parts := spec.split(":")
 	var rescued: Array[int] = []
 	for n in parts[0].split(","):
 		rescued.append(int(n))
 	var total := int(parts[1]) if parts.size() > 1 else friends.prisoners_total()
-	var scores: Array[int] = []
-	var colours: Array[Color] = []
-	# A player the run has not got (2P without --players 2) in the colour he
-	# would have, not the first's: the HUD's "2P" was green as the first's.
-	for i in rescued.size():
-		var c: Crew = crews[mini(i, crews.size() - 1)]
-		scores.append(c.score)
-		colours.append(c.hud.colour if i < crews.size() else _crew_colour(i))
 	# The stage paused under it, as at a run's real end (_game_over).
 	get_tree().paused = true
-	_game_over_screen.open(scores, rescued, colours, total, true)
+	_game_over_screen.open(rescued, total, true)
 
 
 # The reticle: while the mouse aims something and there is a BTR to aim it --
@@ -2852,12 +2844,17 @@ func _make_menu() -> void:
 
 
 # The title screen over the stage, the tree paused under it and its own song
-# playing (Level3DAudio.MUSIC's "title").
-func _show_title() -> void:
+# playing (Level3DAudio.MUSIC's "title"); out of black over `from_black`
+# seconds, its song coming up with it, if given (the game over's END).
+func _show_title(from_black := 0.0) -> void:
 	_menu.leave()
 	get_tree().paused = true
 	Level3DAudio.play_music("title")
-	_title.open()
+	if from_black > 0.0:
+		Level3DAudio.fade_in_music(from_black)
+		_title.open_from_black(from_black)
+	else:
+		_title.open()
 
 
 # A game picked on the title screen: the run from the top, with the start
@@ -3299,8 +3296,8 @@ func _gone(c: Crew) -> bool:
 
 # Every player out: GAME OVER over the stage, which plays on under it with
 # no one in it, and after GAME_OVER_HOLD the game over screen
-# (Level3DGameOverScreen), the stage paused under it: each player's score and
-# the prisoners he brought in, and the stage's. Whether the tick is over.
+# (Level3DGameOverScreen), the stage paused under it: the prisoners each
+# player brought in, and the stage's. Whether the tick is over.
 const GAME_OVER_HOLD := 2.5
 
 func _game_over() -> bool:
@@ -3311,15 +3308,11 @@ func _game_over() -> bool:
 		_banners.game_over()
 	elif _ticks - _over_at >= roundi(GAME_OVER_HOLD * Engine.physics_ticks_per_second) \
 			and not _game_over_screen.is_open():
-		var scores: Array[int] = []
 		var rescued: Array[int] = []
-		var colours: Array[Color] = []
 		for c in crews:
-			scores.append(c.score)
 			rescued.append(_rescued_by.count(c.index))
-			colours.append(c.hud.colour)
 		get_tree().paused = true
-		_game_over_screen.open(scores, rescued, colours, friends.prisoners_total())
+		_game_over_screen.open(rescued, friends.prisoners_total())
 		return true
 	return false
 
@@ -3339,7 +3332,7 @@ func _continue_game() -> void:
 
 # Its END: ContinueMode's no, the title screen, over the game over's black.
 func _end_game() -> void:
-	_show_title()
+	_show_title(Level3DGameOverScreen.END_LIFT)
 
 
 # A player's gun and launcher this tick: the triggers, the aim, the weapon the

@@ -751,6 +751,24 @@ static func fade_music(seconds: float) -> void:
 		play_music(""))
 
 
+# The song just started (play_music) brought up from nothing over `seconds`
+# to where the mix has it: the title's after the game over's END
+# (Level3DGameOverScreen), out of the black.
+static func fade_in_music(seconds: float) -> void:
+	if _current == null or not _current._music.playing:
+		return
+	var c := _current
+	if c._music_fade != null:
+		c._music_fade.kill()
+	var player := c._music
+	var to := player.volume_db
+	player.volume_db = to + linear_to_db(0.0001)
+	c._music_fade = c.create_tween()
+	c._music_fade.tween_method(func(g: float): player.volume_db = to + linear_to_db(maxf(g, 0.0001)),
+			0.0, 1.0, maxf(seconds, 0.01))
+	c._music_fade.tween_callback(func(): c._music_fade = null)
+
+
 # Which enemies are on the field, for a song that follows the fight: a bool
 # for each of ADAPTIVE's layers, in the order the enemies came. One newly on
 # comes in on the next bar, one newly off goes now. Nothing for a song that
