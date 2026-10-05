@@ -93,6 +93,9 @@ const LOOP_PAD := 1.0 / 24.0  # a loop is exported to the frame before it repeat
 const SALUTE_FROM := 1.2
 const SALUTE_STEP := 0.08
 const SALUTE_BLEND := 0.12
+# Lowered (lower_salute) in the same order, the salute played back, then at
+# attention again, ATTENTION_BLEND into it.
+const ATTENTION_BLEND := 0.2
 # The ranks the camera takes in as it stands; a block deeper than that (one
 # player who brought most of them home) and it steps back BACK_PER_RANK for
 # each more, or the last ranks would stand behind it. Twice a rank's depth:
@@ -192,7 +195,8 @@ var _ground_mesh: TriangleMesh
 var _ground_xform := Transform3D.IDENTITY
 var _soft := {}              # a glb's material -> its soft copy
 var _placed: Array[Node3D] = []   # this run's graves, mounds, crosses and guard
-var _guard: Array[Dictionary] = []  # {player: AnimationPlayer, at: seconds, saluting}
+# {player: AnimationPlayer, at: seconds, saluting, down: seconds or INF, lowered}
+var _guard: Array[Dictionary] = []
 var _time := 0.0
 
 const WIND_SOFT_SHADER := preload("res://src/game3d/shaders/level3d_wind_soft.gdshader")
@@ -443,7 +447,8 @@ func _put(node: Node3D, x: float, y: float, yaw := 0.0, tilt := 0.0) -> Node3D:
 
 # The run's end: `rescued` each player's rescued prisoners (one entry for one
 # player, two for two), `total` the prisoners there were; the rest are the
-# crosses. The guard comes to attention and salutes (_process).
+# crosses. The guard comes to attention and salutes (_process), and lowers
+# its hands at the player's key (lower_salute).
 func show_game_over(rescued: Array, total: int) -> void:
 	clear()
 	var rng := RandomNumberGenerator.new()
@@ -519,7 +524,19 @@ func _stand(guard: Node3D, rng: RandomNumberGenerator, at: float) -> void:
 		attention.set_meta(&"looped", true)
 	player.play(ATTENTION)
 	player.seek(rng.randf() * attention.length, true)
-	_guard.append({"player": player, "at": at, "saluting": false})
+	_guard.append({"player": player, "at": at, "saluting": false, "down": INF, "lowered": false})
+
+
+# The guard's hands down, the player's key pressed at the end (the screen's
+# menu): from the aisle out, as they went up; one that had not saluted yet
+# stays at attention.
+func lower_salute() -> void:
+	for g in _guard:
+		if not g.saluting:
+			g.saluting = true
+			g.lowered = true
+		elif g.down == INF:
+			g.down = _time + float(g.at) - SALUTE_FROM
 
 
 func clear() -> void:
@@ -552,9 +569,16 @@ func _process(delta: float) -> void:
 	for material in _wind:
 		material.set_shader_parameter("wind_clock", _wind_clock)
 	for g in _guard:
+		var player := g.player as AnimationPlayer
 		if not g.saluting and _time >= g.at:
-			(g.player as AnimationPlayer).play(SALUTE, SALUTE_BLEND)
+			player.play(SALUTE, SALUTE_BLEND)
 			g.saluting = true
+		elif not g.lowered and _time >= g.down:
+			player.play_backwards(SALUTE)
+			g.lowered = true
+		elif g.lowered and g.down != INF and _time >= g.down + player.get_animation(SALUTE).length:
+			player.play(ATTENTION, ATTENTION_BLEND)
+			g.down = INF
 
 
 # The old print (the header): a rect over the frame, drawn after it and so

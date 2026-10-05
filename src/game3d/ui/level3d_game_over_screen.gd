@@ -304,6 +304,8 @@ func _input(event: InputEvent) -> void:
 
 func _to_menu() -> void:
 	_state = State.MENU
+	if _scene != null:
+		_scene.lower_salute()
 	_selected = 0
 	Level3DAudio.play("menu_pick")
 	_text.queue_redraw()

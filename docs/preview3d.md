@@ -221,7 +221,9 @@ few seconds.
   it, found off the hill's own triangles (`TriangleMesh.intersect_ray`).
 - **The guard** is the prisoners' own `jackal_trooper_pow.glb` at 0.54, on
   `Pow_Attention` and then `Pow_Salute` (`docs/soldier-pipeline.md`, section 7),
-  saluting from the aisle out. Each player's rescued stand in a block either
+  saluting from the aisle out; at the key that answers PRESS ANY KEY it
+  lowers its hands in the same order, the salute played back, and stands at
+  attention again (`lower_salute`). Each player's rescued stand in a block either
   side of the aisle the graves are seen down; one player's are split between
   the two. A block deeper than three ranks takes the camera back 1.8 m a rank.
 - **Soft light, not two tones -- a deliberate departure from
