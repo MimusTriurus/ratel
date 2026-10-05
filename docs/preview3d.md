@@ -221,7 +221,9 @@ few seconds.
   it, found off the hill's own triangles (`TriangleMesh.intersect_ray`).
 - **The guard** is the prisoners' own `jackal_trooper_pow.glb` at 0.54, on
   `Pow_Attention` and then `Pow_Salute` (`docs/soldier-pipeline.md`, section 7),
-  saluting from the aisle out. Each player's rescued stand in a block either
+  saluting from the aisle out; at the key that answers PRESS ANY KEY it
+  lowers its hands in the same order, the salute played back, and stands at
+  attention again (`lower_salute`). Each player's rescued stand in a block either
   side of the aisle the graves are seen down; one player's are split between
   the two. A block deeper than three ranks takes the camera back 1.8 m a rank.
 - **Soft light, not two tones -- a deliberate departure from
@@ -286,10 +288,34 @@ few seconds.
   splashes at the guard's feet. CPU particles, the project being on
   Compatibility; each drop a quad stretched along its fall
   (`level3d_rain.gdshader`). They start over the hill's crest and stop 3 m
-  short of the camera, where one crossed the lens as a thick white bar. The
+  short of the camera, where one crossed the lens as a thick white bar. It
+  is heard too: `ambient_rain` (War Thunder's rain on a tank's armour, made a
+  seamless loop in `build/sfx3d_rain/`) fading in under the song as the
+  cemetery comes up and out with it, on the Ambient bus, its slider under
+  Ambience; modern and classic alike, none in original. The
   rain is on a render layer of its own that the oaks' mask leaves out, or a
-  drop over a crown would ink a streak across it. `--no-rain` gives the
-  sunset back.
+  drop over a crown would ink a streak across it. Under the rain the light
+  is turned round: the sun low behind the graves, into the camera, a bright
+  band at the horizon, the guard's shadows long towards us and the ambient
+  low, so that the guard reads as figures against the light and its models'
+  faces and hands are in their own shadow. `--no-rain` gives the sunset back.
+- **Layers**: the cemetery is drawn on a canvas layer of its own
+  (`CEMETERY_LAYER`, 49) between the stage's grade and the pixels, so that
+  8-bit's look takes it as it takes the stage -- in pixels, under the CRT's
+  glass -- while the plate over it, on the HUD's layer, stays sharp; the HUD
+  itself is hidden while the cemetery stands. On the HUD's layer with the
+  plate, as it was at first, the pixels passed it by.
+- **Film**, over the finished frame (`level3d_game_over_film.gdshader`): an old
+  print -- black and white, a grain, the corners dark and soft (by the place
+  on the screen: Compatibility has no depth of field). The title hides the
+  models' low detail with its light; here the print does. Nothing keeps its
+  colour: the graves have neither wreaths nor helmets, a cross for the first
+  player and a headstone for the second telling them apart. Under the rain, drops on the lens
+  too: small ones, a few pixels across, land here and there, stand a few
+  seconds and dry, and larger ones run down the glass by fits and starts, as on a window -- round below,
+  narrowing above into a trail near as wide, a way cleared of the standing
+  drops with a bead left on it here and there, drying slowly; the frame through each turned over (`--no-drops`).
+  `--no-film` takes it off.
 - **Light**, the Blender scene's: a low warm sun from behind the camera's left
   and a warm ambient, the summer grass faded so that the green uniforms stand
   out. Compatibility lights it about 2.2 times as bright as the energies say

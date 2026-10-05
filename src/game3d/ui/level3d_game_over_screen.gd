@@ -32,6 +32,10 @@
 # pauses the stage under it, and so is not there to open the Escape menu.
 # The cemetery is made the first time it is wanted, under the black: its glb
 # and the guard's are a pause to load that the preview's start need not pay.
+# It is on a layer of its own under this one (`scene_layer`), so that the
+# preview's pixels (8-bit's look) take it as they take the stage, while the
+# plate's text over it stays sharp as the HUD's does; and the HUD (`hud`),
+# which would be between the two, is hidden while it stands.
 class_name Level3DGameOverScreen
 extends CanvasLayer
 
@@ -70,9 +74,14 @@ var scores: Array[int] = []
 var rescued: Array[int] = []
 var colours: Array[Color] = []
 var total := 0
+# The cemetery's layer, under this one's; -1 for the one just under it.
+var scene_layer := -1
+# The layer hidden while the cemetery stands, or null.
+var hud: CanvasLayer
 
 var _state := State.CLOSED
 var _scene: Level3DGameOver
+var _scene_layer: CanvasLayer
 var _text: Control
 var _reticle: Level3DReticle
 var _veil: ColorRect
@@ -146,14 +155,21 @@ func close() -> void:
 	_reticle.shown = false
 	if _scene != null:
 		_scene.clear()
+	if hud != null:
+		hud.visible = true
 
 
 func _show_cemetery() -> void:
 	_fade = null
 	if _scene == null:
+		_scene_layer = CanvasLayer.new()
+		_scene_layer.process_mode = Node.PROCESS_MODE_ALWAYS
+		add_child(_scene_layer)
 		_scene = Level3DGameOver.new()
-		add_child(_scene)
-		move_child(_scene, 0)
+		_scene_layer.add_child(_scene)
+	_scene_layer.layer = scene_layer if scene_layer >= 0 else layer - 1
+	if hud != null:
+		hud.visible = false
 	var shown: Array = []
 	for n in rescued:
 		shown.append(n)
@@ -196,6 +212,8 @@ func _pick() -> void:
 	Level3DAudio.play("menu_pick")
 	_state = State.LEAVING
 	Level3DAudio.fade_music(LEAVE)
+	if _scene != null:
+		_scene.fade_rain(LEAVE)
 	var go_on := _selected == 0
 	_kill_fade()
 	_fade = create_tween()
@@ -304,6 +322,8 @@ func _input(event: InputEvent) -> void:
 
 func _to_menu() -> void:
 	_state = State.MENU
+	if _scene != null:
+		_scene.lower_salute()
 	_selected = 0
 	Level3DAudio.play("menu_pick")
 	_text.queue_redraw()

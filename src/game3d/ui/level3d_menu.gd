@@ -78,7 +78,7 @@ const SOUND_GROUPS := [
 	["Interface", [["pickup", "Prisoner picked up"], ["rescue_pickup", "Prisoner aboard the helicopter"],
 			["upgrade", "Weapon upgrade"], ["extra_life", "Extra life"], ["warning", "Boss warning"], ["pause", "Pause"],
 			["menu_move", "Menu: onto an entry"], ["menu_pick", "Menu: entry picked"]]],
-	["Ambience", [["ambient_sea", "Sea"], ["ambient_jungle", "Jungle"]]],
+	["Ambience", [["ambient_sea", "Sea"], ["ambient_jungle", "Jungle"], ["ambient_rain", "Rain"]]],
 ]
 # The Mixer tab: the game's own gains (Level3DAudio's mix), in dB, for the
 # mode picked on it. SOUND_GROUPS' sounds, with enemy_hit after the blast it

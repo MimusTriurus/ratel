@@ -360,10 +360,12 @@ func _ready() -> void:
 		Level3DMap.rows = int(Level3DIO.read_path(Level3DMap.file)["grid"]["height"])
 	# The title screen first, which starts the run when a game is picked;
 	# not for a --shot, nor for the level editor's Play, there to try the
-	# level out. It is up before the stage is built: the stage is built under
-	# it a little at a time (_breathe), the title's splash playing on, and a
-	# game picked before it is done waits for it (Level3DTitle.game_ready).
-	var titled := _persist and not run_args.has("--editor") and not run_args.has("--intro")
+	# level out, nor for --game-over, which opens over the run at once. It is
+	# up before the stage is built: the stage is built under it a little at a
+	# time (_breathe), the title's splash playing on, and a game picked before
+	# it is done waits for it (Level3DTitle.game_ready).
+	var titled := _persist and not run_args.has("--editor") and not run_args.has("--intro") \
+			and not run_args.has("--game-over")
 	if titled:
 		_make_menu()
 		_apply_settings()
@@ -476,7 +478,10 @@ func _ready() -> void:
 			c.device = _first_device(c.upgrades)
 		_dress_crews()
 		# intro_song, IntroMapMode's: the start jingle running on into stage 1.
-		Level3DAudio.play_music("intro")
+		# Not under --game-over, whose screen plays its own: it was heard for
+		# the second the cemetery takes to load, then cut off.
+		if not args.has("--game-over"):
+			Level3DAudio.play_music("intro")
 		if args.has("--intro") or not (args.has("--shot") or args.has("--obstacle-map")):
 			_start_intro()
 		_start_flags()
@@ -2392,6 +2397,8 @@ func _make_hud() -> void:
 	# are put over it again (_ready, _make_menu).
 	_game_over_screen = Level3DGameOverScreen.new()
 	_game_over_screen.layer = HUD_LAYER
+	_game_over_screen.scene_layer = CEMETERY_LAYER
+	_game_over_screen.hud = _hud
 	_game_over_screen.continue_game = _continue_game
 	_game_over_screen.end_game = _end_game
 	add_child(_game_over_screen)
@@ -2776,10 +2783,14 @@ func _test_game_over(spec: String) -> void:
 	var total := int(parts[1]) if parts.size() > 1 else friends.prisoners_total()
 	var scores: Array[int] = []
 	var colours: Array[Color] = []
+	# A player the run has not got (2P without --players 2) in the colour he
+	# would have, not the first's: the HUD's "2P" was green as the first's.
 	for i in rescued.size():
 		var c: Crew = crews[mini(i, crews.size() - 1)]
 		scores.append(c.score)
-		colours.append(c.hud.colour)
+		colours.append(c.hud.colour if i < crews.size() else _crew_colour(i))
+	# The stage paused under it, as at a run's real end (_game_over).
+	get_tree().paused = true
 	_game_over_screen.open(scores, rescued, colours, total, true)
 
 
@@ -2808,8 +2819,11 @@ func _flash_modes() -> void:
 # preset's grade, the pixels, then the HUD, then the CRT's glass over all of
 # it. The grade is the stage's, so under the HUD. The HUD is over the pixels
 # because they would make it unreadable, and under the glass because it is on
-# the screen.
-const GRADE_LAYER := 49
+# the screen. The game over's cemetery between the grade, which is the
+# stage's light and not its own, and the pixels, which it takes as the stage
+# does; its plate on the HUD's layer.
+const GRADE_LAYER := 48
+const CEMETERY_LAYER := 49
 const PIXELS_LAYER := 50
 const HUD_LAYER := 51
 const CRT_LAYER := 52

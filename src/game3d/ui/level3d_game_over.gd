@@ -46,10 +46,19 @@
 # under --no-wind.
 #
 # And it rains (`rain`, Level3DRain): the sunset that the scene was made
-# under turned to an overcast evening -- a grey sky, a weak cold sun whose
-# shadows are pale, a cold ambient, a haze in the distance -- and the drops
-# falling through the frame, splashing at the guard's feet. Gloomier, as the
-# end of a run is. The sunset is still there under --no-rain.
+# under turned to a wet evening, the sun low behind the graves through a gap
+# in the cloud, into the camera -- a bright band at the horizon over a dark
+# sky, the guard's shadows long towards us, a cold ambient, a warm haze --
+# and the drops falling through the frame, splashing at the guard's feet.
+# Gloomier, as the end of a run is; and the guard against the light is
+# figures, its models' faces and hands in their own shadow; and it is heard,
+# Level3DAudio's ambient_rain under the music while the cemetery stands
+# (RAIN_SOUND). The sunset is still there under --no-rain.
+#
+# And the frame an old print (`film`, level3d_game_over_film.gdshader): black
+# and white, a grain, the corners dark and soft -- what hides the models up
+# close here, as the light does on the title; and under the rain, drops on
+# the lens (`lens_drops`, --no-drops). Gone under --no-film.
 class_name Level3DGameOver
 extends TextureRect
 
@@ -84,6 +93,9 @@ const LOOP_PAD := 1.0 / 24.0  # a loop is exported to the frame before it repeat
 const SALUTE_FROM := 1.2
 const SALUTE_STEP := 0.08
 const SALUTE_BLEND := 0.12
+# Lowered (lower_salute) in the same order, the salute played back, then at
+# attention again, ATTENTION_BLEND into it.
+const ATTENTION_BLEND := 0.2
 # The ranks the camera takes in as it stands; a block deeper than that (one
 # player who brought most of them home) and it steps back BACK_PER_RANK for
 # each more, or the last ranks would stand behind it. Twice a rank's depth:
@@ -126,19 +138,21 @@ void sky() {
 }
 """
 
-# The rain's overcast, in place of the sunset's light and sky (the header):
-# the sky's three bands, sRGB, grey from a paler horizon up; a sun from the
-# same quarter at RAIN_SUN of its energy, cold, its shadows RAIN_SHADOW
-# opaque; an ambient as cold, brighter than the sunset's, which is most of
-# the light under a cloud; a haze RAIN_FOG thick, the sky's colour.
-const RAIN_SKY: Array[Vector3] = [Vector3(0.60, 0.62, 0.64), Vector3(0.50, 0.53, 0.57), Vector3(0.34, 0.37, 0.43)]
-const RAIN_SUN := 0.4
-const RAIN_SUN_COLOUR := Color(0.80, 0.86, 0.96)
-const RAIN_SHADOW := 0.45
-const RAIN_AMBIENT := Color(0.60, 0.66, 0.78)
-const RAIN_AMBIENT_ENERGY := 0.85
-const RAIN_FOG := 0.022
-const RAIN_FOG_COLOUR := Color(0.55, 0.58, 0.62)
+# The rain's light, in place of the sunset's (the header): the sky's three
+# bands, sRGB, a warm bright horizon under a slate one; the sun low from
+# behind the graves into the camera (RAIN_SUN_TRAVEL), RAIN_SUN times the
+# sunset's energy, its shadows near full; the ambient cold and low, so that
+# what the sun does not reach is dark; a haze RAIN_FOG thick, the horizon's
+# colour, thin enough that the crosses up the slope still show.
+const RAIN_SKY: Array[Vector3] = [Vector3(1.0, 0.86, 0.66), Vector3(0.70, 0.64, 0.62), Vector3(0.30, 0.32, 0.38)]
+const RAIN_SUN_TRAVEL := Vector3(0.3, -0.16, 0.94)
+const RAIN_SUN := 2.5
+const RAIN_SUN_COLOUR := Color(1.0, 0.82, 0.62)
+const RAIN_SHADOW := 0.9
+const RAIN_AMBIENT := Color(0.42, 0.46, 0.58)
+const RAIN_AMBIENT_ENERGY := 0.45
+const RAIN_FOG := 0.024
+const RAIN_FOG_COLOUR := Color(0.78, 0.70, 0.62)
 # Where the drops start, the scene's metres: over the frame from the hill's
 # crest to 3 m short of the camera -- nearer, a drop crossed the lens as a
 # thick white bar; further off they are under a pixel, and the haze is the
@@ -147,6 +161,23 @@ const RAIN_FOG_COLOUR := Color(0.55, 0.58, 0.62)
 const RAIN_BOX := AABB(Vector3(-12.0, 3.0, -16.0), Vector3(24.0, 9.0, 22.0))
 const SPLASH_AREA := Rect2(-7.0, -6.0, 14.0, 14.0)
 static var rain := true
+# The rain heard (the header), in over RAIN_SOUND_IN seconds; the screen
+# fades it with its song (fade_rain).
+const RAIN_SOUND := "ambient_rain"
+const RAIN_SOUND_IN := 1.5
+var _wet := false
+var _rain_sound: AudioStreamPlayer
+
+# The old print over the frame (the header). The players' helmets on their
+# graves kept their colours under it for a while, keyed in the oaks' mask;
+# the helmets went, at the user's word, and the keying with them.
+const FILM_SHADER := preload("res://src/game3d/shaders/level3d_game_over_film.gdshader")
+static var film := true
+# The rain's drops on the lens, in the print (level3d_game_over_film.gdshader):
+# under the rain only, and not under --no-drops.
+static var lens_drops := true
+var _wet_lens := false
+var _film: ShaderMaterial
 
 var viewport: SubViewport
 var shown := false
@@ -160,7 +191,8 @@ var _ground_mesh: TriangleMesh
 var _ground_xform := Transform3D.IDENTITY
 var _soft := {}              # a glb's material -> its soft copy
 var _placed: Array[Node3D] = []   # this run's graves, mounds, crosses and guard
-var _guard: Array[Dictionary] = []  # {player: AnimationPlayer, at: seconds, saluting}
+# {player: AnimationPlayer, at: seconds, saluting, down: seconds or INF, lowered}
+var _guard: Array[Dictionary] = []
 var _time := 0.0
 
 const WIND_SOFT_SHADER := preload("res://src/game3d/shaders/level3d_wind_soft.gdshader")
@@ -231,6 +263,8 @@ func _init() -> void:
 	_mask.render_target_update_mode = SubViewport.UPDATE_WHEN_PARENT_VISIBLE
 	_mask.set_meta(SOFT_LIGHT, true)
 	add_child(_mask)
+	_rain_sound = AudioStreamPlayer.new()
+	add_child(_rain_sound)
 	_mask_camera = Camera3D.new()
 	_mask_camera.cull_mask = 0xFFFFF & ~OAK_LAYER & ~RAIN_LAYER
 	_mask.add_child(_mask_camera)
@@ -253,6 +287,7 @@ func _build() -> void:
 	var sky_material := ShaderMaterial.new()
 	sky_material.shader = sky_shader
 	var wet := rain and not OS.get_cmdline_user_args().has("--no-rain")
+	_wet = wet
 	if wet:
 		sky_material.set_shader_parameter("HORIZON", RAIN_SKY[0])
 		sky_material.set_shader_parameter("ROSE", RAIN_SKY[1])
@@ -286,8 +321,11 @@ func _build() -> void:
 		sun.shadow_opacity = RAIN_SHADOW
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = SHADOW_DISTANCE
-	sun.basis = Basis.looking_at(SUN_TRAVEL, Vector3.UP)
+	sun.basis = Basis.looking_at((RAIN_SUN_TRAVEL if wet else SUN_TRAVEL).normalized(), Vector3.UP)
 	_world.add_child(sun)
+	_wet_lens = wet and lens_drops and not OS.get_cmdline_user_args().has("--no-drops")
+	if film and not OS.get_cmdline_user_args().has("--no-film"):
+		_add_film()
 
 	var scene := (load(SCENE_PATH) as PackedScene).instantiate() as Node3D
 	var props := scene.find_child("Props", true, false)
@@ -300,6 +338,11 @@ func _build() -> void:
 	var hill := scene.find_child("GO_Hill", true, false) as MeshInstance3D
 	if _is_compatibility():
 		_colours_to_srgb(hill)
+	# The rain's sun is some 9 degrees up: the hill's facets, each a ridge to
+	# it, threw shadows tens of metres long with straight edges across the
+	# graves' ground, which read as nothing in the scene. Lit by it still.
+	if wet:
+		hill.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_ground_mesh = hill.mesh.generate_triangle_mesh()
 	_ground_xform = _transform_in(hill, scene)
 	_soften(scene)
@@ -403,7 +446,8 @@ func _put(node: Node3D, x: float, y: float, yaw := 0.0, tilt := 0.0) -> Node3D:
 
 # The run's end: `rescued` each player's rescued prisoners (one entry for one
 # player, two for two), `total` the prisoners there were; the rest are the
-# crosses. The guard comes to attention and salutes (_process).
+# crosses. The guard comes to attention and salutes (_process), and lowers
+# its hands at the player's key (lower_salute).
 func show_game_over(rescued: Array, total: int) -> void:
 	clear()
 	var rng := RandomNumberGenerator.new()
@@ -455,6 +499,9 @@ func show_game_over(rescued: Array, total: int) -> void:
 	_time = 0.0
 	shown = true
 	visible = true
+	# Deferred: built for a screen the tree has not taken in yet, it cannot
+	# play.
+	_start_rain_sound.call_deferred()
 
 
 static func _sum(values: Array) -> int:
@@ -477,10 +524,23 @@ func _stand(guard: Node3D, rng: RandomNumberGenerator, at: float) -> void:
 		attention.set_meta(&"looped", true)
 	player.play(ATTENTION)
 	player.seek(rng.randf() * attention.length, true)
-	_guard.append({"player": player, "at": at, "saluting": false})
+	_guard.append({"player": player, "at": at, "saluting": false, "down": INF, "lowered": false})
+
+
+# The guard's hands down, the player's key pressed at the end (the screen's
+# menu): from the aisle out, as they went up; one that had not saluted yet
+# stays at attention.
+func lower_salute() -> void:
+	for g in _guard:
+		if not g.saluting:
+			g.saluting = true
+			g.lowered = true
+		elif g.down == INF:
+			g.down = _time + float(g.at) - SALUTE_FROM
 
 
 func clear() -> void:
+	_rain_sound.stop()
 	for node in _placed:
 		node.queue_free()
 	_placed.clear()
@@ -505,12 +565,57 @@ func _process(delta: float) -> void:
 		_mask_camera.keep_aspect = _camera.keep_aspect
 	_time += delta
 	_wind_clock += delta
+	if _film != null:
+		_film.set_shader_parameter("time", _time)
 	for material in _wind:
 		material.set_shader_parameter("wind_clock", _wind_clock)
 	for g in _guard:
+		var player := g.player as AnimationPlayer
 		if not g.saluting and _time >= g.at:
-			(g.player as AnimationPlayer).play(SALUTE, SALUTE_BLEND)
+			player.play(SALUTE, SALUTE_BLEND)
 			g.saluting = true
+		elif not g.lowered and _time >= g.down:
+			player.play_backwards(SALUTE)
+			g.lowered = true
+		elif g.lowered and g.down != INF and _time >= g.down + player.get_animation(SALUTE).length:
+			player.play(ATTENTION, ATTENTION_BLEND)
+			g.down = INF
+
+
+# The rain heard, from nothing: the stream asked for again each time, as the
+# sound mode may have changed since (none in ORIGINAL).
+func _start_rain_sound() -> void:
+	_rain_sound.stop()
+	if not _wet:
+		return
+	var sound := Level3DAudio.stream(RAIN_SOUND)
+	if sound == null:
+		return
+	_rain_sound.stream = sound
+	_rain_sound.bus = Level3DAudio.bus(RAIN_SOUND)
+	_rain_sound.volume_db = Level3DAudio.SILENT_DB
+	_rain_sound.play()
+	create_tween().tween_property(_rain_sound, "volume_db", Level3DAudio.volume_db(RAIN_SOUND), RAIN_SOUND_IN)
+
+
+# The rain heard away over `seconds`, as the screen takes its song away.
+func fade_rain(seconds: float) -> void:
+	if _rain_sound.playing:
+		create_tween().tween_property(_rain_sound, "volume_db", Level3DAudio.SILENT_DB, seconds)
+
+
+# The old print (the header): a rect over the frame, drawn after it and so
+# after the oaks' ink, reading it back.
+func _add_film() -> void:
+	_film = ShaderMaterial.new()
+	_film.shader = FILM_SHADER
+	if not _wet_lens:
+		_film.set_shader_parameter("drops", 0.0)
+	var print_over := ColorRect.new()
+	print_over.set_anchors_preset(Control.PRESET_FULL_RECT)
+	print_over.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	print_over.material = _film
+	add_child(print_over)
 
 
 # The glb's trees an oak each, where they stood and as tall, give or take

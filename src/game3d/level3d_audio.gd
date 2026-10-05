@@ -238,6 +238,10 @@ const SOUNDS := {
 	# Under everything, for as long as the preview runs.
 	"ambient_sea": {"bus": &"Ambient", "loop": true, "flat": true},
 	"ambient_jungle": {"bus": &"Ambient", "loop": true, "flat": true},
+	# The game over's rain (Level3DGameOver), while the cemetery stands:
+	# War Thunder's rain on a tank's armour, a seamless loop (build/sfx3d_rain/), the
+	# same file in classic: the chips have no rain.
+	"ambient_rain": {"bus": &"Ambient", "loop": true, "flat": true},
 }
 const AMBIENCE: Array[String] = ["ambient_sea", "ambient_jungle"]
 
@@ -254,13 +258,17 @@ const MUSIC := {
 	# (Хозак, «Офицеры»), its guitar intro and three verses, and in CLASSIC
 	# the same notes on the NES and VRC6 (build/music3d_officers/).
 	"title": ["title.ogg"],
-	# The game over's (Level3DGameOverScreen), ContinueMode's continue_song,
-	# once, as the game plays it: the 2D game's in every mode for now, the
-	# 8-bit original being classic's as it is.
+	# The game over's (Level3DGameOverScreen), over and over while the
+	# cemetery stands: in ORIGINAL ContinueMode's continue_song, once, as the
+	# 2D game plays it; in MODERN a requiem on the same «Офицеры» -- the
+	# title's guitar intro and the verse's answer, slow, on a piano over
+	# strings -- and in CLASSIC the same notes on the NES and VRC6
+	# (build/music3d_officers/, requiem_officers.py).
 	"continue": ["continue.ogg"],
 }
-# MUSIC's songs whose last part is played once rather than looped.
-const MUSIC_ONCE: Array[String] = ["continue"]
+# MUSIC's songs whose last part is played once rather than looped, and in
+# which modes.
+const MUSIC_ONCE := {"continue": [Mode.ORIGINAL]}
 
 # The modern mode's songs that follow the fight, in place of MUSIC's song of
 # the same name. An intro, then a loop of layers playing together (an
@@ -1273,7 +1281,7 @@ func _next_part() -> void:
 	var files: Array = []
 	var clips: Array[AudioStream] = []
 	for i in _song.size():
-		var clip := _music_stream(_song[i], i == _song.size() - 1 and not MUSIC_ONCE.has(_song_name))
+		var clip := _music_stream(_song[i], i == _song.size() - 1 and not mode in MUSIC_ONCE.get(_song_name, []))
 		if clip == null:
 			push_warning("Level3DAudio: no music %s%s" % [MUSIC_DIRS[mode], _song[i]])
 			break
