@@ -4,31 +4,20 @@
 // which the title hides with its light. The soft edge goes by the place on the
 // screen, not by depth: Compatibility has no depth of field.
 //
-// The players' helmets on their graves keep their colours: in
-// `mask` (the oaks' mask render, level3d_oak_mask.gdshader) they are blue,
-// green their material's number in eighths (_key_kept), and there the frame
-// takes that material's own colour (`kept_colours`, sRGB) at the brightness
-// the render gave it -- not the render's colour, which the warm light and
-// the haze leave olive beside the grey.
-//
 // And the rain on the lens (`drops`, 0 for none): drops a few pixels across
 // that land here and there, stand a few seconds and dry, and larger ones
 // that run down the glass by fits and starts, wandering a little and leaving
-// a cleared trail behind them. Each a small lens of its own -- the frame through it upside down, a dark rim and
-// a light on its upper side. Each kind in cells of the screen's height that
-// a drop may be in, each at its own time -- tall ones for those that run;
-// the print is made of what they show.
+// a cleared trail behind them. Each a small lens of its own -- the frame
+// through it upside down, a dark rim and a light on its upper side. Each kind
+// in cells of the screen's height that a drop may be in, each at its own
+// time -- tall ones for those that run; the print is made of what they show.
 shader_type canvas_item;
 
 uniform sampler2D screen : hint_screen_texture, filter_linear_mipmap;
-uniform sampler2D mask : filter_nearest;
 uniform float time = 0.0;
-uniform vec3 kept_colours[7];
 // How much of the colour goes to the two tones, 0 to 1 -- all of it, and the
-// tones a grey's -- and how much what is kept is lifted, in the shadow of the
-// light behind it.
+// tones a grey's.
 uniform float fade = 1.0;
-uniform float kept_lift = 1.3;
 uniform vec3 shadow_tone = vec3(0.06, 0.06, 0.06);
 uniform vec3 paper_tone = vec3(0.93, 0.93, 0.91);
 uniform float grain = 0.07;
@@ -161,14 +150,6 @@ vec3 run_at(vec2 p, float scale, float seed) {
 	return vec3(edge, 0.0, there * wet * 0.45);
 }
 
-// Which kept material a mask pixel is, -1 for none.
-int kept(vec3 c) {
-	if (c.r > 0.05 || c.b < 0.95 || c.g < 0.06) {
-		return -1;
-	}
-	return int(floor(c.g * 8.0 + 0.5)) - 1;
-}
-
 void fragment() {
 	vec2 uv = SCREEN_UV;
 	vec2 c = (uv - 0.5) * vec2(1.4, 1.0);
@@ -195,15 +176,8 @@ void fragment() {
 		lod = mix(lod, 0.0, drop.z);
 	}
 	vec3 colour = textureLod(screen, uv, lod).rgb;
-	float l = dot(colour, vec3(0.299, 0.587, 0.114));
-	int which = kept(texture(mask, uv).rgb);
-	if (which >= 0) {
-		vec3 own = kept_colours[min(which, 6)];
-		colour = own * l / max(dot(own, vec3(0.299, 0.587, 0.114)), 0.05) * kept_lift;
-	} else {
-		l = smoothstep(0.04, 0.92, l);
-		colour = mix(colour, mix(shadow_tone, paper_tone, l), fade);
-	}
+	float l = smoothstep(0.04, 0.92, dot(colour, vec3(0.299, 0.587, 0.114)));
+	colour = mix(colour, mix(shadow_tone, paper_tone, l), fade);
 	if (drop.z > 0.0) {
 		float r = length(drop.xy);
 		colour *= 1.0 - 0.2 * smoothstep(0.7, 0.98, r) * drop.z;

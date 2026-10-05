@@ -57,9 +57,8 @@
 #
 # And the frame an old print (`film`, level3d_game_over_film.gdshader): black
 # and white, a grain, the corners dark and soft -- what hides the models up
-# close here, as the light does on the title. Only the players' helmets on
-# their graves keep their colours (_key_kept); and under the
-# rain, drops on the lens (`lens_drops`, --no-drops). Gone under --no-film.
+# close here, as the light does on the title; and under the rain, drops on
+# the lens (`lens_drops`, --no-drops). Gone under --no-film.
 class_name Level3DGameOver
 extends TextureRect
 
@@ -169,26 +168,16 @@ const RAIN_SOUND_IN := 1.5
 var _wet := false
 var _rain_sound: AudioStreamPlayer
 
-# The old print over the frame (the header), and what is kept out of it --
-# a grave's helmet, by its materials' names (KEPT_PREFIXES): in its double
-# on MASK_LAYER those surfaces are blue, green their material's
-# number in eighths, the rest of the grave black; the graves themselves on
-# GRAVE_LAYER, which the mask's camera leaves out. At most KEPT_MAX of them,
-# as many as the shader has room for.
+# The old print over the frame (the header). The players' helmets on their
+# graves kept their colours under it for a while, keyed in the oaks' mask;
+# the helmets went, at the user's word, and the keying with them.
 const FILM_SHADER := preload("res://src/game3d/shaders/level3d_game_over_film.gdshader")
-const KEPT_MAX := 7
-const KEPT_PREFIXES: Array[String] = ["GO_Helmet"]
-const GRAVE_LAYER := 1 << 4
 static var film := true
 # The rain's drops on the lens, in the print (level3d_game_over_film.gdshader):
 # under the rain only, and not under --no-drops.
 static var lens_drops := true
 var _wet_lens := false
 var _film: ShaderMaterial
-var _keys := {}                  # a kept material -> its key material in the mask
-var _kept_colours := PackedVector3Array()
-var _blank_material: StandardMaterial3D
-var _hidden_material: StandardMaterial3D
 
 var viewport: SubViewport
 var shown := false
@@ -277,7 +266,7 @@ func _init() -> void:
 	_rain_sound = AudioStreamPlayer.new()
 	add_child(_rain_sound)
 	_mask_camera = Camera3D.new()
-	_mask_camera.cull_mask = 0xFFFFF & ~OAK_LAYER & ~RAIN_LAYER & ~GRAVE_LAYER
+	_mask_camera.cull_mask = 0xFFFFF & ~OAK_LAYER & ~RAIN_LAYER
 	_mask.add_child(_mask_camera)
 	_build()
 	visible = false
@@ -470,9 +459,7 @@ func show_game_over(rescued: Array, total: int) -> void:
 	if players == 2:
 		xs = [-GRAVE_X, GRAVE_X]
 	for p in players:
-		var grave := _put((_templates["Prop_Grave_%dP" % (p + 1)] as Node3D).duplicate(), xs[p], GRAVE_Y)
-		if _film != null:
-			_key_kept(grave)
+		_put((_templates["Prop_Grave_%dP" % (p + 1)] as Node3D).duplicate(), xs[p], GRAVE_Y)
 		var mound := (_templates["Prop_Mound"] as Node3D).duplicate() as Node3D
 		var keep := mound.scale
 		_put(mound, xs[p], GRAVE_Y)
@@ -618,12 +605,10 @@ func fade_rain(seconds: float) -> void:
 
 
 # The old print (the header): a rect over the frame, drawn after it and so
-# after the oaks' ink, reading it back; and the materials of the graves'
-# doubles in the mask that are not kept.
+# after the oaks' ink, reading it back.
 func _add_film() -> void:
 	_film = ShaderMaterial.new()
 	_film.shader = FILM_SHADER
-	_film.set_shader_parameter("mask", _mask.get_texture())
 	if not _wet_lens:
 		_film.set_shader_parameter("drops", 0.0)
 	var print_over := ColorRect.new()
@@ -631,58 +616,6 @@ func _add_film() -> void:
 	print_over.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	print_over.material = _film
 	add_child(print_over)
-	_blank_material = _flat(Color.BLACK)
-	_hidden_material = _flat(Color.BLACK)
-	_hidden_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_hidden_material.albedo_color.a = 0.0
-
-
-static func _flat(colour: Color) -> StandardMaterial3D:
-	var flat := StandardMaterial3D.new()
-	flat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	flat.disable_fog = true
-	flat.albedo_color = colour
-	return flat
-
-
-# A grave's helmet kept in its colours under the print: the grave off the
-# mask's camera, and in the mask a double of it, the helmet keyed,
-# the rest black, its contour not drawn -- so that what stands in front of
-# them hides them there as on the screen.
-func _key_kept(grave: Node3D) -> void:
-	for node in grave.find_children("*", "MeshInstance3D", true, false) + [grave]:
-		var instance := node as MeshInstance3D
-		if instance == null or instance.mesh == null:
-			continue
-		instance.layers = GRAVE_LAYER
-		var double := MeshInstance3D.new()
-		double.mesh = instance.mesh
-		double.layers = MASK_LAYER
-		double.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		for surface in instance.mesh.get_surface_count():
-			var own := instance.mesh.surface_get_material(surface)
-			var key := _blank_material
-			if Level3DHull.is_hull(own):
-				key = _hidden_material
-			elif own is BaseMaterial3D and KEPT_PREFIXES.any(func(prefix: String) -> bool:
-					return own.resource_name.begins_with(prefix)):
-				key = _key_of(own as BaseMaterial3D)
-			double.set_surface_override_material(surface, key)
-		instance.add_child(double)
-
-
-# A kept material's key in the mask, its colour given to the print.
-func _key_of(own: BaseMaterial3D) -> StandardMaterial3D:
-	if not _keys.has(own):
-		if _keys.size() >= KEPT_MAX:
-			return _blank_material
-		_keys[own] = _flat(Color(0.0, (_keys.size() + 1) / 8.0, 1.0))
-		var c := own.albedo_color
-		_kept_colours.append(Vector3(c.r, c.g, c.b))
-		var table := _kept_colours.duplicate()
-		table.resize(KEPT_MAX)
-		_film.set_shader_parameter("kept_colours", table)
-	return _keys[own]
 
 
 # The glb's trees an oak each, where they stood and as tall, give or take

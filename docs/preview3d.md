@@ -308,10 +308,9 @@ few seconds.
 - **Film**, over the finished frame (`level3d_game_over_film.gdshader`): an old
   print -- black and white, a grain, the corners dark and soft (by the place
   on the screen: Compatibility has no depth of field). The title hides the
-  models' low detail with its light; here the print does. The players'
-  helmets on their graves keep their colours, and nothing else: the graves'
-  doubles have them keyed in the oaks' mask, and the graves themselves are on
-  a layer the mask's camera leaves out. Under the rain, drops on the lens
+  models' low detail with its light; here the print does. Nothing keeps its
+  colour: the graves have neither wreaths nor helmets, a cross for the first
+  player and a headstone for the second telling them apart. Under the rain, drops on the lens
   too: small ones, a few pixels across, land here and there, stand a few
   seconds and dry, and larger ones run down the glass by fits and starts, as on a window -- round below,
   narrowing above into a trail near as wide, a way cleared of the standing
