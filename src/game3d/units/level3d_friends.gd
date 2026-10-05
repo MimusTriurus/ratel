@@ -1,5 +1,5 @@
 # The prisoners on the 3D stage 1 preview: jackal.FriendlySoldier, and what
-# lets them out -- Hut, House and Help -- on jackal_trooper_pow.glb (MODEL).
+# lets them out -- Hut, House and Help -- on low_poly_soldier.glb (MODEL).
 #
 # Nothing here is part of the game, and the rules are the game's, run as the
 # soldiers' are (level3d_soldiers.gd): in map pixels and ticks on the game's
@@ -52,9 +52,14 @@
 # prisoners out of: Hangar_N and Hangar_W, both HOUSE_RIGHT, were turned round
 # in the stage file for it.
 #
-# He is drawn as the model sheet's trooper in the game's green, unarmed
-# (jackal_trooper_pow.glb, jackal_soldier_lowpoly.blend); MODEL says what his
-# code needs to know, as Level3DSoldiers' does.
+# He is drawn as the enemy is, Kolos Studios' low poly soldier
+# (low_poly_soldier.glb), in the game's green, his rifle hidden, waving and
+# jogging by the clips made for him (docs/soldier-pipeline.md, section 12):
+# one figure for every man on the stage. MODEL says what his code needs to
+# know, as Level3DSoldiers' does; the model sheet's unarmed trooper he
+# replaced (jackal_trooper_pow.glb) is TROOPER_MODEL, drawn instead given
+# --old-soldiers, as the enemy's is. chosen() is the one in use, for the
+# rescue helicopter's crewman and the HUD's icon too.
 #
 # The weapon upgrade, from a weapon carrier or from the rescues that give one,
 # goes to the launcher as the game's missile and its two upgrades.
@@ -66,13 +71,25 @@ const PX := Level3DMap.PX
 
 # As Level3DSoldiers.MODEL: scale to the first, sprite-made figure's metre;
 # `colour` the material the weapon carrier's sheets recolour and `dark` the
-# one the yellow sheet does; `stride` metres a Pow_Walk cycle covers,
-# unscaled, 0 to step it by LEG_FRAMES; `wave_seconds` how long a Pow_Wave
-# swing takes, 0 to step it by LEG_FRAMES as the sprite's two waving frames
-# do -- a man waving four times a second is frantic; `loop_pad` what the
-# clips are short of their repeat.
-const MODEL := {"path": TROOPER_POW_PATH, "scale": 0.55, "colour": "F_Uniform", "dark": "F_UniformDark",
-		"stride": 0.8, "wave_seconds": 1.0, "loop_pad": 1.0 / 24.0}
+# one the yellow sheet does, `tint` the colours they are put in first, none
+# to keep the model's own; `walk`, `wave` and `run` his clips, no `run` to
+# walk at any pace; `stride` metres a walk cycle covers, unscaled, 0 to step
+# it by LEG_FRAMES, and `run_stride` a run's, which he takes from `run_from`
+# metres a second -- the prisoners go 1.5 m a second, and a walk's short
+# cycle that fast is a scurry; `wave_seconds` how long a wave's swing takes,
+# 0 to step it by LEG_FRAMES as the sprite's two waving frames do -- a man
+# waving four times a second is frantic; `loop_pad` what the clips are short
+# of their repeat; `hidden` his nodes not drawn, the rifle.
+const TROOPER_MODEL := {"path": TROOPER_POW_PATH, "scale": 0.55, "colour": "F_Uniform", "dark": "F_UniformDark",
+		"tint": [], "walk": "Pow_Walk", "wave": "Pow_Wave", "run": "", "stride": 0.8, "run_stride": 0.0,
+		"run_from": INF, "wave_seconds": 1.0, "loop_pad": 1.0 / 24.0, "hidden": []}
+# His green and its darker shade are jackal_trooper_pow.glb's F_Uniform and
+# F_UniformDark, the game's green toned down to cloth.
+const LOW_POLY_MODEL := {"path": Level3DSoldiers.LOW_POLY_PATH, "scale": 0.55,
+		"colour": "Material.003", "dark": "Material.002", "tint": [Color8(66, 120, 40), Color8(44, 84, 30)],
+		"walk": "Walk_Unarmed", "wave": "Wave", "run": "Run_Unarmed", "stride": 1.05, "run_stride": 1.9,
+		"run_from": 1.0, "wave_seconds": 1.0, "loop_pad": 1.0 / 24.0, "hidden": ["M4", "M4_Mag"]}
+const MODEL := LOW_POLY_MODEL
 
 # FriendlySoldier.init(): a zero-width hit and mine box, 20 px tall -- the
 # player has to drive over his middle. Centred on him here, as the enemy
@@ -98,9 +115,6 @@ const CALL_GAP := Vector2i(250, 450)
 const BUILDING_FIRST := 100
 const PRISONER_WAIT := 800
 const PRISONER_HELP_HEIGHT := 1.3
-
-const WALK := "Pow_Walk"
-const WAVE := "Pow_Wave"
 
 # FriendlySoldier's colour sheets, green first: what the colour and the black
 # become as a weapon carrier flashes. Only the yellow sheet changes the black.
@@ -224,9 +238,11 @@ class Friend:
 	var waited := 0         # ticks out and not picked up, for his call
 	var called := -1        # Level3DFriends._ticks he last called at
 	var leg_frames := 0
-	# Walk cycles covered and ticks gone, for a model that walks by its stride
-	# and waves by the clock.
+	# Walk and run cycles covered and ticks gone, for a model that walks by its
+	# stride and waves by the clock; whether his last step was a run's.
 	var stride_phase := 0.0
+	var run_phase := 0.0
+	var running := false
 	var ticks := 0
 	var entry := 0
 	var waving := 0
@@ -252,20 +268,67 @@ class Friend:
 	var dark_colour: Color
 
 
+# The model in use: MODEL, or TROOPER_MODEL given --old-soldiers.
+static func chosen() -> Dictionary:
+	return TROOPER_MODEL if OS.get_cmdline_user_args().has("--old-soldiers") else MODEL
+
+
+# `root`, an instance of model `m`, dressed: what `hidden` names not drawn,
+# and the uniform's two materials made its own -- one copy each, for every
+# surface that has it -- in `colour` and `dark`, or the model's `tint`, or
+# as they are. The copies, [colour, dark].
+static func dress(root: Node, m: Dictionary, colour := Color(), dark := Color()) -> Array[StandardMaterial3D]:
+	var made: Array[StandardMaterial3D] = [null, null]
+	var colours: Array[Color] = [colour, dark]
+	for i in 2:
+		if colours[i] == Color() and m.tint.size() == 2:
+			colours[i] = m.tint[i]
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if m.hidden.has(String(mi.name)):
+			mi.visible = false
+			continue
+		for surface in mi.mesh.get_surface_count():
+			var material := mi.mesh.surface_get_material(surface) as StandardMaterial3D
+			if material == null:
+				continue
+			var i := [m.colour, m.dark].find(material.resource_name)
+			if i < 0:
+				continue
+			if made[i] == null:
+				made[i] = material.duplicate() as StandardMaterial3D
+				if colours[i] != Color():
+					made[i].albedo_color = colours[i]
+			mi.set_surface_override_material(surface, made[i])
+	return made
+
+
+# Model `m`'s cycles in `player` looped, and padded by `loop_pad` to their
+# repeat. The clips are the scene's, shared by every instance of it -- every
+# prisoner, the crewman, and the game over's guard on the same glb -- so
+# each is padded once, whoever comes to it first, and marked `looped` as the
+# game over marks the ones it pads.
+static func loop_clips(player: AnimationPlayer, m: Dictionary) -> void:
+	for clip in [m.walk, m.wave, m.run]:
+		if clip == "":
+			continue
+		var animation := player.get_animation(clip)
+		animation.loop_mode = Animation.LOOP_LINEAR
+		if m.loop_pad > 0.0 and not animation.has_meta(&"looped"):
+			animation.length += m.loop_pad
+			animation.set_meta(&"looped", true)
+
+
 func _ready() -> void:
 	_rng.seed = 4
+	model = chosen()
 	_scene = load(model.path)
 	if _scene == null:
 		push_error("Cannot load %s -- run its .blend's export" % model.path)
 		return
-	# The clips are the scene's, shared by every prisoner: padded once, here.
-	if model.loop_pad > 0.0:
-		var probe := _scene.instantiate()
-		var clips := probe.find_child("AnimationPlayer", true, false) as AnimationPlayer
-		for clip in [WALK, WAVE]:
-			clips.get_animation(clip).length += model.loop_pad
-			clips.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
-		probe.free()
+	var probe := _scene.instantiate()
+	loop_clips(probe.find_child("AnimationPlayer", true, false), model)
+	probe.free()
 
 
 # Each of the level's barracks and hangars to the nearest HUT or HOUSE of the
@@ -528,18 +591,9 @@ func deliver(x: float, y: float, helicopter_x: float, flashing: bool, arrived: C
 
 
 func _own_materials(f: Friend) -> void:
-	for mesh_instance in f.root.find_children("*", "MeshInstance3D", true, false):
-		var mi := mesh_instance as MeshInstance3D
-		for surface in mi.mesh.get_surface_count():
-			var material := mi.mesh.surface_get_material(surface) as StandardMaterial3D
-			if material == null:
-				continue
-			if material.resource_name == model.colour:
-				f.colour = material.duplicate()
-				mi.set_surface_override_material(surface, f.colour)
-			elif material.resource_name == model.dark:
-				f.dark = material.duplicate()
-				mi.set_surface_override_material(surface, f.dark)
+	var made := dress(f.root, model)
+	f.colour = made[0]
+	f.dark = made[1]
 	f.colour_own = f.colour.albedo_color
 	f.dark_colour = f.dark.albedo_color
 
@@ -632,10 +686,14 @@ func _update(f: Friend) -> void:
 				f.arrived.call()
 
 
-# A leg frame, and for a model that walks by its stride the `step` px it took.
+# A leg frame, and for a model that walks by its stride the `step` px it took:
+# a run's, at a run's pace.
 func _legs(f: Friend, step: float = 0.0) -> void:
 	f.ticks += 1
-	if model.stride > 0.0:
+	f.running = model.run != "" and step * PX * Engine.physics_ticks_per_second >= model.run_from
+	if f.running:
+		f.run_phase += step * PX / (model.run_stride * model.scale)
+	elif model.stride > 0.0:
 		f.stride_phase += step * PX / (model.stride * model.scale)
 	if f.leg_frames == 0:
 		f.leg_frames = FriendlySoldier.LEG_FRAMES - 1
@@ -693,17 +751,19 @@ func solid_boxes(me = null) -> Array[Rect2]:
 func _place(f: Friend) -> void:
 	var at := Level3DMap.to_level(Vector2(f.x, f.y))
 	f.root.position = Vector3(at.x, ground.call(at.x, at.y).height, at.y)
-	f.clip = WAVE if f.state == FriendlySoldier.STATE_WAVING else WALK
+	f.clip = model.wave if f.state == FriendlySoldier.STATE_WAVING else model.run if f.running else model.walk
 	var facing := Vector2(f.direction_x, f.direction_y)
-	if f.clip == WAVE:
+	if f.clip == model.wave:
 		var player: Vector2 = player_position.call(at)
 		facing = player - at
 	if facing.length_squared() > 1e-6:
 		f.yaw = atan2(facing.x, facing.y)
 	f.phase = float(FriendlySoldier.LEG_FRAMES - 1 - f.leg_frames) / FriendlySoldier.LEG_FRAMES
-	if f.clip == WALK and model.stride > 0.0:
+	if f.clip == model.run:
+		f.phase = fposmod(f.run_phase, 1.0)
+	elif f.clip == model.walk and model.stride > 0.0:
 		f.phase = fposmod(f.stride_phase, 1.0)
-	elif f.clip == WAVE and model.wave_seconds > 0.0:
+	elif f.clip == model.wave and model.wave_seconds > 0.0:
 		f.phase = fposmod(f.ticks / (model.wave_seconds * Engine.physics_ticks_per_second), 1.0)
 
 

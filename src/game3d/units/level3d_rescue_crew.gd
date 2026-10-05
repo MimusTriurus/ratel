@@ -10,10 +10,13 @@
 # where to stop; the pad's arrow (Level3DArrow) says where it is, and he says
 # what to do there.
 #
-# He is the prisoners' trooper (Level3DFriends.MODEL) with its Pow_Walk and
-# Pow_Wave, his uniform an orange flight suit: green would be a prisoner, and
-# brown an enemy. The engine does the recolouring on copies of the model's
-# uniform materials, as the weapon carrier's flashing does.
+# He is the prisoners' figure (Level3DFriends.chosen) with their clips, his
+# rifle hidden as theirs is, his uniform an orange flight suit: green would be
+# a prisoner, and brown an enemy. The engine does the recolouring on copies of
+# the model's uniform materials, as the weapon carrier's flashing does
+# (Level3DFriends.dress). He walks at SPEED, a run where theirs is one, and
+# the clip goes as fast as his feet go over the ground (_pose): played at its
+# own speed, the walk slid them.
 class_name Level3DRescueCrew
 extends Node3D
 
@@ -42,6 +45,9 @@ var _state_was := IN
 
 var _root: Node3D
 var _player: AnimationPlayer
+var _model: Dictionary
+var _walk_clip := ""            # his walk's clip, or run's
+var _walk_speed := 1.0          # what it is played at
 var _pad := Vector3.ZERO        # the pad's middle, level metres
 var _side := 1.0                # 1 east, -1 west: where the jeep lets them off
 var _at := Vector2.ZERO         # off the pad's middle
@@ -50,25 +56,22 @@ var _call := 0                  # the calls made
 
 
 func _ready() -> void:
-	var scene: PackedScene = load(Level3DFriends.MODEL.path)
+	_model = Level3DFriends.chosen()
+	var scene: PackedScene = load(_model.path)
 	if scene == null:
 		return
 	_root = scene.instantiate() as Node3D
-	_root.scale = Vector3.ONE * Level3DFriends.MODEL.scale
+	_root.scale = Vector3.ONE * _model.scale
 	add_child(_root)
 	_player = _root.find_child("AnimationPlayer", true, false) as AnimationPlayer
-	for clip in [Level3DFriends.WALK, Level3DFriends.WAVE]:
-		_player.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
-	for mesh_instance in _root.find_children("*", "MeshInstance3D", true, false):
-		var mi := mesh_instance as MeshInstance3D
-		for surface in mi.mesh.get_surface_count():
-			var material := mi.mesh.surface_get_material(surface) as StandardMaterial3D
-			if material == null:
-				continue
-			if material.resource_name == Level3DFriends.MODEL.colour or material.resource_name == Level3DFriends.MODEL.dark:
-				var copy := material.duplicate() as StandardMaterial3D
-				copy.albedo_color = SUIT if material.resource_name == Level3DFriends.MODEL.colour else SUIT_DARK
-				mi.set_surface_override_material(surface, copy)
+	_walk_clip = _model.run if _model.run != "" and SPEED >= _model.run_from else _model.walk
+	Level3DFriends.loop_clips(_player, _model)
+	# The clip's own pace over the ground, at his size; none for a walk not
+	# made by its stride.
+	var stride: float = _model.run_stride if _walk_clip == _model.run else _model.stride
+	var length := _player.get_animation(_walk_clip).length
+	_walk_speed = SPEED * length / (stride * _model.scale) if stride > 0.0 else 1.0
+	Level3DFriends.dress(_root, _model, SUIT, SUIT_DARK)
 	visible = false
 
 
@@ -129,11 +132,12 @@ func _walk(to: Vector2) -> bool:
 
 func _pose() -> void:
 	_root.position = _pad + Vector3(_at.x, 0.0, _at.y)
-	var clip: String = Level3DFriends.WAVE if state == WAVING else Level3DFriends.WALK
+	var clip: String = _model.wave if state == WAVING else _walk_clip
 	if state == WAVING:
 		_root.rotation.y = FACING * _side
 	if _player.current_animation != clip:
 		_player.play(clip)
+		_player.speed_scale = 1.0 if state == WAVING else _walk_speed
 
 
 # His call, if one is up, as Level3DFriends.help_marks gives theirs.

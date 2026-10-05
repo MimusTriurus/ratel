@@ -1,5 +1,5 @@
 # The enemy soldiers on the 3D stage 1 preview: jackal.EnemySoldier and
-# jackal.DeadEnemySoldier, on jackal_trooper.glb (MODEL).
+# jackal.DeadEnemySoldier, on low_poly_soldier.glb (MODEL).
 #
 # Nothing here is part of the game, and all of it is the game's: the soldiers
 # are stage-0.json's SOLDIER_WALKER and SOLDIER_STATIONARY triggers on normal,
@@ -26,10 +26,14 @@
 #     corpse is 100 points. Here he stays where he fell (fade_corpses), unless
 #     the preview is given --fade-corpses.
 #
-# He is drawn as the trooper of the soldier model sheet (jackal_trooper.glb,
-# jackal_soldier_lowpoly.blend): a 1.8 m man shrunk to the metre the first
-# figure, made from the game's sprite, stood at, who blinks his khaki and
-# walks by the ground he covers (MODEL). That first figure is gone.
+# He is drawn as Kolos Studios' low poly soldier (low_poly_soldier.glb, its
+# Aim, Shoot and Death made for him, docs/soldier-pipeline.md, section 12) --
+# the game over's guard is the same man -- his olive uniform put in the
+# game's khaki: a 1.8 m man shrunk to the metre the first figure, made from
+# the game's sprite, stood at, who blinks his khaki and walks by the ground
+# he covers (MODEL). The model sheet's trooper he replaced
+# (jackal_trooper.glb) is TROOPER_MODEL, drawn instead given --old-soldiers.
+# That first figure is gone.
 #
 # Where this departs from the game, and why:
 #   * The hit and mine boxes are the game's 32 x 60 px, but centred on him
@@ -52,6 +56,7 @@ class_name Level3DSoldiers
 extends Node3D
 
 const TROOPER_PATH := "res://resources/3d/jackal_trooper.glb"
+const LOW_POLY_PATH := "res://resources/3d/low_poly_soldier.glb"
 const PX := Level3DMap.PX
 
 # What the figure needs said about it:
@@ -59,14 +64,26 @@ const PX := Level3DMap.PX
 #                proportion with the BTR and the bunkers
 #   brown, dark  the materials his blink recolours, as the yellow sheet does
 #                the sprite's brown and black
+#   tint         the colours those two are put in first, for a model not in
+#                the game's; none keeps the model's own
 #   stride       metres a Walk cycle covers, unscaled, for a walk driven by the
 #                ground covered; 0 steps it by the game's leg frames, which
 #                would slide his feet (his cycle is 0.8 m, the game's 26 ticks
 #                13 px)
 #   loop_pad     seconds the looping clips are short of their repeat: they
 #                are exported up to the frame before the first again
-const MODEL := {"path": TROOPER_PATH, "scale": 0.55,
-		"brown": "T_Uniform", "dark": "T_UniformDark", "stride": 0.8, "loop_pad": 1.0 / 24.0}
+#   rifle_bone   the bone the rifle is bound whole to, the barrel along its
+#                +Y: the muzzle is found on it
+const TROOPER_MODEL := {"path": TROOPER_PATH, "scale": 0.55,
+		"brown": "T_Uniform", "dark": "T_UniformDark", "tint": [], "stride": 0.8, "loop_pad": 1.0 / 24.0,
+		"rifle_bone": "Rifle"}
+# His khaki and its darker shade are jackal_trooper.glb's T_Uniform and
+# T_UniformDark, the game's brown toned down to cloth (soldier-pipeline.md,
+# section 2a); the model's own olive is Material.003 and Material.002.
+const LOW_POLY_MODEL := {"path": LOW_POLY_PATH, "scale": 0.55,
+		"brown": "Material.003", "dark": "Material.002", "tint": [Color8(122, 94, 60), Color8(90, 70, 44)],
+		"stride": 1.05, "loop_pad": 1.0 / 24.0, "rifle_bone": "rifle"}
+const MODEL := LOW_POLY_MODEL
 
 # EnemySoldier.init()'s boxes, pixels from his position. Solid is the game's,
 # for walking round each other; hit and mine are the same size, centred.
@@ -104,10 +121,6 @@ const KNOCK_SPEED := 2.0
 # The BTR's body reaching this far from where he stands runs him over as well
 # as the game's box does (bump).
 const BODY_REACH := 0.1
-# Both figures' rifles are bound whole to this bone, the barrel along its +Y
-# (soldier-pipeline.md, section 5).
-const RIFLE_BONE := "Rifle"
-
 const STATE_SEEKING := 0
 const STATE_AIMING := 1
 
@@ -139,7 +152,8 @@ var model := MODEL
 var soldiers: Array[Soldier] = []
 var _corpses: Array[Soldier] = []
 var _scene: PackedScene
-# The muzzle, in RIFLE_BONE's space, and that bone: the same in every soldier.
+# The muzzle, in the rifle bone's space, and that bone: the same in every
+# soldier.
 var _muzzle := Vector3.ZERO
 var _rifle_bone := -1
 var _rng := RandomNumberGenerator.new()
@@ -192,38 +206,47 @@ class Soldier:
 func _ready() -> void:
 	_rng.seed = 3
 	fade_corpses = OS.get_cmdline_user_args().has("--fade-corpses")
+	if OS.get_cmdline_user_args().has("--old-soldiers"):
+		model = TROOPER_MODEL
 	_scene = load(model.path)
 	if _scene == null:
 		push_error("Cannot load %s -- run export() in its .blend" % model.path)
 		return
 	var probe := _scene.instantiate()
-	# The clips are the scene's, shared by every soldier: padded once, here.
+	# The clips are the scene's, shared by every soldier -- and by every
+	# instance of the glb, again with the next preview: padded once, marked as
+	# Level3DFriends.loop_clips marks its.
 	if model.loop_pad > 0.0:
 		var clips := probe.find_child("AnimationPlayer", true, false) as AnimationPlayer
 		for clip in [WALK, AIM]:
-			clips.get_animation(clip).length += model.loop_pad
+			var animation := clips.get_animation(clip)
+			if not animation.has_meta(&"looped"):
+				animation.length += model.loop_pad
+				animation.set_meta(&"looped", true)
 	_find_muzzle(probe)
 	probe.free()
 	reset()
 
 
-# The tip of the barrel, in RIFLE_BONE's space: the middle of the rifle's
-# vertices that lie furthest out along the bone.
+# The tip of the barrel, in the rifle bone's space: the middle of the rifle's
+# vertices -- the meshes wholly on that bone, the rifle's and its magazine's
+# if they are apart -- that lie furthest out along it.
 func _find_muzzle(root: Node) -> void:
+	var bone_name: String = model.rifle_bone
+	var points := PackedVector3Array()
 	for node in root.find_children("*", "MeshInstance3D", true, false):
 		var mi := node as MeshInstance3D
 		var skeleton := mi.get_node_or_null(mi.skeleton) as Skeleton3D
 		if mi.skin == null or skeleton == null:
 			continue
-		_rifle_bone = skeleton.find_bone(RIFLE_BONE)
+		_rifle_bone = skeleton.find_bone(bone_name)
 		var bind := -1
 		for i in mi.skin.get_bind_count():
 			var bound := mi.skin.get_bind_name(i)
-			if bound == RIFLE_BONE or (bound == "" and mi.skin.get_bind_bone(i) == _rifle_bone):
+			if bound == bone_name or (bound == "" and mi.skin.get_bind_bone(i) == _rifle_bone):
 				bind = i
 		if bind < 0:
 			continue
-		var points := PackedVector3Array()
 		for surface in mi.mesh.get_surface_count():
 			var arrays := mi.mesh.surface_get_arrays(surface)
 			var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
@@ -235,19 +258,19 @@ func _find_muzzle(root: Node) -> void:
 			for v in vertices.size():
 				if bones[v * per] == bind and weights[v * per] > 0.99:
 					points.append(mi.skin.get_bind_pose(bind) * vertices[v])
-		var tip := -INF
-		for p in points:
-			tip = maxf(tip, p.y)
-		var sum := Vector3.ZERO
-		var count := 0
-		for p in points:
-			if p.y > tip - 0.01:
-				sum += p
-				count += 1
-		if count > 0:
-			_muzzle = sum / count
-			return
-	push_warning("%s: no %s bone to fire from" % [model.path, RIFLE_BONE])
+	var tip := -INF
+	for p in points:
+		tip = maxf(tip, p.y)
+	var sum := Vector3.ZERO
+	var count := 0
+	for p in points:
+		if p.y > tip - 0.01:
+			sum += p
+			count += 1
+	if count > 0:
+		_muzzle = sum / count
+		return
+	push_warning("%s: no %s bone to fire from" % [model.path, bone_name])
 
 
 # No soldiers, and the triggers from the bottom of the map again.
@@ -358,6 +381,9 @@ func _own_materials(s: Soldier) -> void:
 			elif material.resource_name == model.dark:
 				s.dark = material.duplicate()
 				mi.set_surface_override_material(surface, s.dark)
+	if model.tint.size() == 2:
+		s.brown.albedo_color = model.tint[0]
+		s.dark.albedo_color = model.tint[1]
 	s.brown_colour = s.brown.albedo_color
 	s.dark_colour = s.dark.albedo_color
 

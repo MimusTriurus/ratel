@@ -704,10 +704,12 @@ func _leave(g: Dictionary, delta: float) -> void:
 		g.walking = true
 		g.from_yaw = node.rotation.y
 		var walk := player.get_animation(WALK)
-		# The clip is the glb's, shared by the guard: looped once.
-		if walk.loop_mode != Animation.LOOP_LINEAR:
+		# The clip is the glb's, shared by the guard and the stage's prisoners
+		# (Level3DFriends.loop_clips): looped once.
+		if not walk.has_meta(&"looped"):
 			walk.length += LOOP_PAD
 			walk.loop_mode = Animation.LOOP_LINEAR
+			walk.set_meta(&"looped", true)
 		player.play(WALK, WALK_BLEND)
 		player.speed_scale = WALK_SPEED * walk.length / (WALK_STRIDE * GUARD_SCALE)
 	var turned := smoothstep(0.0, 1.0, clampf((_time - float(g.leave)) / TURN, 0.0, 1.0))

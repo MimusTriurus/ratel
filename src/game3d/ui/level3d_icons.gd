@@ -1,7 +1,7 @@
 # The HUD's icons (Level3DHud), rendered from the preview's own models rather
 # than cut from the game's sprite sheets: the vehicle the preview drives for
-# the lives and the model-sheet trooper as a prisoner for the prisoners
-# aboard. The weapon had one too, its round, until the HUD stopped showing it.
+# the lives and the stage's prisoner (Level3DFriends.chosen), waving, for the
+# prisoners aboard. The weapon had one too, its round, until the HUD stopped showing it.
 #
 # Each model is put in a SubViewport of its own, with a world of its own so
 # that none of the level is in it, and seen in three quarters, all from the
@@ -22,9 +22,7 @@
 class_name Level3DIcons
 extends Node
 
-const POW_PATH := Level3DFriends.TROOPER_POW_PATH   # the model-sheet trooper
-const POW_POSE := "Pow_Wave"
-const POW_POSE_AT := 0.35             # seconds into it: the arm up
+const POW_POSE_AT := 0.35             # seconds into his wave: the arm up
 const POW_FACING := PI / 2.0          # +Z, his front, onto +X
 # Three quarters: from above the vehicle's front and a side, as a model sheet
 # draws it. The vehicle faces +X (heading 0) and is turned by HEADING, which
@@ -75,26 +73,30 @@ func render_all(vehicle: Dictionary, height: int, hues := Vector3.ZERO) -> Dicti
 		Level3DBtr.tint_model(tinted, hues.x, hues.y, hues.z)
 		icons["lives_2"] = await render(tinted, height, 1.6)
 
-	var pow_scene: PackedScene = load(POW_PATH)
+	var pow: Dictionary = Level3DFriends.chosen()
+	var pose: String = pow.wave
+	var pow_scene: PackedScene = load(pow.path)
 	# Turned as the vehicle is, to face the way its nose does: the figure
 	# faces +Z, as the jeep's model does before VEHICLES' facing turns it.
 	var pow_model: Node3D = pow_scene.instantiate()
+	Level3DFriends.dress(pow_model, pow)
 	var pow_turned := _turned(pow_model, POW_FACING)
 	icons["pow"] = await render(pow_turned, height, 1.0, func():
 		var player := pow_model.find_child("AnimationPlayer", true, false) as AnimationPlayer
-		if player != null and player.has_animation(POW_POSE):
-			player.play(POW_POSE)
+		if player != null and player.has_animation(pose):
+			player.play(pose)
 			player.seek(POW_POSE_AT, true)
 			player.pause())
 	# And in the second player's colours, for the mission's summary, which
 	# colours each prisoner by who brought him (Level3DSummary).
 	if hues != Vector3.ZERO:
 		var pow_2: Node3D = pow_scene.instantiate()
+		Level3DFriends.dress(pow_2, pow)
 		Level3DBtr.tint_model(pow_2, hues.x, hues.y, hues.z)
 		icons["pow_2"] = await render(_turned(pow_2, POW_FACING), height, 1.0, func():
 			var player := pow_2.find_child("AnimationPlayer", true, false) as AnimationPlayer
-			if player != null and player.has_animation(POW_POSE):
-				player.play(POW_POSE)
+			if player != null and player.has_animation(pose):
+				player.play(pose)
 				player.seek(POW_POSE_AT, true)
 				player.pause())
 	return icons

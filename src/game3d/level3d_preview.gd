@@ -175,7 +175,9 @@
 # instead (level3d_btr.gd, VEHICLES): the same driving, stiffer springs and
 # no aerials.
 #
-# The soldiers are the model sheet's trooper (level3d_soldiers.gd, MODEL).
+# The soldiers and the prisoners are Kolos Studios' low poly soldier
+# (level3d_soldiers.gd and level3d_friends.gd, MODEL); --old-soldiers draws
+# the model sheet's troopers they replaced.
 # --level <res:// path> plays another glb of the stage in place of
 # LEVEL_PATH: one built from the level file by tools/blender/build_level.py.
 # Its ground runs to the level's bounds, so the camera's frame is then the
@@ -4064,7 +4066,7 @@ func _screenshot_mode() -> void:
 	# they are not waypoints.
 	for own in ["--fade-corpses", "--btr", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
 			"--no-wind", "--wind-steps", "--spots", "--audio-debug", "--editor", "--no-chinook", "--boss",
-			"--landing-dust"]:
+			"--landing-dust", "--old-soldiers"]:
 		var at := args.find(own)
 		if at >= 0:
 			args.remove_at(at)

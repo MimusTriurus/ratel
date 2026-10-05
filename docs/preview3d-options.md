@@ -30,6 +30,7 @@ godot --path . src/game3d/level3d_preview.tscn -- --players 2 --boss
 | `--btr` | БТР вместо джипа |
 | `--immortal` | Пули врагов проходят насквозь (как чит Bullet hack); таран пушки или танка по-прежнему убивает |
 | `--fade-corpses` | Убитые солдаты исчезают, как в игре; по умолчанию лежат |
+| `--old-soldiers` | Враги, пленные и пилот спасательного вертолёта — прежние фигуры по листу модели (`jackal_trooper.glb`, `jackal_trooper_pow.glb`), а не low poly солдат (`docs/soldier-pipeline.md`, раздел 12) |
 
 `--no-chinook` и `--boss` действуют на каждый старт забега: первый, игру с
 экрана заголовка и перезапуск клавишей R. Сложность (normal/hard) выбирается
