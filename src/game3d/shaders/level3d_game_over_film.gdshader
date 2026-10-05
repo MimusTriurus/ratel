@@ -4,12 +4,12 @@
 // which the title hides with its light. The soft edge goes by the place on the
 // screen, not by depth: Compatibility has no depth of field.
 //
-// The players' helmets and wreaths on their graves keep their colours: in
+// The players' helmets on their graves keep their colours: in
 // `mask` (the oaks' mask render, level3d_oak_mask.gdshader) they are blue,
 // green their material's number in eighths (_key_kept), and there the frame
 // takes that material's own colour (`kept_colours`, sRGB) at the brightness
 // the render gave it -- not the render's colour, which the warm light and
-// the haze leave olive and khaki beside the grey.
+// the haze leave olive beside the grey.
 //
 // And the rain on the lens (`drops`, 0 for none): drops a few pixels across
 // that land here and there, stand a few seconds and dry, and larger ones

@@ -56,8 +56,8 @@
 #
 # And the frame an old print (`film`, level3d_game_over_film.gdshader): black
 # and white, a grain, the corners dark and soft -- what hides the models up
-# close here, as the light does on the title. Only the players' graves keep
-# some colour, their helmets and their wreaths (_key_kept); and under the
+# close here, as the light does on the title. Only the players' helmets on
+# their graves keep their colours (_key_kept); and under the
 # rain, drops on the lens (`lens_drops`, --no-drops). Gone under --no-film.
 class_name Level3DGameOver
 extends TextureRect
@@ -163,14 +163,14 @@ const SPLASH_AREA := Rect2(-7.0, -6.0, 14.0, 14.0)
 static var rain := true
 
 # The old print over the frame (the header), and what is kept out of it --
-# a grave's helmet and wreath, by their materials' names (KEPT_PREFIXES): in
-# its double on MASK_LAYER those surfaces are blue, green their material's
+# a grave's helmet, by its materials' names (KEPT_PREFIXES): in its double
+# on MASK_LAYER those surfaces are blue, green their material's
 # number in eighths, the rest of the grave black; the graves themselves on
 # GRAVE_LAYER, which the mask's camera leaves out. At most KEPT_MAX of them,
 # as many as the shader has room for.
 const FILM_SHADER := preload("res://src/game3d/shaders/level3d_game_over_film.gdshader")
 const KEPT_MAX := 7
-const KEPT_PREFIXES: Array[String] = ["GO_Helmet", "GO_Leaf", "GO_Poppy"]
+const KEPT_PREFIXES: Array[String] = ["GO_Helmet"]
 const GRAVE_LAYER := 1 << 4
 static var film := true
 # The rain's drops on the lens, in the print (level3d_game_over_film.gdshader):
@@ -609,8 +609,8 @@ static func _flat(colour: Color) -> StandardMaterial3D:
 	return flat
 
 
-# A grave's helmet and wreath kept in their colours under the print: the
-# grave off the mask's camera, and in the mask a double of it, those cyan,
+# A grave's helmet kept in its colours under the print: the grave off the
+# mask's camera, and in the mask a double of it, the helmet keyed,
 # the rest black, its contour not drawn -- so that what stands in front of
 # them hides them there as on the screen.
 func _key_kept(grave: Node3D) -> void:
