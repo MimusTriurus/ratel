@@ -478,7 +478,10 @@ func _ready() -> void:
 			c.device = _first_device(c.upgrades)
 		_dress_crews()
 		# intro_song, IntroMapMode's: the start jingle running on into stage 1.
-		Level3DAudio.play_music("intro")
+		# Not under --game-over, whose screen plays its own: it was heard for
+		# the second the cemetery takes to load, then cut off.
+		if not args.has("--game-over"):
+			Level3DAudio.play_music("intro")
 		if args.has("--intro") or not (args.has("--shot") or args.has("--obstacle-map")):
 			_start_intro()
 		_start_flags()
@@ -2780,10 +2783,12 @@ func _test_game_over(spec: String) -> void:
 	var total := int(parts[1]) if parts.size() > 1 else friends.prisoners_total()
 	var scores: Array[int] = []
 	var colours: Array[Color] = []
+	# A player the run has not got (2P without --players 2) in the colour he
+	# would have, not the first's: the HUD's "2P" was green as the first's.
 	for i in rescued.size():
 		var c: Crew = crews[mini(i, crews.size() - 1)]
 		scores.append(c.score)
-		colours.append(c.hud.colour)
+		colours.append(c.hud.colour if i < crews.size() else _crew_colour(i))
 	# The stage paused under it, as at a run's real end (_game_over).
 	get_tree().paused = true
 	_game_over_screen.open(scores, rescued, colours, total, true)
