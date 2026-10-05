@@ -360,10 +360,12 @@ func _ready() -> void:
 		Level3DMap.rows = int(Level3DIO.read_path(Level3DMap.file)["grid"]["height"])
 	# The title screen first, which starts the run when a game is picked;
 	# not for a --shot, nor for the level editor's Play, there to try the
-	# level out. It is up before the stage is built: the stage is built under
-	# it a little at a time (_breathe), the title's splash playing on, and a
-	# game picked before it is done waits for it (Level3DTitle.game_ready).
-	var titled := _persist and not run_args.has("--editor") and not run_args.has("--intro")
+	# level out, nor for --game-over, which opens over the run at once. It is
+	# up before the stage is built: the stage is built under it a little at a
+	# time (_breathe), the title's splash playing on, and a game picked before
+	# it is done waits for it (Level3DTitle.game_ready).
+	var titled := _persist and not run_args.has("--editor") and not run_args.has("--intro") \
+			and not run_args.has("--game-over")
 	if titled:
 		_make_menu()
 		_apply_settings()
@@ -2780,6 +2782,8 @@ func _test_game_over(spec: String) -> void:
 		var c: Crew = crews[mini(i, crews.size() - 1)]
 		scores.append(c.score)
 		colours.append(c.hud.colour)
+	# The stage paused under it, as at a run's real end (_game_over).
+	get_tree().paused = true
 	_game_over_screen.open(scores, rescued, colours, total, true)
 
 
