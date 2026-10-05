@@ -288,8 +288,23 @@ few seconds.
   (`level3d_rain.gdshader`). They start over the hill's crest and stop 3 m
   short of the camera, where one crossed the lens as a thick white bar. The
   rain is on a render layer of its own that the oaks' mask leaves out, or a
-  drop over a crown would ink a streak across it. `--no-rain` gives the
-  sunset back.
+  drop over a crown would ink a streak across it. Under the rain the light
+  is turned round: the sun low behind the graves, into the camera, a bright
+  band at the horizon, the guard's shadows long towards us and the ambient
+  low, so that the guard reads as figures against the light and its models'
+  faces and hands are in their own shadow. `--no-rain` gives the sunset back.
+- **Film**, over the finished frame (`level3d_game_over_film.gdshader`): an old
+  print -- black and white, a grain, the corners dark and soft (by the place
+  on the screen: Compatibility has no depth of field). The title hides the
+  models' low detail with its light; here the print does. The players'
+  helmets and wreaths on their graves keep their colours: the graves'
+  doubles have them cyan in the oaks' mask, and the graves themselves are on
+  a layer the mask's camera leaves out. Under the rain, drops on the lens
+  too: small ones, a few pixels across, land here and there, stand a few
+  seconds and dry, and larger ones run down the glass by fits and starts, as on a window -- round below,
+  narrowing above into a trail near as wide, a way cleared of the standing
+  drops with a bead left on it here and there, drying slowly; the frame through each turned over (`--no-drops`).
+  `--no-film` takes it off.
 - **Light**, the Blender scene's: a low warm sun from behind the camera's left
   and a warm ambient, the summer grass faded so that the green uniforms stand
   out. Compatibility lights it about 2.2 times as bright as the energies say

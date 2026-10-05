@@ -46,10 +46,19 @@
 # under --no-wind.
 #
 # And it rains (`rain`, Level3DRain): the sunset that the scene was made
-# under turned to an overcast evening -- a grey sky, a weak cold sun whose
-# shadows are pale, a cold ambient, a haze in the distance -- and the drops
-# falling through the frame, splashing at the guard's feet. Gloomier, as the
-# end of a run is. The sunset is still there under --no-rain.
+# under turned to a wet evening, the sun low behind the graves through a gap
+# in the cloud, into the camera -- a bright band at the horizon over a dark
+# sky, the guard's shadows long towards us, a cold ambient, a warm haze --
+# and the drops falling through the frame, splashing at the guard's feet.
+# Gloomier, as the end of a run is; and the guard against the light is
+# figures, its models' faces and hands in their own shadow. The sunset is
+# still there under --no-rain.
+#
+# And the frame an old print (`film`, level3d_game_over_film.gdshader): black
+# and white, a grain, the corners dark and soft -- what hides the models up
+# close here, as the light does on the title. Only the players' graves keep
+# some colour, their helmets and their wreaths (_key_kept); and under the
+# rain, drops on the lens (`lens_drops`, --no-drops). Gone under --no-film.
 class_name Level3DGameOver
 extends TextureRect
 
@@ -126,19 +135,21 @@ void sky() {
 }
 """
 
-# The rain's overcast, in place of the sunset's light and sky (the header):
-# the sky's three bands, sRGB, grey from a paler horizon up; a sun from the
-# same quarter at RAIN_SUN of its energy, cold, its shadows RAIN_SHADOW
-# opaque; an ambient as cold, brighter than the sunset's, which is most of
-# the light under a cloud; a haze RAIN_FOG thick, the sky's colour.
-const RAIN_SKY: Array[Vector3] = [Vector3(0.60, 0.62, 0.64), Vector3(0.50, 0.53, 0.57), Vector3(0.34, 0.37, 0.43)]
-const RAIN_SUN := 0.4
-const RAIN_SUN_COLOUR := Color(0.80, 0.86, 0.96)
-const RAIN_SHADOW := 0.45
-const RAIN_AMBIENT := Color(0.60, 0.66, 0.78)
-const RAIN_AMBIENT_ENERGY := 0.85
-const RAIN_FOG := 0.022
-const RAIN_FOG_COLOUR := Color(0.55, 0.58, 0.62)
+# The rain's light, in place of the sunset's (the header): the sky's three
+# bands, sRGB, a warm bright horizon under a slate one; the sun low from
+# behind the graves into the camera (RAIN_SUN_TRAVEL), RAIN_SUN times the
+# sunset's energy, its shadows near full; the ambient cold and low, so that
+# what the sun does not reach is dark; a haze RAIN_FOG thick, the horizon's
+# colour, thin enough that the crosses up the slope still show.
+const RAIN_SKY: Array[Vector3] = [Vector3(1.0, 0.86, 0.66), Vector3(0.70, 0.64, 0.62), Vector3(0.30, 0.32, 0.38)]
+const RAIN_SUN_TRAVEL := Vector3(0.3, -0.16, 0.94)
+const RAIN_SUN := 2.5
+const RAIN_SUN_COLOUR := Color(1.0, 0.82, 0.62)
+const RAIN_SHADOW := 0.9
+const RAIN_AMBIENT := Color(0.42, 0.46, 0.58)
+const RAIN_AMBIENT_ENERGY := 0.45
+const RAIN_FOG := 0.024
+const RAIN_FOG_COLOUR := Color(0.78, 0.70, 0.62)
 # Where the drops start, the scene's metres: over the frame from the hill's
 # crest to 3 m short of the camera -- nearer, a drop crossed the lens as a
 # thick white bar; further off they are under a pixel, and the haze is the
@@ -147,6 +158,27 @@ const RAIN_FOG_COLOUR := Color(0.55, 0.58, 0.62)
 const RAIN_BOX := AABB(Vector3(-12.0, 3.0, -16.0), Vector3(24.0, 9.0, 22.0))
 const SPLASH_AREA := Rect2(-7.0, -6.0, 14.0, 14.0)
 static var rain := true
+
+# The old print over the frame (the header), and what is kept out of it --
+# a grave's helmet and wreath, by their materials' names (KEPT_PREFIXES): in
+# its double on MASK_LAYER those surfaces are blue, green their material's
+# number in eighths, the rest of the grave black; the graves themselves on
+# GRAVE_LAYER, which the mask's camera leaves out. At most KEPT_MAX of them,
+# as many as the shader has room for.
+const FILM_SHADER := preload("res://src/game3d/shaders/level3d_game_over_film.gdshader")
+const KEPT_MAX := 7
+const KEPT_PREFIXES: Array[String] = ["GO_Helmet", "GO_Leaf", "GO_Poppy"]
+const GRAVE_LAYER := 1 << 4
+static var film := true
+# The rain's drops on the lens, in the print (level3d_game_over_film.gdshader):
+# under the rain only, and not under --no-drops.
+static var lens_drops := true
+var _wet_lens := false
+var _film: ShaderMaterial
+var _keys := {}                  # a kept material -> its key material in the mask
+var _kept_colours := PackedVector3Array()
+var _blank_material: StandardMaterial3D
+var _hidden_material: StandardMaterial3D
 
 var viewport: SubViewport
 var shown := false
@@ -232,7 +264,7 @@ func _init() -> void:
 	_mask.set_meta(SOFT_LIGHT, true)
 	add_child(_mask)
 	_mask_camera = Camera3D.new()
-	_mask_camera.cull_mask = 0xFFFFF & ~OAK_LAYER & ~RAIN_LAYER
+	_mask_camera.cull_mask = 0xFFFFF & ~OAK_LAYER & ~RAIN_LAYER & ~GRAVE_LAYER
 	_mask.add_child(_mask_camera)
 	_build()
 	visible = false
@@ -286,8 +318,11 @@ func _build() -> void:
 		sun.shadow_opacity = RAIN_SHADOW
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = SHADOW_DISTANCE
-	sun.basis = Basis.looking_at(SUN_TRAVEL, Vector3.UP)
+	sun.basis = Basis.looking_at((RAIN_SUN_TRAVEL if wet else SUN_TRAVEL).normalized(), Vector3.UP)
 	_world.add_child(sun)
+	_wet_lens = wet and lens_drops and not OS.get_cmdline_user_args().has("--no-drops")
+	if film and not OS.get_cmdline_user_args().has("--no-film"):
+		_add_film()
 
 	var scene := (load(SCENE_PATH) as PackedScene).instantiate() as Node3D
 	var props := scene.find_child("Props", true, false)
@@ -300,6 +335,11 @@ func _build() -> void:
 	var hill := scene.find_child("GO_Hill", true, false) as MeshInstance3D
 	if _is_compatibility():
 		_colours_to_srgb(hill)
+	# The rain's sun is some 9 degrees up: the hill's facets, each a ridge to
+	# it, threw shadows tens of metres long with straight edges across the
+	# graves' ground, which read as nothing in the scene. Lit by it still.
+	if wet:
+		hill.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_ground_mesh = hill.mesh.generate_triangle_mesh()
 	_ground_xform = _transform_in(hill, scene)
 	_soften(scene)
@@ -415,7 +455,9 @@ func show_game_over(rescued: Array, total: int) -> void:
 	if players == 2:
 		xs = [-GRAVE_X, GRAVE_X]
 	for p in players:
-		_put((_templates["Prop_Grave_%dP" % (p + 1)] as Node3D).duplicate(), xs[p], GRAVE_Y)
+		var grave := _put((_templates["Prop_Grave_%dP" % (p + 1)] as Node3D).duplicate(), xs[p], GRAVE_Y)
+		if _film != null:
+			_key_kept(grave)
 		var mound := (_templates["Prop_Mound"] as Node3D).duplicate() as Node3D
 		var keep := mound.scale
 		_put(mound, xs[p], GRAVE_Y)
@@ -505,12 +547,82 @@ func _process(delta: float) -> void:
 		_mask_camera.keep_aspect = _camera.keep_aspect
 	_time += delta
 	_wind_clock += delta
+	if _film != null:
+		_film.set_shader_parameter("time", _time)
 	for material in _wind:
 		material.set_shader_parameter("wind_clock", _wind_clock)
 	for g in _guard:
 		if not g.saluting and _time >= g.at:
 			(g.player as AnimationPlayer).play(SALUTE, SALUTE_BLEND)
 			g.saluting = true
+
+
+# The old print (the header): a rect over the frame, drawn after it and so
+# after the oaks' ink, reading it back; and the materials of the graves'
+# doubles in the mask that are not kept.
+func _add_film() -> void:
+	_film = ShaderMaterial.new()
+	_film.shader = FILM_SHADER
+	_film.set_shader_parameter("mask", _mask.get_texture())
+	if not _wet_lens:
+		_film.set_shader_parameter("drops", 0.0)
+	var print_over := ColorRect.new()
+	print_over.set_anchors_preset(Control.PRESET_FULL_RECT)
+	print_over.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	print_over.material = _film
+	add_child(print_over)
+	_blank_material = _flat(Color.BLACK)
+	_hidden_material = _flat(Color.BLACK)
+	_hidden_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_hidden_material.albedo_color.a = 0.0
+
+
+static func _flat(colour: Color) -> StandardMaterial3D:
+	var flat := StandardMaterial3D.new()
+	flat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	flat.disable_fog = true
+	flat.albedo_color = colour
+	return flat
+
+
+# A grave's helmet and wreath kept in their colours under the print: the
+# grave off the mask's camera, and in the mask a double of it, those cyan,
+# the rest black, its contour not drawn -- so that what stands in front of
+# them hides them there as on the screen.
+func _key_kept(grave: Node3D) -> void:
+	for node in grave.find_children("*", "MeshInstance3D", true, false) + [grave]:
+		var instance := node as MeshInstance3D
+		if instance == null or instance.mesh == null:
+			continue
+		instance.layers = GRAVE_LAYER
+		var double := MeshInstance3D.new()
+		double.mesh = instance.mesh
+		double.layers = MASK_LAYER
+		double.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		for surface in instance.mesh.get_surface_count():
+			var own := instance.mesh.surface_get_material(surface)
+			var key := _blank_material
+			if Level3DHull.is_hull(own):
+				key = _hidden_material
+			elif own is BaseMaterial3D and KEPT_PREFIXES.any(func(prefix: String) -> bool:
+					return own.resource_name.begins_with(prefix)):
+				key = _key_of(own as BaseMaterial3D)
+			double.set_surface_override_material(surface, key)
+		instance.add_child(double)
+
+
+# A kept material's key in the mask, its colour given to the print.
+func _key_of(own: BaseMaterial3D) -> StandardMaterial3D:
+	if not _keys.has(own):
+		if _keys.size() >= KEPT_MAX:
+			return _blank_material
+		_keys[own] = _flat(Color(0.0, (_keys.size() + 1) / 8.0, 1.0))
+		var c := own.albedo_color
+		_kept_colours.append(Vector3(c.r, c.g, c.b))
+		var table := _kept_colours.duplicate()
+		table.resize(KEPT_MAX)
+		_film.set_shader_parameter("kept_colours", table)
+	return _keys[own]
 
 
 # The glb's trees an oak each, where they stood and as tall, give or take
