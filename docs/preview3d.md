@@ -285,7 +285,10 @@ few seconds.
   (`RAIN_SKY`), the sun at 0.4 of its energy and cold, its shadows at 0.45, a
   cold ambient brighter than the sunset's, a haze (`RAIN_FOG`) -- and 7000
   drops falling through the frame, slanting with the wind's way, with
-  splashes at the guard's feet. CPU particles, the project being on
+  splashes at the guard's feet: a crown of thin jets a few centimetres
+  high, gone in a sixth of a second, and a faint ring spreading round it --
+  round drops thrown up and falling back, as they were at first, read as
+  hail. CPU particles, the project being on
   Compatibility; each drop a quad stretched along its fall
   (`level3d_rain.gdshader`). They start over the hill's crest and stop 3 m
   short of the camera, where one crossed the lens as a thick white bar. It
