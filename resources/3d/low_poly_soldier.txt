@@ -1,0 +1,17 @@
+low_poly_soldier.blend
+
+"low poly soldier" by Kolos Studios (https://sketchfab.com/KolosStudios),
+https://sketchfab.com/3d-models/low-poly-soldier-daf5de38902e458aa57ff5ba9460ca02
+Licensed under CC BY 4.0: http://creativecommons.org/licenses/by/4.0/
+
+Changed from the original glb:
+- the body's vertices scaled down 19.555 times to agree with the skin's
+  inverse bind matrices (the M4's already did), which the FBX-to-glTF
+  conversion had left apart, so that the model came apart when posed;
+- 29 bones dropped: the FBX's "_end" leaf bones, which pointed at one stray
+  point, and the unweighted IK helpers; the head's and the fingertips' bones
+  given sensible lengths;
+- the Sketchfab/FBX empties removed, the whole scaled to 1.8 m and applied,
+  the rest (T) pose set on the ground;
+- a Walk cycle added (text block soldier_walk.py in the blend, which makes
+  it), beside the original Standing pose.
