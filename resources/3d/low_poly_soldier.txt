@@ -14,4 +14,9 @@ Changed from the original glb:
 - the Sketchfab/FBX empties removed, the whole scaled to 1.8 m and applied,
   the rest (T) pose set on the ground;
 - a Walk cycle added (text block soldier_walk.py in the blend, which makes
-  it), beside the original Standing pose.
+  it), beside the original Standing pose;
+- the rifle and its magazine skinned to a bone of their own, `rifle`, rather
+  than to the right hand (soldier_rifle.py), which follows the hand in
+  Standing and Walk;
+- Order (order arms, a breathing cycle) and Present (present arms, ending on
+  the pose) added for the game over's honour guard (soldier_guard.py).
