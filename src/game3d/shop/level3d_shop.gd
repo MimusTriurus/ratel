@@ -44,8 +44,10 @@
 #     does not jump, with a line from the box to the part, his or on trial,
 #     which follows it as the jeep turns: straight down, or for a part low
 #     on the jeep down beside it and in at a right angle, so as not to
-#     cross the hull. Under the jeep is kept for the paint. With one player
-#     the second's column is empty.
+#     cross the hull. Under the jeep is kept for the paint.
+#   * With one player there is no second column: the matrix stands at the
+#     frame's right edge, the title over it, and the jeep, larger, has the
+#     rest (SOLO_MATRIX_X, Bay.SOLO_ZOOM).
 #   * The first player has the mouse as well: over a tile picks it, a left
 #     click buys, a right click takes back -- with the title's reticle
 #     (Level3DReticle) in place of the system's pointer.
@@ -72,6 +74,11 @@ const TILE_GAP := 16.0
 const LIFE_HEIGHT := 120.0
 const SIDE_WIDTH := 560.0       # each player's column at the frame's edge
 const SIDE_MARGIN := 40.0
+# With one player the matrix is at the frame's right edge, and his column,
+# his jeep larger in it (Bay.SOLO_ZOOM), is all the rest; his words' box no
+# wider than WORDS_WIDTH, over the jeep's middle.
+const SOLO_MATRIX_X := 2048.0 - SIDE_MARGIN - MATRIX.size.x
+const WORDS_WIDTH := 800.0
 const READY_Y := 1040.0
 const TILE_FILL := Color(0.0, 0.0, 0.0, 0.62)
 const RING := 2.0
@@ -512,11 +519,11 @@ func _draw_text() -> void:
 	var g := _whole(GLYPH * s)
 	var sg := _whole(SMALL * s)
 	var pg := _whole(PLAYER_GLYPH * s)
+	# The goods, and the title over them.
+	var m := Rect2(_matrix().position * s, MATRIX.size * s)
 	var title := "%s - ROUND %d" % [TITLE, _run.round + 1]
-	Level3DFont.draw(_text, title, roundf(_text.size.x * 0.5 - Level3DFont.width(title, tg) * 0.5),
+	Level3DFont.draw(_text, title, roundf(m.get_center().x - Level3DFont.width(title, tg) * 0.5),
 			roundf(TITLE_Y * s), tg)
-	# The goods.
-	var m := Rect2(MATRIX.position * s, MATRIX.size * s)
 	var gap := TILE_GAP * s
 	var columns := float(Level3DShopCatalog.COLUMNS)
 	var rows := float(LIFE_ROW)
@@ -634,11 +641,24 @@ func _status(i: int, it: Dictionary) -> Array:
 	return ["MAX", DIM]
 
 
+# Where the matrix is, in the 2048 frame: in the middle with two players, at
+# the right edge with one.
+func _matrix() -> Rect2:
+	return Rect2(SOLO_MATRIX_X, MATRIX.position.y, MATRIX.size.x, MATRIX.size.y) if _players == 1 else MATRIX
+
+
+# Player `i`'s column, in the 2048 frame: x and width.
+func _column(i: int) -> Vector2:
+	if _players == 1:
+		return Vector2(SIDE_MARGIN, SOLO_MATRIX_X - SIDE_MARGIN * 2.0)
+	return Vector2(SIDE_MARGIN if i == 0 else 2048.0 - SIDE_MARGIN - SIDE_WIDTH, SIDE_WIDTH)
+
+
 func _draw_side(i: int, s: float, g: float, sg: float, pg: float) -> void:
 	var kit: Level3DRun.Kit = _run.kits[i]
 	var colour: Color = colours[i] if i < colours.size() else Color.WHITE
-	var x0 := SIDE_MARGIN * s if i == 0 else (2048.0 - SIDE_MARGIN - SIDE_WIDTH) * s
-	var width := SIDE_WIDTH * s
+	var x0 := _column(i).x * s
+	var width := _column(i).y * s
 	# 1P and the money.
 	var y := roundf(TITLE_Y * s)
 	var who := "%dP " % (i + 1)
@@ -659,20 +679,24 @@ func _draw_side(i: int, s: float, g: float, sg: float, pg: float) -> void:
 
 
 # Player `i`'s tile's name and its words in a box across his column
-# (`column`'s x and width), over his jeep, and a line from it to the part
+# (`column`'s x and width) or WORDS_WIDTH of it in its middle, over his jeep, and a line from it to the part
 # where the jeep has one: straight down, leaving the box at the part's x,
 # or down beside the jeep and in to the part (SHOWS' knee).
 func _draw_words(i: int, column: Rect2, s: float, g: float, sg: float) -> void:
 	var it := _item(i)
 	var show: Dictionary = SHOWS.get(_shown[i], {})
 	var colour: Color = colours[i] if i < colours.size() else Color.WHITE
+	if column.size.x > WORDS_WIDTH * s:
+		column = Rect2(roundf(column.get_center().x - WORDS_WIDTH * s * 0.5), column.position.y,
+				WORDS_WIDTH * s, column.size.y)
 	# The name in full where the tile's is short for it (the catalog's title).
 	var name: String = it.get("title", it.get("name", "READY"))
 	var text: String = it.get("text", "EVERY PLAYER READY, AND THE ROUND STARTS.")
 	var pad := roundf(WORDS_PAD * s)
 	var heads := _wrap(name, g, column.size.x - pad * 2.0)
 	var lines := _wrap(text, sg, column.size.x - pad * 2.0)
-	var height := pad * 2.0 + heads.size() * (g + roundf(4.0 * s)) - roundf(4.0 * s) + roundf(10.0 * s) 			+ lines.size() * (sg + roundf(8.0 * s)) - roundf(8.0 * s)
+	var height := pad * 2.0 + heads.size() * (g + roundf(4.0 * s)) - roundf(4.0 * s) + roundf(10.0 * s) \
+			+ lines.size() * (sg + roundf(8.0 * s)) - roundf(8.0 * s)
 	var box := Rect2(column.position.x, roundf(WORDS_TOP * s), column.size.x, height)
 	var a := clampf((_time - _since[i]) / WORDS_FADE, 0.0, 1.0)
 	var spot: Variant = _bay.spot(i)
@@ -680,7 +704,7 @@ func _draw_words(i: int, column: Rect2, s: float, g: float, sg: float) -> void:
 		var to: Vector2 = spot
 		var points := PackedVector2Array()
 		if show.has("knee"):
-			var x := roundf(_bay.middle(i).x + float(show.knee) * s * (1.0 if i == 0 else -1.0))
+			var x := roundf(_bay.middle(i).x + float(show.knee) * _bay.zoom * s * (1.0 if i == 0 else -1.0))
 			x = clampf(x, box.position.x + pad, box.end.x - pad)
 			points = PackedVector2Array([Vector2(x, box.end.y), Vector2(x, to.y), to])
 		else:
@@ -745,6 +769,12 @@ class Bay:
 	const CAMERA_AT := Vector3(0.0, 3.8, 6.2)
 	const LOOK_AT := Vector3(0.0, -0.3, -0.9)
 	const FOV := 36.0
+	# With one player: his jeep SOLO_ZOOM times as large, the camera that
+	# much nearer along the same line to it -- so it is seen as with two, the
+	# views and knees as they are -- and the lens shifted for the table's
+	# middle to stand at SOLO_AT in the 2048 x 1152 frame.
+	const SOLO_ZOOM := 1.4
+	const SOLO_AT := Vector2(620.0, 630.0)
 
 	var staged := false
 	var viewport: SubViewport
@@ -756,6 +786,7 @@ class Bay:
 	var _spots: Array = []          # per player, the line's end on his jeep, its frame; null for none
 	var _camera: Camera3D
 	var _time := 0.0
+	var zoom := 1.0                 # the jeep's size, as with two players
 
 	func _init() -> void:
 		set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -803,12 +834,15 @@ class Bay:
 		var camera := Camera3D.new()
 		camera.fov = FOV
 		root.add_child(camera)
-		camera.look_at_from_position(CAMERA_AT, LOOK_AT, Vector3.UP)
+		zoom = SOLO_ZOOM if players == 1 else 1.0
+		var first := Vector3(-SPOT.x, SPOT.y, SPOT.z)
+		camera.look_at_from_position(first + (CAMERA_AT - first) / zoom, first + (LOOK_AT - first) / zoom,
+				Vector3.UP)
 		camera.current = true
 		_camera = camera
 		for i in players:
 			var table := Node3D.new()
-			table.position = Vector3(-SPOT.x if i == 0 else SPOT.x, SPOT.y, SPOT.z)
+			table.position = first if i == 0 else Vector3(SPOT.x, SPOT.y, SPOT.z)
 			root.add_child(table)
 			var disc := MeshInstance3D.new()
 			var cylinder := CylinderMesh.new()
@@ -844,6 +878,7 @@ class Bay:
 		_ghosts.clear()
 		_spots.clear()
 		_camera = null
+		zoom = 1.0
 		staged = false
 		visible = false
 
@@ -926,6 +961,21 @@ class Bay:
 			return null
 		return _camera.unproject_position(_jeeps[i].global_transform * (_spots[i] as Vector3))
 
+	# The lens shifted for the one table's middle to stand at SOLO_AT, at
+	# whatever size the frame is.
+	func _aim_solo() -> void:
+		if _camera == null or _tables.is_empty():
+			return
+		var target := _tables[0].global_position + Vector3.UP * 0.12
+		_camera.h_offset = 0.0
+		_camera.v_offset = 0.0
+		var at := _camera.unproject_position(target)
+		var want := SOLO_AT / Vector2(2048.0, 1152.0) * Vector2(viewport.size)
+		var depth := (target - _camera.global_position).dot(-_camera.global_basis.z)
+		var per_pixel := 2.0 * depth * tan(deg_to_rad(_camera.fov) * 0.5) / float(viewport.size.y)
+		_camera.h_offset = (at.x - want.x) * per_pixel
+		_camera.v_offset = (want.y - at.y) * per_pixel
+
 	# Player `i`'s jeep to turn `degrees` off facing the camera, towards the
 	# frame's middle.
 	func turn(i: int, degrees: float) -> void:
@@ -936,6 +986,8 @@ class Bay:
 		if not staged:
 			return
 		_time += delta
+		if zoom != 1.0:
+			_aim_solo()
 		var wave := 0.5 + 0.5 * sin(_time * Level3DShop.GHOST_PULSE)
 		var pulse := lerpf(Level3DShop.GHOST.x, Level3DShop.GHOST.y, wave)
 		for i in _tables.size():
