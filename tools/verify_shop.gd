@@ -43,7 +43,7 @@ func _all() -> void:
 	print("-- The shop: buying, taking back, both players at once, READY.")
 	await _fresh()
 	await _shop()
-	print("-- The passive upgrades: spares, armour, twin gun, loopholes, radar.")
+	print("-- The passive upgrades: spares, armour, twin gun, loopholes, radar, the ram cage.")
 	await _fresh()
 	await _passives()
 	print("-- The devices: the key, nitro, mines, the airstrike, not at the boss.")
@@ -174,7 +174,7 @@ func _shop() -> void:
 	check("what CONTINUE goes back to is the round's start", saved.round == 2 and saved.kits[0].upgrades.has("twin"))
 
 
-# The passive upgrades: spares, armour, twin gun, loopholes, radar.
+# The passive upgrades: spares, armour, twin gun, loopholes, radar, the ram cage.
 func _passives() -> void:
 	while not scene.get("_live"):
 		await process_frame
@@ -238,6 +238,40 @@ func _passives() -> void:
 	for i in 5:
 		await process_frame
 	check("no radar, none shown", not radar.shown)
+
+	# The ram cage: a gun run into is gone and the jeep lives, once; the
+	# next ram, without it, blows the jeep up.
+	var guns: Level3DGuns = scene.get("guns")
+	c.upgrades.assign(["hull"])
+	scene.call("_dress_crews")
+	var standing := guns.targets()
+	if standing.is_empty():
+		check("ram cage: a gun to run into", false)
+		return
+	c.btr.place(Vector3(standing[0].x, c.btr.position.y, standing[0].y), c.btr.heading)
+	c.invincible = 0
+	await physics_frame
+	await physics_frame
+	# That one gone: another may have come out meanwhile.
+	check("ram cage: the gun run into gone", not guns.targets().has(standing[0]))
+	check("ram cage: the jeep lives", c.respawning == 0 and c.btr.visible)
+	check("ram cage: lost, a second's blinking", not c.upgrades.has("hull") and c.invincible > 0)
+	# On up the stage, out of the bunkers' way, till the next one is out.
+	var at: Vector3 = c.btr.position
+	while guns.targets().is_empty() and at.z > -20.0:
+		at.z -= 3.0
+		c.btr.place(Vector3(-5.0, at.y, at.z), c.btr.heading)
+		for i in 60:
+			await physics_frame
+	if guns.targets().is_empty():
+		check("ram cage: a second gun to run into", false)
+		return
+	var next: Vector2 = guns.targets()[0]
+	c.btr.place(Vector3(next.x, c.btr.position.y, next.y), c.btr.heading)
+	c.invincible = 0
+	await physics_frame
+	await physics_frame
+	check("ram cage: without it, the next ram kills", c.respawning > 0)
 
 
 # The devices: the key, nitro, mines, the airstrike, not at the boss.

@@ -3193,11 +3193,13 @@ func _physics_process(delta: float) -> void:
 		soldiers.bump(box)
 		friends.bump(box, c.carrier)
 		if guns.bump(box, c.invincible > 0):
-			_explode_btr(c, "ran into a gun")
+			_rammed(c, "ran into a gun")
 		elif tanks.bump(box, c.invincible > 0):
-			_explode_btr(c, "ran into a tank")
+			_rammed(c, "ran into a tank")
 		elif boss.bump(box, c.invincible > 0):
-			_explode_btr(c, "ran into a boss tank")
+			if c.upgrades.has("hull"):
+				boss.ram(box)
+			_rammed(c, "ran into a boss tank")
 	# No calls before the BTR is down off the Chinook and can go to them.
 	friends.held = chinook != null
 	guns.tick()
@@ -3712,6 +3714,77 @@ func _nitro_flames(c: Crew, gone: bool) -> void:
 		return
 	for at in c.btr.exhaust_mouths():
 		c.launcher.wreck_flame(at - c.btr.forward() * NITRO_FLAME_BACK, NITRO_FLAME_SIZE, 0.15)
+
+
+# A ram (docs/shop-plan.md): the gun or tank run into is gone either way,
+# worth its points, and the boss's tank has taken a rocket's damage if the
+# jeep had the reinforced hull. With it, the jeep lives and the hull goes
+# (_shed_cage); without it, the jeep blows up, as in the game.
+func _rammed(c: Crew, by: String) -> void:
+	if c.upgrades.has("hull"):
+		_shed_cage(c)
+	else:
+		_explode_btr(c, by)
+
+
+# The hull's one ram spent: the upgrade lost, to be bought again; its cage
+# thrown off the jeep (_throw_off), the body jolted back on its springs as
+# from a wall, the camera shaken; and RAM_INVINCIBLE ticks blinking, to get
+# clear of what else it is up against -- the boss's tank, which is still
+# there, or a second gun.
+const RAM_INVINCIBLE := 100
+const RAM_KICK := 1.5             # rad/s into the body's pitch, Level3DBtr.BUMP_JOLT's
+
+func _shed_cage(c: Crew) -> void:
+	c.upgrades.erase("hull")
+	var cage := c.btr.upgrade_part("hull")
+	if cage != null and cage.is_visible_in_tree():
+		_throw_off(cage)
+	c.btr.set_upgrades(c.upgrades)
+	c.invincible = RAM_INVINCIBLE
+	c.btr.recoil(-c.btr.forward(), RAM_KICK)
+	_shake(SHAKE_PIXELS * 0.5)
+	Level3DAudio.play("hit_dull", c.btr.position)
+	if guns.verbose:
+		print("%dP rammed, the cage lost" % (c.index + 1))
+	_show_state()
+
+
+# A copy of `part` off the jeep as it stands: up and away, tumbling, down on
+# the ground and sunk into it, as the wreck's parts are (Level3DWreck) but
+# alone and quicker.
+const THROWN_UP := 2.6            # level m/s
+const THROWN_OUT := 1.2
+const THROWN_SPIN := 9.0          # rad/s
+const THROWN_LIFE := 1.4          # seconds, the last third sinking
+
+func _throw_off(part: Node3D) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	# Turned about its own middle, not its origin, which is the jeep's.
+	var middle := part.global_position
+	var mesh := part as MeshInstance3D
+	if mesh != null:
+		middle = mesh.global_transform * mesh.get_aabb().get_center()
+	var pivot := Node3D.new()
+	add_child(pivot)
+	pivot.global_position = middle
+	var copy := part.duplicate() as Node3D
+	pivot.add_child(copy)
+	copy.global_transform = part.global_transform
+	var away := Vector3(rng.randf_range(-1, 1), 0.0, rng.randf_range(-1, 1)).normalized()
+	var velocity := away * THROWN_OUT + Vector3.UP * THROWN_UP
+	var axis := Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1)).normalized()
+	var under: Dictionary = _ground_at(middle.x, middle.z)
+	var floor_y: float = (under.height if under.hit else middle.y - 0.3) + 0.1
+	var fly := func(t: float):
+		var at := middle + velocity * t + Vector3.DOWN * 4.9 * t * t
+		var sink := clampf((t - THROWN_LIFE * 0.66) / (THROWN_LIFE * 0.34), 0.0, 1.0)
+		at.y = maxf(at.y, floor_y) - sink * 0.3
+		pivot.global_transform = Transform3D(Basis(axis, THROWN_SPIN * minf(t, 0.6)), at)
+	var tween := pivot.create_tween()
+	tween.tween_method(fly, 0.0, THROWN_LIFE, THROWN_LIFE)
+	tween.tween_callback(pivot.queue_free)
 
 
 # Every mine: an enemy tank, or one of the boss's, over it sets it off.
