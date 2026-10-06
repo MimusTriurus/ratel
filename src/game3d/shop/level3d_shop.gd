@@ -1099,6 +1099,7 @@ class Bay:
 				heli = _land(root, pad, table.position, 1.0 if i == 0 else -1.0)
 				if i == 0:
 					_lay(ground.material_override, pad, players > 1)
+					_wear(ground.material_override, table.position, heli.position)
 			_helis.append(heli)
 			var jeep := Level3DBtr.new()
 			table.add_child(jeep)
@@ -1107,8 +1108,8 @@ class Bay:
 				_paint_heli(i, paints[i])
 			_tables.append(table)
 			_jeeps.append(jeep)
-			_yaw.append(30.0)
-			_want.append(30.0)
+			_yaw.append(Level3DShop.VIEW)
+			_want.append(Level3DShop.VIEW)
 			_ghosts.append([])
 			_spots.append(null)
 		staged = true
@@ -1211,6 +1212,20 @@ class Bay:
 		concrete.set_shader_parameter("origin", Vector2(corner.x, corner.z))
 		concrete.set_shader_parameter("angle", pad.rotation.y)
 		concrete.set_shader_parameter("mirror", mirror)
+
+	const DUO_BEND := 1.5
+	# The concrete's wear about the first jeep (at `jeep`) and its helicopter
+	# (at `heli`): its tracks in from behind it as it stands (VIEW off
+	# nose-to-camera, as the bay turns it), bent left round DUO_BEND m with
+	# two players, the helicopter being behind the jeep then; oil under it
+	# and the helicopter.
+	func _wear(concrete: ShaderMaterial, jeep: Vector3, heli: Vector3) -> void:
+		var standing := -PI / 2.0 + deg_to_rad(Level3DShop.VIEW)
+		var way := Vector2(cos(standing), -sin(standing))
+		concrete.set_shader_parameter("jeep", Vector2(jeep.x, jeep.z))
+		concrete.set_shader_parameter("way", way)
+		concrete.set_shader_parameter("heli", Vector2(heli.x, heli.z))
+		concrete.set_shader_parameter("bend", 0.0 if zoom != 1.0 else DUO_BEND)
 
 	# Player `i`'s helicopter in his jeep's paint `id`, from its own colours.
 	func _paint_heli(i: int, id: String) -> void:
