@@ -1,17 +1,17 @@
 # The shop between the 3D preview's rounds (docs/shop-plan.md, section 4):
 # once the mission's summary is closed (level3d_preview.gd, _round_won), the
 # stage goes to black and the shop comes up out of it, the stage paused
-# under it. The players' jeeps stand on turntables at the frame's edges, the
-# first's on the left, the second's on the right, with what they have
-# bought on them; between them the goods, a matrix out of
-# Level3DShopCatalog:
+# under it. The players' jeeps stand on turntables in a column at each of
+# the frame's edges, the first's on the left, the second's on the right,
+# with what they have bought on them; between them the goods, a matrix out
+# of Level3DShopCatalog:
 #
 #     1P $38400                 SUPPLY - ROUND 2                 2P $21300
-#     [jeep]   TWIN GUN    LAUNCHER     RADAR                       [jeep]
-#              SPARES      ARMOR        RAM CAGE
-#              NITRO       MINES        AIRSTRIKE
-#              LIFE ----------------------------
-#     what the 1P's tile does                     what the 2P's tile does
+#     [TWIN GUN ...]   TWIN GUN    LAUNCHER     RADAR     [NITRO ......]
+#          |           SPARES      ARMOR        RAM CAGE              |
+#       [jeep]         NITRO       MINES        AIRSTRIKE    [jeep]   |
+#                      LIFE ----------------------------          o---'
+#                      (the paint, to come)
 #     READY                                                        READY
 #
 # The side says no more than the money: the lives are on LIFE's tile, the
@@ -33,13 +33,15 @@
 #     back on the score. Fire on READY, under the matrix, is the player's
 #     word that he is done; the round starts when every player has given it.
 #   * The jeep turns on its table to show the part the tile is about
-#     (VIEWS), and a part not yet his stands on it see-through, pulsing --
+#     (SHOWS), and a part not yet his stands on it see-through, pulsing --
 #     the twin gun in the single one's place, the launcher's next step in
-#     the one he has. The part, his or on trial, is ringed in the reticle's
-#     orange, round its outline only, the ring's width pulsing (MARK): the
-#     eye goes to it, not to the jeep. The ring is a node of its own
-#     (level3d_hull_mark.gdshader), so that the see-through does not fade
-#     it, and the part's faces mark the stencil for it to keep out of.
+#     the one he has. What the tile is, its name and its words, is in a box
+#     across his column, over the jeep whatever the tile, so that the eye
+#     does not jump, with a line from the box to the part, his or on trial,
+#     which follows it as the jeep turns: straight down, or for a part low
+#     on the jeep down beside it and in at a right angle, so as not to
+#     cross the hull. Under the jeep is kept for the paint. With one player
+#     the second's column is empty.
 #   * The first player has the mouse as well: over a tile picks it, a left
 #     click buys, a right click takes back -- with the title's reticle
 #     (Level3DReticle) in place of the system's pointer.
@@ -61,12 +63,11 @@ const SMALL := 16.0             # the tiles' prices, the descriptions
 const PLAYER_GLYPH := 32.0
 # The layout, in the HUD's 2048 x 1152 at 100%.
 const TITLE_Y := 48.0
-const MATRIX := Rect2(560, 150, 928, 690)   # the goods: rows 0-2 and the life's
+const MATRIX := Rect2(640, 150, 768, 690)   # the goods: rows 0-2 and the life's
 const TILE_GAP := 16.0
 const LIFE_HEIGHT := 120.0
-const SIDE_WIDTH := 480.0       # each player's column at the frame's edge
+const SIDE_WIDTH := 560.0       # each player's column at the frame's edge
 const SIDE_MARGIN := 40.0
-const TEXT_Y := 770.0           # the tile's description, under the tables
 const READY_Y := 1040.0
 const TILE_FILL := Color(0.0, 0.0, 0.0, 0.62)
 const RING := 2.0
@@ -79,17 +80,44 @@ const LEAVE := 0.6
 const READY_ROW := 4
 const LIFE_ROW := 3
 const LAUNCHER_NAMES := ["GRENADE", "MISSILE", "MISSILE+", "MISSILE++"]
-# How the jeep turns on its table for a tile: degrees off nose-to-camera,
-# towards the frame's middle.
-const VIEWS := {"twin": 25.0, "launcher": 150.0, "loopholes": 80.0, "zip": 140.0, "armor": 75.0,
-		"radar": 40.0, "hull": 60.0, "nitro": 130.0, "mines": 180.0, "airstrike": 30.0, "life": 30.0, "ready": 30.0}
+# How the jeep shows a tile's part, and how the line from the words, always
+# over the jeep, gets to it:
+#   view   degrees off nose-to-camera, towards the frame's middle; 180 is
+#          the tail (VIEW if not given)
+#   spot   where on the part the line ends, a fraction of its box in the
+#          jeep's frame -- x the nose, y up -- its middle if not given:
+#          the nitro's pipes at its tail, the ram cage's grille at its nose
+#   knee   for a part low on the jeep, which a line straight down would
+#          reach across the hull: the line goes down beside the jeep
+#          instead, this many pixels of the 2048 frame off the table's
+#          middle, towards the frame's middle, and turns in to the part
+#          at its height
+# The words stay where they are whatever the tile, so that the eye does not
+# jump; under the jeep is the paint's (to come).
+const SHOWS := {
+	"twin": {"view": 25.0},
+	"launcher": {"view": 150.0},
+	"radar": {"view": 40.0},
+	"loopholes": {"view": 80.0},
+	"zip": {"view": 95.0},
+	"armor": {"view": 75.0},
+	"hull": {"view": 60.0, "knee": 240.0, "spot": Vector3(1.0, 0.5, 0.5)},
+	"nitro": {"view": 160.0, "knee": -265.0, "spot": Vector3(0.0, 0.5, 0.5)},
+	"mines": {"view": 155.0, "knee": -265.0},
+	"airstrike": {"view": 30.0},
+}
+const VIEW := 30.0
 const TURN_RATE := 3.0          # of the way to the view, per second
 const GHOST := Vector2(0.25, 0.7)   # a part on trial: its transparency, pulsing between
 const GHOST_PULSE := 4.0
-# The ring round the tile's part on the jeep: its width, pixels of a frame
-# 1080 high, pulsing between, at GHOST_PULSE.
-const MARK := Vector2(3.0, 7.0)
-const MARK_SHADER := preload("res://src/game3d/shaders/level3d_hull_mark.gdshader")
+# The tile's words: a box in the player's column, over the jeep from
+# WORDS_TOP, coming up over WORDS_FADE seconds when the tile changes; the
+# line from it to the part, its dot.
+const WORDS_TOP := 104.0
+const WORDS_PAD := 16.0
+const WORDS_FADE := 0.2
+const LINE := 4.0
+const DOT := 8.0
 
 enum State { CLOSED, DARKENING, OPEN, LEAVING }
 
@@ -117,7 +145,9 @@ var _veil: ColorRect
 var _reticle: Level3DReticle
 var _fade: Tween
 var _time := 0.0
-var _rects := {}                    # this frame's: Vector3i(column, row, player for READY) -> Rect2
+var _shown: Array[String] = []      # each player's tile his words are on, and since when
+var _since: Array[float] = []
+var _rects := {}                  # this frame's: Vector3i(column, row, player for READY) -> Rect2
 
 
 func _init() -> void:
@@ -181,11 +211,15 @@ func open(run: Level3DRun, at_once := false) -> void:
 	_set.clear()
 	_bought.clear()
 	_was.clear()
+	_shown.clear()
+	_since.clear()
 	for i in _players:
 		_cursor.append(Vector2i(0, 0))
 		_set.append(false)
 		_bought.append([])
 		_was.append({})
+		_shown.append("")
+		_since.append(0.0)
 	visible = true
 	_state = State.DARKENING
 	_kill_fade()
@@ -210,10 +244,10 @@ func close() -> void:
 func _show() -> void:
 	_fade = null
 	_bay.stage(_players, tints)
+	_time = 0.0
 	for i in _players:
 		_dress(i)
 	_state = State.OPEN
-	_time = 0.0
 	_fade = create_tween()
 	_fade.tween_property(_veil, "color:a", 0.0, FADE_IN)
 	_fade.tween_callback(func(): _fade = null)
@@ -316,12 +350,16 @@ func _take_back(player: int) -> void:
 
 
 # A player's jeep as his kit has it, the tile under his cursor on trial,
-# turned to show it.
+# turned to show it; his words coming up anew when the tile is another.
 func _dress(player: int) -> void:
 	var it := _item(player)
 	var id: String = it.get("id", "ready")
-	_bay.dress(player, _run.kits[player], id)
-	_bay.turn(player, VIEWS.get(id, 30.0))
+	var show: Dictionary = SHOWS.get(id, {})
+	_bay.dress(player, _run.kits[player], id, show.get("spot", Vector3(0.5, 0.5, 0.5)))
+	_bay.turn(player, show.get("view", VIEW))
+	if _shown[player] != id:
+		_shown[player] = id
+		_since[player] = _time
 
 
 func _process(delta: float) -> void:
@@ -480,13 +518,9 @@ func _draw_text() -> void:
 		rect = Rect2(rect.position.round(), rect.size.round())
 		_rects[Vector3i(it.col, it.row, 0)] = rect
 		_draw_tile(rect, it, s, g, sg)
-	# Each player's side: his line, his lives, launcher and slot, the tile's
-	# words, READY.
+	# Each player's side: his money, the tile's words, READY.
 	for i in _players:
 		_draw_side(i, s, g, sg, pg)
-	if _players == 1:
-		_draw_words(0, Rect2((2048.0 - SIDE_MARGIN - SIDE_WIDTH) * s, 220.0 * s, SIDE_WIDTH * s, 600.0 * s),
-				g, _whole(GLYPH * 1.0 * s))
 	# The cursors, the second's inside the first's.
 	for i in range(_players - 1, -1, -1):
 		var at := _cursor[i]
@@ -542,7 +576,11 @@ func _draw_tile(rect: Rect2, it: Dictionary, s: float, g: float, sg: float) -> v
 			var w := Level3DFont.width(line, sg)
 			var x := rect.get_center().x - w * 0.5 if _players == 1 else \
 					(rect.position.x + pad if i == 0 else rect.end.x - pad - w)
-			Level3DFont.draw(_text, line, roundf(x), roundf(rect.get_center().y - sg * 0.5 + 4.0 * s), sg,
+			# With two, one over the other, as MISSILE++ twice is wider than a tile.
+			var at := rect.get_center().y - sg * 0.5 + 4.0 * s
+			if _players > 1 and it.id == "launcher":
+				at += (sg * 0.5 + 4.0 * s) * (-1.0 if i == 0 else 1.0)
+			Level3DFont.draw(_text, line, roundf(x), roundf(at), sg,
 					Level3DFont.GRAY, colours[i] if i < colours.size() else Color.WHITE)
 
 
@@ -572,9 +610,7 @@ func _draw_side(i: int, s: float, g: float, sg: float, pg: float) -> void:
 	var x := x0 if i == 0 else x0 + width - Level3DFont.width(who + money, pg)
 	x = Level3DFont.draw(_text, who, roundf(x), y, pg, Level3DFont.WHITE, colour)
 	Level3DFont.draw(_text, money, roundf(x), y, pg)
-	# What his tile does: with one player that is the right side's.
-	if _players > 1:
-		_draw_words(i, Rect2(x0, TEXT_Y * s, width, READY_Y * s - TEXT_Y * s - 16.0 * s), g, sg)
+	_draw_words(i, Rect2(x0, 0.0, width, 0.0), s, g, sg)
 	# READY.
 	var ready := "READY!" if _set[i] else "READY"
 	var rw := Level3DFont.width(ready, g)
@@ -586,18 +622,53 @@ func _draw_side(i: int, s: float, g: float, sg: float, pg: float) -> void:
 	Level3DFont.draw(_text, ready, roundf(rect.position.x + 24.0 * s), roundf(rect.position.y + 12.0 * s), g)
 
 
-# Player `i`'s tile's name and its words, wrapped into `box`.
-func _draw_words(i: int, box: Rect2, g: float, tg: float) -> void:
+# Player `i`'s tile's name and its words in a box across his column
+# (`column`'s x and width), over his jeep, and a line from it to the part
+# where the jeep has one: straight down, leaving the box at the part's x,
+# or down beside the jeep and in to the part (SHOWS' knee).
+func _draw_words(i: int, column: Rect2, s: float, g: float, sg: float) -> void:
 	var it := _item(i)
+	var show: Dictionary = SHOWS.get(_shown[i], {})
 	var colour: Color = colours[i] if i < colours.size() else Color.WHITE
 	var name: String = it.get("name", "READY")
 	var text: String = it.get("text", "EVERY PLAYER READY, AND THE ROUND STARTS.")
-	var y := box.position.y
-	Level3DFont.draw(_text, name, roundf(box.position.x), roundf(y), g, Level3DFont.WHITE, colour)
-	y += g + 10.0
-	for line in _wrap(text, tg, box.size.x):
-		Level3DFont.draw(_text, line, roundf(box.position.x), roundf(y), tg, Level3DFont.GRAY)
-		y += tg + 8.0
+	var pad := roundf(WORDS_PAD * s)
+	var lines := _wrap(text, sg, column.size.x - pad * 2.0)
+	var height := pad * 2.0 + g + roundf(10.0 * s) + lines.size() * (sg + roundf(8.0 * s)) - roundf(8.0 * s)
+	var box := Rect2(column.position.x, roundf(WORDS_TOP * s), column.size.x, height)
+	var a := clampf((_time - _since[i]) / WORDS_FADE, 0.0, 1.0)
+	var spot: Variant = _bay.spot(i)
+	if spot != null:
+		var to: Vector2 = spot
+		var points := PackedVector2Array()
+		if show.has("knee"):
+			var x := roundf(_bay.middle(i).x + float(show.knee) * s * (1.0 if i == 0 else -1.0))
+			x = clampf(x, box.position.x + pad, box.end.x - pad)
+			points = PackedVector2Array([Vector2(x, box.end.y), Vector2(x, to.y), to])
+		else:
+			points = PackedVector2Array([Vector2(clampf(to.x, box.position.x + pad, box.end.x - pad), box.end.y), to])
+		var w := maxf(roundf(LINE * s), 2.0)
+		var r := maxf(roundf(DOT * s), 3.0)
+		var edge := maxf(roundf(2.0 * s), 1.0)
+		# The knee rounded, under the line and over it, as the lines meeting
+		# there leave a notch.
+		_text.draw_polyline(points, Color(0, 0, 0, a * 0.8), w + edge * 2.0, true)
+		for k in range(1, points.size() - 1):
+			_text.draw_circle(points[k], w * 0.5 + edge, Color(0, 0, 0, a * 0.8))
+		_text.draw_circle(to, r + edge * 2.0, Color(0, 0, 0, a * 0.8))
+		_text.draw_polyline(points, Color(colour, a), w, true)
+		for k in range(1, points.size() - 1):
+			_text.draw_circle(points[k], w * 0.5, Color(colour, a))
+		_text.draw_circle(to, r + edge, Color(1, 1, 1, a))
+		_text.draw_circle(to, r - edge, Color(colour, a))
+	_text.draw_rect(box, Color(TILE_FILL, TILE_FILL.a * a))
+	_text.draw_rect(box.grow(-1.0), Color(colour, a), false, maxf(roundf(RING * s), 1.0))
+	var y := box.position.y + pad
+	Level3DFont.draw(_text, name, roundf(box.position.x + pad), y, g, Level3DFont.WHITE, Color(colour, a))
+	y += g + roundf(10.0 * s)
+	for line in lines:
+		Level3DFont.draw(_text, line, roundf(box.position.x + pad), y, sg, Level3DFont.GRAY, Color(1, 1, 1, a))
+		y += sg + roundf(8.0 * s)
 
 
 static func _wrap(text: String, g: float, width: float) -> Array[String]:
@@ -628,11 +699,12 @@ class Bay:
 	const GROUND := Color(0.24, 0.22, 0.19)
 	const TABLE := Color(0.36, 0.37, 0.35)
 	# Where the tables stand and the camera looks from, level metres: a jeep
-	# at either edge of the frame, above its line of words.
-	const SPOT := Vector3(3.05, 0.0, -0.2)
+	# in the middle of either player's column, side on clear of the frame's
+	# edge and of the matrix, between the two places of his words.
+	const SPOT := Vector3(2.85, 0.0, -0.2)
 	const CAMERA_AT := Vector3(0.0, 3.8, 6.2)
 	const LOOK_AT := Vector3(0.0, -0.3, -0.9)
-	const FOV := 34.0
+	const FOV := 36.0
 
 	var staged := false
 	var viewport: SubViewport
@@ -641,9 +713,8 @@ class Bay:
 	var _yaw: Array[float] = []
 	var _want: Array[float] = []
 	var _ghosts: Array = []         # per player, the meshes on trial
-	var _mark: ShaderMaterial       # the ring's (MARK)
-	var _rings: Array = []          # per player, the ring's nodes
-	var _stencilled: Array = []     # per player, [mesh, surface, its override before]
+	var _spots: Array = []          # per player, the line's end on his jeep, its frame; null for none
+	var _camera: Camera3D
 	var _time := 0.0
 
 	func _init() -> void:
@@ -694,6 +765,7 @@ class Bay:
 		root.add_child(camera)
 		camera.look_at_from_position(CAMERA_AT, LOOK_AT, Vector3.UP)
 		camera.current = true
+		_camera = camera
 		for i in players:
 			var table := Node3D.new()
 			table.position = Vector3(-SPOT.x if i == 0 else SPOT.x, SPOT.y, SPOT.z)
@@ -718,12 +790,7 @@ class Bay:
 			_yaw.append(30.0)
 			_want.append(30.0)
 			_ghosts.append([])
-			_rings.append([])
-			_stencilled.append([])
-		_mark = ShaderMaterial.new()
-		_mark.shader = Level3DShop.MARK_SHADER
-		_mark.render_priority = 1
-		_mark.set_shader_parameter("colour", Level3DReticle.COLOUR)
+			_spots.append(null)
 		staged = true
 		visible = true
 
@@ -735,8 +802,8 @@ class Bay:
 		_yaw.clear()
 		_want.clear()
 		_ghosts.clear()
-		_rings.clear()
-		_stencilled.clear()
+		_spots.clear()
+		_camera = null
 		staged = false
 		visible = false
 
@@ -746,8 +813,9 @@ class Bay:
 		m.roughness = 1.0
 		return m
 
-	# Player `i`'s jeep with what `kit` has on it, and `trial`'s part on trial.
-	func dress(i: int, kit: Level3DRun.Kit, trial: String) -> void:
+	# Player `i`'s jeep with what `kit` has on it, and `trial`'s part on trial;
+	# the line to end at `fraction` of the part's box, his or on trial.
+	func dress(i: int, kit: Level3DRun.Kit, trial: String, fraction: Vector3) -> void:
 		if i >= _jeeps.size():
 			return
 		var jeep := _jeeps[i]
@@ -755,18 +823,10 @@ class Bay:
 			if is_instance_valid(mesh):
 				(mesh as GeometryInstance3D).transparency = 0.0
 		_ghosts[i] = []
-		for ring in _rings[i]:
-			if is_instance_valid(ring):
-				(ring as Node).queue_free()
-		_rings[i] = []
-		for entry in _stencilled[i]:
-			if is_instance_valid(entry[0]):
-				(entry[0] as MeshInstance3D).set_surface_override_material(entry[1], entry[2])
-		_stencilled[i] = []
 		var shown := kit.upgrades.duplicate()
 		var part: Node3D = null
-		# What is ringed: the tile's part, his or on trial.
-		var ringed := jeep.upgrade_part(trial)
+		# What the line goes to: the tile's part, his or on trial.
+		var pointed := jeep.upgrade_part(trial)
 		if not shown.has(trial) and jeep.upgrade_part(trial) != null:
 			shown.append(trial)
 			part = jeep.upgrade_part(trial)
@@ -785,39 +845,43 @@ class Bay:
 			if trying and k == step + 1:
 				part = base
 			if trial == "launcher" and base.visible:
-				ringed = base
+				pointed = base
 		if part != null:
 			_ghosts[i] = part.find_children("*", "GeometryInstance3D", true, false)
 			if part is GeometryInstance3D:
 				_ghosts[i].append(part)
-		if ringed != null:
-			var meshes := ringed.find_children("*", "MeshInstance3D", true, false)
-			if ringed is MeshInstance3D:
-				meshes.append(ringed)
+		_spots[i] = null
+		if pointed != null:
+			# The box of what of it shows, in the jeep's frame, which turns.
+			var meshes := pointed.find_children("*", "MeshInstance3D", true, false)
+			if pointed is MeshInstance3D:
+				meshes.append(pointed)
+			var into := jeep.global_transform.affine_inverse()
+			var box: AABB
+			var first := true
 			for node in meshes:
 				var mesh := node as MeshInstance3D
-				var hull := Level3DHull.mark_hull(mesh.mesh)
-				if hull == null:
+				if mesh.mesh == null or not mesh.is_visible_in_tree():
 					continue
-				var ring := MeshInstance3D.new()
-				ring.name = "ShopRing"
-				ring.mesh = hull
-				ring.material_override = _mark
-				ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-				mesh.add_child(ring)
-				_rings[i].append(ring)
-				# Its paint on copies that mark the stencil where they are drawn.
-				for surface in mesh.mesh.get_surface_count():
-					var paint := mesh.get_active_material(surface) as BaseMaterial3D
-					if paint == null:
-						continue
-					var marking := paint.duplicate() as BaseMaterial3D
-					marking.stencil_mode = BaseMaterial3D.STENCIL_MODE_CUSTOM
-					marking.stencil_flags = BaseMaterial3D.STENCIL_FLAG_WRITE
-					marking.stencil_compare = BaseMaterial3D.STENCIL_COMPARE_ALWAYS
-					marking.stencil_reference = 1
-					_stencilled[i].append([mesh, surface, mesh.get_surface_override_material(surface)])
-					mesh.set_surface_override_material(surface, marking)
+				var b := (into * mesh.global_transform) * mesh.get_aabb()
+				box = b if first else box.merge(b)
+				first = false
+			if not first:
+				_spots[i] = box.position + box.size * fraction
+
+	# The middle of player `i`'s table, its top, in the bay's pixels: where
+	# SHOWS' knees are measured from.
+	func middle(i: int) -> Vector2:
+		if _camera == null or i >= _tables.size():
+			return Vector2.ZERO
+		return _camera.unproject_position(_tables[i].global_position + Vector3.UP * 0.12)
+
+	# Where player `i`'s line ends, in the bay's pixels, as his jeep stands
+	# now; null for a tile with no part on the jeep.
+	func spot(i: int) -> Variant:
+		if _camera == null or i >= _spots.size() or _spots[i] == null:
+			return null
+		return _camera.unproject_position(_jeeps[i].global_transform * (_spots[i] as Vector3))
 
 	# Player `i`'s jeep to turn `degrees` off facing the camera, towards the
 	# frame's middle.
@@ -831,8 +895,6 @@ class Bay:
 		_time += delta
 		var wave := 0.5 + 0.5 * sin(_time * Level3DShop.GHOST_PULSE)
 		var pulse := lerpf(Level3DShop.GHOST.x, Level3DShop.GHOST.y, wave)
-		if _mark != null:
-			_mark.set_shader_parameter("pixels", lerpf(Level3DShop.MARK.x, Level3DShop.MARK.y, wave))
 		for i in _tables.size():
 			_yaw[i] = lerpf(_yaw[i], _want[i], 1.0 - exp(-Level3DShop.TURN_RATE * delta))
 			# Nose to the camera is the jeep's +X turned to +Z; the first's
