@@ -34,7 +34,7 @@ TTF = 'assets/fonts/PressStart2P-Regular.ttf'
 PNG = 'assets/images/font3d.png'
 XML = 'assets/images/font3d.xml'
 # What it holds: the game's CHARS (Main.CHARS) and what that font has not got.
-CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ.,'-0123456789©!:()&`\" +/?%#"
+CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ.,'-0123456789©!:()&`\" +/?%#$"
 SCALE = 4
 CELL = 8 * SCALE
 # Clear round each cell: the smoothed and modern fonts (Level3DFont.filter) sample it
@@ -48,7 +48,7 @@ NAMES = {
     '.': 'period', ',': 'comma', "'": 'apostrophe', '!': 'exclamation', '-': 'hyphen',
     '©': 'copyright', ' ': 'space', ':': 'colon', '(': 'left-paren', ')': 'right-paren',
     '&': 'ampersand', '`': 'left-quote', '"': 'right-quote', '+': 'plus', '/': 'slash',
-    '?': 'question', '%': 'percent', '#': 'hash',
+    '?': 'question', '%': 'percent', '#': 'hash', '$': 'dollar',
 }
 
 

@@ -84,7 +84,7 @@ func _init() -> void:
 func add(at: Vector3, points: int, colour: Color) -> void:
 	var pop := Pop.new()
 	pop.at = at
-	pop.text = "+%d" % points
+	pop.text = "+$%d" % points
 	pop.colour = colour
 	_push(pop)
 

@@ -542,9 +542,9 @@ func _status(i: int, it: Dictionary) -> Array:
 	var kit: Level3DRun.Kit = _run.kits[i]
 	match Level3DShopCatalog.state(it.id, kit):
 		Level3DShopCatalog.State.BUY:
-			return [str(Level3DShopCatalog.price(it.id, kit)), Color.WHITE]
+			return ["$%d" % Level3DShopCatalog.price(it.id, kit), Color.WHITE]
 		Level3DShopCatalog.State.POOR:
-			return [str(Level3DShopCatalog.price(it.id, kit)), POOR]
+			return ["$%d" % Level3DShopCatalog.price(it.id, kit), POOR]
 		Level3DShopCatalog.State.OWNED:
 			var colour: Color = colours[i] if i < colours.size() else Color.WHITE
 			return ["IN SLOT" if kit.device == it.id else "OWNED", colour]
@@ -556,12 +556,13 @@ func _draw_side(i: int, s: float, g: float, sg: float, pg: float) -> void:
 	var colour: Color = colours[i] if i < colours.size() else Color.WHITE
 	var x0 := SIDE_MARGIN * s if i == 0 else (2048.0 - SIDE_MARGIN - SIDE_WIDTH) * s
 	var width := SIDE_WIDTH * s
-	# 1P and the score.
+	# 1P and the money.
 	var y := roundf(TITLE_Y * s)
 	var who := "%dP " % (i + 1)
-	var x := x0 if i == 0 else x0 + width - Level3DFont.width(who + str(kit.score), pg)
+	var money := "$%d" % kit.score
+	var x := x0 if i == 0 else x0 + width - Level3DFont.width(who + money, pg)
 	x = Level3DFont.draw(_text, who, roundf(x), y, pg, Level3DFont.WHITE, colour)
-	Level3DFont.draw(_text, str(kit.score), roundf(x), y, pg)
+	Level3DFont.draw(_text, money, roundf(x), y, pg)
 	# Lives, the launcher, the slot.
 	y = roundf(STATUS_Y * s)
 	var icon := icons.get("lives_2" if i > 0 else "lives") as Texture2D

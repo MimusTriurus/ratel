@@ -32,7 +32,7 @@ const MODERN_PNG := "res://assets/images/font3d_modern.png"
 const MODERN_XML := "res://assets/images/font3d_modern.xml"
 const MODERN_JSON := "res://assets/images/font3d_modern.json"
 # What the sheets hold: tools/font3d_bake.py's CHARS.
-const CHARS := "ABCDEFGHIJKLMNOPQRSTUVWXYZ.,'-0123456789©!:()&`\" +/?%#"
+const CHARS := "ABCDEFGHIJKLMNOPQRSTUVWXYZ.,'-0123456789©!:()&`\" +/?%#$"
 const WHITE := "black"
 const GRAY := "gray"
 
@@ -140,4 +140,5 @@ static func name_of(c: int) -> String:
 		0x3F: return "question"
 		0x25: return "percent"
 		0x23: return "hash"
+		0x24: return "dollar"
 		_: return String.chr(c)

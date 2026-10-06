@@ -278,6 +278,14 @@ func _measure(rows: Array, g: float) -> float:
 	return widest
 
 
+# The score as money: the crews are mercenaries, paid for what they do and
+# spending it in the shop between rounds (docs/shop-plan.md). Six digits, as
+# the game's score had, behind the dollar: a counter, as Chinatown Wars'
+# money is, whose width does not change as it rolls.
+static func money(amount: int) -> String:
+	return "$%06d" % amount
+
+
 # The main line from `x`, or the part of it `which` says; returns where it ends.
 enum { ALL, SCORE, REST }
 
@@ -290,7 +298,7 @@ func _line(x: float, top: float, g: float, row: float, which := ALL) -> float:
 	elif which == REST:
 		show.score = false
 	if show.score:
-		x = _text("%06d" % int(_shown), x, y - _hop(_roll_time, g), g, WHITE, 1.0, _flash(_roll_time))
+		x = _text(Level3DHud.money(int(_shown)), x, y - _hop(_roll_time, g), g, WHITE, 1.0, _flash(_roll_time))
 		groups += 1
 	if show.lives:
 		x = _gap(x, g, groups)

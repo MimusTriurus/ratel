@@ -557,7 +557,7 @@ func _make_interface_tab() -> Control:
 	_hud = _check(tab, "Show the HUD", func(on: bool): settings.hud = on)
 	tab.add_child(HSeparator.new())
 	_heading(tab, "What to show")
-	_hud_score = _check(tab, "Score", func(on: bool): settings.hud_score = on)
+	_hud_score = _check(tab, "Money", func(on: bool): settings.hud_score = on)
 	_hud_lives = _check(tab, "Lives", func(on: bool): settings.hud_lives = on)
 	_hud_pows = _check(tab, "Prisoners aboard", func(on: bool): settings.hud_pows = on)
 	_hud_modes = _check(tab, "Driving and firing modes", func(on: bool): settings.hud_modes = on)
@@ -583,7 +583,7 @@ func _make_interface_tab() -> Control:
 	var layout := _grid(tab)
 	_hud_corner = _choice(layout, "Position", ["Top", "Bottom"],
 			func(i: int): settings.hud_corner = i)
-	_hud_rows = _choice(layout, "Rows", ["One", "Two: score on its own"],
+	_hud_rows = _choice(layout, "Rows", ["One", "Two: money on its own"],
 			func(i: int): settings.hud_two_rows = i == 1)
 	_font = _choice(layout, "Font", ["Classic: Press Start 2P", "Classic smoothed", "Modern: Black Ops One"],
 			func(i: int): settings.font = i)
