@@ -86,6 +86,16 @@
 # bought -- the twin gun in the single one's place, firing from each barrel
 # in turn (`cycle_muzzle`), the armour, the spares' box, the nitro, the radar
 # with its dish turning, the mines, the rifles' rests. The BTR has none.
+#
+# --armored drives the armoured pickup instead, resources/3d/jackal_armored.glb
+# from jackal_armored_lowpoly.blend: the jeep's turret and launchers on a
+# bigger body, Armored_ for Jeep_, and an upgrades' set of its own. Most of
+# its upgrades stand in the place of a part of its own -- the twin gun of
+# the gun's bore, the nitro's pipes of the exhaust, the radar of the
+# turret's sight, the armour's slits of the glass, the Arena of the roof's
+# lamps -- which VEHICLES' "stock" hides while they show. Its spares' rack
+# holds a round of the launcher's step (`set_weapon_level`), none at the
+# grenade; its aerial is the airstrike's, there only once that is bought.
 class_name Level3DBtr
 extends Node3D
 
@@ -123,8 +133,11 @@ const MODEL_SCALE := 0.31
 #                  not use (level3d_rocket.gd's FITS): hidden
 #   exhausts       where Level3DPuffs' exhaust comes out: a part, by name
 #                  without the prefix, at the middle of its box -- the BTR's
-#                  pipes' tips -- or a point in the model, for the jeep, which
-#                  has no pipe to show
+#                  pipes' tips, the armoured pickup's empties in its pipes'
+#                  mouths, which puff only while shown -- or a point in the
+#                  model, for the jeep, which has no pipe to show
+#   stock          the model's own parts an upgrade stands in the place of:
+#                  id -> names without the prefix, hidden while it shows
 const VEHICLES := {
 	"btr": {"path": "res://resources/3d/ratel_btr.glb", "prefix": "BTR_", "scale": MODEL_SCALE,
 			"facing": 0.0, "axles": 3, "wheel_radius": 0.66, "wheelbase": 3.06,
@@ -142,12 +155,44 @@ const VEHICLES := {
 			"spare_fits": ["GradBase", "TubeLauncherBase"],
 			# Under the tail, on the right, where a jeep's pipe ends.
 			"exhausts": [Vector3(-0.6, 0.4, -2.0)]},
+	# The jeep's springs, wheel for wheel; its scale puts its 3.8 m body at the
+	# jeep's sprite's 1.35 m length, a little narrower than the jeep.
+	"armored": {"path": "res://resources/3d/jackal_armored.glb", "prefix": "Armored_", "scale": 0.36,
+			"facing": PI / 2.0, "axles": 2, "wheel_radius": 0.5, "wheelbase": 2.25,
+			"nose": 2.25, "half_width": 0.95, "body": [-2.04, 2.08, 1.12], "ramp_axles": [1.15, -1.1],
+			"pitch": [0.045, 256.0, 14.4], "roll": [0.07, 256.0, 14.4], "kick": 0.25,
+			"rumble": 1.6 * Level3DMap.PX, "aerials": ["AerialL"],
+			"spare_fits": ["GradBase", "TubeLauncherBase"],
+			"exhausts": ["ExhaustTip", "UpNitroTipL", "UpNitroTipR"],
+			"stock": {"twin": ["GunBore"], "nitro": ["Exhaust"], "radar": ["TurretSight"],
+					"armor": ["Glass"], "arena": ["RoofLamps"]}},
 }
 # The shop's upgrades that show on the vehicle: the shop's id (Level3DShopCatalog)
 # -> its part's root in the model, without the prefix -- jackal_jeep.py's
-# UPGRADES, each built in a collection of its own and exported with the rest.
+# and jackal_armored.py's UPGRADES, each built in a collection of its own and
+# exported with the rest. A model without one passes it over: the jeep has no
+# airstrike's part, hull or Arena, the armoured pickup no rifles' rests.
 const UPGRADE_PARTS := {"twin": "UpTwin", "armor": "UpArmor", "zip": "UpZip", "nitro": "UpNitro",
-		"radar": "UpRadar", "mines": "UpMines", "loopholes": "UpLoopholes"}
+		"radar": "UpRadar", "mines": "UpMines", "loopholes": "UpLoopholes",
+		"airstrike": "UpAirstrike", "hull": "UpHull", "arena": "UpArena"}
+# The armoured pickup's spares' rounds, under UpZip, by the launcher's step:
+# the first the missile's (step 1), and none at the grenade (step 0).
+const ZIP_ROUNDS := ["UpZipRound1", "UpZipRound2", "UpZipRound3"]
+# Its mines on the tailgate's shelf, under UpMines: as many shown as are not
+# down on the ground (set_mines).
+const SHELF_MINES := ["UpMine1", "UpMine2", "UpMine3"]
+# The Arena's two heads, under UpArena, left and right, each on its swivel
+# (arena_fire). Their barrels point out and ahead by ARENA_AHEAD, as
+# jackal_armored.py builds them, and up, which they keep.
+const ARENA_HEADS := ["UpArenaHeadL", "UpArenaHeadR"]
+const ARENA_AHEAD := deg_to_rad(40.0)
+# Where the salvo leaves a head, model metres from its swivel: out along
+# the barrels and up to their muzzles.
+const ARENA_MUZZLE := Vector2(0.3, 0.2)
+# How long a head stays on what it fired at before it turns back.
+const ARENA_HOLD := 0.6
+# Over the roof, level metres, for a vehicle without the heads.
+const ARENA_ROOF := 0.6
 # The twin gun's two bores, under UpTwin, and the radar's dish, which turns.
 const TWIN_BORES := ["UpTwinBoreL", "UpTwinBoreR"]
 const RADAR_DISH := "UpRadarDish"
@@ -294,8 +339,10 @@ var _velocity := Vector3.ZERO
 # Each aerial: its links and their rests, and its spring's two angles --
 # pitch and roll, as the body's -- with their rates.
 var _aerials := []
-# VEHICLES' exhausts, as points on the hull, so that they ride with it.
+# VEHICLES' exhausts, as points on the hull, so that they ride with it, and
+# the part each is in, which puffs only while shown (null: always).
 var _exhausts: Array[Node3D] = []
+var _exhaust_sources: Array[Node3D] = []
 # The shop's upgrades on the model (UPGRADE_PARTS): id -> part, and what the
 # twin gun swaps -- the single gun, the bores in the pivot's frame, the one
 # that fires next -- and the radar's dish.
@@ -306,13 +353,19 @@ var _twin_bores: Array[Vector3] = []
 var _twin := false
 var _next_bore := 0
 var _radar_dish: Node3D
+# VEHICLES' stock: id -> the parts it hides; and the spares' rounds.
+var _stock_parts := {}
+var _zip_rounds: Array[Node3D] = []
+var _shelf_mines: Array[Node3D] = []
+var _arena_heads: Array[Node3D] = []
 # The nitro's dash: the ticks of it left. Ahead whatever the keys say, unless
 # they say somewhere, then that way; faster either way.
 var dash := 0
 
 
 func _ready() -> void:
-	vehicle = VEHICLES["btr" if OS.get_cmdline_user_args().has("--btr") else "jeep"]
+	var args := OS.get_cmdline_user_args()
+	vehicle = VEHICLES["btr" if args.has("--btr") else "armored" if args.has("--armored") else "jeep"]
 	model_scale = vehicle.scale
 	var prefix: String = vehicle.prefix
 	var path: String = vehicle.path
@@ -351,6 +404,27 @@ func _ready() -> void:
 		if twin_bore != null:
 			_twin_bores.append(_turret_pivot.global_transform.affine_inverse() * twin_bore.global_position)
 	_radar_dish = _model.find_child(prefix + RADAR_DISH, true, false) as Node3D
+	var stock: Dictionary = vehicle.get("stock", {})
+	for id in stock:
+		var parts: Array[Node3D] = []
+		for name in stock[id]:
+			var part := _model.find_child(prefix + name, true, false) as Node3D
+			if part != null:
+				parts.append(part)
+		_stock_parts[id] = parts
+	for name in ZIP_ROUNDS:
+		var spare := _model.find_child(prefix + name, true, false) as Node3D
+		if spare != null:
+			_zip_rounds.append(spare)
+	for name in SHELF_MINES:
+		var mine := _model.find_child(prefix + name, true, false) as Node3D
+		if mine != null:
+			_shelf_mines.append(mine)
+	for name in ARENA_HEADS:
+		var head := _model.find_child(prefix + name, true, false) as Node3D
+		if head != null:
+			_arena_heads.append(head)
+	set_weapon_level(0)
 	for spare in vehicle.get("spare_fits", []):
 		var fit := _hull.find_child(prefix + spare, true, false) as Node3D
 		if fit != null:
@@ -380,17 +454,20 @@ func _ready() -> void:
 				"angle": Vector2.ZERO, "rate": Vector2.ZERO})
 	for exhaust in vehicle.get("exhausts", []):
 		var at: Vector3
+		var source: Node3D = null
 		if exhaust is String:
-			var part := _model.find_child(prefix + exhaust, true, false) as MeshInstance3D
-			if part == null:
+			source = _model.find_child(prefix + exhaust, true, false) as Node3D
+			if source == null:
 				continue
-			at = part.global_transform * part.get_aabb().get_center()
+			var mesh := source as MeshInstance3D
+			at = mesh.global_transform * mesh.get_aabb().get_center() if mesh != null else source.global_position
 		else:
 			at = _model.global_transform * (exhaust as Vector3)
 		var mouth := Node3D.new()
 		_hull.add_child(mouth)
 		mouth.global_position = at
 		_exhausts.append(mouth)
+		_exhaust_sources.append(source)
 
 
 # The blink while it cannot be hit (the preview's): the model goes and its
@@ -462,11 +539,66 @@ static func hide_upgrades(model: Node, prefix: String) -> void:
 func set_upgrades(ids: Array) -> void:
 	for id in _upgrade_parts:
 		(_upgrade_parts[id] as Node3D).visible = ids.has(id)
+	for id in _stock_parts:
+		for part in _stock_parts[id]:
+			(part as Node3D).visible = not ids.has(id)
 	_twin = ids.has("twin") and _twin_bores.size() == 2
 	if _gun_single != null:
 		_gun_single.visible = not _twin
 	_next_bore = 0
 	_bore.position = _twin_bores[0] if _twin else _single_bore
+
+
+# The launcher's step (level3d_rocket.gd's weapon_level): the spares' rack
+# holds that step's round, and none at the grenade's. Shown only with the
+# rack, which set_upgrades shows.
+func set_weapon_level(level: int) -> void:
+	for i in _zip_rounds.size():
+		_zip_rounds[i].visible = i + 1 == level
+
+
+# The mines on the shelf, where the vehicle has one: `count` of them, the
+# rest down on the ground. A mine that goes off comes back to it.
+func set_mines(count: int) -> void:
+	for i in _shelf_mines.size():
+		_shelf_mines[i].visible = i < count
+
+
+# The Arena's salvo at `target` (level space): the head nearer it turned on
+# it about its swivel, held there ARENA_HOLD and turned back; where the salvo
+# leaves it. A vehicle without the heads, or with them hidden, fires from
+# over its roof.
+func arena_fire(target: Vector3) -> Vector3:
+	var best: Node3D = null
+	for head in _arena_heads:
+		if head.is_visible_in_tree() and (best == null
+				or head.global_position.distance_to(target) < best.global_position.distance_to(target)):
+			best = head
+	if best == null:
+		return global_position + Vector3.UP * ARENA_ROOF
+	var side := 1.0 if _arena_heads.find(best) == 0 else -1.0
+	var parent := best.get_parent() as Node3D
+	var local := parent.global_transform.affine_inverse() * target - best.position
+	# The barrels' way at rest, in the parent's frame: Blender's out and ahead
+	# (-Y) is Godot's +Z.
+	var rest := atan2(side * cos(ARENA_AHEAD), sin(ARENA_AHEAD))
+	var turn := angle_difference(rest, atan2(local.x, local.z))
+	var tween := best.create_tween()
+	tween.tween_property(best, "rotation:y", turn, 0.05)
+	tween.tween_interval(ARENA_HOLD)
+	tween.tween_property(best, "rotation:y", 0.0, 0.3)
+	var way := Vector3(sin(rest + turn), 0.0, cos(rest + turn))
+	return parent.global_transform * (best.position + way * ARENA_MUZZLE.x + Vector3.UP * ARENA_MUZZLE.y)
+
+
+# Where the exhausts shown are, level space, and the way out of them: for the
+# nitro's flames (the preview's _nitro_flames).
+func exhaust_mouths() -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	for i in _exhausts.size():
+		if _exhaust_sources[i] == null or _exhaust_sources[i].is_visible_in_tree():
+			out.append(_exhausts[i].global_position)
+	return out
 
 
 # An upgrade's part, for the shop to show on trial; null for one the model
@@ -605,8 +737,10 @@ func puffs() -> Array:
 	if not visible:
 		return out
 	for i in _exhausts.size():
+		if _exhaust_sources[i] != null and not _exhaust_sources[i].is_visible_in_tree():
+			continue
 		out.append({"key": "exhaust%d" % i, "kind": "exhaust", "at": _exhausts[i].global_position,
-				"back": -forward(), "size": EXHAUST_SIZE, "working": _rumble_level})
+				"back": -forward(), "size": EXHAUST_SIZE, "working": 1.0 if dash > 0 else _rumble_level})
 	for contact in wheel_tracks():
 		out.append({"key": contact.key, "kind": "dust", "at": contact.at, "size": DUST_SIZE})
 	return out

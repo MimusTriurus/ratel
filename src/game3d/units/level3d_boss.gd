@@ -1002,6 +1002,17 @@ func attack(found: Dictionary) -> void:
 		_attacked(i, "rocket")
 
 
+# The reinforced hull's ram (docs/shop-plan.md), which the player lives
+# through: the tank run into takes a whole round of damage, as a rocket's.
+func ram(player_box: Rect2) -> void:
+	for i in tanks.size():
+		var t := tanks[i]
+		var box := _box_at(Vector2(t.x, t.y), MINE)
+		if player_box.intersects(Rect2(Level3DMap.to_level(box.position), box.size * PX)):
+			_attacked(i, "rocket")
+			return
+
+
 # BossBlueTank.bump: running into one kills the player, not the tank.
 func bump(player_box: Rect2, invincible: bool) -> bool:
 	if invincible:

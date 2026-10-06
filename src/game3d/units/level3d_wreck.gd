@@ -9,7 +9,10 @@
 #
 #   * The turret, the launcher on the hull, a front wheel and the aerials are
 #     thrown off it (THROWN), each up and out from the middle, tumbling, and
-#     come down round it -- a bounce, then still.
+#     come down round it -- a bounce, then still. So is what the shop's
+#     upgrades hang on the armoured pickup that is loose enough: the Arena's
+#     two heads, the spares' round on its rack and a mine off the shelf
+#     (THROWN_ONE_OF), whichever of them it has on.
 #   * The hull jumps and falls back askew, down on its flattened tyres.
 #   * All of it goes black over CHAR_TIME, as a tank's wreck does, and it
 #     smokes, with a flame or two on it at first.
@@ -36,6 +39,15 @@ const THROWN := [
 	["Wheel_L1", 2.8, 1.8, 14.0],
 	["AerialL0", 3.2, 1.2, 11.0],
 	["AerialR0", 3.6, 1.0, 11.0],
+	# The Arena's heads: light, so high and far, spinning fast.
+	["UpArenaHeadL", 4.0, 1.8, 13.0],
+	["UpArenaHeadR", 4.2, 1.6, 13.0],
+]
+# The same for the first shown of each set of names: the one round on the
+# spares' rack, the step's, and one of the mines left on the shelf.
+const THROWN_ONE_OF := [
+	[["UpZipRound1", "UpZipRound2", "UpZipRound3"], 3.0, 1.3, 7.0],
+	[["UpMine1", "UpMine2", "UpMine3"], 3.4, 1.5, 12.0],
 ]
 const LAUNCHER_THROW := [3.6, 1.4, 9.0]
 # A thrown part coming down bounces back up this share of its speed, and
@@ -92,6 +104,12 @@ func build(btr: Level3DBtr) -> void:
 		var part := _body.find_child(prefix + entry[0], true, false) as Node3D
 		if part != null and part.is_visible_in_tree():
 			_throw(part, middle, entry[1], entry[2], entry[3])
+	for entry in THROWN_ONE_OF:
+		for name in entry[0]:
+			var part := _body.find_child(prefix + name, true, false) as Node3D
+			if part != null and part.is_visible_in_tree():
+				_throw(part, middle, entry[1], entry[2], entry[3])
+				break
 	for fit in Level3DLauncher.FITS:
 		var base := _body.find_child(prefix + String(fit.base).trim_prefix("BTR_"), true, false) as Node3D
 		if base != null and base.is_visible_in_tree():

@@ -7,8 +7,8 @@
 # Level3DShopCatalog:
 #
 #     1P 38400                  SUPPLY - ROUND 2                  2P 21300
-#     [jeep]   TWIN GUN    LAUNCHER     LOOPHOLES                   [jeep]
-#              SPARES      ARMOR        RADAR
+#     [jeep]   TWIN GUN    LAUNCHER     RADAR                       [jeep]
+#              SPARES      ARMOR        RAM CAGE
 #              NITRO       MINES        AIRSTRIKE
 #              LIFE ----------------------------
 #     lives, launcher, slot                       lives, launcher, slot
@@ -76,7 +76,7 @@ const LAUNCHER_NAMES := ["GRENADE", "MISSILE", "MISSILE+", "MISSILE++"]
 # How the jeep turns on its table for a tile: degrees off nose-to-camera,
 # towards the frame's middle.
 const VIEWS := {"twin": 25.0, "launcher": 150.0, "loopholes": 80.0, "zip": 140.0, "armor": 75.0,
-		"radar": 40.0, "nitro": 130.0, "mines": 180.0, "airstrike": 30.0, "life": 30.0, "ready": 30.0}
+		"radar": 40.0, "hull": 60.0, "nitro": 130.0, "mines": 180.0, "airstrike": 30.0, "life": 30.0, "ready": 30.0}
 const TURN_RATE := 3.0          # of the way to the view, per second
 const GHOST := Vector2(0.25, 0.7)   # a part on trial: its transparency, pulsing between
 const GHOST_PULSE := 4.0
@@ -758,6 +758,8 @@ class Bay:
 		# The launcher: the step he has, or on trial the next one in its place.
 		var step := kit.weapon()
 		var trying := trial == "launcher" and step < Level3DShopCatalog.LAUNCHER_TOP
+		# The spares' rack, where it has one, with the round of the fit shown.
+		jeep.set_weapon_level(step + 1 if trying else step)
 		var prefix: String = jeep.vehicle.prefix
 		for k in Level3DLauncher.FITS.size():
 			var base := jeep.launcher_node(prefix + String(Level3DLauncher.FITS[k].base).trim_prefix("BTR_"))

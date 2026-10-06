@@ -74,6 +74,10 @@ var stage := Stage.new()
 # Triggers constant), "x", "y" (map px, the trigger's corner), "group" (the
 # destruction group they rewrite)}.
 var buildings: Array = []
+# The missile bunkers' trigger corners, map px: each a solid 4 x 4 block of
+# tiles from the start, as the huts are (reset). The game's launcher stands on
+# a cliff; the preview's is a blockhouse on open ground.
+var blocks: Array[Vector2i] = []
 var _pristine: Array = []
 var _triggered := {}
 
@@ -104,6 +108,12 @@ func _init() -> void:
 					var left: bool = t[0] == Triggers.HOUSE_LEFT
 					buildings.append({"type": t[0], "x": t[1], "y": t[2],
 							"group": stage.groups_map[(t[2] >> 5) + 2][(t[1] >> 5) + (0 if left else 5)]})
+	# The missile bunkers' blocks, on either difficulty (Level3DMissileBunkers).
+	for list in stage.trigger_map:
+		for row in list:
+			for t in row:
+				if t[0] == Triggers.CLIFF_MISSILE_LAUNCHER and not blocks.has(Vector2i(t[1], t[2])):
+					blocks.append(Vector2i(t[1], t[2]))
 	reset()
 
 
@@ -121,6 +131,10 @@ func reset() -> void:
 		for i in (5 if b.type == Triggers.HUT else 6):
 			for j in 6:
 				stage.types_map[Y + i][X + j] = MapIO.TYPE_SOLID
+	for corner in blocks:
+		for i in 4:
+			for j in 4:
+				stage.types_map[(corner.y >> 5) + i][(corner.x >> 5) + j] = MapIO.TYPE_SOLID
 
 
 # GameMode.trigger_group: the building is down, and its cells become what the

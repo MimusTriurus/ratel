@@ -112,6 +112,9 @@ var parts := {"score": true, "lives": true, "pows": true, "device": true}
 # be paid for or is not to be had.
 var device := ""
 var device_ready := true
+# The Arena, "ARENA" when it is fitted, "" when not; dimmed while it reloads.
+var arena := ""
+var arena_ready := true
 var bottom := false         # the bottom left corner rather than the top left
 var right := false          # the right-hand corner, the second player's
 # Which of the icons is this player's vehicle: the second's is blue.
@@ -308,6 +311,10 @@ func _line(x: float, top: float, g: float, row: float, which := ALL) -> float:
 		x = _gap(x, g, groups)
 		groups += 1
 		x = _text(device, x, y, g, WHITE if device_ready else GRAY, 1.0 if device_ready else DIM)
+	if show.get("device", false) and arena != "":
+		x = _gap(x, g, groups)
+		groups += 1
+		x = _text(arena, x, y, g, WHITE if arena_ready else GRAY, 1.0 if arena_ready else DIM)
 	return x
 
 

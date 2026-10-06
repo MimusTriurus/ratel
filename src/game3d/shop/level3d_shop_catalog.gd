@@ -27,14 +27,18 @@ const ITEMS := [
 	{"id": "launcher", "name": "LAUNCHER", "row": 0, "col": 1, "kind": Kind.STEP,
 		"steps": [10000, 15000, 20000],
 		"text": "THE NEXT STEP OF THE LAUNCHER, AS A PRISONER GIVES IT, FROM THE NEXT ROUND ON."},
-	{"id": "loopholes", "name": "LOOPHOLES", "row": 0, "col": 2, "kind": Kind.UPGRADE, "price": 30000,
-		"text": "EVERY PRISONER ABOARD FIRES AT THE NEAREST ENEMY, AS A SOLDIER DOES."},
+	# The radar where the loopholes were, which are off the shelves for now
+	# (docs/shop-plan.md); their code is still there, and --upgrades gives them.
+	{"id": "radar", "name": "RADAR", "row": 0, "col": 2, "kind": Kind.UPGRADE, "price": 8000,
+		"text": "MARKS THE GUNS AND TANKS OFF THE SCREEN AT ITS EDGE."},
 	{"id": "zip", "name": "SPARES", "row": 1, "col": 0, "kind": Kind.UPGRADE, "price": 15000,
 		"text": "DIE AND THE LAUNCHER LOSES ONE STEP, NOT ALL OF THEM."},
 	{"id": "armor", "name": "ARMOR", "row": 1, "col": 1, "kind": Kind.UPGRADE, "price": 25000,
 		"text": "DIE AND EVERY PRISONER ABOARD JUMPS OUT ALIVE."},
-	{"id": "radar", "name": "RADAR", "row": 1, "col": 2, "kind": Kind.UPGRADE, "price": 8000,
-		"text": "MARKS THE GUNS AND TANKS OFF THE SCREEN AT ITS EDGE."},
+	# Lost to the first ram it saves the jeep from (level3d_preview.gd,
+	# _shed_cage), and then for sale again.
+	{"id": "hull", "name": "RAM CAGE", "row": 1, "col": 2, "kind": Kind.UPGRADE, "price": 10000,
+		"text": "RAM A GUN OR A TANK AND LIVE. THE CAGE IS LOST: BUY ANOTHER."},
 	{"id": "nitro", "name": "NITRO", "row": 2, "col": 0, "kind": Kind.DEVICE, "price": 10000,
 		"text": "A DASH AHEAD, THROUGH THE LINE OF FIRE. RELOADS."},
 	{"id": "mines", "name": "MINES", "row": 2, "col": 1, "kind": Kind.DEVICE, "price": 15000,

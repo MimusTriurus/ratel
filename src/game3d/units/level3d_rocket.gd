@@ -386,6 +386,8 @@ func _refit() -> void:
 	_fit = level
 	for i in _mounts.size():
 		_mounts[i].base.visible = i == level
+	# The spares' rack, where the vehicle has one, holds this step's round.
+	btr.set_weapon_level(level)
 	var fit := _mounts[level]
 	_base = fit.base
 	_base_rest = fit.rest
@@ -819,6 +821,12 @@ func _drop_stage(rocket: Dictionary) -> void:
 		var at := from.origin + drift * t + Vector3.DOWN * 4.9 * t * t
 		spent.global_transform = Transform3D(Basis(spin_axis, spin * t) * from.basis, at), 0.0, STAGE_FALL, STAGE_FALL)
 	tween.tween_callback(spent.queue_free)
+
+
+# A puff of the trail for a rocket not the launcher's: the missile bunkers'
+# (level3d_missile_bunkers.gd).
+func trail(at: Vector3) -> void:
+	_trail(at)
 
 
 func _trail(at: Vector3) -> void:

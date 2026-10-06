@@ -173,7 +173,8 @@
 #
 # The vehicle is the jeep; --btr, with or without --shot, drives the BTR
 # instead (level3d_btr.gd, VEHICLES): the same driving, stiffer springs and
-# no aerials.
+# no aerials. --armored drives the armoured pickup: the jeep's springs, turret
+# and launchers on a bigger body, and the shop's upgrades its own way.
 #
 # The soldiers and the prisoners are Kolos Studios' low poly soldier
 # (level3d_soldiers.gd and level3d_friends.gd, MODEL); --old-soldiers draws
@@ -285,6 +286,9 @@ var gun: Level3DGun
 var launcher: Level3DLauncher
 var guns: Level3DGuns
 var soldiers: Level3DSoldiers
+# The missile bunkers and their missiles, on a level whose file puts them down
+# (level3d_missile_bunkers.gd): none on stage 1.
+var missile_bunkers: Level3DMissileBunkers
 var friends: Level3DFriends
 var rescue: Level3DRescue
 var tracks: Level3DTracks
@@ -582,6 +586,8 @@ class Crew:
 	var device := ""
 	# The loopholes' ticks to their next shot (_loopholes).
 	var loophole_wait := 0
+	# The Arena's ticks till it can fire again (_arena).
+	var arena_wait := 0
 	# The device (_use_device): ticks till it can go off again, its key last
 	# tick, the airstrikes called this round (which price the next), the
 	# mines down.
@@ -730,11 +736,14 @@ func _arm(c: Crew) -> void:
 				soldiers.intercept(from, to, PlayerBullet.MARGIN),
 				boats.intercept(from, to, PlayerBullet.MARGIN),
 				tanks.intercept(from, to, PlayerBullet.MARGIN),
+				missile_bunkers.intercept(from, to, PlayerBullet.MARGIN),
 				boss.intercept(from, to, PlayerBullet.MARGIN)])
 	gun_of.struck = func(found: Dictionary):
 		guns.acting = c
 		if found.has("gun"):
 			guns.bullet_attack(found.gun)
+		elif found.has("bunker") or found.has("missile"):
+			missile_bunkers.bullet_attack(found)
 		elif found.has("boat"):
 			boats.bullet_attack(found)
 		elif found.has("tank"):
@@ -754,11 +763,14 @@ func _arm(c: Crew) -> void:
 		return _nearest([guns.intercept(from, to, PlayerMissile.MARGIN, true),
 				boats.intercept(from, to, PlayerMissile.MARGIN, true),
 				tanks.intercept(from, to, PlayerMissile.MARGIN, true),
+				missile_bunkers.intercept(from, to, PlayerMissile.MARGIN, true),
 				boss.intercept(from, to, PlayerMissile.MARGIN, true)])
 	launcher_of.struck = func(found: Dictionary):
 		guns.acting = c
 		if found.has("boat"):
 			boats.attack(found)
+		elif found.has("bunker") or found.has("missile"):
+			missile_bunkers.attack(found)
 		elif found.has("tank"):
 			tanks.attack(found)
 		elif found.has("boss"):
@@ -1946,6 +1958,7 @@ func _on_exploded(at: Vector3) -> bool:
 # it overlaps go down, as Hut.attack and House.attack let it. The gate does
 # not: Gate.attack answers the player's weapon only.
 func _on_travel_hit(box: Rect2) -> void:
+	missile_bunkers.travel_hit(box)
 	for building in destructibles:
 		var entry: Dictionary = destructibles[building]
 		if not entry.destroyed and entry.kind != "Gate" and box.intersects(entry.footprint):
@@ -2111,6 +2124,15 @@ func _add_guns(level: Node) -> void:
 	boss.player_position = guns.player_position
 	boss.scored = guns.scored
 	add_child(boss)
+	missile_bunkers = Level3DMissileBunkers.new()
+	missile_bunkers.map = map
+	missile_bunkers.guns = guns
+	missile_bunkers.frame = _view_frame
+	missile_bunkers.ground = _ground_at
+	missile_bunkers.player_position = guns.player_position
+	missile_bunkers.scored = guns.scored
+	missile_bunkers.trail = func(at: Vector3): launcher.trail(at)
+	add_child(missile_bunkers)
 	# What their wheels and tracks leave behind, and the player's.
 	tracks = Level3DTracks.new()
 	tracks.ground = _ground_at
@@ -2135,6 +2157,7 @@ func _add_guns(level: Node) -> void:
 		soldiers.explosion_hit(box, player)
 		boats.explosion_hit(box, player)
 		tanks.explosion_hit(box, player)
+		missile_bunkers.explosion_hit(box, player)
 	friends = Level3DFriends.new()
 	friends.map = map
 	friends.guns = guns
@@ -2474,6 +2497,8 @@ func _show_state() -> void:
 		line.parts["device"] = on and not c.out
 		line.device = _device_text(c)
 		line.device_ready = c.device_wait == 0 and (c.device != "airstrike" or _airstrike_ready(c))
+		line.arena = "ARENA" if c.upgrades.has("arena") else ""
+		line.arena_ready = c.arena_wait == 0
 		var weapon := 1 + c.carrier.missile_power if c.carrier.has_missiles else 0
 		if weapon > c.weapon_shown and c.weapon_shown >= 0:
 			_crew_pop(c, "POWER UP")
@@ -2547,7 +2572,7 @@ func _update_radar() -> void:
 		var middle := _follow_point()
 		_radar.middle = Vector3(middle.x, 0.0, middle.y)
 		_radar.targets.clear()
-		for at in guns.targets() + tanks.targets():
+		for at in guns.targets() + tanks.targets() + missile_bunkers.targets():
 			_radar.targets.append(Vector3(at.x, 0.0, at.y))
 	_radar.queue_redraw()
 # The prisoners' HELP, the game's and the calls (Level3DFriends.help_marks).
@@ -3190,7 +3215,9 @@ func _physics_process(delta: float) -> void:
 		_fire(c, gone[c], cursor, delta)
 		if not gone[c]:
 			_loopholes(c)
+		_arena(c, gone[c])
 		_use_device(c, gone[c])
+		_nitro_flames(c, gone[c])
 	_tick_mines()
 	for c in crews:
 		if gone[c]:
@@ -3203,18 +3230,25 @@ func _physics_process(delta: float) -> void:
 		var box := _player_box(c)
 		soldiers.bump(box)
 		friends.bump(box, c.carrier)
-		if guns.bump(box, c.invincible > 0):
-			_explode_btr(c, "ran into a gun")
+		# A missile is a shot, which --immortal and the bullet hack let by; a
+		# ram is not.
+		if missile_bunkers.bump(box, c.invincible > 0 or _immortal or settings.bullet_hack):
+			_explode_btr(c, "a missile")
+		elif guns.bump(box, c.invincible > 0):
+			_rammed(c, "ran into a gun")
 		elif tanks.bump(box, c.invincible > 0):
-			_explode_btr(c, "ran into a tank")
+			_rammed(c, "ran into a tank")
 		elif boss.bump(box, c.invincible > 0):
-			_explode_btr(c, "ran into a boss tank")
+			if c.upgrades.has("hull"):
+				boss.ram(box)
+			_rammed(c, "ran into a boss tank")
 	# No calls before the BTR is down off the Chinook and can go to them.
 	friends.held = chinook != null
 	guns.tick()
 	soldiers.tick()
 	boats.tick()
 	tanks.tick()
+	missile_bunkers.tick()
 	boss.tick()
 	tracks.tick()
 	puffs.tick()
@@ -3631,9 +3665,11 @@ func _gun_rate(c: Crew) -> float:
 
 # The device in the slot (docs/shop-plan.md), on its key's press -- the
 # settings' "device" for the first player, right Shift for the second:
-#   nitro      the jeep dashes ahead (Level3DBtr.dash), NITRO_RELOAD to the next
+#   nitro      the jeep dashes ahead (Level3DBtr.dash), NITRO_RELOAD to the next,
+#              flames out of its exhausts all the while (_nitro_flames)
 #   mines      a mine down behind the jeep, MINE_RELOAD to the next, MAX_MINES
-#              of a player's at once; it goes off under an enemy tank
+#              of a player's at once; it goes off under an enemy tank. The
+#              armoured pickup's shelf shows those not down (Level3DBtr.set_mines)
 #   airstrike  every enemy in the frame but the boss's tanks blown up, for
 #              AIRSTRIKE_PRICE, twice that the next call in the round and so
 #              on; the dead are worth no points, the prisoners and the
@@ -3701,7 +3737,93 @@ func _drop_mine(c: Crew) -> void:
 	mine.position = Vector3(at.x, (ground.height if ground.hit else at.y) + 0.035, at.z)
 	add_child(mine)
 	c.mines.append(mine)
+	c.btr.set_mines(MAX_MINES - c.mines.size())
 	Level3DAudio.play("pickup", mine.position)
+
+
+# While the nitro's dash lasts, flames out of every exhaust shown, one each
+# NITRO_FLAME_EVERY ticks: left where they are as it goes, they draw a trail
+# of fire behind it.
+const NITRO_FLAME_EVERY := 2
+const NITRO_FLAME_SIZE := 0.11
+const NITRO_FLAME_BACK := 0.06
+
+func _nitro_flames(c: Crew, gone: bool) -> void:
+	if gone or c.btr.dash <= 0 or c.btr.dash % NITRO_FLAME_EVERY != 0:
+		return
+	for at in c.btr.exhaust_mouths():
+		c.launcher.wreck_flame(at - c.btr.forward() * NITRO_FLAME_BACK, NITRO_FLAME_SIZE, 0.15)
+
+
+# A ram (docs/shop-plan.md): the gun or tank run into is gone either way,
+# worth its points, and the boss's tank has taken a rocket's damage if the
+# jeep had the reinforced hull. With it, the jeep lives and the hull goes
+# (_shed_cage); without it, the jeep blows up, as in the game.
+func _rammed(c: Crew, by: String) -> void:
+	if c.upgrades.has("hull"):
+		_shed_cage(c)
+	else:
+		_explode_btr(c, by)
+
+
+# The hull's one ram spent: the upgrade lost, to be bought again; its cage
+# thrown off the jeep (_throw_off), the body jolted back on its springs as
+# from a wall, the camera shaken; and RAM_INVINCIBLE ticks blinking, to get
+# clear of what else it is up against -- the boss's tank, which is still
+# there, or a second gun.
+const RAM_INVINCIBLE := 100
+const RAM_KICK := 1.5             # rad/s into the body's pitch, Level3DBtr.BUMP_JOLT's
+
+func _shed_cage(c: Crew) -> void:
+	c.upgrades.erase("hull")
+	var cage := c.btr.upgrade_part("hull")
+	if cage != null and cage.is_visible_in_tree():
+		_throw_off(cage)
+	c.btr.set_upgrades(c.upgrades)
+	c.invincible = RAM_INVINCIBLE
+	c.btr.recoil(-c.btr.forward(), RAM_KICK)
+	_shake(SHAKE_PIXELS * 0.5)
+	Level3DAudio.play("hit_dull", c.btr.position)
+	if guns.verbose:
+		print("%dP rammed, the cage lost" % (c.index + 1))
+	_show_state()
+
+
+# A copy of `part` off the jeep as it stands: up and away, tumbling, down on
+# the ground and sunk into it, as the wreck's parts are (Level3DWreck) but
+# alone and quicker.
+const THROWN_UP := 2.6            # level m/s
+const THROWN_OUT := 1.2
+const THROWN_SPIN := 9.0          # rad/s
+const THROWN_LIFE := 1.4          # seconds, the last third sinking
+
+func _throw_off(part: Node3D) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	# Turned about its own middle, not its origin, which is the jeep's.
+	var middle := part.global_position
+	var mesh := part as MeshInstance3D
+	if mesh != null:
+		middle = mesh.global_transform * mesh.get_aabb().get_center()
+	var pivot := Node3D.new()
+	add_child(pivot)
+	pivot.global_position = middle
+	var copy := part.duplicate() as Node3D
+	pivot.add_child(copy)
+	copy.global_transform = part.global_transform
+	var away := Vector3(rng.randf_range(-1, 1), 0.0, rng.randf_range(-1, 1)).normalized()
+	var velocity := away * THROWN_OUT + Vector3.UP * THROWN_UP
+	var axis := Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1)).normalized()
+	var under: Dictionary = _ground_at(middle.x, middle.z)
+	var floor_y: float = (under.height if under.hit else middle.y - 0.3) + 0.1
+	var fly := func(t: float):
+		var at := middle + velocity * t + Vector3.DOWN * 4.9 * t * t
+		var sink := clampf((t - THROWN_LIFE * 0.66) / (THROWN_LIFE * 0.34), 0.0, 1.0)
+		at.y = maxf(at.y, floor_y) - sink * 0.3
+		pivot.global_transform = Transform3D(Basis(axis, THROWN_SPIN * minf(t, 0.6)), at)
+	var tween := pivot.create_tween()
+	tween.tween_method(fly, 0.0, THROWN_LIFE, THROWN_LIFE)
+	tween.tween_callback(pivot.queue_free)
 
 
 # Every mine: an enemy tank, or one of the boss's, over it sets it off.
@@ -3717,6 +3839,7 @@ func _tick_mines() -> void:
 				continue
 			c.mines.erase(mine)
 			mine.queue_free()
+			c.btr.set_mines(MAX_MINES - c.mines.size())
 			if found.has("tank"):
 				tanks.attack(found)
 			else:
@@ -3730,7 +3853,7 @@ func _tick_mines() -> void:
 func _airstrike(c: Crew) -> void:
 	var view := _view_frame()
 	var hits: Array[Vector2] = []
-	for at in soldiers.targets() + guns.targets() + tanks.targets() + boats.targets():
+	for at in soldiers.targets() + guns.targets() + tanks.targets() + boats.targets() 			+ missile_bunkers.targets():
 		if view.has_point(at):
 			hits.append(at)
 	_no_points = true
@@ -3738,6 +3861,7 @@ func _airstrike(c: Crew) -> void:
 	soldiers.explosion_hit(view, false)
 	tanks.explosion_hit(view, false)
 	boats.explosion_hit(view, false)
+	missile_bunkers.strike(view)
 	for i in guns.guns.size():
 		if hits.has(guns.targets_of(i)):
 			guns.attack(i)
@@ -3747,6 +3871,44 @@ func _airstrike(c: Crew) -> void:
 	for k in hits.size():
 		var at := hits[k]
 		_spawn_blast(Vector3(at.x, 0.0, at.y), 1.2, AIRSTRIKE_BLASTS * k)
+
+
+# The Arena (docs/shop-plan.md): an enemy missile that comes within
+# ARENA_REACH of the player -- a third of the gun's classic reach, so that
+# the player has had the rest of it to shoot the missile down -- is shot
+# down by a salvo from the head nearer it, and the Arena reloads for
+# ARENA_RELOAD. Missiles only: rounds, shells and mines it lets by. The
+# salvo is seen as a flash and a tracer; the missile goes off as it does to
+# a round, an Explosion that spares the player.
+const ARENA_REACH := 130.0
+const ARENA_RELOAD := 1000
+const ARENA_FLASH := 0.6
+const ARENA_TRACER := 0.05
+
+func _arena(c: Crew, gone: bool) -> void:
+	if c.arena_wait > 0:
+		c.arena_wait -= 1
+		return
+	if gone or not c.upgrades.has("arena"):
+		return
+	var at := Vector2(c.btr.position.x, c.btr.position.z)
+	var i := missile_bunkers.nearest_missile(at, ARENA_REACH * Level3DMap.PX)
+	if i < 0:
+		return
+	c.arena_wait = ARENA_RELOAD
+	var target := missile_bunkers.missile_position(i)
+	var from := c.btr.arena_fire(target)
+	guns.muzzle_flash(from, (target - from).normalized(), ARENA_FLASH, "grenade_launch")
+	var node := Level3DFx.take_round(self, false)
+	var fly := func(k: float): Level3DFx.aim_round(node, from.lerp(target, k), target - from)
+	fly.call(0.0)
+	var tween := node.create_tween()
+	tween.tween_method(fly, 0.0, 1.0, ARENA_TRACER)
+	tween.tween_callback(func(): Level3DFx.give_round(node))
+	guns.acting = c
+	missile_bunkers.shoot_down(i)
+	if guns.verbose:
+		print("%dP's Arena shot a missile down" % (c.index + 1))
 
 
 # The loopholes (docs/shop-plan.md): every prisoner aboard fires at the
@@ -3770,7 +3932,7 @@ func _loopholes(c: Crew) -> void:
 	var reach := LOOPHOLE_REACH
 	var best := Vector2.ZERO
 	var best_d := INF
-	for target in soldiers.targets() + guns.targets() + tanks.targets() + boats.targets() + boss.targets():
+	for target in soldiers.targets() + guns.targets() + tanks.targets() + boats.targets() + boss.targets() 			+ missile_bunkers.targets():
 		var d := target.distance_to(Vector2(from.x, from.z))
 		if d < best_d:
 			best_d = d
@@ -3894,6 +4056,7 @@ func _start_round(jingle := false) -> void:
 	soldiers.reset()
 	boats.reset()
 	tanks.reset()
+	missile_bunkers.reset()
 	boss.reset()
 	tracks.reset()
 	puffs.reset()
@@ -3917,10 +4080,12 @@ func _start_round(jingle := false) -> void:
 		c.btr.blink(true)
 		c.btr.dash = 0
 		c.device_wait = 0
+		c.arena_wait = 0
 		c.strikes = 0
 		for mine in c.mines:
 			mine.queue_free()
 		c.mines.clear()
+		c.btr.set_mines(MAX_MINES)
 	_dress_crews()
 	_won_at = -1
 	_banners.clear()
@@ -3989,6 +4154,7 @@ func _jump_to_boss() -> void:
 	var top := Level3DMap.to_map(_view_frame().position).y
 	soldiers.skip_to(top)
 	tanks.skip_to(top)
+	missile_bunkers.skip_to(top)
 	boats.skip_to(top)
 
 
@@ -4052,6 +4218,7 @@ func _screenshot_mode() -> void:
 	soldiers.verbose = guns.verbose
 	boats.verbose = guns.verbose
 	tanks.verbose = guns.verbose
+	missile_bunkers.verbose = guns.verbose
 	boss.verbose = guns.verbose
 	friends.verbose = guns.verbose
 	rescue.verbose = guns.verbose
@@ -4064,7 +4231,7 @@ func _screenshot_mode() -> void:
 		args.remove_at(immortal)
 	# Level3DSoldiers, Level3DBtr and Level3DAudio read these for themselves;
 	# they are not waypoints.
-	for own in ["--fade-corpses", "--btr", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
+	for own in ["--fade-corpses", "--btr", "--armored", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
 			"--no-wind", "--wind-steps", "--spots", "--audio-debug", "--editor", "--no-chinook", "--boss",
 			"--landing-dust", "--old-soldiers"]:
 		var at := args.find(own)
