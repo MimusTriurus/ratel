@@ -36,7 +36,9 @@
 #     owned goes in the slot instead. The rocket (P, the right button, right
 #     Ctrl) takes back the last of that tile bought in this visit, its price
 #     back on the score. Fire on READY, under the matrix, is the player's
-#     word that he is done; the round starts when every player has given it.
+#     word that he is done; the round starts when every player has given it:
+#     the words and the goods go, the jeeps turn forward and drive off their
+#     spots, out of the frame, and the black comes down over them (DRIVE_*).
 #   * The jeep turns on its table to show the part the tile is about
 #     (SHOWS), and a part not yet his stands on it see-through, pulsing --
 #     the twin gun in the single one's place, the launcher's next step in
@@ -98,6 +100,18 @@ const DIM := Color(0.62, 0.62, 0.62)
 const FADE_OUT := 0.6
 const FADE_IN := 0.5
 const LEAVE := 0.6
+# Every player ready: the shop's words and frames gone over HUD_OUT, the
+# jeeps turned DRIVE_VIEW off nose-to-camera (towards the middle) at
+# DRIVE_TURN_RATE and away from a standstill at DRIVE_ACCEL, metres a second
+# a second, their noses up DRIVE_SQUAT as they pull away; the black comes
+# down DRIVE_TIME after.
+const HUD_OUT := 0.25
+const DRIVE_VIEW := 15.0
+const DRIVE_TURN_RATE := 8.0
+const DRIVE_DELAY := 0.15
+const DRIVE_ACCEL := 5.0
+const DRIVE_SQUAT := 0.05
+const DRIVE_TIME := 1.3
 const READY_ROW := 7
 const PAINT_ROW := 6           # the swatches over READY, each player's own
 const LIFE_ROW := 5            # and as many rows of tiles over it
@@ -277,6 +291,7 @@ func close() -> void:
 
 func _show() -> void:
 	_fade = null
+	_text.modulate.a = 1.0
 	_bay.stage(_players, paints)
 	_swatch_colours()
 	_time = 0.0
@@ -301,11 +316,13 @@ func _kill_fade() -> void:
 # stage again.
 func _leave() -> void:
 	_state = State.LEAVING
-	_reticle.fire()
 	Level3DAudio.play("menu_pick")
+	# The words, the goods and the reticle gone, the jeeps away.
+	_text.create_tween().tween_property(_text, "modulate:a", 0.0, HUD_OUT)
+	_bay.drive_off()
 	_kill_fade()
 	_fade = create_tween()
-	_fade.tween_interval(Level3DReticle.FIRE)
+	_fade.tween_interval(DRIVE_TIME)
 	_fade.tween_property(_veil, "color:a", 1.0, LEAVE)
 	_fade.tween_callback(func():
 		_bay.clear()
@@ -930,6 +947,7 @@ class Bay:
 	var _want: Array[float] = []
 	var _ghosts: Array = []         # per player, the meshes on trial
 	var _spots: Array = []          # per player, the line's end on his jeep, its frame; null for none
+	var _driving := -1.0             # seconds since drive_off, -1 before
 	var _helis: Array = []          # per player, the helicopter by his jeep, in its paint
 	var _camera: Camera3D
 	var _time := 0.0
@@ -1015,7 +1033,14 @@ class Bay:
 		staged = true
 		visible = true
 
+	# Every jeep turned forward and driving off its spot (Level3DShop.DRIVE_*).
+	func drive_off() -> void:
+		_driving = 0.0
+		for i in _want.size():
+			_want[i] = Level3DShop.DRIVE_VIEW
+
 	func clear() -> void:
+		_driving = -1.0
 		for child in viewport.get_children():
 			child.queue_free()
 		_tables.clear()
@@ -1259,8 +1284,18 @@ class Bay:
 		_aim_solo()
 		var wave := 0.5 + 0.5 * sin(_time * Level3DShop.GHOST_PULSE)
 		var pulse := lerpf(Level3DShop.GHOST.x, Level3DShop.GHOST.y, wave)
+		var rate := Level3DShop.TURN_RATE
+		if _driving >= 0.0:
+			_driving += delta
+			rate = Level3DShop.DRIVE_TURN_RATE
+			# Away from a standstill, nose up while it pulls.
+			var t := maxf(_driving - Level3DShop.DRIVE_DELAY, 0.0)
+			var gone := 0.5 * Level3DShop.DRIVE_ACCEL * t * t
+			var squat := Level3DShop.DRIVE_SQUAT * clampf(1.0 - t / 0.6, 0.0, 1.0) if t > 0.0 else 0.0
+			for jeep in _jeeps:
+				jeep.carry(Vector3(gone, jeep.position.y, 0.0), 0.0, squat)
 		for i in _tables.size():
-			_yaw[i] = lerpf(_yaw[i], _want[i], 1.0 - exp(-Level3DShop.TURN_RATE * delta))
+			_yaw[i] = lerpf(_yaw[i], _want[i], 1.0 - exp(-rate * delta))
 			# Nose to the camera is the jeep's +X turned to +Z; the first's
 			# turns right to show his side to the middle, the second's left.
 			var side := 1.0 if i == 0 else -1.0
