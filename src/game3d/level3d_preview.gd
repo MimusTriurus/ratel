@@ -579,6 +579,8 @@ class Crew:
 	var device := ""
 	# The loopholes' ticks to their next shot (_loopholes).
 	var loophole_wait := 0
+	# The Arena's ticks till it can fire again (_arena).
+	var arena_wait := 0
 	# The device (_use_device): ticks till it can go off again, its key last
 	# tick, the airstrikes called this round (which price the next), the
 	# mines down.
@@ -2486,6 +2488,8 @@ func _show_state() -> void:
 		line.parts["device"] = on and not c.out
 		line.device = _device_text(c)
 		line.device_ready = c.device_wait == 0 and (c.device != "airstrike" or _airstrike_ready(c))
+		line.arena = "ARENA" if c.upgrades.has("arena") else ""
+		line.arena_ready = c.arena_wait == 0
 		var weapon := 1 + c.carrier.missile_power if c.carrier.has_missiles else 0
 		if weapon > c.weapon_shown and c.weapon_shown >= 0:
 			_crew_pop(c, "POWER UP")
@@ -3198,6 +3202,7 @@ func _physics_process(delta: float) -> void:
 		_fire(c, gone[c], cursor, delta)
 		if not gone[c]:
 			_loopholes(c)
+		_arena(c, gone[c])
 		_use_device(c, gone[c])
 		_nitro_flames(c, gone[c])
 	_tick_mines()
@@ -3859,6 +3864,44 @@ func _airstrike(c: Crew) -> void:
 		_spawn_blast(Vector3(at.x, 0.0, at.y), 1.2, AIRSTRIKE_BLASTS * k)
 
 
+# The Arena (docs/shop-plan.md): an enemy missile that comes within
+# ARENA_REACH of the player -- a third of the gun's classic reach, so that
+# the player has had the rest of it to shoot the missile down -- is shot
+# down by a salvo from the head nearer it, and the Arena reloads for
+# ARENA_RELOAD. Missiles only: rounds, shells and mines it lets by. The
+# salvo is seen as a flash and a tracer; the missile goes off as it does to
+# a round, an Explosion that spares the player.
+const ARENA_REACH := 130.0
+const ARENA_RELOAD := 1000
+const ARENA_FLASH := 0.6
+const ARENA_TRACER := 0.05
+
+func _arena(c: Crew, gone: bool) -> void:
+	if c.arena_wait > 0:
+		c.arena_wait -= 1
+		return
+	if gone or not c.upgrades.has("arena"):
+		return
+	var at := Vector2(c.btr.position.x, c.btr.position.z)
+	var i := missile_bunkers.nearest_missile(at, ARENA_REACH * Level3DMap.PX)
+	if i < 0:
+		return
+	c.arena_wait = ARENA_RELOAD
+	var target := missile_bunkers.missile_position(i)
+	var from := c.btr.arena_fire(target)
+	guns.muzzle_flash(from, (target - from).normalized(), ARENA_FLASH, "grenade_launch")
+	var node := Level3DFx.take_round(self, false)
+	var fly := func(k: float): Level3DFx.aim_round(node, from.lerp(target, k), target - from)
+	fly.call(0.0)
+	var tween := node.create_tween()
+	tween.tween_method(fly, 0.0, 1.0, ARENA_TRACER)
+	tween.tween_callback(func(): Level3DFx.give_round(node))
+	guns.acting = c
+	missile_bunkers.shoot_down(i)
+	if guns.verbose:
+		print("%dP's Arena shot a missile down" % (c.index + 1))
+
+
 # The loopholes (docs/shop-plan.md): every prisoner aboard fires at the
 # nearest enemy within a soldier's reach (LOOPHOLE_REACH: EnemySoldier's
 # round's flight), at a soldier's pace --
@@ -4028,6 +4071,7 @@ func _start_round(jingle := false) -> void:
 		c.btr.blink(true)
 		c.btr.dash = 0
 		c.device_wait = 0
+		c.arena_wait = 0
 		c.strikes = 0
 		for mine in c.mines:
 			mine.queue_free()

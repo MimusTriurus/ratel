@@ -536,6 +536,28 @@ func travel_hit(box: Rect2) -> void:
 			_kill(b, "traveling explosion")
 
 
+# The missile nearest `at` (level x, z) within `reach` metres, for the
+# Arena (the preview's _arena): its index, or -1.
+func nearest_missile(at: Vector2, reach: float) -> int:
+	var best := -1
+	var best_d := reach
+	for i in missiles.size():
+		var d := at.distance_to(Level3DMap.to_level(Vector2(missiles[i].x, missiles[i].y)))
+		if d <= best_d:
+			best = i
+			best_d = d
+	return best
+
+
+func missile_position(i: int) -> Vector3:
+	return missiles[i].node.global_position
+
+
+# Shot down in the air, by the Arena: it goes off as it would to a round.
+func shoot_down(i: int) -> void:
+	_burst(i, "the Arena")
+
+
 # SwampMissile as a mine, for the player's box (level x, z): a missile it
 # meets goes off, and the player with it, unless the player cannot be hit.
 func bump(player_box: Rect2, invincible: bool) -> bool:

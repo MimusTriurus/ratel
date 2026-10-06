@@ -181,6 +181,18 @@ const ZIP_ROUNDS := ["UpZipRound1", "UpZipRound2", "UpZipRound3"]
 # Its mines on the tailgate's shelf, under UpMines: as many shown as are not
 # down on the ground (set_mines).
 const SHELF_MINES := ["UpMine1", "UpMine2", "UpMine3"]
+# The Arena's two heads, under UpArena, left and right, each on its swivel
+# (arena_fire). Their barrels point out and ahead by ARENA_AHEAD, as
+# jackal_armored.py builds them, and up, which they keep.
+const ARENA_HEADS := ["UpArenaHeadL", "UpArenaHeadR"]
+const ARENA_AHEAD := deg_to_rad(40.0)
+# Where the salvo leaves a head, model metres from its swivel: out along
+# the barrels and up to their muzzles.
+const ARENA_MUZZLE := Vector2(0.3, 0.2)
+# How long a head stays on what it fired at before it turns back.
+const ARENA_HOLD := 0.6
+# Over the roof, level metres, for a vehicle without the heads.
+const ARENA_ROOF := 0.6
 # The twin gun's two bores, under UpTwin, and the radar's dish, which turns.
 const TWIN_BORES := ["UpTwinBoreL", "UpTwinBoreR"]
 const RADAR_DISH := "UpRadarDish"
@@ -345,6 +357,7 @@ var _radar_dish: Node3D
 var _stock_parts := {}
 var _zip_rounds: Array[Node3D] = []
 var _shelf_mines: Array[Node3D] = []
+var _arena_heads: Array[Node3D] = []
 # The nitro's dash: the ticks of it left. Ahead whatever the keys say, unless
 # they say somewhere, then that way; faster either way.
 var dash := 0
@@ -407,6 +420,10 @@ func _ready() -> void:
 		var mine := _model.find_child(prefix + name, true, false) as Node3D
 		if mine != null:
 			_shelf_mines.append(mine)
+	for name in ARENA_HEADS:
+		var head := _model.find_child(prefix + name, true, false) as Node3D
+		if head != null:
+			_arena_heads.append(head)
 	set_weapon_level(0)
 	for spare in vehicle.get("spare_fits", []):
 		var fit := _hull.find_child(prefix + spare, true, false) as Node3D
@@ -545,6 +562,33 @@ func set_weapon_level(level: int) -> void:
 func set_mines(count: int) -> void:
 	for i in _shelf_mines.size():
 		_shelf_mines[i].visible = i < count
+
+
+# The Arena's salvo at `target` (level space): the head nearer it turned on
+# it about its swivel, held there ARENA_HOLD and turned back; where the salvo
+# leaves it. A vehicle without the heads, or with them hidden, fires from
+# over its roof.
+func arena_fire(target: Vector3) -> Vector3:
+	var best: Node3D = null
+	for head in _arena_heads:
+		if head.is_visible_in_tree() and (best == null
+				or head.global_position.distance_to(target) < best.global_position.distance_to(target)):
+			best = head
+	if best == null:
+		return global_position + Vector3.UP * ARENA_ROOF
+	var side := 1.0 if _arena_heads.find(best) == 0 else -1.0
+	var parent := best.get_parent() as Node3D
+	var local := parent.global_transform.affine_inverse() * target - best.position
+	# The barrels' way at rest, in the parent's frame: Blender's out and ahead
+	# (-Y) is Godot's +Z.
+	var rest := atan2(side * cos(ARENA_AHEAD), sin(ARENA_AHEAD))
+	var turn := angle_difference(rest, atan2(local.x, local.z))
+	var tween := best.create_tween()
+	tween.tween_property(best, "rotation:y", turn, 0.05)
+	tween.tween_interval(ARENA_HOLD)
+	tween.tween_property(best, "rotation:y", 0.0, 0.3)
+	var way := Vector3(sin(rest + turn), 0.0, cos(rest + turn))
+	return parent.global_transform * (best.position + way * ARENA_MUZZLE.x + Vector3.UP * ARENA_MUZZLE.y)
 
 
 # Where the exhausts shown are, level space, and the way out of them: for the
