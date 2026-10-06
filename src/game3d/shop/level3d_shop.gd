@@ -758,6 +758,8 @@ class Bay:
 		# The launcher: the step he has, or on trial the next one in its place.
 		var step := kit.weapon()
 		var trying := trial == "launcher" and step < Level3DShopCatalog.LAUNCHER_TOP
+		# The spares' rack, where it has one, with the round of the fit shown.
+		jeep.set_weapon_level(step + 1 if trying else step)
 		var prefix: String = jeep.vehicle.prefix
 		for k in Level3DLauncher.FITS.size():
 			var base := jeep.launcher_node(prefix + String(Level3DLauncher.FITS[k].base).trim_prefix("BTR_"))

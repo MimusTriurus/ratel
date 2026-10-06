@@ -173,7 +173,8 @@
 #
 # The vehicle is the jeep; --btr, with or without --shot, drives the BTR
 # instead (level3d_btr.gd, VEHICLES): the same driving, stiffer springs and
-# no aerials.
+# no aerials. --armored drives the armoured pickup: the jeep's springs, turret
+# and launchers on a bigger body, and the shop's upgrades its own way.
 #
 # The soldiers are the model sheet's trooper (level3d_soldiers.gd, MODEL).
 # --level <res:// path> plays another glb of the stage in place of
@@ -4055,7 +4056,7 @@ func _screenshot_mode() -> void:
 		args.remove_at(immortal)
 	# Level3DSoldiers, Level3DBtr and Level3DAudio read these for themselves;
 	# they are not waypoints.
-	for own in ["--fade-corpses", "--btr", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
+	for own in ["--fade-corpses", "--btr", "--armored", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
 			"--no-wind", "--wind-steps", "--spots", "--audio-debug", "--editor", "--no-chinook", "--boss",
 			"--landing-dust"]:
 		var at := args.find(own)

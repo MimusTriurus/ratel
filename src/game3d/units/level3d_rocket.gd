@@ -386,6 +386,8 @@ func _refit() -> void:
 	_fit = level
 	for i in _mounts.size():
 		_mounts[i].base.visible = i == level
+	# The spares' rack, where the vehicle has one, holds this step's round.
+	btr.set_weapon_level(level)
 	var fit := _mounts[level]
 	_base = fit.base
 	_base_rest = fit.rest
