@@ -367,12 +367,13 @@ func _ready() -> void:
 		Level3DMap.rows = int(Level3DIO.read_path(Level3DMap.file)["grid"]["height"])
 	# The title screen first, which starts the run when a game is picked;
 	# not for a --shot, nor for the level editor's Play, there to try the
-	# level out, nor for --game-over, which opens over the run at once. It is
-	# up before the stage is built: the stage is built under it a little at a
-	# time (_breathe), the title's splash playing on, and a game picked before
-	# it is done waits for it (Level3DTitle.game_ready).
+	# level out, nor for --game-over or --shop, which open over the run at
+	# once (the title's song was heard for the second before the shop came
+	# up). It is up before the stage is built: the stage is built under it a
+	# little at a time (_breathe), the title's splash playing on, and a game
+	# picked before it is done waits for it (Level3DTitle.game_ready).
 	var titled := _persist and not run_args.has("--editor") and not run_args.has("--intro") \
-			and not run_args.has("--game-over")
+			and not run_args.has("--game-over") and not run_args.has("--shop")
 	if titled:
 		_make_menu()
 		_apply_settings()
@@ -486,8 +487,10 @@ func _ready() -> void:
 		_dress_crews()
 		# intro_song, IntroMapMode's: the start jingle running on into stage 1.
 		# Not under --game-over, whose screen plays its own: it was heard for
-		# the second the cemetery takes to load, then cut off.
-		if not args.has("--game-over"):
+		# the second the cemetery takes to load, then cut off. Nor under
+		# --shop, which opens over the stage at once: it was heard for the
+		# second the shop took to fade it.
+		if not args.has("--game-over") and not args.has("--shop"):
 			Level3DAudio.play_music("intro")
 		if args.has("--intro") or not (args.has("--shot") or args.has("--obstacle-map")):
 			_start_intro()
@@ -4060,7 +4063,10 @@ func _open_shop(at_once := false) -> void:
 	_shop.colours.assign(crews.map(func(c: Crew): return c.hud.colour))
 	_shop.paints.assign(crews.map(func(c: Crew): return _paint(c.index)))
 	get_tree().paused = true
-	Level3DAudio.fade_music(Level3DShop.FADE_OUT)
+	if at_once:
+		Level3DAudio.stop_music()
+	else:
+		Level3DAudio.fade_music(Level3DShop.FADE_OUT)
 	_shop.open(_capture(), at_once)
 
 

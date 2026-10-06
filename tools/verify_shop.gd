@@ -162,8 +162,8 @@ func _shop() -> void:
 	shop._fire(0)
 	check("one ready is not enough", shop.is_open() and shop._state == Level3DShop.State.OPEN)
 	shop._fire(1)
-	for i in 200:
-		await process_frame
+	# The jeeps' start and drive off, the black down and up again.
+	await create_timer(Level3DShop.DRIVE_TIME + Level3DShop.LEAVE * 2.0 + 0.5).timeout
 	check("both ready: the shop gone, round 2", not shop.is_open() and scene.get("_round") == 2 and not paused)
 	var a = crews[0]
 	check("1P carries what he bought", a.score == 0 and a.upgrades.has("twin") and a.device == "nitro"

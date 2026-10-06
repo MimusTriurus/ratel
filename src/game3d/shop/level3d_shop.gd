@@ -108,10 +108,31 @@ const LEAVE := 0.6
 const HUD_OUT := 0.25
 const DRIVE_VIEW := 15.0
 const DRIVE_TURN_RATE := 8.0
-const DRIVE_DELAY := 0.15
 const DRIVE_ACCEL := 5.0
 const DRIVE_SQUAT := 0.05
-const DRIVE_TIME := 1.3
+# And heard, as the title's jeeps are (Level3DSplash3D): each jeep's starter
+# (jeep_start) from ENGINE_FROM into the file, the next jeep's ENGINE_STAGGER
+# later. The file cranks, catches and revs, and has settled to a run by
+# ENGINE_STARTED, 1.45 s in (its spectrum: the starter from 0.15 s, the
+# flare to 1.1 s): only then does the jeep pull away (DRIVE_DELAY, the next
+# one's ENGINE_STAGGER later), and the running engine (jeep_idle) comes in
+# over ENGINE_RUN_IN as it does, pitched up with the speed to
+# ENGINE_REV_PITCH at ENGINE_REV_SPEED m/s; all ENGINE_GAIN loud and dying
+# away with the black, which comes down DRIVE_TIME after READY -- the start
+# heard and DRIVE_MOVING of the drive seen.
+const ENGINE_START := "jeep_start"
+const ENGINE_LOOP := "jeep_idle"
+const ENGINE_FROM := 0.12
+const ENGINE_STARTED := 1.45
+const ENGINE_STAGGER := 0.12
+const DRIVE_DELAY := ENGINE_STARTED - ENGINE_FROM
+const DRIVE_MOVING := 1.2
+const DRIVE_TIME := DRIVE_DELAY + DRIVE_MOVING
+const ENGINE_RUN := DRIVE_DELAY
+const ENGINE_RUN_IN := 0.4
+const ENGINE_REV_PITCH := 1.6
+const ENGINE_REV_SPEED := 6.0
+const ENGINE_GAIN := 0.8
 const READY_ROW := 7
 const PAINT_ROW := 6           # the swatches over READY, each player's own
 const LIFE_ROW := 5            # and as many rows of tiles over it
@@ -195,6 +216,7 @@ var _time := 0.0
 var _shown: Array[String] = []      # each player's tile his words are on, and since when
 var _since: Array[float] = []
 static var _swatches: Array[Color] = []  # each paint's olive, Level3DBtr.paint_swatches
+var _engines: Array = []            # per jeep driving off: [start, idle, since]
 var _rects := {}                  # this frame's: Vector3i(column, row, player for READY) -> Rect2
 
 
@@ -281,6 +303,7 @@ func open(run: Level3DRun, at_once := false) -> void:
 
 
 func close() -> void:
+	_stop_engines()
 	_kill_fade()
 	_state = State.CLOSED
 	visible = false
@@ -320,11 +343,13 @@ func _leave() -> void:
 	# The words, the goods and the reticle gone, the jeeps away.
 	_text.create_tween().tween_property(_text, "modulate:a", 0.0, HUD_OUT)
 	_bay.drive_off()
+	_start_engines()
 	_kill_fade()
 	_fade = create_tween()
 	_fade.tween_interval(DRIVE_TIME)
 	_fade.tween_property(_veil, "color:a", 1.0, LEAVE)
 	_fade.tween_callback(func():
+		_stop_engines()
 		_bay.clear()
 		_text.queue_redraw()
 		if done.is_valid():
@@ -434,6 +459,52 @@ func _process(delta: float) -> void:
 				_poll(i, inputs[i])
 	_text.texture_filter = Level3DFont.filter()
 	_text.queue_redraw()
+	_run_engines()
+
+
+# Each jeep's engine started as it drives off (ENGINE_*).
+func _start_engines() -> void:
+	_stop_engines()
+	for i in _players:
+		var start := AudioStreamPlayer.new()
+		var idle := AudioStreamPlayer.new()
+		for player in [start, idle]:
+			add_child(player)
+		_engines.append([start, idle, _time + ENGINE_STAGGER * i])
+
+
+func _run_engines() -> void:
+	for engine in _engines:
+		var start := engine[0] as AudioStreamPlayer
+		var idle := engine[1] as AudioStreamPlayer
+		var t: float = _time - float(engine[2])
+		if t < 0.0:
+			continue
+		# The sound mode may change under it: the streams asked for as each starts.
+		if not start.playing and t < ENGINE_RUN and start.stream == null:
+			start.stream = Level3DAudio.stream(ENGINE_START)
+			start.bus = Level3DAudio.bus(ENGINE_START)
+			if start.stream != null:
+				start.play(ENGINE_FROM)
+		if not idle.playing and t >= ENGINE_RUN and idle.stream == null:
+			idle.stream = Level3DAudio.stream(ENGINE_LOOP)
+			idle.bus = Level3DAudio.bus(ENGINE_LOOP)
+			if idle.stream != null:
+				idle.play()
+		var run := clampf((t - ENGINE_RUN) / ENGINE_RUN_IN, 0.0, 1.0)
+		var out := ENGINE_GAIN * (1.0 - _veil.color.a)
+		start.volume_db = Level3DAudio.volume_db(ENGINE_START) + linear_to_db(maxf(out * (1.0 - run), 0.0001))
+		idle.volume_db = Level3DAudio.volume_db(ENGINE_LOOP) + linear_to_db(maxf(out * run, 0.0001))
+		var moving := maxf(t - DRIVE_DELAY, 0.0) * DRIVE_ACCEL
+		idle.pitch_scale = lerpf(1.0, ENGINE_REV_PITCH, clampf(moving / ENGINE_REV_SPEED, 0.0, 1.0))
+
+
+func _stop_engines() -> void:
+	for engine in _engines:
+		for player in [engine[0], engine[1]]:
+			if is_instance_valid(player):
+				(player as Node).queue_free()
+	_engines.clear()
 
 
 # The second player's buttons, read off his HumanInput as the stage does,
@@ -1288,11 +1359,13 @@ class Bay:
 		if _driving >= 0.0:
 			_driving += delta
 			rate = Level3DShop.DRIVE_TURN_RATE
-			# Away from a standstill, nose up while it pulls.
-			var t := maxf(_driving - Level3DShop.DRIVE_DELAY, 0.0)
-			var gone := 0.5 * Level3DShop.DRIVE_ACCEL * t * t
-			var squat := Level3DShop.DRIVE_SQUAT * clampf(1.0 - t / 0.6, 0.0, 1.0) if t > 0.0 else 0.0
-			for jeep in _jeeps:
+			# Away from a standstill once its engine has started, each as
+			# its own does (Level3DShop.ENGINE_*), nose up while it pulls.
+			for k in _jeeps.size():
+				var jeep := _jeeps[k]
+				var t := maxf(_driving - Level3DShop.DRIVE_DELAY - Level3DShop.ENGINE_STAGGER * k, 0.0)
+				var gone := 0.5 * Level3DShop.DRIVE_ACCEL * t * t
+				var squat := Level3DShop.DRIVE_SQUAT * clampf(1.0 - t / 0.6, 0.0, 1.0) if t > 0.0 else 0.0
 				jeep.carry(Vector3(gone, jeep.position.y, 0.0), 0.0, squat)
 		for i in _tables.size():
 			_yaw[i] = lerpf(_yaw[i], _want[i], 1.0 - exp(-rate * delta))
