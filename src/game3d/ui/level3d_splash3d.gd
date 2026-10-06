@@ -124,9 +124,11 @@ const FOCUS_ZOOM := 1.5
 const SCREEN := Vector2(2048, 1152)
 
 # The jeep's launcher fits (level3d_rocket.gd's FITS, and the spare ones in
-# level3d_btr.gd): only the missiles' is shown, the picture's rocket pods.
-const SHOWN_FIT := "LauncherBase"
-const HIDDEN_FITS := ["MortarBase", "HeavyLauncherBase", "StageLauncherBase", "GradBase",
+# level3d_btr.gd): only the mortar's is shown, what a run starts with. It was
+# the missiles', the picture's rocket pods, which stand taller than the
+# Chinook's cabin and went through its roof on the way in.
+const SHOWN_FIT := "MortarBase"
+const HIDDEN_FITS := ["LauncherBase", "HeavyLauncherBase", "StageLauncherBase", "GradBase",
 		"TubeLauncherBase"]
 
 # Where everything stands, in metres; the jeeps are at the glb's own scale,
