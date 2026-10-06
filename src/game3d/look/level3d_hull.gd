@@ -73,6 +73,7 @@ static var _materials := {}  # Kind -> ShaderMaterial
 static var _pixels := DEFAULT_PIXELS.duplicate()
 static var _tracked: Array[WeakRef] = []  # the stage's copies (track)
 static var _made := {}  # a glb's Mesh -> the same with the engine's hull
+static var _marks := {}  # a Mesh -> its mark's hull (mark_hull)
 
 
 static func material(kind := Kind.STAGE) -> ShaderMaterial:
@@ -115,6 +116,58 @@ static func track(copy: ShaderMaterial) -> void:
 
 static func is_hull(material: Material) -> bool:
 	return material != null and material.resource_name == HULL_NAME
+
+
+# A hull over every face of `mesh`, without a material, for the shop's mark
+# round a part (level3d_hull_mark.gdshader, Level3DShop.Bay): bare corners
+# grown too -- a part with no line of its own, an aerial's links, the
+# armour's plates flush on the body, is marked all the same. Not the
+# contour, nor any hull made here. Null if it has no faces.
+static func mark_hull(mesh: Mesh) -> Mesh:
+	if mesh == null:
+		return null
+	if _marks.has(mesh):
+		return _marks[mesh]
+	var positions := PackedVector3Array()
+	var flat := PackedVector3Array()
+	var indices := PackedInt32Array()
+	for surface in mesh.get_surface_count():
+		var material := mesh.surface_get_material(surface)
+		if mesh.surface_get_primitive_type(surface) != Mesh.PRIMITIVE_TRIANGLES or is_hull(material) \
+				or material != null and material.resource_name.ends_with("Contour"):
+			continue
+		var arrays := mesh.surface_get_arrays(surface)
+		var base := positions.size()
+		positions.append_array(arrays[Mesh.ARRAY_VERTEX])
+		flat.append_array(arrays[Mesh.ARRAY_NORMAL])
+		if arrays[Mesh.ARRAY_INDEX] != null:
+			for i in arrays[Mesh.ARRAY_INDEX] as PackedInt32Array:
+				indices.append(base + i)
+		else:
+			for i in (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size():
+				indices.append(base + i)
+	var out: ArrayMesh = null
+	if not indices.is_empty():
+		var aabb := AABB(positions[0], Vector3.ZERO)
+		for p in positions:
+			aabb = aabb.expand(p)
+		var normals := _smooth_normals(positions, flat, indices)
+		var reach := PackedVector2Array()
+		reach.resize(positions.size())
+		for i in positions.size():
+			if normals[i] == Vector3.ZERO:
+				normals[i] = flat[i]
+			reach[i] = Vector2(aabb.get_longest_axis_size() * REACH, positions[i].y - aabb.position.y)
+		var hull := []
+		hull.resize(Mesh.ARRAY_MAX)
+		hull[Mesh.ARRAY_VERTEX] = positions
+		hull[Mesh.ARRAY_NORMAL] = normals
+		hull[Mesh.ARRAY_TEX_UV] = reach
+		hull[Mesh.ARRAY_INDEX] = indices
+		out = ArrayMesh.new()
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, hull)
+	_marks[mesh] = out
+	return out
 
 
 # Gives `instance` the engine's hull in place of its baked one, if it has

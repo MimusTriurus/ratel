@@ -35,7 +35,11 @@
 #   * The jeep turns on its table to show the part the tile is about
 #     (VIEWS), and a part not yet his stands on it see-through, pulsing --
 #     the twin gun in the single one's place, the launcher's next step in
-#     the one he has.
+#     the one he has. The part, his or on trial, is ringed in the reticle's
+#     orange, round its outline only, the ring's width pulsing (MARK): the
+#     eye goes to it, not to the jeep. The ring is a node of its own
+#     (level3d_hull_mark.gdshader), so that the see-through does not fade
+#     it, and the part's faces mark the stencil for it to keep out of.
 #   * The first player has the mouse as well: over a tile picks it, a left
 #     click buys, a right click takes back -- with the title's reticle
 #     (Level3DReticle) in place of the system's pointer.
@@ -82,6 +86,10 @@ const VIEWS := {"twin": 25.0, "launcher": 150.0, "loopholes": 80.0, "zip": 140.0
 const TURN_RATE := 3.0          # of the way to the view, per second
 const GHOST := Vector2(0.25, 0.7)   # a part on trial: its transparency, pulsing between
 const GHOST_PULSE := 4.0
+# The ring round the tile's part on the jeep: its width, pixels of a frame
+# 1080 high, pulsing between, at GHOST_PULSE.
+const MARK := Vector2(3.0, 7.0)
+const MARK_SHADER := preload("res://src/game3d/shaders/level3d_hull_mark.gdshader")
 
 enum State { CLOSED, DARKENING, OPEN, LEAVING }
 
@@ -633,6 +641,9 @@ class Bay:
 	var _yaw: Array[float] = []
 	var _want: Array[float] = []
 	var _ghosts: Array = []         # per player, the meshes on trial
+	var _mark: ShaderMaterial       # the ring's (MARK)
+	var _rings: Array = []          # per player, the ring's nodes
+	var _stencilled: Array = []     # per player, [mesh, surface, its override before]
 	var _time := 0.0
 
 	func _init() -> void:
@@ -707,6 +718,12 @@ class Bay:
 			_yaw.append(30.0)
 			_want.append(30.0)
 			_ghosts.append([])
+			_rings.append([])
+			_stencilled.append([])
+		_mark = ShaderMaterial.new()
+		_mark.shader = Level3DShop.MARK_SHADER
+		_mark.render_priority = 1
+		_mark.set_shader_parameter("colour", Level3DReticle.COLOUR)
 		staged = true
 		visible = true
 
@@ -718,6 +735,8 @@ class Bay:
 		_yaw.clear()
 		_want.clear()
 		_ghosts.clear()
+		_rings.clear()
+		_stencilled.clear()
 		staged = false
 		visible = false
 
@@ -736,8 +755,18 @@ class Bay:
 			if is_instance_valid(mesh):
 				(mesh as GeometryInstance3D).transparency = 0.0
 		_ghosts[i] = []
+		for ring in _rings[i]:
+			if is_instance_valid(ring):
+				(ring as Node).queue_free()
+		_rings[i] = []
+		for entry in _stencilled[i]:
+			if is_instance_valid(entry[0]):
+				(entry[0] as MeshInstance3D).set_surface_override_material(entry[1], entry[2])
+		_stencilled[i] = []
 		var shown := kit.upgrades.duplicate()
 		var part: Node3D = null
+		# What is ringed: the tile's part, his or on trial.
+		var ringed := jeep.upgrade_part(trial)
 		if not shown.has(trial) and jeep.upgrade_part(trial) != null:
 			shown.append(trial)
 			part = jeep.upgrade_part(trial)
@@ -755,10 +784,40 @@ class Bay:
 			base.visible = k == (step + 1 if trying else step)
 			if trying and k == step + 1:
 				part = base
+			if trial == "launcher" and base.visible:
+				ringed = base
 		if part != null:
 			_ghosts[i] = part.find_children("*", "GeometryInstance3D", true, false)
 			if part is GeometryInstance3D:
 				_ghosts[i].append(part)
+		if ringed != null:
+			var meshes := ringed.find_children("*", "MeshInstance3D", true, false)
+			if ringed is MeshInstance3D:
+				meshes.append(ringed)
+			for node in meshes:
+				var mesh := node as MeshInstance3D
+				var hull := Level3DHull.mark_hull(mesh.mesh)
+				if hull == null:
+					continue
+				var ring := MeshInstance3D.new()
+				ring.name = "ShopRing"
+				ring.mesh = hull
+				ring.material_override = _mark
+				ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				mesh.add_child(ring)
+				_rings[i].append(ring)
+				# Its paint on copies that mark the stencil where they are drawn.
+				for surface in mesh.mesh.get_surface_count():
+					var paint := mesh.get_active_material(surface) as BaseMaterial3D
+					if paint == null:
+						continue
+					var marking := paint.duplicate() as BaseMaterial3D
+					marking.stencil_mode = BaseMaterial3D.STENCIL_MODE_CUSTOM
+					marking.stencil_flags = BaseMaterial3D.STENCIL_FLAG_WRITE
+					marking.stencil_compare = BaseMaterial3D.STENCIL_COMPARE_ALWAYS
+					marking.stencil_reference = 1
+					_stencilled[i].append([mesh, surface, mesh.get_surface_override_material(surface)])
+					mesh.set_surface_override_material(surface, marking)
 
 	# Player `i`'s jeep to turn `degrees` off facing the camera, towards the
 	# frame's middle.
@@ -770,7 +829,10 @@ class Bay:
 		if not staged:
 			return
 		_time += delta
-		var pulse := lerpf(Level3DShop.GHOST.x, Level3DShop.GHOST.y, 0.5 + 0.5 * sin(_time * Level3DShop.GHOST_PULSE))
+		var wave := 0.5 + 0.5 * sin(_time * Level3DShop.GHOST_PULSE)
+		var pulse := lerpf(Level3DShop.GHOST.x, Level3DShop.GHOST.y, wave)
+		if _mark != null:
+			_mark.set_shader_parameter("pixels", lerpf(Level3DShop.MARK.x, Level3DShop.MARK.y, wave))
 		for i in _tables.size():
 			_yaw[i] = lerpf(_yaw[i], _want[i], 1.0 - exp(-Level3DShop.TURN_RATE * delta))
 			# Nose to the camera is the jeep's +X turned to +Z; the first's
