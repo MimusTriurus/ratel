@@ -50,7 +50,9 @@ const ITEMS := [
 		"text": "WIPES OUT THE ENEMIES ON THE SCREEN FOR 2000, 4000, 8000 A CALL. NOT THE BOSS."},
 	# Only of use where enemy missiles fly (docs/shop-plan.md): none on
 	# stage-0 as yet.
-	{"id": "arena", "name": "ARENA", "row": 3, "col": 0, "kind": Kind.UPGRADE, "price": 20000,
+	# The Arena: APS on its tile and the HUD, in full in the shop's words.
+	{"id": "arena", "name": "APS", "title": "ACTIVE PROTECTION SYSTEM", "row": 3, "col": 0,
+		"kind": Kind.UPGRADE, "price": 20000,
 		"text": "SHOOTS DOWN A MISSILE ABOUT TO HIT YOU. ONE EVERY 10 SECONDS."},
 	{"id": "classified1", "name": "???", "row": 3, "col": 1, "kind": Kind.CLASSIFIED,
 		"text": "CLASSIFIED. NOT FOR SALE - YET."},

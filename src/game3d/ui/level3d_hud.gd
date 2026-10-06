@@ -112,7 +112,7 @@ var parts := {"score": true, "lives": true, "pows": true, "device": true}
 # be paid for or is not to be had.
 var device := ""
 var device_ready := true
-# The Arena, "ARENA" when it is fitted, "" when not; dimmed while it reloads.
+# The Arena, "APS" when it is fitted, "" when not; dimmed while it reloads.
 var arena := ""
 var arena_ready := true
 var bottom := false         # the bottom left corner rather than the top left

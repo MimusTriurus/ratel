@@ -2513,7 +2513,7 @@ func _show_state() -> void:
 		line.parts["device"] = on and not c.out
 		line.device = _device_text(c)
 		line.device_ready = c.device_wait == 0 and (c.device != "airstrike" or _airstrike_ready(c))
-		line.arena = "ARENA" if c.upgrades.has("arena") else ""
+		line.arena = "APS" if c.upgrades.has("arena") else ""
 		line.arena_ready = c.arena_wait == 0
 		var weapon := 1 + c.carrier.missile_power if c.carrier.has_missiles else 0
 		if weapon > c.weapon_shown and c.weapon_shown >= 0:

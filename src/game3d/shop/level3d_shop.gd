@@ -666,11 +666,13 @@ func _draw_words(i: int, column: Rect2, s: float, g: float, sg: float) -> void:
 	var it := _item(i)
 	var show: Dictionary = SHOWS.get(_shown[i], {})
 	var colour: Color = colours[i] if i < colours.size() else Color.WHITE
-	var name: String = it.get("name", "READY")
+	# The name in full where the tile's is short for it (the catalog's title).
+	var name: String = it.get("title", it.get("name", "READY"))
 	var text: String = it.get("text", "EVERY PLAYER READY, AND THE ROUND STARTS.")
 	var pad := roundf(WORDS_PAD * s)
+	var heads := _wrap(name, g, column.size.x - pad * 2.0)
 	var lines := _wrap(text, sg, column.size.x - pad * 2.0)
-	var height := pad * 2.0 + g + roundf(10.0 * s) + lines.size() * (sg + roundf(8.0 * s)) - roundf(8.0 * s)
+	var height := pad * 2.0 + heads.size() * (g + roundf(4.0 * s)) - roundf(4.0 * s) + roundf(10.0 * s) 			+ lines.size() * (sg + roundf(8.0 * s)) - roundf(8.0 * s)
 	var box := Rect2(column.position.x, roundf(WORDS_TOP * s), column.size.x, height)
 	var a := clampf((_time - _since[i]) / WORDS_FADE, 0.0, 1.0)
 	var spot: Variant = _bay.spot(i)
@@ -700,8 +702,10 @@ func _draw_words(i: int, column: Rect2, s: float, g: float, sg: float) -> void:
 	_text.draw_rect(box, Color(TILE_FILL, TILE_FILL.a * a))
 	_text.draw_rect(box.grow(-1.0), Color(colour, a), false, maxf(roundf(RING * s), 1.0))
 	var y := box.position.y + pad
-	Level3DFont.draw(_text, name, roundf(box.position.x + pad), y, g, Level3DFont.WHITE, Color(colour, a))
-	y += g + roundf(10.0 * s)
+	for head in heads:
+		Level3DFont.draw(_text, head, roundf(box.position.x + pad), y, g, Level3DFont.WHITE, Color(colour, a))
+		y += g + roundf(4.0 * s)
+	y += roundf(6.0 * s)
 	for line in lines:
 		Level3DFont.draw(_text, line, roundf(box.position.x + pad), y, sg, Level3DFont.GRAY, Color(1, 1, 1, a))
 		y += sg + roundf(8.0 * s)
