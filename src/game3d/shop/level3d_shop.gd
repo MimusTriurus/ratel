@@ -1065,7 +1065,15 @@ class Bay:
 		var plane := PlaneMesh.new()
 		plane.size = Vector2(40.0, 40.0)
 		ground.mesh = plane
-		ground.material_override = _matte(_concrete())
+		var concrete := ShaderMaterial.new()
+		concrete.shader = CONCRETE
+		concrete.set_shader_parameter("albedo", _concrete())
+		concrete.set_shader_parameter("slabs", _slabs())
+		concrete.set_shader_parameter("grain", GRAIN)
+		concrete.set_shader_parameter("tile", SLAB * SLABS)
+		concrete.set_shader_parameter("slab", SLAB)
+		concrete.set_shader_parameter("contrast", GRAIN_CONTRAST)
+		ground.material_override = concrete
 		root.add_child(ground)
 		var camera := Camera3D.new()
 		camera.fov = FOV
@@ -1089,6 +1097,8 @@ class Bay:
 			if pad != null:
 				root.add_child(pad)
 				heli = _land(root, pad, table.position, 1.0 if i == 0 else -1.0)
+				if i == 0:
+					_lay(ground.material_override, pad, players > 1)
 			_helis.append(heli)
 			var jeep := Level3DBtr.new()
 			table.add_child(jeep)
@@ -1193,6 +1203,15 @@ class Bay:
 		heli.rotation.y = HELI_YAW * side
 		return heli
 
+	# The concrete's slabs, SLAB m, laid along `pad`, the first landing
+	# spot: its circle in the middle of one; the second's half mirrored.
+	func _lay(concrete: ShaderMaterial, pad: Node3D, mirror: bool) -> void:
+		var circle := _box_of(pad, "Helipad_Disc").get_center()
+		var corner := pad.transform * Vector3(circle.x, 0.0, circle.z) 				- pad.basis.orthonormalized() * Vector3(SLAB, 0.0, SLAB) * 0.5
+		concrete.set_shader_parameter("origin", Vector2(corner.x, corner.z))
+		concrete.set_shader_parameter("angle", pad.rotation.y)
+		concrete.set_shader_parameter("mirror", mirror)
+
 	# Player `i`'s helicopter in his jeep's paint `id`, from its own colours.
 	func _paint_heli(i: int, id: String) -> void:
 		if i >= _helis.size() or _helis[i] == null:
@@ -1238,6 +1257,46 @@ class Bay:
 	static func _box_of(pad: Node3D, name: String) -> AABB:
 		var mesh := pad.find_child(name, true, false) as MeshInstance3D
 		return mesh.transform * mesh.get_aabb() if mesh != null else AABB()
+
+	# The concrete's slabs, SLABS by SLABS of them a side, SLAB m each,
+	# tiled: each a flat tone of its own (within SLAB_TONE), warmer than grey
+	# (SLAB_WARM), dark seams (SEAM_TONE) between. Low in contrast: the words
+	# are drawn over it.
+	const SLAB := 4.0
+	const SLABS := 4
+	const SLAB_PIXELS := 128
+	const SLAB_TONE := 0.09
+	const SLAB_WARM := Color(1.0, 0.97, 0.92)
+	const SEAM_PIXELS := 2
+	const SEAM_TONE := 0.78
+	static var _slab_texture: ImageTexture
+
+	static func _slabs() -> ImageTexture:
+		if _slab_texture != null:
+			return _slab_texture
+		var side := SLABS * SLAB_PIXELS
+		var image := Image.create(side, side, false, Image.FORMAT_RGB8)
+		var random := RandomNumberGenerator.new()
+		random.seed = 1985
+		for sy in SLABS:
+			for sx in SLABS:
+				var tone := 1.0 - SLAB_TONE + random.randf() * SLAB_TONE
+				var colour := SLAB_WARM * tone
+				image.fill_rect(Rect2i(sx * SLAB_PIXELS, sy * SLAB_PIXELS, SLAB_PIXELS, SLAB_PIXELS), colour)
+				var seam := colour * SEAM_TONE
+				image.fill_rect(Rect2i(sx * SLAB_PIXELS, sy * SLAB_PIXELS, SLAB_PIXELS, SEAM_PIXELS / 2), seam)
+				image.fill_rect(Rect2i(sx * SLAB_PIXELS, (sy + 1) * SLAB_PIXELS - SEAM_PIXELS / 2, SLAB_PIXELS, SEAM_PIXELS / 2), seam)
+				image.fill_rect(Rect2i(sx * SLAB_PIXELS, sy * SLAB_PIXELS, SEAM_PIXELS / 2, SLAB_PIXELS), seam)
+				image.fill_rect(Rect2i((sx + 1) * SLAB_PIXELS - SEAM_PIXELS / 2, sy * SLAB_PIXELS, SEAM_PIXELS / 2, SLAB_PIXELS), seam)
+		image.generate_mipmaps()
+		_slab_texture = ImageTexture.create_from_image(image)
+		return _slab_texture
+
+	# The concrete's grain, one slab's (a CC0 photograph, grey, square),
+	# GRAIN_CONTRAST of its contrast kept.
+	const CONCRETE := preload("res://src/game3d/shop/level3d_shop_concrete.gdshader")
+	const GRAIN := preload("res://src/game3d/shop/level3d_shop_concrete.png")
+	const GRAIN_CONTRAST := 0.5
 
 	static func _matte(colour: Color) -> StandardMaterial3D:
 		var m := StandardMaterial3D.new()
