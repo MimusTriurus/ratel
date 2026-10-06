@@ -10,7 +10,7 @@
     "FLOOR_GUN_PLAIN": {"kind": "gun"},
     "CLIFF_GUN": {"kind": "gun"},
     "FLOOR_MISSILE_LAUNCHER": {"kind": "gun"},
-    "CLIFF_MISSILE_LAUNCHER": {"kind": "gun"},
+    "CLIFF_MISSILE_LAUNCHER": {"kind": "gun", "model": "res://resources/3d/jackal_missile_bunker.glb"},
     "SWAMP_MISSILE_LAUNCHER": {"kind": "gun"},
     "SOLDIER_WALKER": {"kind": "enemy", "model": "res://resources/3d/jackal_trooper.glb"},
     "SOLDIER_STATIONARY": {"kind": "enemy", "model": "res://resources/3d/jackal_trooper.glb"},

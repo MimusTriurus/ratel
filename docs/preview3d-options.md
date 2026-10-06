@@ -43,7 +43,7 @@ godot --path . src/game3d/level3d_preview.tscn -- --players 2 --boss
 
 | Параметр | Что делает |
 |---|---|
-| `--file <res://…json>` | Играть другой файл уровня вместо `assets/level3d/stage-0.json` — сделанный в редакторе уровней |
+| `--file <res://…json>` | Играть другой файл уровня вместо `assets/level3d/stage-0.json` — сделанный в редакторе уровней. `res://assets/level3d/polygon.json` — тестовая копия этапа 1 с ракетным бункером впереди старта (`level3d_missile_bunkers.gd`) |
 | `--level <res://…glb>` | Его собранная модель вместо `resources/3d/jackal_stage1.glb` (`tools/blender/build_level.py`) |
 | `--editor` | Так запускает Play в редакторе уровней: без экрана заголовка, выход из меню называется «Back to the editor» |
 

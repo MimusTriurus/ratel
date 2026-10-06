@@ -284,6 +284,9 @@ var gun: Level3DGun
 var launcher: Level3DLauncher
 var guns: Level3DGuns
 var soldiers: Level3DSoldiers
+# The missile bunkers and their missiles, on a level whose file puts them down
+# (level3d_missile_bunkers.gd): none on stage 1.
+var missile_bunkers: Level3DMissileBunkers
 var friends: Level3DFriends
 var rescue: Level3DRescue
 var tracks: Level3DTracks
@@ -724,11 +727,14 @@ func _arm(c: Crew) -> void:
 				soldiers.intercept(from, to, PlayerBullet.MARGIN),
 				boats.intercept(from, to, PlayerBullet.MARGIN),
 				tanks.intercept(from, to, PlayerBullet.MARGIN),
+				missile_bunkers.intercept(from, to, PlayerBullet.MARGIN),
 				boss.intercept(from, to, PlayerBullet.MARGIN)])
 	gun_of.struck = func(found: Dictionary):
 		guns.acting = c
 		if found.has("gun"):
 			guns.bullet_attack(found.gun)
+		elif found.has("bunker") or found.has("missile"):
+			missile_bunkers.bullet_attack(found)
 		elif found.has("boat"):
 			boats.bullet_attack(found)
 		elif found.has("tank"):
@@ -748,11 +754,14 @@ func _arm(c: Crew) -> void:
 		return _nearest([guns.intercept(from, to, PlayerMissile.MARGIN, true),
 				boats.intercept(from, to, PlayerMissile.MARGIN, true),
 				tanks.intercept(from, to, PlayerMissile.MARGIN, true),
+				missile_bunkers.intercept(from, to, PlayerMissile.MARGIN, true),
 				boss.intercept(from, to, PlayerMissile.MARGIN, true)])
 	launcher_of.struck = func(found: Dictionary):
 		guns.acting = c
 		if found.has("boat"):
 			boats.attack(found)
+		elif found.has("bunker") or found.has("missile"):
+			missile_bunkers.attack(found)
 		elif found.has("tank"):
 			tanks.attack(found)
 		elif found.has("boss"):
@@ -1940,6 +1949,7 @@ func _on_exploded(at: Vector3) -> bool:
 # it overlaps go down, as Hut.attack and House.attack let it. The gate does
 # not: Gate.attack answers the player's weapon only.
 func _on_travel_hit(box: Rect2) -> void:
+	missile_bunkers.travel_hit(box)
 	for building in destructibles:
 		var entry: Dictionary = destructibles[building]
 		if not entry.destroyed and entry.kind != "Gate" and box.intersects(entry.footprint):
@@ -2105,6 +2115,15 @@ func _add_guns(level: Node) -> void:
 	boss.player_position = guns.player_position
 	boss.scored = guns.scored
 	add_child(boss)
+	missile_bunkers = Level3DMissileBunkers.new()
+	missile_bunkers.map = map
+	missile_bunkers.guns = guns
+	missile_bunkers.frame = _view_frame
+	missile_bunkers.ground = _ground_at
+	missile_bunkers.player_position = guns.player_position
+	missile_bunkers.scored = guns.scored
+	missile_bunkers.trail = func(at: Vector3): launcher.trail(at)
+	add_child(missile_bunkers)
 	# What their wheels and tracks leave behind, and the player's.
 	tracks = Level3DTracks.new()
 	tracks.ground = _ground_at
@@ -2129,6 +2148,7 @@ func _add_guns(level: Node) -> void:
 		soldiers.explosion_hit(box, player)
 		boats.explosion_hit(box, player)
 		tanks.explosion_hit(box, player)
+		missile_bunkers.explosion_hit(box, player)
 	friends = Level3DFriends.new()
 	friends.map = map
 	friends.guns = guns
@@ -2539,7 +2559,7 @@ func _update_radar() -> void:
 		var middle := _follow_point()
 		_radar.middle = Vector3(middle.x, 0.0, middle.y)
 		_radar.targets.clear()
-		for at in guns.targets() + tanks.targets():
+		for at in guns.targets() + tanks.targets() + missile_bunkers.targets():
 			_radar.targets.append(Vector3(at.x, 0.0, at.y))
 	_radar.queue_redraw()
 # The prisoners' HELP, the game's and the calls (Level3DFriends.help_marks).
@@ -3192,7 +3212,11 @@ func _physics_process(delta: float) -> void:
 		var box := _player_box(c)
 		soldiers.bump(box)
 		friends.bump(box, c.carrier)
-		if guns.bump(box, c.invincible > 0):
+		# A missile is a shot, which --immortal and the bullet hack let by; a
+		# ram is not.
+		if missile_bunkers.bump(box, c.invincible > 0 or _immortal or settings.bullet_hack):
+			_explode_btr(c, "a missile")
+		elif guns.bump(box, c.invincible > 0):
 			_rammed(c, "ran into a gun")
 		elif tanks.bump(box, c.invincible > 0):
 			_rammed(c, "ran into a tank")
@@ -3206,6 +3230,7 @@ func _physics_process(delta: float) -> void:
 	soldiers.tick()
 	boats.tick()
 	tanks.tick()
+	missile_bunkers.tick()
 	boss.tick()
 	tracks.tick()
 	puffs.tick()
@@ -3814,7 +3839,7 @@ func _tick_mines() -> void:
 func _airstrike(c: Crew) -> void:
 	var view := _view_frame()
 	var hits: Array[Vector2] = []
-	for at in soldiers.targets() + guns.targets() + tanks.targets() + boats.targets():
+	for at in soldiers.targets() + guns.targets() + tanks.targets() + boats.targets() 			+ missile_bunkers.targets():
 		if view.has_point(at):
 			hits.append(at)
 	_no_points = true
@@ -3822,6 +3847,7 @@ func _airstrike(c: Crew) -> void:
 	soldiers.explosion_hit(view, false)
 	tanks.explosion_hit(view, false)
 	boats.explosion_hit(view, false)
+	missile_bunkers.strike(view)
 	for i in guns.guns.size():
 		if hits.has(guns.targets_of(i)):
 			guns.attack(i)
@@ -3854,7 +3880,7 @@ func _loopholes(c: Crew) -> void:
 	var reach := LOOPHOLE_REACH
 	var best := Vector2.ZERO
 	var best_d := INF
-	for target in soldiers.targets() + guns.targets() + tanks.targets() + boats.targets() + boss.targets():
+	for target in soldiers.targets() + guns.targets() + tanks.targets() + boats.targets() + boss.targets() 			+ missile_bunkers.targets():
 		var d := target.distance_to(Vector2(from.x, from.z))
 		if d < best_d:
 			best_d = d
@@ -3978,6 +4004,7 @@ func _start_round(jingle := false) -> void:
 	soldiers.reset()
 	boats.reset()
 	tanks.reset()
+	missile_bunkers.reset()
 	boss.reset()
 	tracks.reset()
 	puffs.reset()
@@ -4074,6 +4101,7 @@ func _jump_to_boss() -> void:
 	var top := Level3DMap.to_map(_view_frame().position).y
 	soldiers.skip_to(top)
 	tanks.skip_to(top)
+	missile_bunkers.skip_to(top)
 	boats.skip_to(top)
 
 
@@ -4137,6 +4165,7 @@ func _screenshot_mode() -> void:
 	soldiers.verbose = guns.verbose
 	boats.verbose = guns.verbose
 	tanks.verbose = guns.verbose
+	missile_bunkers.verbose = guns.verbose
 	boss.verbose = guns.verbose
 	friends.verbose = guns.verbose
 	rescue.verbose = guns.verbose

@@ -495,7 +495,8 @@
     {"id": "soldier_stationary_31", "type": "SOLDIER_STATIONARY", "pos": [-6.573, -75.255], "difficulty": ["hard"]},
     {"id": "soldier_stationary_32", "type": "SOLDIER_STATIONARY", "pos": [-4.698, -60.721], "difficulty": ["hard"]},
     {"id": "soldier_stationary_33", "type": "SOLDIER_STATIONARY", "pos": [-6.573, -58.846], "difficulty": ["hard"]},
-    {"id": "soldier_stationary_34", "type": "SOLDIER_STATIONARY", "pos": [-12.199, -49.001], "difficulty": ["hard"]}
+    {"id": "soldier_stationary_34", "type": "SOLDIER_STATIONARY", "pos": [-12.199, -49.001], "difficulty": ["hard"]},
+    {"id": "cliff_missile_launcher_0", "type": "CLIFF_MISSILE_LAUNCHER", "pos": [-2.822, 19.683], "difficulty": ["normal", "hard"]}
   ],
   "objects": [
     {"id": "Bunker_0", "asset": "Bunker", "pos": [-8.400, 0.000, -5.660], "yaw": 0.000, "scale": 1.000, "entity": "gray_gun_12"},

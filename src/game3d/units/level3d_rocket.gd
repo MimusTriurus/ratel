@@ -823,6 +823,12 @@ func _drop_stage(rocket: Dictionary) -> void:
 	tween.tween_callback(spent.queue_free)
 
 
+# A puff of the trail for a rocket not the launcher's: the missile bunkers'
+# (level3d_missile_bunkers.gd).
+func trail(at: Vector3) -> void:
+	_trail(at)
+
+
 func _trail(at: Vector3) -> void:
 	var puff := _instance(_puff_mesh, "trail")
 	puff.global_position = at + Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1),
