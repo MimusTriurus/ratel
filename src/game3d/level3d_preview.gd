@@ -3179,6 +3179,7 @@ func _physics_process(delta: float) -> void:
 		if not gone[c]:
 			_loopholes(c)
 		_use_device(c, gone[c])
+		_nitro_flames(c, gone[c])
 	_tick_mines()
 	for c in crews:
 		if gone[c]:
@@ -3623,9 +3624,11 @@ func _gun_rate(c: Crew) -> float:
 
 # The device in the slot (docs/shop-plan.md), on its key's press -- the
 # settings' "device" for the first player, right Shift for the second:
-#   nitro      the jeep dashes ahead (Level3DBtr.dash), NITRO_RELOAD to the next
+#   nitro      the jeep dashes ahead (Level3DBtr.dash), NITRO_RELOAD to the next,
+#              flames out of its exhausts all the while (_nitro_flames)
 #   mines      a mine down behind the jeep, MINE_RELOAD to the next, MAX_MINES
-#              of a player's at once; it goes off under an enemy tank
+#              of a player's at once; it goes off under an enemy tank. The
+#              armoured pickup's shelf shows those not down (Level3DBtr.set_mines)
 #   airstrike  every enemy in the frame but the boss's tanks blown up, for
 #              AIRSTRIKE_PRICE, twice that the next call in the round and so
 #              on; the dead are worth no points, the prisoners and the
@@ -3693,7 +3696,22 @@ func _drop_mine(c: Crew) -> void:
 	mine.position = Vector3(at.x, (ground.height if ground.hit else at.y) + 0.035, at.z)
 	add_child(mine)
 	c.mines.append(mine)
+	c.btr.set_mines(MAX_MINES - c.mines.size())
 	Level3DAudio.play("pickup", mine.position)
+
+
+# While the nitro's dash lasts, flames out of every exhaust shown, one each
+# NITRO_FLAME_EVERY ticks: left where they are as it goes, they draw a trail
+# of fire behind it.
+const NITRO_FLAME_EVERY := 2
+const NITRO_FLAME_SIZE := 0.11
+const NITRO_FLAME_BACK := 0.06
+
+func _nitro_flames(c: Crew, gone: bool) -> void:
+	if gone or c.btr.dash <= 0 or c.btr.dash % NITRO_FLAME_EVERY != 0:
+		return
+	for at in c.btr.exhaust_mouths():
+		c.launcher.wreck_flame(at - c.btr.forward() * NITRO_FLAME_BACK, NITRO_FLAME_SIZE, 0.15)
 
 
 # Every mine: an enemy tank, or one of the boss's, over it sets it off.
@@ -3709,6 +3727,7 @@ func _tick_mines() -> void:
 				continue
 			c.mines.erase(mine)
 			mine.queue_free()
+			c.btr.set_mines(MAX_MINES - c.mines.size())
 			if found.has("tank"):
 				tanks.attack(found)
 			else:
@@ -3913,6 +3932,7 @@ func _start_round(jingle := false) -> void:
 		for mine in c.mines:
 			mine.queue_free()
 		c.mines.clear()
+		c.btr.set_mines(MAX_MINES)
 	_dress_crews()
 	_won_at = -1
 	_banners.clear()

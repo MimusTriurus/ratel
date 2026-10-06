@@ -178,6 +178,9 @@ const UPGRADE_PARTS := {"twin": "UpTwin", "armor": "UpArmor", "zip": "UpZip", "n
 # The armoured pickup's spares' rounds, under UpZip, by the launcher's step:
 # the first the missile's (step 1), and none at the grenade (step 0).
 const ZIP_ROUNDS := ["UpZipRound1", "UpZipRound2", "UpZipRound3"]
+# Its mines on the tailgate's shelf, under UpMines: as many shown as are not
+# down on the ground (set_mines).
+const SHELF_MINES := ["UpMine1", "UpMine2", "UpMine3"]
 # The twin gun's two bores, under UpTwin, and the radar's dish, which turns.
 const TWIN_BORES := ["UpTwinBoreL", "UpTwinBoreR"]
 const RADAR_DISH := "UpRadarDish"
@@ -341,6 +344,7 @@ var _radar_dish: Node3D
 # VEHICLES' stock: id -> the parts it hides; and the spares' rounds.
 var _stock_parts := {}
 var _zip_rounds: Array[Node3D] = []
+var _shelf_mines: Array[Node3D] = []
 # The nitro's dash: the ticks of it left. Ahead whatever the keys say, unless
 # they say somewhere, then that way; faster either way.
 var dash := 0
@@ -399,6 +403,10 @@ func _ready() -> void:
 		var spare := _model.find_child(prefix + name, true, false) as Node3D
 		if spare != null:
 			_zip_rounds.append(spare)
+	for name in SHELF_MINES:
+		var mine := _model.find_child(prefix + name, true, false) as Node3D
+		if mine != null:
+			_shelf_mines.append(mine)
 	set_weapon_level(0)
 	for spare in vehicle.get("spare_fits", []):
 		var fit := _hull.find_child(prefix + spare, true, false) as Node3D
@@ -530,6 +538,23 @@ func set_upgrades(ids: Array) -> void:
 func set_weapon_level(level: int) -> void:
 	for i in _zip_rounds.size():
 		_zip_rounds[i].visible = i + 1 == level
+
+
+# The mines on the shelf, where the vehicle has one: `count` of them, the
+# rest down on the ground. A mine that goes off comes back to it.
+func set_mines(count: int) -> void:
+	for i in _shelf_mines.size():
+		_shelf_mines[i].visible = i < count
+
+
+# Where the exhausts shown are, level space, and the way out of them: for the
+# nitro's flames (the preview's _nitro_flames).
+func exhaust_mouths() -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	for i in _exhausts.size():
+		if _exhaust_sources[i] == null or _exhaust_sources[i].is_visible_in_tree():
+			out.append(_exhausts[i].global_position)
+	return out
 
 
 # An upgrade's part, for the shop to show on trial; null for one the model
@@ -671,7 +696,7 @@ func puffs() -> Array:
 		if _exhaust_sources[i] != null and not _exhaust_sources[i].is_visible_in_tree():
 			continue
 		out.append({"key": "exhaust%d" % i, "kind": "exhaust", "at": _exhausts[i].global_position,
-				"back": -forward(), "size": EXHAUST_SIZE, "working": _rumble_level})
+				"back": -forward(), "size": EXHAUST_SIZE, "working": 1.0 if dash > 0 else _rumble_level})
 	for contact in wheel_tracks():
 		out.append({"key": contact.key, "kind": "dust", "at": contact.at, "size": DUST_SIZE})
 	return out
