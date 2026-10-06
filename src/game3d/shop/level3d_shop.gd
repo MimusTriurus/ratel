@@ -886,16 +886,25 @@ class Bay:
 	const PAD_SCALE := 0.65
 	const CIRCLE_AT := Vector3(1.7, 0.0, -1.6)        # with one player
 	const DUO_CIRCLE_AT := Vector3(0.2, 0.0, -2.0)    # with two: over his jeep
-	const HELI_SCALE := 0.7
-	const DUO_HELI_SCALE := 0.63
+	const HELI_SCALE := 0.85
+	const DUO_HELI_SCALE := 0.78
 	const HELI_YAW := deg_to_rad(20.0)
-	# The crates round the helicopter, off its circle's middle, mirrored for
-	# the second player's: [offset, size, yaw].
-	const CRATES_BY_HELI := [[Vector3(-0.9, 0.0, -0.9), Vector3(0.5, 0.36, 0.36), 0.1],
-			[Vector3(-0.85, 0.36, -0.92), Vector3(0.5, 0.36, 0.36), -0.08],
-			[Vector3(-0.3, 0.0, -1.2), Vector3(0.5, 0.36, 0.36), -0.15],
-			[Vector3(-1.35, 0.0, -0.4), Vector3(0.3, 0.42, 0.3), 0.0],
-			[Vector3(0.4, 0.0, -1.3), Vector3(0.3, 0.42, 0.3), 0.2]]
+	# The supply round the helicopter (jackal_supply.glb, its props life size
+	# and here as the units are, MODEL_SCALE, PROP_SCALE larger to be read by
+	# the jeep): off its circle's middle, mirrored for the second player's,
+	# each [prop, offset -- x, z in shop metres, y up in the prop's own,
+	# what it is stacked on -- yaw].
+	const SUPPLY := "res://resources/3d/jackal_supply.glb"
+	const PROP_SCALE := 1.3
+	const PREFIX_SUPPLY := "Supply_"
+	const CRATES_BY_HELI := [
+			["Pallet", Vector3(-0.95, 0.0, -0.85), 0.1],
+			["CrateLong", Vector3(-0.95, 0.15, -0.85), 0.1],
+			["AmmoBox", Vector3(-1.0, 0.57, -0.84), 0.45],
+			["CrateSquare", Vector3(-0.3, 0.0, -1.25), -0.2],
+			["Drum", Vector3(-1.45, 0.0, -0.3), 0.0],
+			["Drum", Vector3(-1.62, 0.0, -0.58), 0.6],
+			["AmmoBox", Vector3(0.42, 0.0, -1.3), 0.3]]
 	# The Littlebird as Level3DBtr.paint_model takes a vehicle: its olive
 	# body's hues, and the turn of BLUE that puts it on the blue jeep's.
 	const LITTLEBIRD := {"path": "res://resources/3d/jackal_littlebird.glb", "blue": Vector3(60.0, 100.0, 128.0)}
@@ -1059,8 +1068,8 @@ class Bay:
 
 	# The landing spot's markings laid on the concrete, its arrow from the
 	# circle to the jeep at `at`, which stands short of STOP; the Littlebird
-	# on the circle, side on, its nose to the frame's edge; the crates round
-	# it, stand-ins for now.
+	# on the circle, three quarters, its nose to the frame's edge, `side` -1
+	# mirroring it all for the second player; the supply round it.
 	func _land(root: Node3D, pad: Node3D, at: Vector3, side: float) -> Node3D:
 		# The circle at CIRCLE_AT off the jeep, mirrored for the second
 		# (`side` -1), the arrow on to him.
@@ -1075,10 +1084,7 @@ class Bay:
 		pad.position.y = -_box_of(pad, "Helipad_Pad").end.y * PAD_SCALE + 0.005
 		var middle := pad.transform * Vector3(circle.get_center().x, 0.0, circle.get_center().z)
 		middle.y = 0.0
-		var crates := []
-		for c in CRATES_BY_HELI:
-			crates.append([Vector3(c[0].x * side, c[0].y, c[0].z), c[1], c[2] * side])
-		_crates(root, middle, crates)
+		_crates(root, middle, CRATES_BY_HELI, side)
 		var heli: Node3D = (load(LITTLEBIRD.path) as PackedScene).instantiate()
 		root.add_child(heli)
 		heli.scale = Vector3.ONE * Level3DBtr.MODEL_SCALE * (HELI_SCALE if zoom != 1.0 else DUO_HELI_SCALE)
@@ -1109,18 +1115,25 @@ class Bay:
 		pad.free()
 		return colour.darkened(CONCRETE_DULL)
 
-	# The supply's crates, stand-ins for now: `crates` ([offset, size, yaw])
-	# off `at`, on the concrete.
-	static func _crates(root: Node3D, at: Vector3, crates: Array) -> void:
+	# The supply's props `crates` (CRATES_BY_HELI) off `at`, `side` -1
+	# mirroring them.
+	static func _crates(root: Node3D, at: Vector3, crates: Array, side: float) -> void:
+		var scene := load(SUPPLY) as PackedScene
+		if scene == null:
+			return
+		var props: Node = scene.instantiate()
+		var size := Level3DBtr.MODEL_SCALE * PROP_SCALE
 		for c in crates:
-			var crate := MeshInstance3D.new()
-			var box := BoxMesh.new()
-			box.size = c[1]
-			crate.mesh = box
-			crate.material_override = _matte(Color("4f5a35"))
-			root.add_child(crate)
-			crate.position = at + (c[0] as Vector3) + Vector3(0.0, (c[1] as Vector3).y * 0.5, 0.0)
-			crate.rotation.y = c[2]
+			var prop := props.find_child(PREFIX_SUPPLY + String(c[0]), true, false) as Node3D
+			if prop == null:
+				continue
+			var copy := prop.duplicate() as Node3D
+			root.add_child(copy)
+			var off: Vector3 = c[1]
+			copy.position = at + Vector3(off.x * side, off.y * size, off.z)
+			copy.rotation = Vector3(0.0, float(c[2]) * side, 0.0)
+			copy.scale = Vector3.ONE * size
+		props.free()
 
 	static func _box_of(pad: Node3D, name: String) -> AABB:
 		var mesh := pad.find_child(name, true, false) as MeshInstance3D
