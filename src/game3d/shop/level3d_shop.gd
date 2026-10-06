@@ -1,8 +1,9 @@
 # The shop between the 3D preview's rounds (docs/shop-plan.md, section 4):
 # once the mission's summary is closed (level3d_preview.gd, _round_won), the
 # stage goes to black and the shop comes up out of it, the stage paused
-# under it. The players' jeeps stand on turntables in a column at each of
-# the frame's edges, the first's on the left, the second's on the right,
+# under it. The players' jeeps stand on one concrete, a landing spot's paint
+# on it, the Littlebird that flew the supply in on its circle and crates
+# round it (Bay), in a column at each of the frame's edges, the first's on the left, the second's on the right,
 # with what they have bought on them; between them the goods, a matrix out
 # of Level3DShopCatalog:
 #
@@ -863,7 +864,6 @@ class Bay:
 	extends TextureRect
 
 	const GROUND := Color(0.24, 0.22, 0.19)
-	const TABLE := Color(0.36, 0.37, 0.35)
 	# Where the tables stand and the camera looks from, level metres: a jeep
 	# in the middle of either player's column, side on clear of the frame's
 	# edge and of the matrix, between the two places of his words.
@@ -871,12 +871,43 @@ class Bay:
 	const CAMERA_AT := Vector3(0.0, 3.8, 6.2)
 	const LOOK_AT := Vector3(0.0, -0.3, -0.9)
 	const FOV := 36.0
+	# One concrete, the stage's helipad's (Helipad in its glb) and duller
+	# (CONCRETE_DULL); on it, for each player, the pad's paint only, its
+	# circle off his jeep -- with one player CIRCLE_AT, behind it and
+	# towards the matrix, where there is room; with two DUO_CIRCLE_AT,
+	# straight behind, over him on the screen, the second's mirrored -- and
+	# its arrow on to him, his jeep at STOP; the paint PAD_SCALE of the stage's, the jeep being
+	# as it is. On the circle the Littlebird that brought the supply, in his
+	# jeep's paint, three quarters, its nose HELI_YAW round to the camera and
+	# the frame's edge, smaller with two players.
+	const STAGE := "res://resources/3d/jackal_stage1.glb"   # level3d_preview.gd's LEVEL_PATH
+	const PAD_DULL := 0.45
+	const CONCRETE_DULL := 0.25
+	const PAD_SCALE := 0.65
+	const CIRCLE_AT := Vector3(1.7, 0.0, -1.6)        # with one player
+	const DUO_CIRCLE_AT := Vector3(0.2, 0.0, -2.0)    # with two: over his jeep
+	const HELI_SCALE := 0.7
+	const DUO_HELI_SCALE := 0.63
+	const HELI_YAW := deg_to_rad(20.0)
+	# The crates round the helicopter, off its circle's middle, mirrored for
+	# the second player's: [offset, size, yaw].
+	const CRATES_BY_HELI := [[Vector3(-0.9, 0.0, -0.9), Vector3(0.5, 0.36, 0.36), 0.1],
+			[Vector3(-0.85, 0.36, -0.92), Vector3(0.5, 0.36, 0.36), -0.08],
+			[Vector3(-0.3, 0.0, -1.2), Vector3(0.5, 0.36, 0.36), -0.15],
+			[Vector3(-1.35, 0.0, -0.4), Vector3(0.3, 0.42, 0.3), 0.0],
+			[Vector3(0.4, 0.0, -1.3), Vector3(0.3, 0.42, 0.3), 0.2]]
+	# The Littlebird as Level3DBtr.paint_model takes a vehicle: its olive
+	# body's hues, and the turn of BLUE that puts it on the blue jeep's.
+	const LITTLEBIRD := {"path": "res://resources/3d/jackal_littlebird.glb", "blue": Vector3(60.0, 100.0, 128.0)}
 	# With one player: his jeep SOLO_ZOOM times as large, the camera that
 	# much nearer along the same line to it -- so it is seen as with two, the
 	# views and knees as they are -- and the lens shifted for the table's
 	# middle to stand at SOLO_AT in the 2048 x 1152 frame.
 	const SOLO_ZOOM := 1.4
-	const SOLO_AT := Vector2(620.0, 630.0)
+	const SOLO_AT := Vector2(470.0, 660.0)
+	# With two, the tables' middle this low: the first's pad's circle and
+	# its helicopter, behind him, want the room over him.
+	const DUO_Y := 760.0
 
 	var staged := false
 	var viewport: SubViewport
@@ -886,6 +917,7 @@ class Bay:
 	var _want: Array[float] = []
 	var _ghosts: Array = []         # per player, the meshes on trial
 	var _spots: Array = []          # per player, the line's end on his jeep, its frame; null for none
+	var _helis: Array = []          # per player, the helicopter by his jeep, in its paint
 	var _camera: Camera3D
 	var _time := 0.0
 	var zoom := 1.0                 # the jeep's size, as with two players
@@ -931,7 +963,7 @@ class Bay:
 		var plane := PlaneMesh.new()
 		plane.size = Vector2(40.0, 40.0)
 		ground.mesh = plane
-		ground.material_override = _matte(GROUND)
+		ground.material_override = _matte(_concrete())
 		root.add_child(ground)
 		var camera := Camera3D.new()
 		camera.fov = FOV
@@ -946,21 +978,21 @@ class Bay:
 			var table := Node3D.new()
 			table.position = first if i == 0 else Vector3(SPOT.x, SPOT.y, SPOT.z)
 			root.add_child(table)
-			var disc := MeshInstance3D.new()
-			var cylinder := CylinderMesh.new()
-			cylinder.top_radius = 1.0
-			cylinder.bottom_radius = 1.04
-			cylinder.height = 0.12
-			cylinder.radial_segments = 32
-			disc.mesh = cylinder
-			disc.position.y = 0.06
-			disc.material_override = _matte(TABLE)
-			table.add_child(disc)
+			# Each jeep at the STOP of a landing spot of his own on the
+			# concrete, the second's mirrored, the helicopter that brought
+			# the supply standing on its circle, in the jeep's paint, the
+			# crates round it.
+			var heli: Node3D = null
+			var pad := _helipad()
+			if pad != null:
+				root.add_child(pad)
+				heli = _land(root, pad, table.position, 1.0 if i == 0 else -1.0)
+			_helis.append(heli)
 			var jeep := Level3DBtr.new()
-			jeep.position.y = 0.12
 			table.add_child(jeep)
 			if i < paints.size():
 				jeep.paint(paints[i])
+				_paint_heli(i, paints[i])
 			_tables.append(table)
 			_jeeps.append(jeep)
 			_yaw.append(30.0)
@@ -979,10 +1011,120 @@ class Bay:
 		_want.clear()
 		_ghosts.clear()
 		_spots.clear()
+		_helis.clear()
 		_camera = null
 		zoom = 1.0
 		staged = false
 		visible = false
+
+	# A copy of the stage's helipad, its lamps and markings; null if the
+	# stage has none. The stage is made once for it, and only the pad kept.
+	static var _pad: PackedScene
+
+	static func _helipad() -> Node3D:
+		if _pad == null:
+			_pad = PackedScene.new()
+			var stage: Node = (load(STAGE) as PackedScene).instantiate()
+			var pad := stage.find_child("Helipad", true, false) as Node3D
+			if pad != null:
+				pad.get_parent().remove_child(pad)
+				pad.transform = Transform3D.IDENTITY
+				# Without its lamps, which stand out over the matrix and the
+				# swatches, and duller, the concrete and the paint, so that
+				# the frame's words stay what is read.
+				for beacon in pad.find_children("Beacon*", "", false, false):
+					pad.remove_child(beacon)
+					beacon.free()
+				# Its slab, apron and kerb hidden: the paint is on the one
+				# concrete, which is the slab's colour (_concrete).
+				for name in ["Helipad_Pad", "Helipad_Apron", "Helipad_Kerb"]:
+					var part := pad.find_child(name, true, false) as Node3D
+					if part != null:
+						part.visible = false
+				for node in pad.find_children("*", "MeshInstance3D", true, false):
+					var mesh := node as MeshInstance3D
+					for surface in mesh.mesh.get_surface_count():
+						var material := mesh.get_active_material(surface) as StandardMaterial3D
+						if material == null or material.resource_name.ends_with("Contour"):
+							continue
+						var dull := material.duplicate() as StandardMaterial3D
+						dull.albedo_color = material.albedo_color.darkened(PAD_DULL)
+						mesh.set_surface_override_material(surface, dull)
+				for node in pad.find_children("*", "", true, false):
+					node.owner = pad
+				_pad.pack(pad)
+				pad.free()
+			stage.free()
+		return _pad.instantiate() as Node3D if _pad.can_instantiate() else null
+
+	# The landing spot's markings laid on the concrete, its arrow from the
+	# circle to the jeep at `at`, which stands short of STOP; the Littlebird
+	# on the circle, side on, its nose to the frame's edge; the crates round
+	# it, stand-ins for now.
+	func _land(root: Node3D, pad: Node3D, at: Vector3, side: float) -> Node3D:
+		# The circle at CIRCLE_AT off the jeep, mirrored for the second
+		# (`side` -1), the arrow on to him.
+		var off := CIRCLE_AT if zoom != 1.0 else DUO_CIRCLE_AT
+		var target := at + Vector3(off.x * side, off.y, off.z)
+		var way := Vector3(at.x - target.x, 0.0, at.z - target.z).normalized()
+		pad.rotation.y = atan2(-way.z, way.x)
+		pad.scale = Vector3.ONE * PAD_SCALE
+		var circle := _box_of(pad, "Helipad_Disc")
+		pad.position = target - pad.basis * Vector3(circle.get_center().x, 0.0, circle.get_center().z)
+		# The paint down on the concrete, the slab's top at the ground's.
+		pad.position.y = -_box_of(pad, "Helipad_Pad").end.y * PAD_SCALE + 0.005
+		var middle := pad.transform * Vector3(circle.get_center().x, 0.0, circle.get_center().z)
+		middle.y = 0.0
+		var crates := []
+		for c in CRATES_BY_HELI:
+			crates.append([Vector3(c[0].x * side, c[0].y, c[0].z), c[1], c[2] * side])
+		_crates(root, middle, crates)
+		var heli: Node3D = (load(LITTLEBIRD.path) as PackedScene).instantiate()
+		root.add_child(heli)
+		heli.scale = Vector3.ONE * Level3DBtr.MODEL_SCALE * (HELI_SCALE if zoom != 1.0 else DUO_HELI_SCALE)
+		heli.position = middle
+		# Three quarters, its nose to the frame's edge and the camera.
+		heli.rotation.y = HELI_YAW * side
+		return heli
+
+	# Player `i`'s helicopter in his jeep's paint `id`, from its own colours.
+	func _paint_heli(i: int, id: String) -> void:
+		if i >= _helis.size() or _helis[i] == null:
+			return
+		var heli: Node3D = _helis[i]
+		for node in heli.find_children("*", "MeshInstance3D", true, false):
+			var mesh := node as MeshInstance3D
+			for surface in mesh.get_surface_override_material_count():
+				mesh.set_surface_override_material(surface, null)
+		Level3DBtr.paint_model(heli, LITTLEBIRD, id)
+
+	# The concrete everywhere: the pad's own, as dull.
+	static func _concrete() -> Color:
+		var pad := _helipad()
+		if pad == null:
+			return GROUND
+		var slab := pad.find_child("Helipad_Pad", true, false) as MeshInstance3D
+		var material := slab.get_active_material(0) as StandardMaterial3D if slab != null else null
+		var colour := material.albedo_color if material != null else GROUND
+		pad.free()
+		return colour.darkened(CONCRETE_DULL)
+
+	# The supply's crates, stand-ins for now: `crates` ([offset, size, yaw])
+	# off `at`, on the concrete.
+	static func _crates(root: Node3D, at: Vector3, crates: Array) -> void:
+		for c in crates:
+			var crate := MeshInstance3D.new()
+			var box := BoxMesh.new()
+			box.size = c[1]
+			crate.mesh = box
+			crate.material_override = _matte(Color("4f5a35"))
+			root.add_child(crate)
+			crate.position = at + (c[0] as Vector3) + Vector3(0.0, (c[1] as Vector3).y * 0.5, 0.0)
+			crate.rotation.y = c[2]
+
+	static func _box_of(pad: Node3D, name: String) -> AABB:
+		var mesh := pad.find_child(name, true, false) as MeshInstance3D
+		return mesh.transform * mesh.get_aabb() if mesh != null else AABB()
 
 	static func _matte(colour: Color) -> StandardMaterial3D:
 		var m := StandardMaterial3D.new()
@@ -1073,6 +1215,9 @@ class Bay:
 		_camera.v_offset = 0.0
 		var at := _camera.unproject_position(target)
 		var want := SOLO_AT / Vector2(2048.0, 1152.0) * Vector2(viewport.size)
+		if zoom == 1.0:
+			# With two the tables stay across, only lower.
+			want = Vector2(at.x, DUO_Y / 1152.0 * float(viewport.size.y))
 		var depth := (target - _camera.global_position).dot(-_camera.global_basis.z)
 		var per_pixel := 2.0 * depth * tan(deg_to_rad(_camera.fov) * 0.5) / float(viewport.size.y)
 		_camera.h_offset = (at.x - want.x) * per_pixel
@@ -1082,6 +1227,7 @@ class Bay:
 	func paint(i: int, id: String) -> void:
 		if i < _jeeps.size():
 			_jeeps[i].paint(id)
+		_paint_heli(i, id)
 
 	# Player `i`'s jeep to turn `degrees` off facing the camera, towards the
 	# frame's middle.
@@ -1093,8 +1239,7 @@ class Bay:
 		if not staged:
 			return
 		_time += delta
-		if zoom != 1.0:
-			_aim_solo()
+		_aim_solo()
 		var wave := 0.5 + 0.5 * sin(_time * Level3DShop.GHOST_PULSE)
 		var pulse := lerpf(Level3DShop.GHOST.x, Level3DShop.GHOST.y, wave)
 		for i in _tables.size():
