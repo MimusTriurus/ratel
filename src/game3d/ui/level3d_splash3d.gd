@@ -1003,7 +1003,9 @@ func place(centre: Vector2, width: float) -> void:
 	position = centre - size * 0.5
 	_rest = Rect2(position, size)
 	_focused = size * FOCUS_ZOOM
-	viewport.size = Vector2i(SCREEN)
+	# At the screen's pixels, not the frame's: blown up, the edges stepped
+	# (Level3DPixels).
+	viewport.size = Vector2i(SCREEN * Level3DPixels.scale(self))
 	# CAMERA_FOV across the focused frame's height, and the render as much
 	# wider and taller as SCREEN is than that frame.
 	camera.keep_aspect = Camera3D.KEEP_WIDTH

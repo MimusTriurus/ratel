@@ -1024,10 +1024,22 @@ class Bay:
 	var _time := 0.0
 	var zoom := 1.0                 # the jeep's size, as with two players
 
+	# The bay drawn at the screen's pixels (Level3DPixels) and SUPERSAMPLE
+	# times that a side, shrunk to it, the 4x MSAA's edges smoothed again:
+	# drawn at the frame's 2048 x 1152 and blown up to the screen, an edge's
+	# steps blown up with it, it showed a staircase on every model. `_rate`,
+	# the bay's pixels to the frame's.
+	const SUPERSAMPLE := 1.5
+	var _rate := 1.0
+
 	func _init() -> void:
 		set_anchors_preset(Control.PRESET_FULL_RECT)
+		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		stretch_mode = TextureRect.STRETCH_SCALE
+		# Its size the frame's, not the texture's, twice that: else the one
+		# grew with the other, and the texture after it, without end.
+		expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		viewport = SubViewport.new()
 		viewport.own_world_3d = true
 		viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_PARENT_VISIBLE
@@ -1040,12 +1052,20 @@ class Bay:
 
 	func _notification(what: int) -> void:
 		if what == NOTIFICATION_RESIZED and viewport != null:
-			viewport.size = Vector2i(maxi(int(size.x), 1), maxi(int(size.y), 1))
+			_fit()
+
+	# The render as large as `_rate` makes the frame, the screen's scale
+	# looked at again each frame: the window may change without the frame.
+	func _fit() -> void:
+		_rate = Level3DPixels.scale(self) * SUPERSAMPLE
+		var want := Vector2i(maxi(int(size.x * _rate), 1), maxi(int(size.y * _rate), 1))
+		if viewport.size != want:
+			viewport.size = want
 
 	# The bay for `players` jeeps, each in his paint (`paints`).
 	func stage(players: int, paints: Array[String]) -> void:
 		clear()
-		viewport.size = Vector2i(maxi(int(size.x), 1), maxi(int(size.y), 1))
+		_fit()
 		var root := Node3D.new()
 		viewport.add_child(root)
 		var environment := Environment.new()
@@ -1421,14 +1441,14 @@ class Bay:
 	func middle(i: int) -> Vector2:
 		if _camera == null or i >= _tables.size():
 			return Vector2.ZERO
-		return _camera.unproject_position(_tables[i].global_position + Vector3.UP * 0.12)
+		return _camera.unproject_position(_tables[i].global_position + Vector3.UP * 0.12) / _rate
 
 	# Where player `i`'s line ends, in the bay's pixels, as his jeep stands
 	# now; null for a tile with no part on the jeep.
 	func spot(i: int) -> Variant:
 		if _camera == null or i >= _spots.size() or _spots[i] == null:
 			return null
-		return _camera.unproject_position(_jeeps[i].global_transform * (_spots[i] as Vector3))
+		return _camera.unproject_position(_jeeps[i].global_transform * (_spots[i] as Vector3)) / _rate
 
 	# The lens shifted for the one table's middle to stand at SOLO_AT, at
 	# whatever size the frame is.
@@ -1464,6 +1484,7 @@ class Bay:
 	func _process(delta: float) -> void:
 		if not staged:
 			return
+		_fit()
 		_time += delta
 		_aim_solo()
 		var wave := 0.5 + 0.5 * sin(_time * Level3DShop.GHOST_PULSE)

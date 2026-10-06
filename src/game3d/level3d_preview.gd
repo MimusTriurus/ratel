@@ -2958,7 +2958,9 @@ func _screen_pass(layer_index: int, mode: int) -> ColorRect:
 # canvas items instead: the 3D is drawn at the window's size, and the HUD and
 # the menu, which were laid out on 2048x1152, are scaled up to it as before.
 # A resolution of its own (Level3DSettings.resolution) is Viewport's 3D
-# scaling, from the width the 3D actually has in the window.
+# scaling, from the width the 3D actually has in the window. Its edges are
+# smoothed by 4x MSAA, as the shop's and the cemetery's are: without, every
+# model's edge was a staircase.
 #
 # Not for a --shot, whose image stays 2048x1152 whatever window it was taken in.
 var _window_watched := false
@@ -2972,6 +2974,7 @@ func _apply_resolution() -> void:
 		window.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
 		window.size_changed.connect(_apply_resolution)
 	var viewport := get_viewport()
+	viewport.msaa_3d = Viewport.MSAA_4X
 	var wanted: Vector2i = Level3DSettings.RESOLUTIONS[settings.resolution]
 	var base := Vector2(window.content_scale_size)
 	var drawn := base.x * minf(window.size.x / base.x, window.size.y / base.y)
