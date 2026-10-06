@@ -85,8 +85,11 @@ const LAUNCHER_NAMES := ["GRENADE", "MISSILE", "MISSILE+", "MISSILE++"]
 #   view   degrees off nose-to-camera, towards the frame's middle; 180 is
 #          the tail (VIEW if not given)
 #   spot   where on the part the line ends, a fraction of its box in the
-#          jeep's frame -- x the nose, y up -- its middle if not given:
-#          the nitro's pipes at its tail, the ram cage's grille at its nose
+#          jeep's frame -- x the nose, y up, z across, 1 the side the first
+#          player's jeep shows the camera, the second's mirrored -- its
+#          middle if not given: the nitro's pipes at its tail, the ram
+#          cage's grille at its nose, the armour's near door, under its
+#          plates on the glass (y below 0)
 #   knee   for a part low on the jeep, which a line straight down would
 #          reach across the hull: the line goes down beside the jeep
 #          instead, this many pixels of the 2048 frame off the table's
@@ -99,8 +102,8 @@ const SHOWS := {
 	"launcher": {"view": 150.0},
 	"radar": {"view": 40.0},
 	"loopholes": {"view": 80.0},
-	"zip": {"view": 95.0},
-	"armor": {"view": 75.0},
+	"zip": {"view": 150.0, "spot": Vector3(1.0, 1.0, 0.5)},
+	"armor": {"view": 75.0, "spot": Vector3(0.45, -1.0, 1.0)},
 	"hull": {"view": 60.0, "knee": 240.0, "spot": Vector3(1.0, 0.5, 0.5)},
 	"nitro": {"view": 160.0, "knee": -265.0, "spot": Vector3(0.0, 0.5, 0.5)},
 	"mines": {"view": 155.0, "knee": -265.0},
@@ -110,10 +113,10 @@ const VIEW := 30.0
 const TURN_RATE := 3.0          # of the way to the view, per second
 const GHOST := Vector2(0.25, 0.7)   # a part on trial: its transparency, pulsing between
 const GHOST_PULSE := 4.0
-# The tile's words: a box in the player's column, over the jeep from
-# WORDS_TOP, coming up over WORDS_FADE seconds when the tile changes; the
-# line from it to the part, its dot.
-const WORDS_TOP := 104.0
+# The tile's words: a box in the player's column, over the jeep, its top in
+# line with the matrix's, coming up over WORDS_FADE seconds when the tile
+# changes; the line from it to the part, its dot.
+const WORDS_TOP := MATRIX.position.y
 const WORDS_PAD := 16.0
 const WORDS_FADE := 0.2
 const LINE := 4.0
@@ -867,7 +870,10 @@ class Bay:
 				box = b if first else box.merge(b)
 				first = false
 			if not first:
-				_spots[i] = box.position + box.size * fraction
+				# The second's jeep turns the other way, its other side to
+				# the camera.
+				var f := fraction if i == 0 else Vector3(fraction.x, fraction.y, 1.0 - fraction.z)
+				_spots[i] = box.position + box.size * f
 
 	# The middle of player `i`'s table, its top, in the bay's pixels: where
 	# SHOWS' knees are measured from.

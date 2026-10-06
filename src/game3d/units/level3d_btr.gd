@@ -94,8 +94,9 @@
 # the gun's bore, the nitro's pipes of the exhaust, the radar of the
 # turret's sight, the armour's slits of the glass, the Arena of the roof's
 # lamps -- which VEHICLES' "stock" hides while they show. Its spares' rack
-# holds a round of the launcher's step (`set_weapon_level`), none at the
-# grenade; its aerial is the airstrike's, there only once that is bought.
+# holds the round of the step the launcher falls back to with it, one down
+# (`set_weapon_level`): the mortar's mine at the grenade's step and the
+# missile's; its aerial is the airstrike's, there only once that is bought.
 class_name Level3DBtr
 extends Node3D
 
@@ -183,8 +184,10 @@ const UPGRADE_PARTS := {"twin": "UpTwin", "armor": "UpArmor", "zip": "UpZip", "n
 		"radar": "UpRadar", "mines": "UpMines", "loopholes": "UpLoopholes",
 		"airstrike": "UpAirstrike", "hull": "UpHull", "arena": "UpArena"}
 # The armoured pickup's spares' rounds, under UpZip, by the launcher's step:
-# the first the missile's (step 1), and none at the grenade (step 0).
+# the first the missile's (step 1). The grenade's (step 0), the mortar's
+# mine, the model has none of: RACK_MINE is made of the mortar's (_rack_mine).
 const ZIP_ROUNDS := ["UpZipRound1", "UpZipRound2", "UpZipRound3"]
+const RACK_MINE := "UpZipRound0"
 # Its mines on the tailgate's shelf, under UpMines: as many shown as are not
 # down on the ground (set_mines).
 const SHELF_MINES := ["UpMine1", "UpMine2", "UpMine3"]
@@ -425,6 +428,7 @@ func _ready() -> void:
 			if part != null:
 				parts.append(part)
 		_stock_parts[id] = parts
+	_zip_rounds.append(_rack_mine(prefix))
 	for name in ZIP_ROUNDS:
 		var spare := _model.find_child(prefix + name, true, false) as Node3D
 		if spare != null:
@@ -563,11 +567,61 @@ func set_upgrades(ids: Array) -> void:
 
 
 # The launcher's step (level3d_rocket.gd's weapon_level): the spares' rack
-# holds that step's round, and none at the grenade's. Shown only with the
-# rack, which set_upgrades shows.
+# holds the round of the step it falls back to, one down -- what the spares
+# are for -- the mortar's mine at the bottom, for the grenade's step as well
+# as the missile's. Shown only with the rack, which set_upgrades shows.
 func set_weapon_level(level: int) -> void:
+	var held := maxi(level - 1, 0)
 	for i in _zip_rounds.size():
-		_zip_rounds[i].visible = i + 1 == level
+		if _zip_rounds[i] != null:
+			_zip_rounds[i].visible = i == held
+
+
+# The mortar's mine on the spares' rack (RACK_MINE), where the vehicle has
+# both: a copy of the parts of the one in the mortar, its fins and fuze, laid
+# across the rack as the rounds lie and down on it. Null for a vehicle
+# without them.
+func _rack_mine(prefix: String) -> Node3D:
+	var rack := _upgrade_parts.get("zip") as Node3D
+	var lying := _model.find_child(prefix + ZIP_ROUNDS[0], true, false) as MeshInstance3D
+	var pivot := _model.find_child(prefix + String(Level3DLauncher.FITS[0].pivot).trim_prefix("BTR_"),
+			true, false) as Node3D
+	if rack == null or lying == null or pivot == null:
+		return null
+	var mine := Node3D.new()
+	mine.name = prefix + RACK_MINE
+	rack.add_child(mine)
+	# The parts keep their places in the pivot's frame, which the mine's is.
+	var parts := prefix + String(Level3DLauncher.FITS[0].round).trim_prefix("BTR_")
+	var box := AABB()
+	var first := true
+	for child in pivot.get_children():
+		var part := child as MeshInstance3D
+		if part == null or not String(part.name).begins_with(parts):
+			continue
+		var copy := part.duplicate() as MeshInstance3D
+		# Not the mortar's names, which the launcher finds its round by.
+		copy.name = String(part.name) + "Spare"
+		copy.visible = true
+		mine.add_child(copy)
+		var b := copy.transform * copy.get_aabb()
+		box = b if first else box.merge(b)
+		first = false
+	if first:
+		mine.free()
+		return null
+	# In the vehicle's frame: the pivot's, turned for the mine's length -- its
+	# +X, nose first -- to lie across the vehicle (+Z) as the rounds do, at
+	# the missile's middle, down on the rack.
+	var into := global_transform.affine_inverse()
+	var at := into * pivot.global_transform
+	var turned := Basis(Quaternion(at.basis.x.normalized(), Vector3.BACK)) * at.basis
+	var missile := (into * lying.global_transform) * lying.get_aabb()
+	var laid := Transform3D(turned, Vector3.ZERO) * box
+	var origin := missile.get_center() - laid.get_center()
+	origin.y = missile.position.y - laid.position.y
+	mine.global_transform = global_transform * Transform3D(turned, origin)
+	return mine
 
 
 # The mines on the shelf, where the vehicle has one: `count` of them, the

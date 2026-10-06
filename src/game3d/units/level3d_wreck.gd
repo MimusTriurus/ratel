@@ -44,9 +44,10 @@ const THROWN := [
 	["UpArenaHeadR", 4.2, 1.6, 13.0],
 ]
 # The same for the first shown of each set of names: the one round on the
-# spares' rack, the step's, and one of the mines left on the shelf.
+# spares' rack, the step below's (the mortar's mine, Level3DBtr.RACK_MINE,
+# for the first two), and one of the mines left on the shelf.
 const THROWN_ONE_OF := [
-	[["UpZipRound1", "UpZipRound2", "UpZipRound3"], 3.0, 1.3, 7.0],
+	[["UpZipRound0", "UpZipRound1", "UpZipRound2", "UpZipRound3"], 3.0, 1.3, 7.0],
 	[["UpMine1", "UpMine2", "UpMine3"], 3.4, 1.5, 12.0],
 ]
 const LAUNCHER_THROW := [3.6, 1.4, 9.0]
