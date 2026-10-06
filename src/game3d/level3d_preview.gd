@@ -1242,9 +1242,10 @@ func _toon(node: Node) -> void:
 
 # The contour, grown by a shader in place of the Solidify's shell the glbs
 # carry (Level3DHull, docs/cel-shading.md, section 5). --baked-contour keeps
-# the shell, to compare the two; --no-contour draws neither.
+# the shell, to compare the two; --no-contour draws neither. The shop's bay
+# keeps the shell too (Level3DShop.Bay.BAKED): it shows the models near.
 func _engine_contour(node: Node) -> void:
-	if node is MeshInstance3D:
+	if node is MeshInstance3D and not node.get_viewport().has_meta(Level3DShop.Bay.BAKED):
 		Level3DHull.apply(node, _contour_kind(node))
 
 

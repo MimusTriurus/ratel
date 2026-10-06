@@ -1032,6 +1032,8 @@ class Bay:
 		viewport.own_world_3d = true
 		viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_PARENT_VISIBLE
 		viewport.msaa_3d = Viewport.MSAA_4X
+		viewport.set_meta(Level3DGameOver.SOFT_LIGHT, true)
+		viewport.set_meta(BAKED, true)
 		add_child(viewport)
 		texture = viewport.get_texture()
 		visible = false
@@ -1112,6 +1114,7 @@ class Bay:
 			_want.append(Level3DShop.VIEW)
 			_ghosts.append([])
 			_spots.append(null)
+		_soften(root)
 		staged = true
 		visible = true
 
@@ -1227,6 +1230,40 @@ class Bay:
 		concrete.set_shader_parameter("heli", Vector2(heli.x, heli.z))
 		concrete.set_shader_parameter("bend", 0.0 if zoom != 1.0 else DUO_BEND)
 
+	# Seen near, larger than in the game, the bay is drawn as Blender draws
+	# the models: lit soft, face by face, not in the preview's two tones --
+	# a hood and the grille under it the same colour, the form flat -- and
+	# ringed by the glbs' own contour (BAKED), in metres, so as thick as the
+	# model is large; the engine's, so many pixels wide near or far, is a
+	# thread here, and grown thicker it came in through a bore's mouth. The
+	# viewport carries Level3DGameOver.SOFT_LIGHT, which the preview's _toon
+	# leaves alone, and BAKED, which its contour does; the materials are
+	# copies, Lambert's (_soften), the painted ones too, each paint after.
+	const BAKED := &"baked_contour"
+	var _soft := {}   # a material -> its soft copy
+
+	func _soften(node: Node) -> void:
+		var meshes := node.find_children("*", "MeshInstance3D", true, false)
+		if node is MeshInstance3D:
+			meshes.append(node)
+		for found in meshes:
+			var instance := found as MeshInstance3D
+			if instance.mesh == null:
+				continue
+			for surface in instance.mesh.get_surface_count():
+				var base := instance.get_active_material(surface) as BaseMaterial3D
+				if base == null or base.resource_name.ends_with("Contour") or _soft.values().has(base):
+					continue
+				if not _soft.has(base):
+					var copy := base.duplicate() as BaseMaterial3D
+					copy.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT
+					copy.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+					copy.roughness = 1.0
+					copy.metallic = 0.0
+					copy.metallic_specular = 0.0
+					_soft[base] = copy
+				instance.set_surface_override_material(surface, _soft[base])
+
 	# Player `i`'s helicopter in his jeep's paint `id`, from its own colours.
 	func _paint_heli(i: int, id: String) -> void:
 		if i >= _helis.size() or _helis[i] == null:
@@ -1237,6 +1274,7 @@ class Bay:
 			for surface in mesh.get_surface_override_material_count():
 				mesh.set_surface_override_material(surface, null)
 		Level3DBtr.paint_model(heli, LITTLEBIRD, id)
+		_soften(heli)
 
 	# The concrete everywhere: the pad's own, as dull.
 	static func _concrete() -> Color:
@@ -1414,6 +1452,7 @@ class Bay:
 	func paint(i: int, id: String) -> void:
 		if i < _jeeps.size():
 			_jeeps[i].paint(id)
+			_soften(_jeeps[i])
 		_paint_heli(i, id)
 
 	# Player `i`'s jeep to turn `degrees` off facing the camera, towards the
