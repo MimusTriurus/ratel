@@ -41,7 +41,10 @@
 class_name Level3DSplash3D
 extends TextureRect
 
-const JEEP := "res://resources/3d/jackal_jeep.glb"
+# The jeeps are the preview's vehicle (Level3DBtr.chosen): the armoured
+# pickup, or the jeep under --jeep. Not the BTR: under --btr they are the
+# armoured pickup still.
+const KINDS := ["armored", "jeep"]
 # The palms are the stage's: these meshes' first instances in its glb.
 const STAGE := "res://resources/3d/jackal_stage1.glb"
 const PALM_MESHES := ["Palm", "Palm_001", "Palm_002", "Palm_003"]
@@ -242,15 +245,14 @@ void light() {
 # on anything else they go dark; on hard the turrets swing round on the
 # camera, on normal they look out to either side.
 #
-# The lamps are the hull's Jeep_White surface, the pair of headlights at its
-# nose: their paint glows (TOON_SHADER's `glow`) and over each a flare and a
+# The lamps are the hull's LAMP_PAINTS surface, the pair of headlights at its
+# nose, one either side (_lamps_at): their paint glows (TOON_SHADER's `glow`) and over each a flare and a
 # spot light come up, the spot lighting a pool on the ground before the jeep
 # that the two-tone light cuts in bands (TOON_SHADER, ATTENUATION). Coming on
 # they flicker once, as a lamp catching does; going off they fade quickly.
-const LAMP_SURFACE := "Jeep_White"
+const LAMP_PAINTS := {"jeep": "Jeep_White", "armored": "Armored_Lamp"}
 const LAMP_COLOUR := Color(1.0, 0.9, 0.68)
 const LAMP_GLOW := 2.4
-const LAMPS_AT := [Vector3(-0.78, 0.8, 1.8), Vector3(0.78, 0.8, 1.8)]
 const LAMP_ON := 0.25          # seconds to come up
 const LAMP_OFF := 0.15         # seconds to go down
 const FLARE_SIZE := 1.6        # metres across at full
@@ -345,9 +347,8 @@ const LAUNCH_REV := 0.25
 const LAUNCH_ACCEL := 9.0
 const LAUNCH_PASS := Vector2(4.5, 8.0)
 const LAUNCH_SQUAT := -0.045      # rad, nose up
-const WHEEL_RADIUS := 0.44
-const WHEELS := ["Jeep_Wheel_L1", "Jeep_Wheel_L2", "Jeep_Wheel_R1", "Jeep_Wheel_R2"]
-const REAR_WHEELS := ["Jeep_Wheel_L2", "Jeep_Wheel_R2"]
+const WHEELS := ["Wheel_L1", "Wheel_L2", "Wheel_R1", "Wheel_R2"]   # without the prefix
+const REAR_WHEELS := ["Wheel_L2", "Wheel_R2"]
 const WHEEL_DUST_STEP := 0.6
 const WHEEL_CLOUD := Vector2(0.7, 0.45)   # radius, life, as shares of a wind cloud's
 
@@ -883,6 +884,10 @@ void sky() {
 var viewport: SubViewport
 var camera: Camera3D
 var jeeps: Array[Node3D] = []
+# Which vehicle the jeeps are (KINDS), and its Level3DBtr.VEHICLES' entry:
+# its glb, its parts' prefix, its wheels' radius.
+var kind: String = "jeep" if Level3DBtr.chosen() == "jeep" else "armored"
+var vehicle: Dictionary = Level3DBtr.VEHICLES[kind]
 
 var _rigs: Array[Dictionary] = []    # per jeep, what the menu moves (_rig)
 var _rest := Rect2()                 # where place put the frame
@@ -1246,8 +1251,8 @@ func _dress(mesh_instance: MeshInstance3D) -> void:
 
 
 func _jeep() -> Node3D:
-	var jeep: Node3D = (load(JEEP) as PackedScene).instantiate()
-	var prefix := "Jeep_"
+	var jeep: Node3D = (load(vehicle.path) as PackedScene).instantiate()
+	var prefix: String = vehicle.prefix
 	for fit in HIDDEN_FITS:
 		var node := jeep.find_child(prefix + fit, true, false) as Node3D
 		if node != null:
@@ -1737,8 +1742,9 @@ func show_menu(lit: int, hard: bool) -> void:
 # What moves on a jeep: its hull, its turret, its lamps' paint, flares and
 # spots, and their state.
 func _rig(jeep: Node3D, side: float) -> Dictionary:
-	var hull := jeep.find_child("Jeep_Hull", true, false) as MeshInstance3D
-	var turret := jeep.find_child("Jeep_TurretPivot", true, false) as Node3D
+	var prefix: String = vehicle.prefix
+	var hull := jeep.find_child(prefix + "Hull", true, false) as MeshInstance3D
+	var turret := jeep.find_child(prefix + "TurretPivot", true, false) as Node3D
 	var rig := {
 		"jeep": jeep, "jeep_rest": jeep.transform,
 		"hull": hull, "rest": hull.transform, "turret": turret, "turret_rest": turret.transform,
@@ -1754,15 +1760,17 @@ func _rig(jeep: Node3D, side: float) -> Dictionary:
 		"start": Voice.new(ENGINE_START, self), "idle": Voice.new(ENGINE_LOOP, self),
 	}
 	for name in WHEELS:
-		var wheel := jeep.find_child(name, true, false) as Node3D
+		var wheel := jeep.find_child(prefix + name, true, false) as Node3D
 		if wheel != null:
 			rig.wheels.append(wheel)
 			rig.wheel_rests.append(wheel.transform)
 			if name in REAR_WHEELS:
 				rig.rear.append(wheel)
+	var lamps_at: Array[Vector3] = []
 	for surface in hull.mesh.get_surface_count():
 		var paint := hull.mesh.surface_get_material(surface)
-		if paint != null and String(paint.resource_name) == LAMP_SURFACE:
+		if paint != null and String(paint.resource_name) == LAMP_PAINTS[kind]:
+			lamps_at = _lamps_at(hull.mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX])
 			# A copy of its own, since each jeep's lamps glow on their own.
 			var lamp := (hull.get_surface_override_material(surface) as ShaderMaterial).duplicate() as ShaderMaterial
 			hull.set_surface_override_material(surface, lamp)
@@ -1771,7 +1779,7 @@ func _rig(jeep: Node3D, side: float) -> Dictionary:
 	quad.size = Vector2.ONE
 	var shader := Shader.new()
 	shader.code = FLARE_SHADER
-	for at in LAMPS_AT:
+	for at in lamps_at:
 		var flare := MeshInstance3D.new()
 		var m := ShaderMaterial.new()
 		m.shader = shader
@@ -1796,6 +1804,23 @@ func _rig(jeep: Node3D, side: float) -> Dictionary:
 		hull.add_child(spot)
 		rig.spots.append(spot)
 	return rig
+
+
+# Where the lamps' flares and spots stand: the middle of the lamps' paint
+# either side, at its front -- each vehicle's own headlights.
+func _lamps_at(points: PackedVector3Array) -> Array[Vector3]:
+	var at: Array[Vector3] = []
+	for side in [-1.0, 1.0]:
+		var box := AABB()
+		var first := true
+		for point in points:
+			if signf(point.x) != side:
+				continue
+			box = AABB(point, Vector3.ZERO) if first else box.expand(point)
+			first = false
+		if not first:
+			at.append(Vector3(box.get_center().x, box.get_center().y, box.end.z))
+	return at
 
 
 func _drive_rigs(delta: float) -> void:
@@ -2031,7 +2056,7 @@ func _drive_off(rig: Dictionary, delta: float) -> void:
 	(rig.jeep as Node3D).transform = Transform3D(Basis(Vector3.UP, yaw), at)
 	for k in rig.wheels.size():
 		var wheel_rest: Transform3D = rig.wheel_rests[k]
-		(rig.wheels[k] as Node3D).transform = Transform3D(wheel_rest.basis * Basis(Vector3.RIGHT, run / WHEEL_RADIUS),
+		(rig.wheels[k] as Node3D).transform = Transform3D(wheel_rest.basis * Basis(Vector3.RIGHT, run / float(vehicle.wheel_radius)),
 				wheel_rest.origin)
 	rig.dust_run += step
 	var dust_step := _wheel_step(WHEEL_DUST_STEP)

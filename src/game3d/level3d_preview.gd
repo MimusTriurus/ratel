@@ -171,10 +171,11 @@
 # apply to the title screen's games and to R as well as to the first.
 # docs/preview3d-options.md lists every option.
 #
-# The vehicle is the jeep; --btr, with or without --shot, drives the BTR
-# instead (level3d_btr.gd, VEHICLES): the same driving, stiffer springs and
-# no aerials. --armored drives the armoured pickup: the jeep's springs, turret
-# and launchers on a bigger body, and the shop's upgrades its own way.
+# The vehicle is the armoured pickup (level3d_btr.gd, VEHICLES, chosen), and
+# the title's splash shows it too; --jeep, with or without --shot, drives the
+# jeep instead: the same springs, turret and launchers on a smaller body, and
+# the shop's upgrades its own way. --btr drives the BTR: the same driving,
+# stiffer springs and no aerials.
 #
 # The soldiers and the prisoners are Kolos Studios' low poly soldier
 # (level3d_soldiers.gd and level3d_friends.gd, MODEL); --old-soldiers draws
@@ -628,7 +629,8 @@ class KeySides:
 var _mapping := ButtonMapping.new()
 var _mapping_2: ButtonMapping
 
-# The second player's colours: Main.players_blue's turn of the green.
+# The second player's colour: Main.players_blue's turn of the green, here of
+# CREW_COLOUR. Its vehicle's is the vehicle's own (Level3DBtr.VEHICLES' blue).
 const BLUE_HUES := Vector3(80.0, 130.0, 100.0)
 # The vehicle's lit olive (BTR_OliveLight), the colour the score and the points
 # for a prisoner show in; the second's turned as its vehicle is.
@@ -657,7 +659,8 @@ func _add_crew() -> Crew:
 	c.btr.ground = _hull_ground_at
 	add_child(c.btr)
 	if c.index > 0:
-		c.btr.tint(BLUE_HUES.x, BLUE_HUES.y, BLUE_HUES.z)
+		var blue: Vector3 = c.btr.vehicle.blue
+		c.btr.tint(blue.x, blue.y, blue.z)
 		c.input = HumanInput.new(_mapping_2)
 		c.input.arrows = false
 	Level3DAudio.attach_loop("btr_idle", c.btr)
@@ -2469,7 +2472,7 @@ func _render_icons() -> void:
 	_icon_pixels = crews[0].hud.icon_pixels()
 	_icon_run += 1
 	var run := _icon_run
-	var rendered: Dictionary = await _icons.render_all(btr.vehicle, _icon_pixels, BLUE_HUES)
+	var rendered: Dictionary = await _icons.render_all(btr.vehicle, _icon_pixels, btr.vehicle.blue)
 	if run == _icon_run:
 		for c in crews:
 			c.hud.icons = rendered
@@ -4020,7 +4023,7 @@ func _open_shop(at_once := false) -> void:
 	_shop.settings = settings
 	_shop.inputs.assign(crews.map(func(c: Crew): return c.input))
 	_shop.colours.assign(crews.map(func(c: Crew): return c.hud.colour))
-	_shop.tints.assign(crews.map(func(c: Crew): return BLUE_HUES if c.index > 0 else Vector3.ZERO))
+	_shop.tints.assign(crews.map(func(c: Crew): return c.btr.vehicle.blue if c.index > 0 else Vector3.ZERO))
 	_shop.icons = crews[0].hud.icons
 	get_tree().paused = true
 	Level3DAudio.fade_music(Level3DShop.FADE_OUT)
@@ -4231,7 +4234,7 @@ func _screenshot_mode() -> void:
 		args.remove_at(immortal)
 	# Level3DSoldiers, Level3DBtr and Level3DAudio read these for themselves;
 	# they are not waypoints.
-	for own in ["--fade-corpses", "--btr", "--armored", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
+	for own in ["--fade-corpses", "--btr", "--jeep", "--armored", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
 			"--no-wind", "--wind-steps", "--spots", "--audio-debug", "--editor", "--no-chinook", "--boss",
 			"--landing-dust", "--old-soldiers"]:
 		var at := args.find(own)

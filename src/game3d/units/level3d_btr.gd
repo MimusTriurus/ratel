@@ -64,7 +64,7 @@
 # does. The scene is still asked for the ground's height, to sit and tilt the
 # hull on.
 #
-# The same code drives the jeep, the default -- --btr for the BTR --
+# The same code drives the jeep -- --jeep; --btr for the BTR --
 # resources/3d/jackal_jeep.glb,
 # built from jackal_jeep_lowpoly.blend with the BTR's part names, Jeep_ for
 # BTR_, so the gun and the launchers read it the same way. VEHICLES says what
@@ -87,7 +87,7 @@
 # in turn (`cycle_muzzle`), the armour, the spares' box, the nitro, the radar
 # with its dish turning, the mines, the rifles' rests. The BTR has none.
 #
-# --armored drives the armoured pickup instead, resources/3d/jackal_armored.glb
+# The default is the armoured pickup (`chosen`), resources/3d/jackal_armored.glb
 # from jackal_armored_lowpoly.blend: the jeep's turret and launchers on a
 # bigger body, Armored_ for Jeep_, and an upgrades' set of its own. Most of
 # its upgrades stand in the place of a part of its own -- the twin gun of
@@ -138,13 +138,18 @@ const MODEL_SCALE := 0.31
 #                  model, for the jeep, which has no pipe to show
 #   stock          the model's own parts an upgrade stands in the place of:
 #                  id -> names without the prefix, hidden while it shows
+#   blue           the second player's colours (tint): the hues, degrees,
+#                  from x to y turned by z -- the jeep's and the BTR's green,
+#                  Main.players_blue's turn of it, or the armoured pickup's
+#                  olive, turned to the same blue
 const VEHICLES := {
 	"btr": {"path": "res://resources/3d/ratel_btr.glb", "prefix": "BTR_", "scale": MODEL_SCALE,
 			"facing": 0.0, "axles": 3, "wheel_radius": 0.66, "wheelbase": 3.06,
 			"nose": 3.5, "half_width": 1.3, "body": [-2.45, 3.74, 1.83], "ramp_axles": [2.25, -1.52],
 			# BodyPitch, verbatim: zeta 0.65 at omega 21.9.
 			"pitch": [0.030, 480.0, 28.5], "roll": [0.0, 480.0, 28.5], "kick": 0.0,
-			"rumble": 0.0, "aerials": [], "exhausts": ["ExhaustTip1", "ExhaustTip-1"]},
+			"rumble": 0.0, "aerials": [], "exhausts": ["ExhaustTip1", "ExhaustTip-1"],
+			"blue": Vector3(80.0, 130.0, 100.0)},
 	"jeep": {"path": "res://resources/3d/jackal_jeep.glb", "prefix": "Jeep_", "scale": 0.375,
 			"facing": PI / 2.0, "axles": 2, "wheel_radius": 0.44, "wheelbase": 2.3,
 			"nose": 2.3, "half_width": 1.0, "body": [-1.97, 2.01, 1.33], "ramp_axles": [1.2, -1.1],
@@ -154,7 +159,7 @@ const VEHICLES := {
 			"rumble": 1.6 * Level3DMap.PX, "aerials": ["AerialL", "AerialR"],
 			"spare_fits": ["GradBase", "TubeLauncherBase"],
 			# Under the tail, on the right, where a jeep's pipe ends.
-			"exhausts": [Vector3(-0.6, 0.4, -2.0)]},
+			"exhausts": [Vector3(-0.6, 0.4, -2.0)], "blue": Vector3(80.0, 130.0, 100.0)},
 	# The jeep's springs, wheel for wheel; its scale puts its 3.8 m body at the
 	# jeep's sprite's 1.35 m length, a little narrower than the jeep.
 	"armored": {"path": "res://resources/3d/jackal_armored.glb", "prefix": "Armored_", "scale": 0.36,
@@ -165,7 +170,9 @@ const VEHICLES := {
 			"spare_fits": ["GradBase", "TubeLauncherBase"],
 			"exhausts": ["ExhaustTip", "UpNitroTipL", "UpNitroTipR"],
 			"stock": {"twin": ["GunBore"], "nitro": ["Exhaust"], "radar": ["TurretSight"],
-					"armor": ["Glass"], "arena": ["RoofLamps"]}},
+					"armor": ["Glass"], "arena": ["RoofLamps"]},
+			# Its olive is at 55 degrees, the canvas, lamps and amber below 50.
+			"blue": Vector3(50.0, 80.0, 150.0)},
 }
 # The shop's upgrades that show on the vehicle: the shop's id (Level3DShopCatalog)
 # -> its part's root in the model, without the prefix -- jackal_jeep.py's
@@ -363,9 +370,15 @@ var _arena_heads: Array[Node3D] = []
 var dash := 0
 
 
-func _ready() -> void:
+# The vehicle the preview drives, VEHICLES' key: the armoured pickup unless
+# --jeep or --btr says otherwise. --armored, which once chose it, still may.
+static func chosen() -> String:
 	var args := OS.get_cmdline_user_args()
-	vehicle = VEHICLES["btr" if args.has("--btr") else "armored" if args.has("--armored") else "jeep"]
+	return "btr" if args.has("--btr") else "jeep" if args.has("--jeep") else "armored"
+
+
+func _ready() -> void:
+	vehicle = VEHICLES[chosen()]
 	model_scale = vehicle.scale
 	var prefix: String = vehicle.prefix
 	var path: String = vehicle.path

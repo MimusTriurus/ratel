@@ -21,7 +21,8 @@ extends Level3DSplash3D
 const CHINOOK := "res://resources/3d/jackal_chinook.glb"
 # The Chinook is at the BTR's scale in the preview, Level3DChinook.MODEL_SCALE,
 # and the jeep at Level3DBtr.VEHICLES' 0.375; here the jeep is 1:1, and the
-# Chinook the same against it: 24 m from rotor tip to rotor tip.
+# Chinook the same against it: 24 m from rotor tip to rotor tip. The armoured
+# pickup, at 0.36 there, is 4% bigger against it here, which is let be.
 const CHINOOK_SCALE := Level3DChinook.MODEL_SCALE / 0.375
 # Where it sets down, nose away from the camera: in the middle of the sun,
 # three times as far as the jeeps -- the near ground ends at 67 m
@@ -107,9 +108,6 @@ const ROCK_RIM := 0.7
 const APPROACH := 4.0
 const FIRST_PLACE := 1.0
 const CABIN_GAP := 0.4
-const JEEP_LENGTH := 3.98      # Level3DBtr.VEHICLES' jeep body, 1:1
-const JEEP_HALF_WIDTH := 1.33
-const AXLES := Vector2(1.2, -1.1)  # front, rear, along the jeep (ramp_axles)
 # Their heading: the way between the points HEADING_SPAN metres either side of
 # them along their way, fewer behind them as they set off -- the window
 # clamped at the start turned them by the first 0.3 m of the U-turn, five
@@ -243,6 +241,12 @@ var _close_at := INF         # when the ramp goes up, once the jeeps are in (_fl
 var _lift_at := INF          # when it lifts, once it is shut and the stage built (_flight)
 var _game_ready := false
 var _plans: Array[Dictionary] = []   # per jeep, its way in (_plan)
+# The jeeps' size, 1:1, from Level3DBtr.VEHICLES' entry for them (vehicle):
+# its body's length and half its width, and its front and rear axles along it
+# (ramp_axles).
+var _length: float = vehicle.body[1] - vehicle.body[0]
+var _half_width: float = vehicle.body[2]
+var _axles := Vector2(vehicle.ramp_axles[0], vehicle.ramp_axles[1])
 
 
 func _build() -> void:
@@ -487,7 +491,7 @@ func _plan(rig: Dictionary, index: int) -> Dictionary:
 		if signf(at.x) == side:
 			clear = maxf(clear, absf(at.x) + entry[1])
 			behind = minf(behind, at.z - entry[1])
-	var out_x := side * (clear + ROCK_RIM + JEEP_HALF_WIDTH)
+	var out_x := side * (clear + ROCK_RIM + _half_width)
 	var points := PackedVector2Array()
 	# The U-turn: a half circle and the toe, out to its side, ending on -Z at
 	# out_x.
@@ -504,7 +508,7 @@ func _plan(rig: Dictionary, index: int) -> Dictionary:
 		points.append(centre - across * radius * cos(a) + ahead * radius * sin(a))
 	var turned := points[points.size() - 1]
 	# Straight on past the rocks.
-	var past := Vector2(turned.x, behind - ROCK_RIM - JEEP_HALF_WIDTH)
+	var past := Vector2(turned.x, behind - ROCK_RIM - _half_width)
 	points.append(past)
 	# In onto the Chinook's line, and up it.
 	var lip_z := LANDING.z + (Level3DChinook.HINGE_BACK + Level3DChinook.RAMP_LEN
@@ -516,7 +520,7 @@ func _plan(rig: Dictionary, index: int) -> Dictionary:
 		var w := 1.0 - u
 		points.append(past * w * w * w + (past + Vector2(0.0, -bend)) * 3.0 * w * w * u
 				+ (line + Vector2(0.0, bend)) * 3.0 * w * u * u + line * u * u * u)
-	var place := FIRST_PLACE - index * (JEEP_LENGTH / CHINOOK_SCALE + CABIN_GAP)
+	var place := FIRST_PLACE - index * (_length / CHINOOK_SCALE + CABIN_GAP)
 	var end := Vector2(LANDING.x, LANDING.z - place * CHINOOK_SCALE)
 	points.append(Vector2(LANDING.x, lip_z))
 	points.append(end)
@@ -708,7 +712,7 @@ func _drive_off(rig: Dictionary, delta: float) -> void:
 		if ahead.going and float(ahead.run) < float(ahead.plan.length) - 0.01:
 			var between := (ahead.jeep as Node3D).position - (rig.jeep as Node3D).position
 			between.y = 0.0
-			most = minf(most, maxf(between.length() - JEEP_LENGTH - SPACING, 0.0) * 2.0)
+			most = minf(most, maxf(between.length() - _length - SPACING, 0.0) * 2.0)
 	rig.speed = minf(float(rig.speed) + DRIVE_ACCEL * delta, most)
 	var step: float = minf(float(rig.speed) * delta, length - run)
 	run += step
@@ -721,16 +725,16 @@ func _drive_off(rig: Dictionary, delta: float) -> void:
 	yaw = lerp_angle(stood, yaw, smoothstep(0.0, HEADING_SPAN, run))
 	var ahead := Vector3(sin(yaw), 0.0, cos(yaw))
 	var centre := Vector3(at.x, 0.0, at.y)
-	var front := _surface(centre + ahead * AXLES.x)
-	var rear := _surface(centre + ahead * AXLES.y)
-	var wheelbase := AXLES.x - AXLES.y
-	centre.y = rear + (front - rear) * -AXLES.y / wheelbase
+	var front := _surface(centre + ahead * _axles.x)
+	var rear := _surface(centre + ahead * _axles.y)
+	var wheelbase := _axles.x - _axles.y
+	centre.y = rear + (front - rear) * -_axles.y / wheelbase
 	var pitch := atan2(front - rear, wheelbase)
 	var jeep := rig.jeep as Node3D
 	jeep.transform = Transform3D(Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -pitch), centre)
 	for k in rig.wheels.size():
 		var wheel_rest: Transform3D = rig.wheel_rests[k]
-		(rig.wheels[k] as Node3D).transform = Transform3D(wheel_rest.basis * Basis(Vector3.RIGHT, run / WHEEL_RADIUS),
+		(rig.wheels[k] as Node3D).transform = Transform3D(wheel_rest.basis * Basis(Vector3.RIGHT, run / float(vehicle.wheel_radius)),
 				wheel_rest.origin)
 	if run < float(plan.lip) - 1.0:
 		rig.dust_run += step
