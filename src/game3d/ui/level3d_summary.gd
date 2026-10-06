@@ -33,7 +33,10 @@
 # On the HUD's layer and in its font, as the HUD is (Level3DHud), on a plate
 # ringed as its icons are, white with a thin black line, across the frame
 # and see-through (draw_plate, which the banners' plates are as well): the
-# boss's burning wrecks show through it.
+# boss's burning wrecks show through it. Or (`plate` off, `top` set) over the
+# mission's end (Level3DVictoryScreen) with no plate, at the top of the
+# frame: the scene is the picture, and the words stand over its sky and its
+# jungle.
 class_name Level3DSummary
 extends Control
 
@@ -66,6 +69,10 @@ var scale_factor := 1.0
 var shown := false
 # Called once it has faded out after a press -- not by `clear`.
 var closed: Callable
+# The plate under it, and where its top is, px at 100% from the frame's top;
+# -1 for the middle of the frame.
+var plate := true
+var top := -1.0
 
 var _sound: AudioStreamPlayer
 var _lost_layer: Node2D
@@ -227,11 +234,14 @@ func _draw() -> void:
 	for line in lines:
 		width = maxf(width, _width(line, g))
 	var height := tg + gap + rows * (icon_h + gap) + lines.size() * (g + gap) + pg
-	var plate := Rect2((size - Vector2(width, height)) * 0.5 - PADDING * s, Vector2(width, height) + PADDING * s * 2.0)
-	plate.position = plate.position.round()
-	draw_plate(self, plate, s)
+	var box := Rect2((size - Vector2(width, height)) * 0.5 - PADDING * s, Vector2(width, height) + PADDING * s * 2.0)
+	if top >= 0.0:
+		box.position.y = roundf(top * s) - PADDING.y * s
+	box.position = box.position.round()
+	if plate:
+		draw_plate(self, box, s)
 
-	var y := plate.position.y + PADDING.y * s
+	var y := box.position.y + PADDING.y * s
 	# The title, typed.
 	var typed := TITLE.substr(0, mini(int(_time / TYPE_TIME) + 1, TITLE.length()))
 	_text(typed, roundf(size.x * 0.5 - Level3DFont.width(TITLE, tg) * 0.5), y, tg, 0, Color.WHITE)

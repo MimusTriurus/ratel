@@ -179,6 +179,85 @@ the game over's CONTINUE goes back to.
 longer give a life at 20000 and every 50000 as the game's `PlayerState` does
 (`_add_points`): a deliberate departure. A run starts with the game's four.
 
+## The mission's end
+
+Made, not yet in the game: the boss beaten, the mission is to end on a scene
+of its own (`Level3DVictory`, `src/game3d/ui/level3d_victory.gd`) rather
+than on the summary's plate over the stage, which the preview still shows.
+The arena at the top of stage 1 seen from behind and over the players'
+jeeps, turned in towards its middle so that a flank shows, and up the
+clearing the four boss tanks burnt black where they stopped, smoking and
+burning, the jungle round it all. The picture the user chose out of Blender
+renders: the evening's light, the camera high over the shoulder, the jeeps
+turned in (`docs/renders/victory_1p.png`, `victory_2p.png`; in Godot,
+`victory_godot_1p.png`, `victory_godot_2p.png`). Nothing in the preview
+opens it yet; `tools/victory_shot.gd` shoots it on its own
+(`docs/preview3d-options.md`).
+
+- **The scene** is built from `resources/3d/jackal_victory.glb`, which
+  `resources/3d/jackal_victory.blend` exports (`export_victory()` in its text
+  block `jackal_victory.py`; `build_victory()` makes the Blender scene, with
+  the game's glbs imported in it, to render). In the glb: the ground, the
+  tanks' tracks, the soot and the craters in its vertices' colours; the four
+  wrecks, each the boss's tank posed in Blender -- Breach's end, Breached,
+  Death's end, then its turret thrown further than Death throws it, onto
+  the deck, off onto the sand, or left on its ring with the gun down -- and
+  baked, burnt (`CHAR` 0.32 of the sRGB colour); the rocks, the
+  debris, a camera for one player and one for two. And markers for what the
+  preview makes: each player's jeep (`Car_Solo`, `Car_1P`, `Car_2P`), the
+  smoke's and the fires' (`Smoke_<k>`, its scale the column's height;
+  `Fire_<k>`), and the jungle's oaks (`Oak_<n>`, the scale its height).
+- **The jeeps** are the preview's own vehicle (`Level3DBtr`), as the shop's
+  are: each in his paint, with what the shop has sold him and his launcher's
+  step -- the jeep he finished the stage in -- idling, its exhaust puffing.
+  The camera eases in 0.7 m over 9 s and comes to rest on the frame chosen.
+- **The wrecks' fire and smoke** (`Level3DBurn`, `src/game3d/fx/
+  level3d_burn.gd`) are BlenderMCP's `CelBurn` and `CelCloud`
+  (`BlenderMCP/godot/scripts/`), carried over to the preview's metres,
+  perspective and two-tone light. The flames are one quad over the open
+  turret ring, facing the camera and upright, and on it one field of
+  teardrop tongues -- a body that breathes and three that come and go every
+  0.9 s -- their smooth union cut into bands once, yellow core to dark red
+  rim (`level3d_flame.gdshader`); each pixel at its port's depth, so the
+  deck hides the fire's foot. The smoke is one cloud (`Level3DCloud`,
+  `level3d_cloud.gdshader`): 34 puffs off the top of the fire as discs on
+  one quad, flowed into one shape with one black line round it and lit as
+  one column, swelling and blown right and away as they climb, eaten from
+  the rim -- not `Level3DPuffs`' balls, each with a line of its own, which
+  stood in a column as a heap of them. Closed form: a puff is arithmetic on
+  its index and the clock, so the column is up from the first frame and a
+  shot repeats. A flickering light over each fire. Not carried over yet: the
+  fire coming up and dying down, the scorch round it, the turret's stencil.
+  The jeeps' exhaust is still `Level3DPuffs`'.
+- **The oaks** are the cemetery's (`Level3DOaks`, `src/game3d/world/
+  level3d_oaks.gd`, moved there out of `Level3DGameOver` for both): soft,
+  in the wind, outlined through the mask -- but 1.5 px (`OAK_INK_PIXELS`)
+  rather than the cemetery's 3: a crown here is a few dozen pixels across,
+  and at 3 every gap in it was inked. The jungle is oaks alone; the palms
+  the stage has along its edges were taken out. Unlike everything round them,
+  which is lit as the stage is, in two tones (the stage's Golden hour, the
+  sun low from the right): their crowns read better soft. There are 463 of
+  them; the levels of detail the oaks' import made are kept when their
+  meshes are rebuilt, taken 4 px sooner than the default (`LOD_THRESHOLD`),
+  and only those within 22 m cast a shadow -- 22 million triangles a frame
+  where it was 40.
+- **The screen** (`Level3DVictoryScreen`,
+  `src/game3d/ui/level3d_victory_screen.gd`), as it is meant to go in: the
+  fourth tank gone, the stage stands over its blast for a hold (2.5 s), then
+  goes to black and pauses, and the scene comes up out of it, the HUD
+  hidden. From 1.6 s the summary (`Level3DSummary`, with `plate` off and
+  `top` set): MISSION
+  ACCOMPLISHED! typed, a prisoner for every one the level held in the colour
+  of who brought him in, the count and the time, PRESS ANY KEY -- at the top
+  of the frame, over the sky and the jungle, with no plate. A key, a button
+  or a pad's brings it all at once, and the next closes it: the scene and
+  the music to black, and the shop out of it (its `done`, the preview's
+  `_round_won`). The music is the boss's own end, which plays on. Its scene is on the cemetery's layer
+  (`CEMETERY_LAYER`), as 8-bit's pixels want; the two are never up together.
+  The mission's banner off (Options), there is to be no mission's end, as
+  there is no summary. The wiring into the preview was written and taken
+  out again until it is wanted.
+
 ## Game over
 
 The end of a run as a scene of its own (`Level3DGameOver`,
