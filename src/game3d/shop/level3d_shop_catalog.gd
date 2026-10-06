@@ -14,12 +14,15 @@
 #   STEP     the launcher's next step, as a prisoner's (Carrier.upgrade_weapon):
 #            bought again until the missile's last, each dearer
 #   SUPPLY   a life: bought again and again, each 5 000 dearer than the last
+#   CLASSIFIED  not for sale yet: a tile under a CLASSIFIED stamp, for what
+#            the player is to unlock later, nothing behind it for now
 class_name Level3DShopCatalog
 extends RefCounted
 
-enum Kind { UPGRADE, DEVICE, STEP, SUPPLY }
+enum Kind { UPGRADE, DEVICE, STEP, SUPPLY, CLASSIFIED }
 
-# The matrix: rows 0-2 of three, weapons, protection, devices; row 3 the
+# The matrix: rows 0-4 of three, weapons, protection, devices, then the
+# Arena and two tiles still classified, and a row of three more; row 5 the
 # life, across all three columns.
 const ITEMS := [
 	{"id": "twin", "name": "TWIN GUN", "row": 0, "col": 0, "kind": Kind.UPGRADE, "price": 20000,
@@ -45,10 +48,24 @@ const ITEMS := [
 		"text": "A MINE DROPPED BEHIND, FOR THE TANK ON YOUR TAIL."},
 	{"id": "airstrike", "name": "AIRSTRIKE", "row": 2, "col": 2, "kind": Kind.DEVICE, "price": 30000,
 		"text": "WIPES OUT THE ENEMIES ON THE SCREEN FOR 2000, 4000, 8000 A CALL. NOT THE BOSS."},
-	{"id": "life", "name": "LIFE", "row": 3, "col": 0, "kind": Kind.SUPPLY,
+	# Only of use where enemy missiles fly (docs/shop-plan.md): none on
+	# stage-0 as yet.
+	{"id": "arena", "name": "ARENA", "row": 3, "col": 0, "kind": Kind.UPGRADE, "price": 20000,
+		"text": "SHOOTS DOWN A MISSILE ABOUT TO HIT YOU. ONE EVERY 10 SECONDS."},
+	{"id": "classified1", "name": "???", "row": 3, "col": 1, "kind": Kind.CLASSIFIED,
+		"text": "CLASSIFIED. NOT FOR SALE - YET."},
+	{"id": "classified2", "name": "???", "row": 3, "col": 2, "kind": Kind.CLASSIFIED,
+		"text": "CLASSIFIED. NOT FOR SALE - YET."},
+	{"id": "classified3", "name": "???", "row": 4, "col": 0, "kind": Kind.CLASSIFIED,
+		"text": "CLASSIFIED. NOT FOR SALE - YET."},
+	{"id": "classified4", "name": "???", "row": 4, "col": 1, "kind": Kind.CLASSIFIED,
+		"text": "CLASSIFIED. NOT FOR SALE - YET."},
+	{"id": "classified5", "name": "???", "row": 4, "col": 2, "kind": Kind.CLASSIFIED,
+		"text": "CLASSIFIED. NOT FOR SALE - YET."},
+	{"id": "life", "name": "LIFE", "row": 5, "col": 0, "kind": Kind.SUPPLY,
 		"text": "ONE MORE LIFE. EACH ONE COSTS 5000 MORE THAN THE LAST."},
 ]
-const ROWS := 4
+const ROWS := 6
 const COLUMNS := 3
 const LIFE_PRICE := 15000
 const LIFE_STEP := 5000
@@ -56,7 +73,7 @@ const MAX_LIVES := 9
 const LAUNCHER_TOP := 3          # Level3DRun.Kit.weapon(): the missile's last step
 
 # What an item is to a player, for its tile.
-enum State { BUY, POOR, OWNED, FULL }
+enum State { BUY, POOR, OWNED, FULL, LOCKED }
 
 
 static func item(id: String) -> Dictionary:
@@ -91,6 +108,8 @@ static func price(id: String, kit: Level3DRun.Kit) -> int:
 
 static func state(id: String, kit: Level3DRun.Kit) -> State:
 	var i := item(id)
+	if i.kind == Kind.CLASSIFIED:
+		return State.LOCKED
 	var p := price(id, kit)
 	if p < 0:
 		return State.OWNED if i.kind == Kind.UPGRADE or i.kind == Kind.DEVICE else State.FULL

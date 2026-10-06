@@ -10,7 +10,9 @@
 #     [TWIN GUN ...]   TWIN GUN    LAUNCHER     RADAR     [NITRO ......]
 #          |           SPARES      ARMOR        RAM CAGE              |
 #       [jeep]         NITRO       MINES        AIRSTRIKE    [jeep]   |
-#                      LIFE ----------------------------          o---'
+#                      ARENA       ??? CLASSIFIED  ???            o---'
+#                      ???         ???          ???
+#                      LIFE ----------------------------
 #                      (the paint, to come)
 #     READY                                                        READY
 #
@@ -24,7 +26,9 @@
 # second's right, as their jeeps stand -- what it is to him: its price, red
 # when he is short of it, OWNED, IN SLOT for the device in his slot, MAX for
 # the launcher at its last step and a life past MAX_LIVES. With one player,
-# one status across the tile.
+# one status across the tile. A CLASSIFIED tile (Level3DShopCatalog) says
+# nothing but ??? under its stamp: not for sale, for the player to unlock
+# later.
 #
 #   * Fire buys (the gun: L, the left button, right Alt for the second
 #     player, Enter and Space for the first, a pad's A); a device already
@@ -63,7 +67,7 @@ const SMALL := 16.0             # the tiles' prices, the descriptions
 const PLAYER_GLYPH := 32.0
 # The layout, in the HUD's 2048 x 1152 at 100%.
 const TITLE_Y := 48.0
-const MATRIX := Rect2(640, 150, 768, 690)   # the goods: rows 0-2 and the life's
+const MATRIX := Rect2(640, 150, 768, 832.5)   # the goods: five rows of tiles 126.5 high, and the life's
 const TILE_GAP := 16.0
 const LIFE_HEIGHT := 120.0
 const SIDE_WIDTH := 560.0       # each player's column at the frame's edge
@@ -73,12 +77,14 @@ const TILE_FILL := Color(0.0, 0.0, 0.0, 0.62)
 const RING := 2.0
 const CURSOR := 4.0
 const POOR := Color(1.0, 0.36, 0.3)
+const STAMP := Color(0.86, 0.2, 0.16)   # CLASSIFIED's, and its tilt, degrees
+const STAMP_TILT := -8.0
 const DIM := Color(0.62, 0.62, 0.62)
 const FADE_OUT := 0.6
 const FADE_IN := 0.5
 const LEAVE := 0.6
-const READY_ROW := 4
-const LIFE_ROW := 3
+const READY_ROW := 6
+const LIFE_ROW := 5            # and as many rows of tiles over it
 const LAUNCHER_NAMES := ["GRENADE", "MISSILE", "MISSILE+", "MISSILE++"]
 # How the jeep shows a tile's part, and how the line from the words, always
 # over the jeep, gets to it:
@@ -108,6 +114,7 @@ const SHOWS := {
 	"nitro": {"view": 160.0, "knee": -265.0, "spot": Vector3(0.0, 0.5, 0.5)},
 	"mines": {"view": 155.0, "knee": -265.0},
 	"airstrike": {"view": 30.0},
+	"arena": {"view": 35.0, "spot": Vector3(0.5, 1.0, 1.0)},
 }
 const VIEW := 30.0
 const TURN_RATE := 3.0          # of the way to the view, per second
@@ -511,11 +518,13 @@ func _draw_text() -> void:
 	# The goods.
 	var m := Rect2(MATRIX.position * s, MATRIX.size * s)
 	var gap := TILE_GAP * s
-	var tile := Vector2((m.size.x - gap * 2.0) / 3.0, (m.size.y - LIFE_HEIGHT * s - gap * 3.0) / 3.0)
+	var columns := float(Level3DShopCatalog.COLUMNS)
+	var rows := float(LIFE_ROW)
+	var tile := Vector2((m.size.x - gap * (columns - 1.0)) / columns, (m.size.y - LIFE_HEIGHT * s - gap * rows) / rows)
 	for it in Level3DShopCatalog.ITEMS:
 		var rect: Rect2
 		if it.kind == Level3DShopCatalog.Kind.SUPPLY:
-			rect = Rect2(m.position.x, m.position.y + (tile.y + gap) * 3.0, m.size.x, LIFE_HEIGHT * s)
+			rect = Rect2(m.position.x, m.position.y + (tile.y + gap) * rows, m.size.x, LIFE_HEIGHT * s)
 		else:
 			rect = Rect2(m.position + Vector2((tile.x + gap) * it.col, (tile.y + gap) * it.row), tile)
 		rect = Rect2(rect.position.round(), rect.size.round())
@@ -540,6 +549,9 @@ func _draw_text() -> void:
 
 
 func _draw_tile(rect: Rect2, it: Dictionary, s: float, g: float, sg: float) -> void:
+	if it.kind == Level3DShopCatalog.Kind.CLASSIFIED:
+		_draw_classified(rect, it, s, g, sg)
+		return
 	var ring := maxf(roundf(RING * s), 1.0)
 	_text.draw_rect(rect, TILE_FILL)
 	_text.draw_rect(rect.grow(-ring * 0.5), Color(1, 1, 1, 0.85), false, ring)
@@ -585,6 +597,27 @@ func _draw_tile(rect: Rect2, it: Dictionary, s: float, g: float, sg: float) -> v
 				at += (sg * 0.5 + 4.0 * s) * (-1.0 if i == 0 else 1.0)
 			Level3DFont.draw(_text, line, roundf(x), roundf(at), sg,
 					Level3DFont.GRAY, colours[i] if i < colours.size() else Color.WHITE)
+
+
+# A tile not for sale yet: dimmer, its name a question, and a CLASSIFIED
+# stamp across it, aslant, in STAMP's red -- no price, no status.
+func _draw_classified(rect: Rect2, it: Dictionary, s: float, g: float, sg: float) -> void:
+	var ring := maxf(roundf(RING * s), 1.0)
+	_text.draw_rect(rect, Color(TILE_FILL, TILE_FILL.a * 0.6))
+	_text.draw_rect(rect.grow(-ring * 0.5), Color(1, 1, 1, 0.35), false, ring)
+	var pad := roundf(12.0 * s)
+	var name: String = it.name
+	Level3DFont.draw(_text, name, roundf(rect.get_center().x - Level3DFont.width(name, g) * 0.5),
+			rect.position.y + pad, g, Level3DFont.GRAY)
+	var word := "CLASSIFIED"
+	var w := Level3DFont.width(word, sg)
+	var inner := roundf(8.0 * s)
+	var box := Rect2(-w * 0.5 - inner, -sg * 0.5 - inner, w + inner * 2.0, sg + inner * 2.0)
+	_text.draw_set_transform(rect.get_center() + Vector2(0.0, roundf(10.0 * s)), deg_to_rad(STAMP_TILT))
+	_text.draw_rect(box, Color(0, 0, 0, 0.35))
+	_text.draw_rect(box, STAMP, false, maxf(roundf(2.0 * s), 1.0))
+	Level3DFont.draw(_text, word, roundf(-w * 0.5), roundf(-sg * 0.5), sg, Level3DFont.WHITE, STAMP)
+	_text.draw_set_transform(Vector2.ZERO)
 
 
 # What tile `it` is to player `i`: [text, tint].
