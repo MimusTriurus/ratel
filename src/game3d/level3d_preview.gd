@@ -1242,7 +1242,21 @@ func _toon(node: Node) -> void:
 # the shell, to compare the two; --no-contour draws neither.
 func _engine_contour(node: Node) -> void:
 	if node is MeshInstance3D:
-		Level3DHull.apply(node)
+		Level3DHull.apply(node, _contour_kind(node))
+
+
+# Whose line a mesh's is (Level3DHull.Kind), by what it is under: the
+# players' vehicles -- the shop's too -- and their wrecks; the soldiers, the
+# prisoners and the rescue crewman; the stage and everything else.
+static func _contour_kind(node: Node) -> Level3DHull.Kind:
+	var up := node.get_parent()
+	while up != null:
+		if up is Level3DBtr or up is Level3DWreck:
+			return Level3DHull.Kind.VEHICLES
+		if up is Level3DSoldiers or up is Level3DFriends or up is Level3DRescueCrew:
+			return Level3DHull.Kind.PEOPLE
+		up = up.get_parent()
+	return Level3DHull.Kind.STAGE
 
 
 # The palms and the trees sway, and the blasts and the rounds throw them about
@@ -1351,7 +1365,7 @@ func _holed_ground(root: Node) -> void:
 				var holed := ShaderMaterial.new()
 				if hull:
 					holed.shader = GROUND_CONTOUR_SHADER
-					holed.set_shader_parameter("pixels", Level3DHull.PIXELS)
+					Level3DHull.track(holed)
 				else:
 					holed.shader = GROUND_SHADER
 					holed.set_shader_parameter("albedo", (material as BaseMaterial3D).albedo_color)
@@ -2977,6 +2991,15 @@ func _apply_settings() -> void:
 	lighting = Level3DLighting.from_name(OS.get_cmdline_user_args()[light_flag + 1]) 			if light_flag >= 0 else settings.light as Level3DLighting.Preset
 	_apply_lighting()
 	_crt.visible = settings.crt
+	# --outline over the settings, for a --shot: stage, vehicles, people.
+	var outlines := [settings.outline_stage, settings.outline_vehicles, settings.outline_people]
+	var outline_flag := OS.get_cmdline_user_args().find("--outline")
+	if outline_flag >= 0:
+		var given := OS.get_cmdline_user_args()[outline_flag + 1].split(",")
+		for i in mini(given.size(), 3):
+			outlines[i] = float(given[i])
+	for kind in 3:
+		Level3DHull.set_pixels(kind as Level3DHull.Kind, outlines[kind])
 	if friends != null:
 		friends.calls = settings.hud and settings.hud_help
 		if rescue != null and rescue.crew != null:
@@ -4333,7 +4356,7 @@ func _screenshot_mode() -> void:
 	var log_rounds := args.find("--log-rounds")
 	if log_rounds >= 0:
 		args.remove_at(log_rounds)
-	for flag in ["--level", "--file", "--players", "--light", "--round", "--upgrades"]:
+	for flag in ["--level", "--file", "--players", "--light", "--outline", "--round", "--upgrades"]:
 		var at := args.find(flag)
 		if at >= 0:
 			args = args.slice(0, at) + args.slice(at + 2)  # read in _ready

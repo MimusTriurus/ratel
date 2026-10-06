@@ -76,7 +76,7 @@ static func apply(instance: MeshInstance3D) -> bool:
 		var material := ShaderMaterial.new()
 		if Level3DHull.is_hull(source):
 			material.shader = HULL_SHADER
-			material.set_shader_parameter("pixels", Level3DHull.PIXELS)
+			Level3DHull.track(material)
 		elif source is BaseMaterial3D and not source.resource_name.ends_with("Contour"):
 			material.shader = SHADER
 			material.set_shader_parameter("albedo", (source as BaseMaterial3D).albedo_color)

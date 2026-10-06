@@ -491,13 +491,13 @@ static func _transform_in(node: Node3D, root: Node) -> Transform3D:
 # stepped on the glb's own (what the stage loads too), and no
 # specular, as the scene was drawn in Blender. The ground takes its colours
 # from its vertices. The contour's material is left as it is.
-func _soften(root: Node) -> void:
+func _soften(root: Node, kind := Level3DHull.Kind.STAGE) -> void:
 	var meshes := root.find_children("*", "MeshInstance3D", true, false)
 	if root is MeshInstance3D:
 		meshes.append(root)
 	for node in meshes:
 		var instance := node as MeshInstance3D
-		Level3DHull.apply(instance)
+		Level3DHull.apply(instance, kind)
 		var mesh := instance.mesh
 		if mesh == null:
 			continue
@@ -580,7 +580,7 @@ func show_game_over(rescued: Array, total: int) -> void:
 				var mesh := guard.find_child(gun, true, false) as Node3D
 				if mesh != null:
 					mesh.visible = false
-			_soften(guard)
+			_soften(guard, Level3DHull.Kind.PEOPLE)
 			guard.scale = Vector3.ONE * GUARD_SCALE
 			_put(guard, x, GUARD_Y - rank * RANK_GAP, PI + deg_to_rad(rng.randf_range(-3.0, 3.0)))
 			guard.scale = Vector3.ONE * GUARD_SCALE
@@ -635,7 +635,7 @@ func _post_soldiers(rng: RandomNumberGenerator) -> void:
 	for side in [-1.0, 1.0]:
 		for at in [POST_AT]:
 			var post := _guard_scene.instantiate() as Node3D
-			_soften(post)
+			_soften(post, Level3DHull.Kind.PEOPLE)
 			post.scale = Vector3.ONE * GUARD_SCALE
 			_put(post, side * at.x, at.y, -side * PI * 0.5 + deg_to_rad(rng.randf_range(-2.0, 2.0)))
 			post.scale = Vector3.ONE * GUARD_SCALE
@@ -967,7 +967,7 @@ func _plant_oaks(scene: Node) -> void:
 		var ink := ShaderMaterial.new()
 		ink.shader = OAK_INK_SHADER
 		ink.set_shader_parameter("mask", _mask.get_texture())
-		ink.set_shader_parameter("pixels", Level3DHull.PIXELS)
+		Level3DHull.track(ink)
 		ink.set_shader_parameter("fog_colour", RAIN_FOG_COLOUR)
 		material = ink
 
@@ -1080,7 +1080,7 @@ func _sway(instance: MeshInstance3D, give: float) -> void:
 			var material: ShaderMaterial = null
 			if Level3DHull.is_hull(source):
 				material = _wind_material(Level3DWind.HULL_SHADER)
-				material.set_shader_parameter("pixels", Level3DHull.PIXELS)
+				Level3DHull.track(material)
 			elif source is BaseMaterial3D and (source.resource_name.contains("Leaf")
 					or source.resource_name.contains("Core")):
 				var base := source as BaseMaterial3D

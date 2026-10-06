@@ -36,6 +36,15 @@ extends RefCounted
 #
 # Made once a mesh: the level's 6000 meshes are 291, and every glb there is
 # takes 0.4 s all told.
+#
+# The width is a kind's (Kind, Level3DSettings' outline_*): the stage and the
+# enemies, the players' vehicles, the people -- soldiers, prisoners, the
+# rescue crewman. Thick round a small figure, the line is most of him. The
+# hull in the mesh is the stage's; a vehicle or a person has its kind's
+# material over it on the instance (apply), since one mesh is every
+# soldier's. The stage's copies made elsewhere -- the trees in the wind, the
+# holed ground, the cemetery's, the splash's -- take its width through
+# `track`, and keep it as it changes.
 
 # The hull's material's name ends as the glbs' did, so that what passes the
 # contour by -- the two-tone light (_toon), the tanks' charring -- still does.
@@ -45,8 +54,10 @@ const SHADER := preload("res://src/game3d/shaders/level3d_hull.gdshader")
 # shrinking to nothing takes its line with it (level3d_hull.gdshaderinc).
 const REACH := 1.0 / 6.0
 # The line, in pixels of a frame 1080 high (level3d_hull.gdshaderinc): thick,
-# as Chinatown Wars draws its cars and people.
+# as Chinatown Wars draws its cars and people. Each kind's to start with.
+enum Kind { STAGE, VEHICLES, PEOPLE }
 const PIXELS := 3.0
+const DEFAULT_PIXELS := {Kind.STAGE: PIXELS, Kind.VEHICLES: 2.0, Kind.PEOPLE: 2.0}
 # A position whose faces' normals, summed, come to less than this share of
 # what they would pointing one way has no normal (_smooth_normals).
 const DEGENERATE := 0.25
@@ -58,31 +69,71 @@ static var creases := false
 # is left black without a line -- the paint.
 static var drawn := true
 
-static var _material: ShaderMaterial
+static var _materials := {}  # Kind -> ShaderMaterial
+static var _pixels := DEFAULT_PIXELS.duplicate()
+static var _tracked: Array[WeakRef] = []  # the stage's copies (track)
 static var _made := {}  # a glb's Mesh -> the same with the engine's hull
 
 
-static func material() -> ShaderMaterial:
-	if _material == null:
-		_material = ShaderMaterial.new()
-		_material.resource_name = HULL_NAME
-		_material.shader = SHADER
-		_material.set_shader_parameter("pixels", PIXELS)
-	return _material
+static func material(kind := Kind.STAGE) -> ShaderMaterial:
+	if not _materials.has(kind):
+		var made := ShaderMaterial.new()
+		made.resource_name = HULL_NAME
+		made.shader = SHADER
+		made.set_shader_parameter("pixels", _pixels[kind])
+		_materials[kind] = made
+	return _materials[kind]
+
+
+static func pixels(kind := Kind.STAGE) -> float:
+	return _pixels[kind]
+
+
+# A kind's line this wide from now on, on whatever has it already.
+static func set_pixels(kind: Kind, wide: float) -> void:
+	if is_equal_approx(_pixels[kind], wide):
+		return
+	_pixels[kind] = wide
+	if _materials.has(kind):
+		(_materials[kind] as ShaderMaterial).set_shader_parameter("pixels", wide)
+	if kind == Kind.STAGE:
+		var kept: Array[WeakRef] = []
+		for ref in _tracked:
+			var copy := ref.get_ref() as ShaderMaterial
+			if copy != null:
+				copy.set_shader_parameter("pixels", wide)
+				kept.append(ref)
+		_tracked = kept
+
+
+# A copy of the stage's hull, in a shader of its own: its width now, and as
+# it changes.
+static func track(copy: ShaderMaterial) -> void:
+	copy.set_shader_parameter("pixels", _pixels[Kind.STAGE])
+	_tracked.append(weakref(copy))
 
 
 static func is_hull(material: Material) -> bool:
 	return material != null and material.resource_name == HULL_NAME
 
 
-# Gives `instance` the engine's hull in place of its baked one, if it has one.
-static func apply(instance: MeshInstance3D) -> void:
+# Gives `instance` the engine's hull in place of its baked one, if it has
+# one, as wide as `kind`'s.
+static func apply(instance: MeshInstance3D, kind := Kind.STAGE) -> void:
 	var mesh := instance.mesh as ArrayMesh
 	if mesh == null:
 		return
 	if not _made.has(mesh):
 		_made[mesh] = _rebuild(mesh)
 	instance.mesh = _made[mesh]
+	# The stage's is the mesh's own. Nor does it undo another's: the
+	# cemetery's guard is given the people's and then put in the preview's
+	# tree, which applies the stage's to all it is not told otherwise of.
+	if kind == Kind.STAGE:
+		return
+	for surface in instance.mesh.get_surface_count():
+		if is_hull(instance.mesh.surface_get_material(surface)):
+			instance.set_surface_override_material(surface, material(kind))
 
 
 static func _rebuild(mesh: ArrayMesh) -> ArrayMesh:

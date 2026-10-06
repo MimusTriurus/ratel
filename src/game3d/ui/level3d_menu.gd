@@ -130,6 +130,9 @@ var _camera: OptionButton
 var _look: OptionButton
 var _light: OptionButton
 var _crt: CheckBox
+var _outline_stage: OptionButton
+var _outline_vehicles: OptionButton
+var _outline_people: OptionButton
 var _resolution: OptionButton
 var _driving: OptionButton
 var _firing: OptionButton
@@ -399,6 +402,9 @@ func refresh() -> void:
 	_look.select(settings.look)
 	_light.select(settings.light)
 	_crt.set_pressed_no_signal(settings.crt)
+	_outline_stage.select(Level3DSettings.OUTLINES.find(settings.outline_stage))
+	_outline_vehicles.select(Level3DSettings.OUTLINES.find(settings.outline_vehicles))
+	_outline_people.select(Level3DSettings.OUTLINES.find(settings.outline_people))
 	_resolution.select(settings.resolution)
 	_driving.select(settings.driving)
 	_firing.select(settings.firing)
@@ -534,7 +540,15 @@ func _make_graphics_tab() -> Control:
 			func(i: int): settings.light = i)
 	_resolution = _choice(grid, "3D resolution", ["Native", "2048×1152 (as the game)", "1920×1080", "1280×720"],
 			func(i: int): settings.resolution = i)
+	var widths := Level3DSettings.OUTLINES.map(func(px: float): return "%s px" % str(px).trim_suffix(".0"))
+	_outline_stage = _choice(grid, "Outline: stage, enemies", widths,
+			func(i: int): settings.outline_stage = Level3DSettings.OUTLINES[i])
+	_outline_vehicles = _choice(grid, "Outline: your vehicles", widths,
+			func(i: int): settings.outline_vehicles = Level3DSettings.OUTLINES[i])
+	_outline_people = _choice(grid, "Outline: people", widths,
+			func(i: int): settings.outline_people = Level3DSettings.OUTLINES[i])
 	_crt = _check(tab, "CRT monitor", func(on: bool): settings.crt = on)
+	_note(tab, "Outlines are in pixels of a 1080-line screen. People: soldiers, prisoners and the helicopter's crewman.")
 	return tab.get_parent().get_parent()
 
 

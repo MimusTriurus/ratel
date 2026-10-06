@@ -57,6 +57,13 @@ var crt := false
 # in: the day, Blender's, or the title's low sun.
 var light := Level3DLighting.Preset.DAY as int
 var resolution := Resolution.NATIVE
+# The contour's width by what it is round (Level3DHull.Kind), pixels of a
+# frame 1080 high, one of OUTLINES: the stage and the enemies, the players'
+# vehicles, the people.
+const OUTLINES: Array[float] = [1.0, 1.5, 2.0, 2.5, 3.0, 4.0]
+var outline_stage: float = Level3DHull.DEFAULT_PIXELS[Level3DHull.Kind.STAGE]
+var outline_vehicles: float = Level3DHull.DEFAULT_PIXELS[Level3DHull.Kind.VEHICLES]
+var outline_people: float = Level3DHull.DEFAULT_PIXELS[Level3DHull.Kind.PEOPLE]
 var driving := Driving.CLASSIC
 var firing := Firing.CLASSIC
 var reach := Reach.CLASSIC
@@ -201,6 +208,9 @@ func load_saved() -> void:
 		var old: int = config.get_value("graphics", "look", 0)
 		look = Look.PIXELS if old == 2 else Look.MODERN
 		crt = old == 1
+	outline_stage = _outline(config.get_value("graphics", "outline_stage", outline_stage), outline_stage)
+	outline_vehicles = _outline(config.get_value("graphics", "outline_vehicles", outline_vehicles), outline_vehicles)
+	outline_people = _outline(config.get_value("graphics", "outline_people", outline_people), outline_people)
 	driving = clampi(config.get_value("controls", "driving", driving), 0, Driving.size() - 1)
 	firing = clampi(config.get_value("controls", "firing", firing), 0, Firing.size() - 1)
 	reach = clampi(config.get_value("controls", "reach", reach), 0, Reach.size() - 1)
@@ -250,6 +260,10 @@ static func _volume(saved) -> float:
 	return clampf(float(saved), 0.0, 1.0) if saved is int or saved is float else 1.0
 
 
+static func _outline(saved, otherwise: float) -> float:
+	return float(saved) if (saved is int or saved is float) and OUTLINES.has(float(saved)) else otherwise
+
+
 static func _rate(saved) -> float:
 	return float(saved) if (saved is int or saved is float) and RATES.has(float(saved)) else 1.0
 
@@ -262,6 +276,9 @@ func save() -> void:
 	config.set_value("graphics", "resolution", resolution)
 	config.set_value("graphics", "crt", crt)
 	config.set_value("graphics", "light", light)
+	config.set_value("graphics", "outline_stage", outline_stage)
+	config.set_value("graphics", "outline_vehicles", outline_vehicles)
+	config.set_value("graphics", "outline_people", outline_people)
 	config.set_value("controls", "driving", driving)
 	config.set_value("controls", "firing", firing)
 	config.set_value("controls", "reach", reach)

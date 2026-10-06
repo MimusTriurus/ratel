@@ -1495,7 +1495,7 @@ func _sway(palm: MeshInstance3D) -> void:
 		if Level3DHull.is_hull(source):
 			m = ShaderMaterial.new()
 			m.shader = Level3DWind.HULL_SHADER
-			m.set_shader_parameter("pixels", Level3DHull.PIXELS)
+			Level3DHull.track(m)
 		else:
 			var paint := palm.get_surface_override_material(surface) as ShaderMaterial
 			if paint == null:
