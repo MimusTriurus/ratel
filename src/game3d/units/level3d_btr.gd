@@ -523,9 +523,10 @@ func tint(min_hue: float, max_hue: float, shift: float) -> void:
 # paints), each by the colour its olive takes -- the olive's parts as tint
 # finds them, their mean the olive -- every shade of it kept as far off as it
 # was, darker or lighter, greyer or not; BLUE the second player's of old, the
-# olive turned by VEHICLES' blue as tint turns it, and OLIVE the model's own.
+# olive turned by VEHICLES' blue as tint turns it, and OLIVE the Littlebird's
+# own green (the shop's helicopter), every other model's olive brought to it.
 const PAINTS := [
-	{"id": "olive", "name": "OLIVE"},
+	{"id": "olive", "name": "OLIVE", "colour": Color("586636")},
 	{"id": "blue", "name": "BLUE"},
 	{"id": "sand", "name": "SAND", "colour": Color("ad9265")},
 	{"id": "grey", "name": "GREY", "colour": Color("63686e")},
@@ -553,17 +554,11 @@ func paint(id: String) -> void:
 		_paintable = _olive_parts(_model, vehicle)
 	var base := _olive(_paintable.map(func(entry): return entry[3]))
 	for entry in _paintable:
-		var mesh := entry[0] as MeshInstance3D
-		if id == "olive":
-			mesh.set_surface_override_material(entry[1], entry[2])
-		else:
-			mesh.set_surface_override_material(entry[1], _painted(entry[3], base, id, vehicle))
+		(entry[0] as MeshInstance3D).set_surface_override_material(entry[1], _painted(entry[3], base, id, vehicle))
 
 
 # paint's turn on any model of `vehicle` as it comes: the HUD's icons.
 static func paint_model(model: Node, vehicle_entry: Dictionary, id: String) -> void:
-	if id == "olive":
-		return
 	var parts := _olive_parts(model, vehicle_entry)
 	var base := _olive(parts.map(func(entry): return entry[3]))
 	for entry in parts:
