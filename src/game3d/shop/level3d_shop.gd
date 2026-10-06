@@ -6,14 +6,17 @@
 # bought on them; between them the goods, a matrix out of
 # Level3DShopCatalog:
 #
-#     1P 38400                  SUPPLY - ROUND 2                  2P 21300
+#     1P $38400                 SUPPLY - ROUND 2                 2P $21300
 #     [jeep]   TWIN GUN    LAUNCHER     RADAR                       [jeep]
 #              SPARES      ARMOR        RAM CAGE
 #              NITRO       MINES        AIRSTRIKE
 #              LIFE ----------------------------
-#     lives, launcher, slot                       lives, launcher, slot
 #     what the 1P's tile does                     what the 2P's tile does
 #     READY                                                        READY
+#
+# The side says no more than the money: the lives are on LIFE's tile, the
+# launcher's step on the jeep and LAUNCHER's tile, and the device's slot is
+# to go.
 #
 # Both players shop at once, each with a cursor of his own: a frame round a
 # tile in his colour, the first's outside the second's when both are on one.
@@ -59,8 +62,7 @@ const TILE_GAP := 16.0
 const LIFE_HEIGHT := 120.0
 const SIDE_WIDTH := 480.0       # each player's column at the frame's edge
 const SIDE_MARGIN := 40.0
-const STATUS_Y := 690.0         # lives, launcher, slot
-const TEXT_Y := 830.0           # the tile's description
+const TEXT_Y := 770.0           # the tile's description, under the tables
 const READY_Y := 1040.0
 const TILE_FILL := Color(0.0, 0.0, 0.0, 0.62)
 const RING := 2.0
@@ -89,11 +91,10 @@ var done: Callable
 var scale_factor := 1.0
 var settings: Level3DSettings
 # Per player: null for the first (the settings' keys and the mouse), the
-# second's HumanInput; and their colours, their tints, the HUD's icons.
+# second's HumanInput; and their colours and their tints.
 var inputs: Array = []
 var colours: Array[Color] = []
 var tints: Array[Vector3] = []
-var icons := {}
 
 var _state := State.CLOSED
 var _run: Level3DRun
@@ -563,21 +564,6 @@ func _draw_side(i: int, s: float, g: float, sg: float, pg: float) -> void:
 	var x := x0 if i == 0 else x0 + width - Level3DFont.width(who + money, pg)
 	x = Level3DFont.draw(_text, who, roundf(x), y, pg, Level3DFont.WHITE, colour)
 	Level3DFont.draw(_text, money, roundf(x), y, pg)
-	# Lives, the launcher, the slot.
-	y = roundf(STATUS_Y * s)
-	var icon := icons.get("lives_2" if i > 0 else "lives") as Texture2D
-	x = x0
-	if icon != null:
-		var h := pg
-		var w := h * icon.get_width() / float(icon.get_height())
-		_text.draw_texture_rect(icon, Rect2(x, y, w, h), false)
-		x += w + 8.0 * s
-	Level3DFont.draw(_text, "x%d" % kit.lives, roundf(x), y + (pg - g) * 0.5, g)
-	y += pg + 12.0 * s
-	Level3DFont.draw(_text, LAUNCHER_NAMES[kit.weapon()], roundf(x0), y, sg, Level3DFont.GRAY)
-	y += sg + 10.0 * s
-	var slot: String = "SLOT: " + (Level3DShopCatalog.item(kit.device).get("name", "") if kit.device != "" else "-")
-	Level3DFont.draw(_text, slot, roundf(x0), y, sg, Level3DFont.GRAY)
 	# What his tile does: with one player that is the right side's.
 	if _players > 1:
 		_draw_words(i, Rect2(x0, TEXT_Y * s, width, READY_Y * s - TEXT_Y * s - 16.0 * s), g, sg)

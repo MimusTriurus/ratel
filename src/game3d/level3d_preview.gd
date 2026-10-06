@@ -2492,7 +2492,6 @@ func _render_icons() -> void:
 			c.hud.icons = rendered
 			c.hud.queue_redraw()
 		_summary.icons = rendered
-		_shop.icons = rendered
 
 
 const FIRING_NAMES := ["CLASSIC", "CURSOR", "COMBINED"]
@@ -4047,7 +4046,6 @@ func _open_shop(at_once := false) -> void:
 	_shop.inputs.assign(crews.map(func(c: Crew): return c.input))
 	_shop.colours.assign(crews.map(func(c: Crew): return c.hud.colour))
 	_shop.tints.assign(crews.map(func(c: Crew): return c.btr.vehicle.blue if c.index > 0 else Vector3.ZERO))
-	_shop.icons = crews[0].hud.icons
 	get_tree().paused = true
 	Level3DAudio.fade_music(Level3DShop.FADE_OUT)
 	_shop.open(_capture(), at_once)
