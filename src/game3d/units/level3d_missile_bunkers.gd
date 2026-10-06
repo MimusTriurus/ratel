@@ -102,9 +102,16 @@ const TRAIL_EVERY := 2
 # The warning lamps' glass, lit.
 const BEACON_MATERIAL := "MissileBunker_Beacon"
 const BEACON_LIT := Color(1.0, 0.18, 0.08)
-const BEACON_ENERGY := 3.0
-const LIGHT_ENERGY := 0.5
-const LIGHT_RANGE := 2.0
+const BEACON_ENERGY := 1.4
+# A small red light over each glass while it is lit, which shows on the roof
+# and the ground round it from above when the glass alone is too small to:
+# its energy and reach, level metres, and how far over the glass's top.
+const LIGHT_ENERGY := 0.6
+const LIGHT_RANGE := 0.8
+const LIGHT_LIFT := 0.06
+# The lamps on one mesh lie this far apart at least, model metres: the
+# deck's two, 2.2 m (jackal_missile_bunker.py's LAMP_ANGLES).
+const LAMP_APART := 0.5
 
 enum { REST, WARN, OPENING, AIMING, HOLDING, CLOSING }
 
@@ -136,7 +143,7 @@ class Bunker:
 	var parts := {}       # deploy()'s nodes by their names less the prefix
 	var rest := {}        # their transforms as the glb has them, launcher down
 	var glass: Array = [] # [MeshInstance3D, surface] of the warning lamps
-	var light: OmniLight3D
+	var lights: Array[OmniLight3D] = []
 	var state := REST
 	var wait := FIRST_DELAY
 	var deployed := 0.0
@@ -172,7 +179,8 @@ func _ready() -> void:
 func reset() -> void:
 	for b in bunkers:
 		b.root.queue_free()
-		b.light.queue_free()
+		for light in b.lights:
+			light.queue_free()
 	bunkers.clear()
 	for m in missiles:
 		m.node.queue_free()
@@ -237,19 +245,43 @@ func _spawn(x: float, y: float) -> void:
 			var m := mi.mesh.surface_get_material(s)
 			if m != null and m.resource_name == BEACON_MATERIAL:
 				b.glass.append([mi, s])
-	# A red light over the deck's lamps, which shows on the roof from above
-	# when the glass is too small to.
-	b.light = OmniLight3D.new()
-	b.light.light_color = BEACON_LIT
-	b.light.omni_range = LIGHT_RANGE
-	b.light.light_energy = 0.0
-	b.light.visible = false
-	add_child(b.light)
-	b.light.global_position = (b.root.find_child(PREFIX + "Lamps", true, false) as Node3D).global_position \
-			+ Vector3.UP * 0.3
+	for top in _lamp_tops(b):
+		var light := OmniLight3D.new()
+		light.light_color = BEACON_LIT
+		light.omni_range = LIGHT_RANGE
+		light.light_energy = 0.0
+		light.visible = false
+		add_child(light)
+		light.global_position = top + Vector3.UP * LIGHT_LIFT
+		b.lights.append(light)
 	bunkers.append(b)
 	if verbose:
 		print("missile bunker appears at %.0f, %.0f" % [x, y])
+
+
+# The top of each lamp's glass, level space: the glass's vertices grouped by
+# where across their mesh they are -- the deck's two lamps share one -- each
+# group's middle, at its top.
+func _lamp_tops(b: Bunker) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	for pair in b.glass:
+		var mi: MeshInstance3D = pair[0]
+		var verts: PackedVector3Array = mi.mesh.surface_get_arrays(pair[1])[Mesh.ARRAY_VERTEX]
+		var groups := {}
+		for v in verts:
+			var key := roundi(v.x / LAMP_APART)
+			if not groups.has(key):
+				groups[key] = []
+			groups[key].append(v)
+		for key in groups:
+			var sum := Vector3.ZERO
+			var top := -INF
+			for v: Vector3 in groups[key]:
+				sum += v
+				top = maxf(top, v.y)
+			var middle: Vector3 = sum / groups[key].size()
+			out.append(mi.global_transform * Vector3(middle.x, top, middle.z))
+	return out
 
 
 func _update(b: Bunker, view: Rect2) -> void:
@@ -310,8 +342,9 @@ func _turn(b: Bunker) -> bool:
 func _flash(b: Bunker, on: bool) -> void:
 	for pair in b.glass:
 		(pair[0] as MeshInstance3D).set_surface_override_material(pair[1], _lit if on else null)
-	b.light.visible = on
-	b.light.light_energy = LIGHT_ENERGY if on else 0.0
+	for light in b.lights:
+		light.visible = on
+		light.light_energy = LIGHT_ENERGY if on else 0.0
 
 
 # jackal_missile_bunker.py's deploy() and ram(), in Godot's axes: the cupola
