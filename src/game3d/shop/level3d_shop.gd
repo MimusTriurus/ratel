@@ -7,7 +7,7 @@
 # with what they have bought on them; between them the goods, a matrix out
 # of Level3DShopCatalog:
 #
-#     1P $38400                 SUPPLY - ROUND 2                 2P $21300
+#     1P $38400                      SUPPLY                      2P $21300
 #     [TWIN GUN ...]   TWIN GUN    LAUNCHER     RADAR     [NITRO ......]
 #          |           SPARES      ARMOR        RAM CAGE              |
 #       [jeep]         NITRO       MINES        AIRSTRIKE    [jeep]   |
@@ -72,7 +72,9 @@ const TITLE := "SUPPLY"
 const TITLE_GLYPH := 48.0
 const GLYPH := 24.0             # the tiles' names, the players' lines
 const SMALL := 16.0             # the tiles' prices, the descriptions
-const PLAYER_GLYPH := 32.0
+const PLAYER_GLYPH := 48.0     # the players' money, as large as the title
+const READY_GLYPH := 32.0
+const READY_PAD := Vector2(32.0, 16.0)
 # The layout, in the HUD's 2048 x 1152 at 100%.
 const TITLE_Y := 48.0
 const MATRIX := Rect2(640, 150, 768, 832.5)   # the goods: five rows of tiles 126.5 high, and the life's
@@ -596,7 +598,7 @@ func _draw_text() -> void:
 	var pg := _whole(PLAYER_GLYPH * s)
 	# The goods, and the title over them.
 	var m := Rect2(_matrix().position * s, MATRIX.size * s)
-	var title := "%s - ROUND %d" % [TITLE, _run.round + 1]
+	var title := TITLE
 	Level3DFont.draw(_text, title, roundf(m.get_center().x - Level3DFont.width(title, tg) * 0.5),
 			roundf(TITLE_Y * s), tg)
 	var gap := TILE_GAP * s
@@ -745,13 +747,15 @@ func _draw_side(i: int, s: float, g: float, sg: float, pg: float) -> void:
 	_draw_paints(i, x0, width, s)
 	# READY.
 	var ready := "READY!" if _set[i] else "READY"
-	var rw := Level3DFont.width(ready, g)
-	var rect := Rect2(roundf(x0 + width * 0.5 - rw * 0.5 - 24.0 * s), roundf(READY_Y * s - 12.0 * s),
-			rw + 48.0 * s, g + 24.0 * s)
+	var rg := _whole(READY_GLYPH * s)
+	var pad := (READY_PAD * s).round()
+	var rw := Level3DFont.width(ready, rg)
+	var rect := Rect2(roundf(x0 + width * 0.5 - rw * 0.5 - pad.x), roundf(READY_Y * s - pad.y),
+			rw + pad.x * 2.0, rg + pad.y * 2.0)
 	_rects[Vector3i(0, READY_ROW, i)] = rect
 	_text.draw_rect(rect, colour if _set[i] else TILE_FILL)
 	_text.draw_rect(rect, Color(1, 1, 1, 0.85), false, maxf(roundf(RING * s), 1.0))
-	Level3DFont.draw(_text, ready, roundf(rect.position.x + 24.0 * s), roundf(rect.position.y + 12.0 * s), g)
+	Level3DFont.draw(_text, ready, rect.position.x + pad.x, rect.position.y + pad.y, rg)
 
 
 # Player `i`'s swatches over his READY, across the middle of his column,
