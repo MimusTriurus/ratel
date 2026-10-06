@@ -45,7 +45,9 @@ void fragment() {
 	vec3 here = texture(mask, UV).rgb;
 	float own = oak_of(here);
 	if (own > 0.0) {
-		float reach = pixels;
+		// `pixels` of a frame 1080 high, as the shells' are: the mask is
+		// the screen's size (Level3DPixels), not the frame's.
+		float reach = pixels * float(textureSize(mask, 0).y) / 1080.0;
 		bool edge = false;
 		// A disc of `pixels`, by eight directions and the rings between.
 		for (float r = 1.0; r <= reach && !edge; r += 1.0) {

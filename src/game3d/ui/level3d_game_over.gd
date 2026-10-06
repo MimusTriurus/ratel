@@ -847,8 +847,11 @@ func clear() -> void:
 func _process(delta: float) -> void:
 	if not shown:
 		return
-	# The render the size of the frame it fills.
-	var want := Vector2i(size)
+	# The render the size of the frame it fills, in the screen's pixels, not
+	# the frame's (Level3DPixels): blown up, its edges stepped. Smoothed as
+	# the settings say, the oaks' mask never.
+	var want := Vector2i(size * Level3DPixels.scale(self))
+	viewport.msaa_3d = Level3DPixels.msaa
 	if want.x > 0 and want.y > 0 and viewport.size != want:
 		viewport.size = want
 		_mask.size = want

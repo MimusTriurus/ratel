@@ -134,6 +134,7 @@ var _outline_stage: OptionButton
 var _outline_vehicles: OptionButton
 var _outline_people: OptionButton
 var _resolution: OptionButton
+var _antialias: OptionButton
 var _driving: OptionButton
 var _firing: OptionButton
 var _reach: OptionButton
@@ -406,6 +407,7 @@ func refresh() -> void:
 	_outline_vehicles.select(Level3DSettings.OUTLINES.find(settings.outline_vehicles))
 	_outline_people.select(Level3DSettings.OUTLINES.find(settings.outline_people))
 	_resolution.select(settings.resolution)
+	_antialias.select(settings.antialias)
 	_driving.select(settings.driving)
 	_firing.select(settings.firing)
 	_reach.select(REACH_ORDER.find(settings.reach))
@@ -540,6 +542,8 @@ func _make_graphics_tab() -> Control:
 			func(i: int): settings.light = i)
 	_resolution = _choice(grid, "3D resolution", ["Native", "2048×1152 (as the game)", "1920×1080", "1280×720"],
 			func(i: int): settings.resolution = i)
+	_antialias = _choice(grid, "Anti-aliasing", ["Off", "MSAA 2x", "MSAA 4x", "MSAA 8x"],
+			func(i: int): settings.antialias = i)
 	var widths := Level3DSettings.OUTLINES.map(func(px: float): return "%s px" % str(px).trim_suffix(".0"))
 	_outline_stage = _choice(grid, "Outline: stage, enemies", widths,
 			func(i: int): settings.outline_stage = Level3DSettings.OUTLINES[i])

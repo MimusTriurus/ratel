@@ -8,6 +8,12 @@ extends RefCounted
 # splash -- was drawn at 2048x1152 and blown up to the screen, its edges'
 # steps with it, a staircase on every model. Such a render is made this many
 # times its frame size instead. 1 under a --shot, whose window is the frame.
+#
+# `msaa` is the settings' anti-aliasing (Level3DSettings.antialias), which
+# the preview sets (_apply_resolution): the shop's and the splash's renders
+# take it as their own, each frame they are drawn.
+static var msaa := Viewport.MSAA_4X
+
 static func scale(node: Node) -> float:
 	var window := node.get_window()
 	if window == null or window.content_scale_mode != Window.CONTENT_SCALE_MODE_CANVAS_ITEMS:

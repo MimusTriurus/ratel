@@ -1057,7 +1057,9 @@ class Bay:
 	# The render as large as `_rate` makes the frame, the screen's scale
 	# looked at again each frame: the window may change without the frame.
 	func _fit() -> void:
-		_rate = Level3DPixels.scale(self) * SUPERSAMPLE
+		viewport.msaa_3d = Level3DPixels.msaa
+		var smoothed := Level3DPixels.msaa != Viewport.MSAA_DISABLED
+		_rate = Level3DPixels.scale(self) * (SUPERSAMPLE if smoothed else 1.0)
 		var want := Vector2i(maxi(int(size.x * _rate), 1), maxi(int(size.y * _rate), 1))
 		if viewport.size != want:
 			viewport.size = want

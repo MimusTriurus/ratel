@@ -1549,6 +1549,8 @@ func _process(delta: float) -> void:
 	if not is_visible_in_tree():
 		_silence_engines()
 		return
+	# The settings' anti-aliasing (Level3DPixels), as it is now.
+	viewport.msaa_3d = Level3DPixels.msaa
 	_time += delta
 	_show_frame()
 	_follow_mouse(delta)

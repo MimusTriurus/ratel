@@ -18,6 +18,10 @@ enum Look { MODERN, PIXELS }
 # the screen's either way (level3d_preview.gd, _apply_resolution).
 enum Resolution { NATIVE, GAME, FULL_HD, HD }
 const RESOLUTIONS := [Vector2i.ZERO, Vector2i(2048, 1152), Vector2i(1920, 1080), Vector2i(1280, 720)]
+# How the 3D's edges are smoothed: MSAA, its samples ANTIALIAS_MSAA[i], or
+# not at all -- the game's, the shop's and the title's splash's (Level3DPixels).
+enum Antialias { OFF, MSAA_2X, MSAA_4X, MSAA_8X }
+const ANTIALIAS_MSAA := [Viewport.MSAA_DISABLED, Viewport.MSAA_2X, Viewport.MSAA_4X, Viewport.MSAA_8X]
 enum Driving { CLASSIC, FREE }
 # Classic: the gun up the screen and the launcher the way the BTR drives, as
 # the game's jeep fires; driving free, both along the hull. Modern: both at the
@@ -59,6 +63,7 @@ var crt := false
 # in: the day, Blender's, or the title's low sun.
 var light := Level3DLighting.Preset.DAY as int
 var resolution := Resolution.NATIVE
+var antialias := Antialias.MSAA_4X
 # The contour's width by what it is round (Level3DHull.Kind), pixels of a
 # frame 1080 high, one of OUTLINES: the stage and the enemies, the players'
 # vehicles, the people.
@@ -205,6 +210,7 @@ func load_saved() -> void:
 			paints[i] = paint
 	camera = clampi(config.get_value("graphics", "camera", camera), 0, Camera.size() - 1)
 	resolution = clampi(config.get_value("graphics", "resolution", resolution), 0, Resolution.size() - 1)
+	antialias = clampi(config.get_value("graphics", "antialias", antialias), 0, Antialias.size() - 1)
 	light = clampi(config.get_value("graphics", "light", light), 0, Level3DLighting.NAMES.size() - 1)
 	if config.has_section_key("graphics", "render"):
 		look = clampi(config.get_value("graphics", "render", look), 0, Look.size() - 1)
@@ -282,6 +288,7 @@ func save() -> void:
 	config.set_value("graphics", "camera", camera)
 	config.set_value("graphics", "render", look)
 	config.set_value("graphics", "resolution", resolution)
+	config.set_value("graphics", "antialias", antialias)
 	config.set_value("graphics", "crt", crt)
 	config.set_value("graphics", "light", light)
 	config.set_value("graphics", "outline_stage", outline_stage)
