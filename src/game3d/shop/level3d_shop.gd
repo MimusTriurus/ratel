@@ -13,7 +13,7 @@
 #                      ARENA       ??? CLASSIFIED  ???            o---'
 #                      ???         ???          ???
 #                      LIFE ----------------------------
-#                      (the paint, to come)
+#     [paint swatches]                                  [paint swatches]
 #     READY                                                        READY
 #
 # The side says no more than the money: the lives are on LIFE's tile, the
@@ -44,7 +44,12 @@
 #     does not jump, with a line from the box to the part, his or on trial,
 #     which follows it as the jeep turns: straight down, or for a part low
 #     on the jeep down beside it and in at a right angle, so as not to
-#     cross the hull. Under the jeep is kept for the paint.
+#     cross the hull.
+#   * Under the jeep, over READY, the paints (Level3DBtr.PAINTS): a row of
+#     swatches, free, left and right on it repainting the jeep there and
+#     then, a click on one the mouse's way; another player's paint is not to
+#     be had, two jeeps alike on the stage not telling whose is whose. The
+#     preview keeps them in its settings, for the next game too.
 #   * With one player there is no second column: the matrix stands at the
 #     frame's right edge, the title over it, and the jeep, larger, has the
 #     rest (SOLO_MATRIX_X, Bay.SOLO_ZOOM).
@@ -90,7 +95,8 @@ const DIM := Color(0.62, 0.62, 0.62)
 const FADE_OUT := 0.6
 const FADE_IN := 0.5
 const LEAVE := 0.6
-const READY_ROW := 6
+const READY_ROW := 7
+const PAINT_ROW := 6           # the swatches over READY, each player's own
 const LIFE_ROW := 5            # and as many rows of tiles over it
 const LAUNCHER_NAMES := ["GRENADE", "MISSILE", "MISSILE+", "MISSILE++"]
 # How the jeep shows a tile's part, and how the line from the words, always
@@ -122,6 +128,7 @@ const SHOWS := {
 	"mines": {"view": 155.0, "knee": -265.0},
 	"airstrike": {"view": 30.0},
 	"arena": {"view": 35.0, "spot": Vector3(0.5, 1.0, 1.0)},
+	"paint": {"view": 40.0},
 }
 const VIEW := 30.0
 const TURN_RATE := 3.0          # of the way to the view, per second
@@ -133,6 +140,11 @@ const GHOST_PULSE := 4.0
 const WORDS_TOP := MATRIX.position.y
 const WORDS_PAD := 16.0
 const WORDS_FADE := 0.2
+# The paints' swatches (PAINT_ROW): their size and the gap between, over
+# READY in the player's column; and what the words say of them.
+const SWATCH := 44.0
+const SWATCH_GAP := 12.0
+const PAINT_TEXT := "THE JEEP'S PAINT, FREE. LEFT AND RIGHT FOR ANOTHER."
 const LINE := 4.0
 const DOT := 8.0
 
@@ -144,10 +156,11 @@ var done: Callable
 var scale_factor := 1.0
 var settings: Level3DSettings
 # Per player: null for the first (the settings' keys and the mouse), the
-# second's HumanInput; and their colours and their tints.
+# second's HumanInput; and their colours, and their jeeps' paints
+# (Level3DBtr.PAINTS), which the shop changes and the preview keeps.
 var inputs: Array = []
 var colours: Array[Color] = []
-var tints: Array[Vector3] = []
+var paints: Array[String] = []
 
 var _state := State.CLOSED
 var _run: Level3DRun
@@ -164,6 +177,7 @@ var _fade: Tween
 var _time := 0.0
 var _shown: Array[String] = []      # each player's tile his words are on, and since when
 var _since: Array[float] = []
+static var _swatches: Array[Color] = []  # each paint's olive, Level3DBtr.paint_swatches
 var _rects := {}                  # this frame's: Vector3i(column, row, player for READY) -> Rect2
 
 
@@ -205,7 +219,7 @@ func _ready() -> void:
 		k.device = ["nitro", ""][i]
 		run.kits.append(k)
 	colours.assign([Color("5ca83e"), Color("3e8fa8")])
-	tints.assign([Vector3.ZERO, Vector3(80.0, 130.0, 100.0)])
+	paints.assign(["olive", "blue"])
 	open(run, true)
 
 
@@ -260,7 +274,8 @@ func close() -> void:
 
 func _show() -> void:
 	_fade = null
-	_bay.stage(_players, tints)
+	_bay.stage(_players, paints)
+	_swatch_colours()
 	_time = 0.0
 	for i in _players:
 		_dress(i)
@@ -306,6 +321,9 @@ func _item(player: int) -> Dictionary:
 	var at := _cursor[player]
 	if at.y == READY_ROW:
 		return {}
+	if at.y == PAINT_ROW:
+		var paint: Dictionary = Level3DBtr.PAINTS[Level3DBtr.paint_index(paints[player])]
+		return {"id": "paint", "name": paint.name, "text": PAINT_TEXT}
 	return Level3DShopCatalog.at(at.y, at.x)
 
 
@@ -314,6 +332,9 @@ func _move(player: int, by: Vector2i) -> void:
 	var to := at
 	if by.y != 0:
 		to.y = clampi(at.y + by.y, 0, READY_ROW)
+	elif at.y == PAINT_ROW:
+		_repaint(player, Level3DBtr.paint_index(paints[player]) + by.x, by.x)
+		return
 	elif at.y < LIFE_ROW:
 		to.x = clampi(at.x + by.x, 0, Level3DShopCatalog.COLUMNS - 1)
 	if to != at:
@@ -326,6 +347,9 @@ func _move(player: int, by: Vector2i) -> void:
 
 func _fire(player: int) -> void:
 	if _state != State.OPEN:
+		return
+	if _cursor[player].y == PAINT_ROW:
+		Level3DAudio.play("menu_pick")
 		return
 	if _cursor[player].y == READY_ROW:
 		_set[player] = not _set[player]
@@ -448,6 +472,9 @@ func _input(event: InputEvent) -> void:
 		if _state == State.OPEN and _reticle.mouse_has_it():
 			var at := _cell_at(_text.get_local_mouse_position())
 			var now := _cursor[0]
+			if at.y == PAINT_ROW:
+				# Over a swatch: the row, the paint only by a click.
+				at.x = now.x
 			if at.x >= 0 and (at.y != now.y or at.y < LIFE_ROW and at.x != now.x):
 				_cursor[0] = Vector2i(at.x, at.y)
 				Level3DAudio.play("menu_move")
@@ -460,6 +487,12 @@ func _input(event: InputEvent) -> void:
 			return
 		var at := _cell_at(_text.get_local_mouse_position())
 		if at.x < 0:
+			return
+		if at.y == PAINT_ROW:
+			_cursor[0].y = PAINT_ROW
+			_dress(0)
+			if click.button_index == MOUSE_BUTTON_LEFT:
+				_repaint(0, at.x, 0)
 			return
 		_cursor[0] = Vector2i(at.x, at.y)
 		_dress(0)
@@ -488,21 +521,62 @@ func _key(action: String) -> Key:
 	return Level3DSettings.DEFAULT_KEYS.get(action, KEY_NONE)
 
 
-# The cell under `p`, (column, row), the first player's READY as row 4; x
-# -1 for none.
+# The cell under `p`, (column, row), the first player's READY and swatches
+# as their rows, a swatch's x its paint; x -1 for none.
 func _cell_at(p: Vector2) -> Vector2i:
 	for k in _rects:
 		if (_rects[k] as Rect2).has_point(p):
 			var cell: Vector3i = k
-			if cell.y == READY_ROW and cell.z != 0:
+			if (cell.y == READY_ROW or cell.y == PAINT_ROW) and cell.z != 0:
 				continue
 			return Vector2i(cell.x, cell.y)
 	return Vector2i(-1, -1)
 
 
+# Player `player`'s jeep in the paint at `index` (Level3DBtr.PAINTS), or,
+# that one being another player's, the next on the way `step` goes;
+# nothing past either end, nor with `step` 0 (a click) on a taken one.
+func _repaint(player: int, index: int, step: int) -> void:
+	while index >= 0 and index < Level3DBtr.PAINTS.size() and _taken(player, Level3DBtr.PAINTS[index].id):
+		if step == 0:
+			index = -1
+			break
+		index += step
+	if index < 0 or index >= Level3DBtr.PAINTS.size():
+		Level3DAudio.play("hit_dull")
+		return
+	var id: String = Level3DBtr.PAINTS[index].id
+	if id == paints[player]:
+		return
+	paints[player] = id
+	_bay.paint(player, id)
+	Level3DAudio.play("menu_move")
+
+
+# Whether paint `id` is on another player's jeep: two alike on the stage
+# would not tell which is whose.
+func _taken(player: int, id: String) -> bool:
+	for i in _players:
+		if i != player and i < paints.size() and paints[i] == id:
+			return true
+	return false
+
+
+func _swatch_colours() -> void:
+	if _swatches.is_empty():
+		_swatches = Level3DBtr.paint_swatches(Level3DBtr.VEHICLES[Level3DBtr.chosen()])
+
+
+# Player `i`'s cursor's key in _rects.
+func _cursor_key(i: int) -> Vector3i:
+	var at := _cursor[i]
+	if at.y == PAINT_ROW:
+		return Vector3i(Level3DBtr.paint_index(paints[i]), PAINT_ROW, i)
+	return Vector3i(at.x if at.y < LIFE_ROW else 0, at.y, i if at.y == READY_ROW else 0)
+
+
 func _reticle_slot() -> Vector2:
-	var at := _cursor[0] if not _cursor.is_empty() else Vector2i.ZERO
-	var rect: Rect2 = _rects.get(Vector3i(at.x if at.y < LIFE_ROW else 0, at.y, 0), Rect2())
+	var rect: Rect2 = _rects.get(_cursor_key(0), Rect2()) if not _cursor.is_empty() else Rect2()
 	return Vector2(rect.position.x - 28.0 * scale_factor, rect.get_center().y)
 
 
@@ -543,12 +617,12 @@ func _draw_text() -> void:
 	# The cursors, the second's inside the first's.
 	for i in range(_players - 1, -1, -1):
 		var at := _cursor[i]
-		var key := Vector3i(at.x if at.y < LIFE_ROW else 0, at.y, i if at.y == READY_ROW else 0)
+		var key := _cursor_key(i)
 		if not _rects.has(key):
 			continue
 		var r: Rect2 = _rects[key]
 		var inset := 0.0
-		if i == 1 and _cursor[0] == at and at.y != READY_ROW:
+		if i == 1 and _cursor[0] == at and at.y != READY_ROW and at.y != PAINT_ROW:
 			inset = (CURSOR + 2.0) * s
 		var c := maxf(roundf(CURSOR * s), 2.0)
 		_text.draw_rect(r.grow(c - inset), Color.BLACK, false, c + 2.0)
@@ -667,6 +741,7 @@ func _draw_side(i: int, s: float, g: float, sg: float, pg: float) -> void:
 	x = Level3DFont.draw(_text, who, roundf(x), y, pg, Level3DFont.WHITE, colour)
 	Level3DFont.draw(_text, money, roundf(x), y, pg)
 	_draw_words(i, Rect2(x0, 0.0, width, 0.0), s, g, sg)
+	_draw_paints(i, x0, width, s)
 	# READY.
 	var ready := "READY!" if _set[i] else "READY"
 	var rw := Level3DFont.width(ready, g)
@@ -676,6 +751,33 @@ func _draw_side(i: int, s: float, g: float, sg: float, pg: float) -> void:
 	_text.draw_rect(rect, colour if _set[i] else TILE_FILL)
 	_text.draw_rect(rect, Color(1, 1, 1, 0.85), false, maxf(roundf(RING * s), 1.0))
 	Level3DFont.draw(_text, ready, roundf(rect.position.x + 24.0 * s), roundf(rect.position.y + 12.0 * s), g)
+
+
+# Player `i`'s swatches over his READY, across the middle of his column,
+# their bottom in line with the matrix's: each the olive in that paint, a
+# bar over the one on his jeep, another
+# player's dimmed and struck through.
+func _draw_paints(i: int, x0: float, width: float, s: float) -> void:
+	var n := Level3DBtr.PAINTS.size()
+	var size := roundf(SWATCH * s)
+	var gap := roundf(SWATCH_GAP * s)
+	var x := roundf(x0 + width * 0.5 - (size * n + gap * (n - 1)) * 0.5)
+	# Their bottom in line with LIFE's, the matrix's.
+	var y := roundf((MATRIX.end.y - SWATCH) * s)
+	var ring := maxf(roundf(RING * s), 1.0)
+	for k in n:
+		var rect := Rect2(x + (size + gap) * k, y, size, size)
+		_rects[Vector3i(k, PAINT_ROW, i)] = rect
+		var id: String = Level3DBtr.PAINTS[k].id
+		var colour: Color = _swatches[k] if k < _swatches.size() else Color.GRAY
+		var taken := _taken(i, id)
+		_text.draw_rect(rect, colour.darkened(0.6) if taken else colour)
+		_text.draw_rect(rect, Color(1, 1, 1, 0.35 if taken else 0.85), false, ring)
+		if taken:
+			_text.draw_line(rect.position, rect.end, Color(1, 1, 1, 0.5), ring)
+		if id == paints[i]:
+			_text.draw_rect(Rect2(rect.position.x, rect.position.y - roundf(10.0 * s), size, roundf(4.0 * s)),
+					Color.WHITE)
 
 
 # Player `i`'s tile's name and its words in a box across his column
@@ -804,8 +906,8 @@ class Bay:
 		if what == NOTIFICATION_RESIZED and viewport != null:
 			viewport.size = Vector2i(maxi(int(size.x), 1), maxi(int(size.y), 1))
 
-	# The bay for `players` jeeps, the second tinted by `tints[1]`.
-	func stage(players: int, tints: Array[Vector3]) -> void:
+	# The bay for `players` jeeps, each in his paint (`paints`).
+	func stage(players: int, paints: Array[String]) -> void:
 		clear()
 		viewport.size = Vector2i(maxi(int(size.x), 1), maxi(int(size.y), 1))
 		var root := Node3D.new()
@@ -857,8 +959,8 @@ class Bay:
 			var jeep := Level3DBtr.new()
 			jeep.position.y = 0.12
 			table.add_child(jeep)
-			if i > 0 and i < tints.size() and tints[i] != Vector3.ZERO:
-				jeep.tint(tints[i].x, tints[i].y, tints[i].z)
+			if i < paints.size():
+				jeep.paint(paints[i])
 			_tables.append(table)
 			_jeeps.append(jeep)
 			_yaw.append(30.0)
@@ -975,6 +1077,11 @@ class Bay:
 		var per_pixel := 2.0 * depth * tan(deg_to_rad(_camera.fov) * 0.5) / float(viewport.size.y)
 		_camera.h_offset = (at.x - want.x) * per_pixel
 		_camera.v_offset = (want.y - at.y) * per_pixel
+
+	# Player `i`'s jeep in paint `id` (Level3DBtr.PAINTS).
+	func paint(i: int, id: String) -> void:
+		if i < _jeeps.size():
+			_jeeps[i].paint(id)
 
 	# Player `i`'s jeep to turn `degrees` off facing the camera, towards the
 	# frame's middle.

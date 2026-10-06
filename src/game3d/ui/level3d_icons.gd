@@ -41,10 +41,12 @@ var shade := 0.3
 
 # Every icon at `height` pixels (the widest may be up to `max_aspect` times
 # that across), for `vehicle` -- Level3DBtr.VEHICLES' entry: {"lives": Texture,
-# "pow": Texture}, and "lives_2" too, the vehicle
-# turned by Level3DBtr.tint's `hues` (min, max, shift), when they are given:
-# the second player's. Takes a few frames.
-func render_all(vehicle: Dictionary, height: int, hues := Vector3.ZERO) -> Dictionary:
+# "pow": Texture}, and "lives_2" too when `hues` (Level3DBtr.tint's min, max,
+# shift) are given, the second player's: the vehicle in each player's paint
+# (`paints`, Level3DBtr.PAINTS), or with none the first's olive and the
+# second's turned by `hues`; his prisoner ("pow_2") turned by them whatever
+# his paint, his colour being the player's, not the jeep's. Takes a few frames.
+func render_all(vehicle: Dictionary, height: int, hues := Vector3.ZERO, paints := []) -> Dictionary:
 	var scene: PackedScene = load(vehicle.path)
 	var prefix: String = vehicle.prefix
 	var fits: Array[String] = []
@@ -63,6 +65,8 @@ func render_all(vehicle: Dictionary, height: int, hues := Vector3.ZERO) -> Dicti
 		var node := body.find_child(name, true, false)
 		if node != null:
 			node.visible = false
+	if paints.size() > 0:
+		Level3DBtr.paint_model(body, vehicle, paints[0])
 	var icons := {"lives": await render(body, height, 1.6)}
 	if hues != Vector3.ZERO:
 		var tinted := _turned(scene.instantiate(), vehicle.facing)
@@ -70,7 +74,10 @@ func render_all(vehicle: Dictionary, height: int, hues := Vector3.ZERO) -> Dicti
 			var node := tinted.find_child(name, true, false)
 			if node != null:
 				node.visible = false
-		Level3DBtr.tint_model(tinted, hues.x, hues.y, hues.z)
+		if paints.size() > 1:
+			Level3DBtr.paint_model(tinted, vehicle, paints[1])
+		else:
+			Level3DBtr.tint_model(tinted, hues.x, hues.y, hues.z)
 		icons["lives_2"] = await render(tinted, height, 1.6)
 
 	var pow: Dictionary = Level3DFriends.chosen()

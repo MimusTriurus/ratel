@@ -49,6 +49,8 @@ const DEFAULT_KEYS := {
 
 # The title screen's difficulty (Level3DTitle, Level3DMap.hard).
 var hard := false
+# Each player's paint (Level3DBtr.PAINTS), as the shop last left it.
+var paints: Array[String] = ["olive", "blue"]
 var camera := Camera.TILTED
 var look := Look.MODERN
 # The CRT monitor, over either look.
@@ -197,6 +199,10 @@ func load_saved() -> void:
 	if config.load(SAVE_PATH) != OK:
 		return
 	hard = config.get_value("game", "hard", hard)
+	for i in paints.size():
+		var paint: String = str(config.get_value("game", "paint_%d" % (i + 1), paints[i]))
+		if Level3DBtr.PAINTS.any(func(p: Dictionary): return p.id == paint):
+			paints[i] = paint
 	camera = clampi(config.get_value("graphics", "camera", camera), 0, Camera.size() - 1)
 	resolution = clampi(config.get_value("graphics", "resolution", resolution), 0, Resolution.size() - 1)
 	light = clampi(config.get_value("graphics", "light", light), 0, Level3DLighting.NAMES.size() - 1)
@@ -271,6 +277,8 @@ static func _rate(saved) -> float:
 func save() -> void:
 	var config := ConfigFile.new()
 	config.set_value("game", "hard", hard)
+	for i in paints.size():
+		config.set_value("game", "paint_%d" % (i + 1), paints[i])
 	config.set_value("graphics", "camera", camera)
 	config.set_value("graphics", "render", look)
 	config.set_value("graphics", "resolution", resolution)

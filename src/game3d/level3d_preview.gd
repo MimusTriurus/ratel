@@ -658,9 +658,9 @@ func _add_crew() -> Crew:
 	c.btr = Btr.new()
 	c.btr.ground = _hull_ground_at
 	add_child(c.btr)
+	# In the paint the shop last gave him (Level3DSettings.paints).
+	c.btr.paint(_paint(c.index))
 	if c.index > 0:
-		var blue: Vector3 = c.btr.vehicle.blue
-		c.btr.tint(blue.x, blue.y, blue.z)
 		c.input = HumanInput.new(_mapping_2)
 		c.input.arrows = false
 	Level3DAudio.attach_loop("btr_idle", c.btr)
@@ -2470,6 +2470,18 @@ func _layout_hud() -> void:
 		_render_icons()
 
 
+# Player `index`'s paint (Level3DBtr.PAINTS): the settings' -- the shop's,
+# last time -- the second's not the first's, which would leave the two
+# jeeps on the stage alike.
+func _paint(index: int) -> String:
+	var paint: String = settings.paints[mini(index, settings.paints.size() - 1)]
+	if index > 0 and paint == settings.paints[0]:
+		for p in Level3DBtr.PAINTS:
+			if p.id != settings.paints[0]:
+				return p.id
+	return paint
+
+
 # The HUD's icons off the preview's own models (Level3DIcons), lit by its sun.
 # A few frames' work, so a size changed again before it is done starts over,
 # and only the last one's are kept.
@@ -2486,7 +2498,8 @@ func _render_icons() -> void:
 	_icon_pixels = crews[0].hud.icon_pixels()
 	_icon_run += 1
 	var run := _icon_run
-	var rendered: Dictionary = await _icons.render_all(btr.vehicle, _icon_pixels, btr.vehicle.blue)
+	var rendered: Dictionary = await _icons.render_all(btr.vehicle, _icon_pixels, btr.vehicle.blue,
+			[_paint(0), _paint(1)])
 	if run == _icon_run:
 		for c in crews:
 			c.hud.icons = rendered
@@ -4045,7 +4058,7 @@ func _open_shop(at_once := false) -> void:
 	_shop.settings = settings
 	_shop.inputs.assign(crews.map(func(c: Crew): return c.input))
 	_shop.colours.assign(crews.map(func(c: Crew): return c.hud.colour))
-	_shop.tints.assign(crews.map(func(c: Crew): return c.btr.vehicle.blue if c.index > 0 else Vector3.ZERO))
+	_shop.paints.assign(crews.map(func(c: Crew): return _paint(c.index)))
 	get_tree().paused = true
 	Level3DAudio.fade_music(Level3DShop.FADE_OUT)
 	_shop.open(_capture(), at_once)
@@ -4058,6 +4071,17 @@ func _shop_done(run: Level3DRun) -> void:
 	get_tree().paused = false
 	_gun_locked = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	_restore(run)
+	# The paints chosen in it, kept for the next game too, and the lives'
+	# icons in them.
+	var repainted := false
+	for c in crews:
+		if c.index < _shop.paints.size() and _shop.paints[c.index] != _paint(c.index):
+			settings.paints[c.index] = _shop.paints[c.index]
+			c.btr.paint(_paint(c.index))
+			repainted = true
+	if repainted:
+		settings.save()
+		_render_icons()
 	_round += 1
 	_start_round()
 	_saved = _capture()

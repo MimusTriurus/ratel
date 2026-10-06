@@ -519,6 +519,122 @@ func tint(min_hue: float, max_hue: float, shift: float) -> void:
 	tint_model(_model, min_hue, max_hue, shift)
 
 
+# The paints a player may give his vehicle (the shop's, Level3DSettings'
+# paints), each by the colour its olive takes -- the olive's parts as tint
+# finds them, their mean the olive -- every shade of it kept as far off as it
+# was, darker or lighter, greyer or not; BLUE the second player's of old, the
+# olive turned by VEHICLES' blue as tint turns it, and OLIVE the model's own.
+const PAINTS := [
+	{"id": "olive", "name": "OLIVE"},
+	{"id": "blue", "name": "BLUE"},
+	{"id": "sand", "name": "SAND", "colour": Color("ad9265")},
+	{"id": "grey", "name": "GREY", "colour": Color("63686e")},
+	{"id": "snow", "name": "SNOW", "colour": Color("d0d5db")},
+	{"id": "night", "name": "NIGHT", "colour": Color("2a2f38")},
+	{"id": "jungle", "name": "JUNGLE", "colour": Color("34603a")},
+	{"id": "rust", "name": "RUST", "colour": Color("8c4f35")},
+]
+# The olive's parts as they came, for paint to start from each time:
+# [mesh, surface, its override before, the material].
+var _paintable: Array = []
+
+
+static func paint_index(id: String) -> int:
+	for i in PAINTS.size():
+		if PAINTS[i].id == id:
+			return i
+	return 0
+
+
+# The vehicle in paint `id` (PAINTS), from its own colours whatever it was in
+# before.
+func paint(id: String) -> void:
+	if _paintable.is_empty():
+		_paintable = _olive_parts(_model, vehicle)
+	var base := _olive(_paintable.map(func(entry): return entry[3]))
+	for entry in _paintable:
+		var mesh := entry[0] as MeshInstance3D
+		if id == "olive":
+			mesh.set_surface_override_material(entry[1], entry[2])
+		else:
+			mesh.set_surface_override_material(entry[1], _painted(entry[3], base, id, vehicle))
+
+
+# paint's turn on any model of `vehicle` as it comes: the HUD's icons.
+static func paint_model(model: Node, vehicle_entry: Dictionary, id: String) -> void:
+	if id == "olive":
+		return
+	var parts := _olive_parts(model, vehicle_entry)
+	var base := _olive(parts.map(func(entry): return entry[3]))
+	for entry in parts:
+		(entry[0] as MeshInstance3D).set_surface_override_material(entry[1],
+				_painted(entry[3], base, id, vehicle_entry))
+
+
+# What each paint (PAINTS) makes of `vehicle_entry`'s olive itself: the
+# shop's swatches.
+static func paint_swatches(vehicle_entry: Dictionary) -> Array[Color]:
+	var model: Node = (load(vehicle_entry.path) as PackedScene).instantiate()
+	var parts := _olive_parts(model, vehicle_entry)
+	var base := _olive(parts.map(func(entry): return entry[3]))
+	model.free()
+	var out: Array[Color] = []
+	for paint in PAINTS:
+		out.append(_paint_colour(base, base, paint.id, vehicle_entry))
+	return out
+
+
+static func _olive_parts(model: Node, vehicle_entry: Dictionary) -> Array:
+	var hues: Vector3 = vehicle_entry.blue
+	var out := []
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		for surface in mesh_instance.get_surface_override_material_count():
+			var material := mesh_instance.get_active_material(surface) as StandardMaterial3D
+			if material == null:
+				continue
+			var colour := material.albedo_color
+			var hue := colour.h * 360.0
+			if colour.s <= 0.2 or hue < hues.x or hue > hues.y:
+				continue
+			out.append([mesh_instance, surface, mesh_instance.get_surface_override_material(surface), material])
+	return out
+
+
+static func _olive(materials: Array) -> Color:
+	if materials.is_empty():
+		return Color.WHITE
+	var h := 0.0
+	var sat := 0.0
+	var val := 0.0
+	for material in materials:
+		var c: Color = (material as StandardMaterial3D).albedo_color
+		h += c.h
+		sat += c.s
+		val += c.v
+	var n := float(materials.size())
+	return Color.from_hsv(h / n, sat / n, val / n)
+
+
+static func _painted(material: StandardMaterial3D, base: Color, id: String,
+		vehicle_entry: Dictionary) -> StandardMaterial3D:
+	var copy := material.duplicate() as StandardMaterial3D
+	copy.albedo_color = _paint_colour(material.albedo_color, base, id, vehicle_entry)
+	return copy
+
+
+static func _paint_colour(c: Color, base: Color, id: String, vehicle_entry: Dictionary) -> Color:
+	var entry: Dictionary = PAINTS[paint_index(id)]
+	if id == "blue":
+		var shift: float = (vehicle_entry.blue as Vector3).z
+		return Color.from_hsv(fposmod(c.h * 360.0 + shift, 360.0) / 360.0, c.s, c.v, c.a)
+	if not entry.has("colour"):
+		return c
+	var to: Color = entry.colour
+	return Color.from_hsv(fposmod(to.h + c.h - base.h, 1.0), clampf(to.s * c.s / maxf(base.s, 0.01), 0.0, 1.0),
+			clampf(to.v * c.v / maxf(base.v, 0.01), 0.0, 1.0), c.a)
+
+
 # tint's turn on any model: the HUD's icon of the vehicle is tinted as it is.
 static func tint_model(model: Node, min_hue: float, max_hue: float, shift: float) -> void:
 	for node in model.find_children("*", "MeshInstance3D", true, false):
