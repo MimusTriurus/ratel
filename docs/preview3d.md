@@ -92,7 +92,10 @@ is a `Crew` in `level3d_preview.gd` -- vehicle, gun, launcher, HUD line, and a
 `Level3DFriends.Carrier` for the prisoners and the weapon; `btr`, `gun` and
 `launcher` are still the first's, which the mouse, the --shot options and the
 ground's craters (`Level3DLauncher.marks`) go by. The second is blue
-(`Level3DBtr.tint`), reads `Main`'s second mapping from `user://buttons2.cfg`
+(`Level3DBtr.tint`), and on the armoured pickup drives another make of it,
+`jackal_armored_b.glb` (`Level3DBtr.player`, `for_player`, VEHICLES'
+`second`) -- on the level, in the shop, the splash, the mission's end and
+the HUD's lives icon alike; it reads `Main`'s second mapping from `user://buttons2.cfg`
 through a `HumanInput` of its own, fires the classic way, and takes the arrows
 from the camera. The modules get the nearest jeep from
 `player_position.call(from)`, points go to `Level3DGuns.acting` (explosions

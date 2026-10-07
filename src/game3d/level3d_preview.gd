@@ -670,6 +670,7 @@ func _add_crew() -> Crew:
 	c.index = crews.size()
 	c.lives = EXTRA_LIVES
 	c.btr = Btr.new()
+	c.btr.player = c.index
 	c.btr.ground = _hull_ground_at
 	add_child(c.btr)
 	# In the paint the shop last gave him (Level3DSettings.paints).

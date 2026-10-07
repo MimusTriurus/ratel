@@ -1090,8 +1090,9 @@ func _build() -> void:
 	camera.rotation.x = deg_to_rad(CAMERA_TILT)
 
 	world.add_child(_ground())
-	for at in JEEPS:
-		var jeep := _jeep()
+	for i in JEEPS.size():
+		var at: Vector3 = JEEPS[i]
+		var jeep := _jeep(i)
 		world.add_child(jeep)
 		jeep.position = at
 		jeep.rotation.y = deg_to_rad(JEEP_TOE) * signf(at.x) * -1.0
@@ -1254,8 +1255,11 @@ func _dress(mesh_instance: MeshInstance3D) -> void:
 			mesh_instance.set_surface_override_material(surface, m)
 
 
-func _jeep() -> Node3D:
-	var jeep: Node3D = (load(vehicle.path) as PackedScene).instantiate()
+# Player `index`'s jeep, the left one the first's: the second's may be
+# another model (Level3DBtr.second_of), with the same part names.
+func _jeep(index: int) -> Node3D:
+	var entry: Dictionary = Level3DBtr.second_of(vehicle) if index > 0 else vehicle
+	var jeep: Node3D = (load(entry.path) as PackedScene).instantiate()
 	var prefix: String = vehicle.prefix
 	for fit in HIDDEN_FITS:
 		var node := jeep.find_child(prefix + fit, true, false) as Node3D

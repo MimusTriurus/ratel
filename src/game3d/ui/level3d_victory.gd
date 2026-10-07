@@ -302,6 +302,7 @@ func show_victory(paints: Array[String], kits: Array) -> void:
 		spots = ["Car_1P", "Car_2P"]
 	for i in players:
 		var jeep := Level3DBtr.new()
+		jeep.player = i
 		_world.add_child(jeep)
 		# The marker is turned as the model's root is, its +Z the nose; the
 		# vehicle's nose is its +X.

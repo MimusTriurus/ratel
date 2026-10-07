@@ -1163,6 +1163,7 @@ class Bay:
 					_wear(ground.material_override, table.position, heli.position)
 			_helis.append(heli)
 			var jeep := Level3DBtr.new()
+			jeep.player = i
 			table.add_child(jeep)
 			if i < paints.size():
 				jeep.paint(paints[i])

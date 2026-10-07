@@ -69,7 +69,10 @@ func render_all(vehicle: Dictionary, height: int, hues := Vector3.ZERO, paints :
 		Level3DBtr.paint_model(body, vehicle, paints[0])
 	var icons := {"lives": await render(body, height, 1.6)}
 	if hues != Vector3.ZERO:
-		var tinted := _turned(scene.instantiate(), vehicle.facing)
+		# The second player's vehicle, which may be another model
+		# (Level3DBtr.second_of), with the same part names.
+		var scene_2: PackedScene = load(Level3DBtr.second_of(vehicle).path)
+		var tinted := _turned(scene_2.instantiate(), vehicle.facing)
 		for name in fits + spare:
 			var node := tinted.find_child(name, true, false)
 			if node != null:

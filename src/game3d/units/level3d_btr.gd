@@ -97,6 +97,11 @@
 # holds the round of the step the launcher falls back to with it, one down
 # (`set_weapon_level`): the mortar's mine at the grenade's step and the
 # missile's; its aerial is the airstrike's, there only once that is bought.
+#
+# The second player's armoured pickup is another make in its proportions
+# (VEHICLES' second, `player`): jackal_armored_b.glb, every part where the
+# first's is and named as the first's, its body, glass and upgrades its own
+# shape, and the airstrike's aerials a pair, AerialL and AerialR.
 class_name Level3DBtr
 extends Node3D
 
@@ -143,6 +148,11 @@ const MODEL_SCALE := 0.31
 #                  from x to y turned by z -- the jeep's and the BTR's green,
 #                  Main.players_blue's turn of it, or the armoured pickup's
 #                  olive, turned to the same blue
+#   second         what differs for the second player (for_player): the
+#                  armoured pickup's is another make, jackal_armored_b.glb
+#                  from jackal_armored_b_lowpoly.blend, in its proportions
+#                  and with its part names, so that only the glb and its two
+#                  aerials (the airstrike's pair) differ
 const VEHICLES := {
 	"btr": {"path": "res://resources/3d/ratel_btr.glb", "prefix": "BTR_", "scale": MODEL_SCALE,
 			"facing": 0.0, "axles": 3, "wheel_radius": 0.66, "wheelbase": 3.06,
@@ -172,8 +182,10 @@ const VEHICLES := {
 			"exhausts": ["ExhaustTip", "UpNitroTipL", "UpNitroTipR"],
 			"stock": {"twin": ["GunBore"], "nitro": ["Exhaust"], "radar": ["TurretSight"],
 					"armor": ["Glass"], "arena": ["RoofLamps"]},
-			# Its olive is at 55 degrees, the canvas, lamps and amber below 50.
-			"blue": Vector3(50.0, 80.0, 150.0)},
+			# Its olive is at 55 degrees, the canvas, lamps and amber below 50
+			# (and the second's cargo's sand, at 37).
+			"blue": Vector3(50.0, 80.0, 150.0),
+			"second": {"path": "res://resources/3d/jackal_armored_b.glb", "aerials": ["AerialL", "AerialR"]}},
 }
 # The shop's upgrades that show on the vehicle: the shop's id (Level3DShopCatalog)
 # -> its part's root in the model, without the prefix -- jackal_jeep.py's
@@ -314,6 +326,9 @@ var _classic_synced := false
 # not pulled back in, only kept from going further.
 var z_limits := Vector2(-INF, INF)
 
+# Whose it is, 0 or 1, set before it enters the tree: the second player's
+# vehicle may be another model (VEHICLES' second, for_player).
+var player := 0
 # VEHICLES' entry for the one driven, and what it scales to in the level.
 var vehicle: Dictionary
 var model_scale: float
@@ -380,8 +395,23 @@ static func chosen() -> String:
 	return "btr" if args.has("--btr") else "jeep" if args.has("--jeep") else "armored"
 
 
+# VEHICLES' entry for player `index` (0 or 1) of the chosen vehicle.
+static func for_player(index: int) -> Dictionary:
+	var entry: Dictionary = VEHICLES[chosen()]
+	return second_of(entry) if index > 0 else entry
+
+
+# `entry` as the second player's: with its "second" over it, or as it is.
+static func second_of(entry: Dictionary) -> Dictionary:
+	if not entry.has("second"):
+		return entry
+	var out := entry.duplicate()
+	out.merge(entry.second, true)
+	return out
+
+
 func _ready() -> void:
-	vehicle = VEHICLES[chosen()]
+	vehicle = for_player(player)
 	model_scale = vehicle.scale
 	var prefix: String = vehicle.prefix
 	var path: String = vehicle.path
