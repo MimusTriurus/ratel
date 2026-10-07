@@ -59,11 +59,10 @@
 #   * With one player there is no second column: the matrix stands at the
 #     frame's right edge, the title over it, and the jeep, larger, has the
 #     rest (SOLO_MATRIX_X, Bay.SOLO_ZOOM).
-#   * No mouse: the keys and the pads, the first player's cursor shown by
-#     the title's reticle (Level3DReticle).
+#   * No mouse: the keys and the pads, each player's cursor his frame.
 #   * Escape opens the Escape menu over it (`open_menu`), which leaves the
 #     stage paused under it when it closes (Level3DMenu.open). While it is
-#     up (`menu_open`) the shop takes no input and hides its reticle.
+#     up (`menu_open`) the shop takes no input.
 #
 # Its own layer, processing while the tree is paused, the bay on one under it
 # (scene_layer). The jeeps are in a
@@ -228,7 +227,6 @@ var _bay: Bay
 var _bay_layer: CanvasLayer
 var _text: Control
 var _veil: ColorRect
-var _reticle: Level3DReticle
 var _fade: Tween
 var _time := 0.0
 var _shown: Array[String] = []      # each player's tile his words are on, and since when
@@ -251,9 +249,6 @@ func _init() -> void:
 	_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_text.draw.connect(_draw_text)
 	add_child(_text)
-	_reticle = Level3DReticle.new()
-	_reticle.shown = false
-	add_child(_reticle)
 	_veil = ColorRect.new()
 	_veil.color = Color(0, 0, 0, 0)
 	_veil.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -323,7 +318,6 @@ func close() -> void:
 	_state = State.CLOSED
 	visible = false
 	_veil.color.a = 0.0
-	_reticle.shown = false
 	_bay.clear()
 	_show_hud(true)
 
@@ -347,9 +341,6 @@ func _show() -> void:
 	_fade = create_tween()
 	_fade.tween_property(_veil, "color:a", 0.0, FADE_IN)
 	_fade.tween_callback(func(): _fade = null)
-	await get_tree().process_frame
-	_reticle.park()
-	_reticle.aim(_reticle_slot, false)
 
 
 func _kill_fade() -> void:
@@ -363,7 +354,7 @@ func _kill_fade() -> void:
 func _leave() -> void:
 	_state = State.LEAVING
 	Level3DAudio.play("menu_pick")
-	# The words, the goods and the reticle gone, the jeeps away.
+	# The words and the goods gone, the jeeps away.
 	_text.create_tween().tween_property(_text, "modulate:a", 0.0, HUD_OUT)
 	_bay.drive_off()
 	_start_engines()
@@ -410,8 +401,6 @@ func _move(player: int, by: Vector2i) -> void:
 		_cursor[player] = to
 		Level3DAudio.play("menu_move")
 		_dress(player)
-		if player == 0:
-			_reticle.aim(_reticle_slot)
 
 
 func _fire(player: int) -> void:
@@ -433,8 +422,6 @@ func _fire(player: int) -> void:
 		_bought[player].append(it.id)
 		_set[player] = false
 		Level3DAudio.play("extra_life" if it.kind == Level3DShopCatalog.Kind.SUPPLY else "upgrade")
-		if player == 0:
-			_reticle.fire()
 		_dress(player)
 	elif state == Level3DShopCatalog.State.OWNED and it.kind == Level3DShopCatalog.Kind.DEVICE \
 			and kit.device != it.id:
@@ -476,10 +463,6 @@ func _process(delta: float) -> void:
 	if _state == State.CLOSED:
 		return
 	_time += delta
-	# Out of the tree's processing under the menu, not only unseen: both carry
-	# the hidden pointer, and the two would pull it each its own way.
-	_reticle.visible = not _menu_up()
-	_reticle.shown = _state == State.OPEN and _veil.color.a < 0.5 and not _menu_up()
 	if _state == State.OPEN and not _menu_up():
 		for i in _players:
 			if inputs.size() > i and inputs[i] is HumanInput:
@@ -680,11 +663,6 @@ func _cursor_key(i: int) -> Vector3i:
 	if at.y == PAINT_ROW:
 		return Vector3i(Level3DBtr.paint_index(paints[i]), PAINT_ROW, i)
 	return Vector3i(at.x if at.y < LIFE_ROW else 0, at.y, i if at.y == READY_ROW else 0)
-
-
-func _reticle_slot() -> Vector2:
-	var rect: Rect2 = _rects.get(_cursor_key(0), Rect2()) if not _cursor.is_empty() else Rect2()
-	return Vector2(rect.position.x - 28.0 * scale_factor, rect.get_center().y)
 
 
 # ---------------------------------------------------------------------------

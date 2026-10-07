@@ -113,8 +113,12 @@ godot --path . --windowed --resolution 1280x720 src/game3d/level3d_preview.tscn 
 The preview is played on the keys and the pads alone: nothing reads the
 mouse -- not the stage's weapons and orders, not the title, the shop, the
 game over or the Escape menu, which keeps its events from its controls --
-and the system pointer is hidden the whole time (`Level3DCrosshair`); the
-menus point with their reticle (`Level3DReticle`). The free driving, the
+and the system pointer is hidden the whole time (`Level3DCrosshair`). No
+pointer stands in for it: the Escape menu marks the control the keys have by
+its frame, the shop each player's tile by his, and the title and the game
+over the entry picked by a bar behind it with a ▶ before it, gliding from one
+to the next (`Level3DSelection`), where the game's crosshair used to point
+(`Level3DReticle`, gone with the mouse). The free driving, the
 modern and combined firing and the longer reaches are hidden for now
 (`Level3DSettings.MODERN_CONTROLS`): not in the Controls tab, not switched by
 V and M, not set by the Game tab's styles, which are the sound, the font and
@@ -359,7 +363,7 @@ few seconds.
   out of the black with its song. Over it nothing but KILLED IN ACTION at
   the top, over the sky, fading in once the guard has saluted (2.4 s), and a
   little after (4.4 s), by itself, CONTINUE and END small at the foot of the
-  frame, picked as the title's entries are, with its reticle and tints; a
+  frame, picked as the title's entries are, with its bar and tints; a
   key or pad button before that brings them at once. KIA, not
   MIA: the players are in those graves. The summary's plate it had at first
   -- GAME OVER, each player's score and rescued, PRESS ANY KEY -- covered

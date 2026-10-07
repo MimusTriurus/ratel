@@ -19,9 +19,9 @@
 # as the game's continue_player does, both players in again; END, the title
 # screen, as its "no" goes to IntroMode. Picked as the title's entries are:
 # left and right (or up and down, and the keys bound to the BTR's), Enter,
-# Space or the gun, the mouse's reticle (Level3DReticle) aimed at an entry
-# and clicked, with the menus' clicks. A key, a mouse button or a pad's
-# before the menu is up brings it up at once. At the pick the guard lowers
+# Space or the gun, a pad's d-pad, stick and A, with the menus' clicks and the
+# title's bar (Level3DSelection). A key or a pad's button before the menu is
+# up brings it up at once. At the pick the guard lowers
 # its hands (Level3DGameOver.lower_salute); then to black, the song fading
 # with it, and `continue_game` or `end_game` under the black; on CONTINUE the
 # black lifts off the stage. CONTINUE is help coming (Level3DGameOver.reinforce):
@@ -50,7 +50,6 @@ const GLYPH := 32.0             # the entries'
 const TOP := 72.0               # the title's top from the frame's
 const BOTTOM := 64.0            # the entries' foot from the frame's
 const ENTRY_GAP := 160.0        # between CONTINUE and END
-const RETICLE_X := -52.0        # where the reticle stands before an entry
 # The title's tints (Level3DTitle): the entry picked in the sun's yellow, the
 # other a dim copper.
 const PICKED_TINT := Level3DTitle.PICKED_TINT
@@ -99,7 +98,7 @@ var _state := State.CLOSED
 var _scene: Level3DGameOver
 var _scene_layer: CanvasLayer
 var _text: Control
-var _reticle: Level3DReticle
+var _selection: Level3DSelection
 var _veil: ColorRect
 var _fade: Tween
 var _time := 0.0                # since the cemetery came up
@@ -108,20 +107,21 @@ var _selected := 0
 var _ending := false            # END picked: the guard leaving, and slowly to black
 var _words := 1.0              # the title's and the entries' share, 0 once picked
 var _hurried := false           # and a key pressed while it went
-var _entry_rects: Array[Rect2] = []   # this frame's, for the reticle
+var _entry_rects: Array[Rect2] = []   # this frame's, for the bar
 
 
 func _init() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
+	# Under the words.
+	_selection = Level3DSelection.new()
+	_selection.shown = false
+	add_child(_selection)
 	_text = Control.new()
 	_text.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_text.draw.connect(_draw_text)
 	add_child(_text)
-	_reticle = Level3DReticle.new()
-	_reticle.shown = false
-	add_child(_reticle)
 	_veil = ColorRect.new()
 	_veil.color = Color(0, 0, 0, 0)
 	_veil.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -163,7 +163,7 @@ func close() -> void:
 	_state = State.CLOSED
 	visible = false
 	_veil.color.a = 0.0
-	_reticle.shown = false
+	_selection.shown = false
 	if _scene != null:
 		_scene.clear()
 	if hud != null:
@@ -207,7 +207,9 @@ func _process(delta: float) -> void:
 		_time += delta
 	if _state == State.TELLING and _time >= MENU_AFTER and _veil.color.a == 0.0:
 		_to_menu()
-	_reticle.shown = _state == State.MENU and _veil.color.a == 0.0
+	_selection.shown = _state in [State.MENU, State.LEAVING] and _veil.color.a == 0.0
+	# Coming in and going with the entries (_draw_text).
+	_selection.modulate.a = clampf((_time - _menu_from) / MENU_IN, 0.0, 1.0) * _words
 	_text.texture_filter = Level3DFont.filter()
 	_text.queue_redraw()
 
@@ -215,12 +217,12 @@ func _process(delta: float) -> void:
 # The choice picked: the guard's hands down, the song and the cemetery to
 # black, then the caller's -- slowly for END (END_*).
 func _pick() -> void:
-	_reticle.fire()
+	_selection.fire()
 	create_tween().tween_property(self, "_words", 0.0, WORDS_OUT)
 	Level3DAudio.play("menu_pick")
 	_state = State.LEAVING
 	_ending = _selected == 1
-	var hold := Level3DReticle.FIRE
+	var hold := Level3DSelection.FIRE
 	var leave := LEAVE
 	if _ending:
 		hold = (_scene.disperse() if _scene != null else 0.0) + END_SEEN
@@ -263,7 +265,7 @@ func _fade_away(hold: float, leave: float) -> void:
 # The black off the stage the run starts again on, and the screen gone.
 func _lift() -> void:
 	_state = State.LEAVING
-	_reticle.shown = false
+	_selection.shown = false
 	_fade = create_tween()
 	_fade.tween_property(_veil, "color:a", 0.0, LIFT)
 	_fade.tween_callback(close)
@@ -276,15 +278,12 @@ func _select(index: int, quiet := false) -> void:
 	_selected = index
 	if not quiet:
 		Level3DAudio.play("menu_move")
-	_reticle.aim(_slot)
+	_selection.aim(_slot)
 
 
-# Before the entry picked, half a glyph down: where the title has its reticle.
-func _slot() -> Vector2:
-	if _entry_rects.size() <= _selected:
-		return Vector2.ZERO
-	var at := _entry_rects[_selected]
-	return Vector2(at.position.x + RETICLE_X * scale_factor, at.get_center().y)
+# The entry picked's words, for the bar.
+func _slot() -> Rect2:
+	return _entry_rects[_selected] if _entry_rects.size() > _selected else Rect2()
 
 
 func _input(event: InputEvent) -> void:
@@ -338,8 +337,8 @@ func _to_menu() -> void:
 	_text.queue_redraw()
 	# Placed once the entries are drawn, the next frame.
 	await get_tree().process_frame
-	_reticle.park()
-	_reticle.aim(_slot, false)
+	_selection.park()
+	_selection.aim(_slot, false)
 
 
 # A key or a pad's button pressed: no mouse.

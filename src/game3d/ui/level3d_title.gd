@@ -1,7 +1,8 @@
 # The 3D preview's title screen, the 2D game's (IntroMode's title and its
-# Menu) over the stage: the splash where the title art was, the menus'
-# reticle where Menu's jeep icon was (Level3DReticle), the same layout in the
-# 1024x960 frame centred in the 2048x1152 one. Its entries are the preview's own: a
+# Menu) over the stage: the splash where the title art was, the same layout
+# in the 1024x960 frame centred in the 2048x1152 one, the entry picked marked by a
+# bar behind it with a ▶ before it (Level3DSelection) where Menu's jeep icon
+# stood. Its entries are the preview's own: a
 # game for one player or two (the 2D game's "1 player" / "2 players"), the
 # mode -- 8-bit or modern, the Escape menu's Game tab (Level3DSettings.Preset),
 # here too since it is what a game is played as --, the difficulty the 2D
@@ -33,8 +34,8 @@ var _repeat := Level3DPad.Repeat.new()   # up or down held on a pad
 
 # Where IntroMode draws them in its 1024x960 frame (title at 128,192, 25x8
 # tiles of 32 px, Menu at
-# 416,608, an entry each 64 px, the icon 72 px to the left of the text and
-# 16 px down), and where that frame is in the 2048x1152 one.
+# 416,608, an entry each 64 px), and where that frame is in the 2048x1152
+# one.
 const FRAME := Vector2(512, 96)
 const TITLE_AT := Vector2(128, 192)
 const TITLE_SIZE := Vector2(800, 256)
@@ -44,11 +45,10 @@ const TITLE_SIZE := Vector2(800, 256)
 const SCENE_DROP := 48.0
 const MENU_AT := Vector2(416, 608)
 const ROW := 64
-const ICON_X := -72
 const GLYPH := 32.0
-# The reticle (Level3DReticle) is in place of the 2D game's jeep icon, which
+# The bar (Level3DSelection) is in place of the 2D game's jeep icon, which
 # was the one sprite left on a screen drawn otherwise in the splash's dark and
-# the sun's colours; the keys glide it to before the entry they pick.
+# the sun's colours; it glides to the entry the keys pick.
 # The entries: the one picked in the sun's yellow, the others a dim copper.
 const PICKED_TINT := Color(1.0, 0.83, 0.42)
 const OTHER_TINT := Color(0.55, 0.36, 0.27)
@@ -65,9 +65,9 @@ const OTHER_TINT := Color(0.55, 0.36, 0.27)
 # (music_fade_after) -- down to nothing as the title goes black, so that the
 # run's own song comes in on silence rather than cutting it off.
 const LAUNCH_FADE := 0.5
-# And the menu goes as they set off: the entries and the reticle fade out
-# over MENU_HIDE, MENU_HIDE_AFTER after the pick, once the reticle's flash
-# (Level3DReticle.FIRE) has been seen, leaving the scene to play alone.
+# And the menu goes as they set off: the entries and the bar fade out over
+# MENU_HIDE, MENU_HIDE_AFTER after the pick, once the bar's flash
+# (Level3DSelection.FIRE) has been seen, leaving the scene to play alone.
 const MENU_HIDE_AFTER := 0.15
 const MENU_HIDE := 0.4
 # And the splash comes to the middle of the screen as the menu goes, over
@@ -102,9 +102,9 @@ var _launch: Tween           # the hold and the fade
 var _waiting := 0            # players of a game whose fade the splash cannot time yet
 var _music_fading := false   # the song's fade begun on the splash's reckoning
 var _tell_later := false     # the splash's jeeps to be lit once the stage is built
-var _menu_hide: Tween        # the entries and the reticle fading out (_hide_menu)
+var _menu_hide: Tween        # the entries and the bar fading out (_hide_menu)
 var _game_ready := false     # the stage under the title is built (game_ready)
-var _reticle: Level3DReticle
+var _selection: Level3DSelection
 var _text: Control           # the entries, in the font's filter
 var _logo: Level3DLogo
 var _logo_in: Tween          # the name coming up (LOGO_AFTER)
@@ -137,13 +137,14 @@ func _ready() -> void:
 	_logo = Level3DLogo.new()
 	_logo.drop = SCENE_DROP
 	add_child(_logo)
+	# Under the words.
+	_selection = Level3DSelection.new()
+	add_child(_selection)
 	_text = Control.new()
 	_text.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_text.draw.connect(_draw_text)
 	add_child(_text)
-	_reticle = Level3DReticle.new()
-	add_child(_reticle)
 	_veil = ColorRect.new()
 	_veil.color = Color(0, 0, 0, 0)
 	_veil.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -171,7 +172,7 @@ func open() -> void:
 		_menu_hide.kill()
 		_menu_hide = null
 	_text.modulate.a = 1.0
-	_reticle.modulate.a = 1.0
+	_selection.modulate.a = 1.0
 	if _logo_in != null:
 		_logo_in.kill()
 	_logo.modulate.a = 0.0
@@ -180,8 +181,8 @@ func open() -> void:
 	_logo_in.tween_property(_logo, "modulate:a", 1.0, LOGO_IN)
 	if _splash != null and _splash.has_method("reset_launch"):
 		_splash.reset_launch()
-	_reticle.park()
-	_reticle.aim(_slot, false)
+	_selection.park()
+	_selection.aim(_slot, false)
 	_redraw()
 	# Opened first, while the stage is still being built under it in frames
 	# up to a tenth of a second long, the jeep the menu picks is started once
@@ -207,9 +208,8 @@ func close() -> void:
 	visible = false
 
 
-# Whether its reticle is up: while the title is and the settings are not over
-# it -- they have a reticle of their own.
-func reticle_up() -> bool:
+# Whether its bar is up: while the title is and the settings are not over it.
+func _selection_up() -> bool:
 	return visible and not (settings_open.is_valid() and settings_open.call())
 
 
@@ -247,8 +247,7 @@ func _process(delta: float) -> void:
 		var again := _repeat.tick(Level3DPad.held_dir(Level3DPad.connected()), delta)
 		if again.y != 0:
 			_select(_selected + again.y)
-	_reticle.shown = reticle_up()
-	_reticle.visible = reticle_up()
+	_selection.visible = _selection_up()
 	# Until the HUD's crosshair, which owns the mouse mode, is made under the
 	# title (Level3DPreview._ready), nobody else hides the pointer.
 	if Input.mouse_mode != Input.MOUSE_MODE_HIDDEN:
@@ -256,8 +255,13 @@ func _process(delta: float) -> void:
 
 
 # Before the entry picked, where Menu's icon stood.
-func _slot() -> Vector2:
-	return FRAME + MENU_AT + Vector2(ICON_X, 16.0 + _selected * ROW)
+# The entry picked's words, as wide as the widest entry, so that the bar
+# keeps its width from one to the next.
+func _slot() -> Rect2:
+	var widest := 0.0
+	for entry in _entries():
+		widest = maxf(widest, Level3DFont.width(entry, GLYPH))
+	return Rect2(FRAME + MENU_AT + Vector2(0.0, _selected * ROW), Vector2(widest, GLYPH))
 
 
 # Onto another entry, with its click unless `quiet` -- a click on it, whose
@@ -269,13 +273,13 @@ func _select(index: int, quiet := false) -> void:
 	_selected = index
 	if not quiet:
 		Level3DAudio.play("menu_move")
-	_reticle.aim(_slot)
+	_selection.aim(_slot)
 	_text.queue_redraw()
 	_tell_splash()
 
 
 func _pick() -> void:
-	_reticle.fire()
+	_selection.fire()
 	Level3DAudio.play("menu_pick")
 	match _selected:
 		Entry.ONE_PLAYER, Entry.TWO_PLAYERS:
@@ -297,7 +301,7 @@ func _pick() -> void:
 			get_tree().quit()
 
 
-# The entries, the reticle and the name out of the way of the launch
+# The entries, the bar and the name out of the way of the launch
 # (MENU_HIDE), and the splash to the middle (MENU_FOCUS).
 func _hide_menu() -> void:
 	if _menu_hide != null:
@@ -305,7 +309,7 @@ func _hide_menu() -> void:
 	_menu_hide = create_tween()
 	_menu_hide.tween_interval(MENU_HIDE_AFTER)
 	_menu_hide.tween_property(_text, "modulate:a", 0.0, MENU_HIDE)
-	_menu_hide.parallel().tween_property(_reticle, "modulate:a", 0.0, MENU_HIDE)
+	_menu_hide.parallel().tween_property(_selection, "modulate:a", 0.0, MENU_HIDE)
 	if _logo_in != null:
 		_logo_in.kill()
 	_menu_hide.parallel().tween_property(_logo, "modulate:a", 0.0, MENU_HIDE)
