@@ -1034,6 +1034,21 @@ class Bay:
 			["Drum", Vector3(-1.45, 0.0, -0.3), 0.0],
 			["Drum", Vector3(-1.62, 0.0, -0.58), 0.6],
 			["AmmoBox", Vector3(0.42, 0.0, -1.3), 0.3]]
+	# And the ammunition it brought still on its benches, if it has them:
+	# each [seat (Level3DRescueSeats.BENCH_SEATS), prop, how many stacked,
+	# yaw], in the helicopter's own metres CARGO_SCALE of life size -- so a
+	# box is no deeper than the plank is wide -- its long side along the
+	# bench, CARGO_OUT off the seat's mark away from the pod.
+	const CARGO_SCALE := 0.8
+	const CARGO_OUT := 0.01
+	const BENCH_CARGO := [
+			["Seat_BenchL1", "AmmoBox", 2, 0.05],
+			["Seat_BenchL2", "AmmoBox", 1, -0.08],
+			["Seat_BenchL3", "AmmoBox", 2, 0.0],
+			["Seat_BenchR1", "AmmoBox", 1, 0.06],
+			["Seat_BenchR2", "AmmoBox", 2, -0.04],
+			["Seat_BenchR3", "AmmoBox", 1, 0.1]]
+	const STACK_YAW := 0.12          # each box on another turned that much more
 	# The Littlebird as Level3DBtr.paint_model takes a vehicle: its olive
 	# body's hues, and the turn of BLUE that puts it on the blue jeep's.
 	const LITTLEBIRD := {"path": "res://resources/3d/jackal_littlebird_mh6.glb", "blue": Vector3(60.0, 100.0, 128.0)}
@@ -1271,6 +1286,7 @@ class Bay:
 		var pilot := Level3DRescueSeats.seat_pilot(heli, root, heli.transform)
 		if pilot != null:
 			_soften(pilot)
+		_cargo(root, heli)
 		return heli
 
 	# The concrete's slabs, SLAB m, laid along `pad`, the first landing
@@ -1371,6 +1387,28 @@ class Bay:
 			copy.position = at + Vector3(off.x * side, off.y * size, off.z)
 			copy.rotation = Vector3(0.0, float(c[2]) * side, 0.0)
 			copy.scale = Vector3.ONE * size
+		props.free()
+
+	# BENCH_CARGO on `heli`'s benches, if they are on, beside the model as
+	# its pilot is: the paint (_paint_heli) goes over all of the model.
+	static func _cargo(root: Node3D, heli: Node3D) -> void:
+		var benches := heli.find_child(Level3DRescue.BENCHES, true, false) as Node3D
+		var scene := load(SUPPLY) as PackedScene
+		if benches == null or not benches.visible or scene == null:
+			return
+		var props: Node = scene.instantiate()
+		for c in BENCH_CARGO:
+			var seat := heli.find_child(String(c[0]), true, false) as Node3D
+			var prop := props.find_child(PREFIX_SUPPLY + String(c[1]), true, false) as Node3D
+			if seat == null or prop == null:
+				continue
+			var at := heli.transform * Level3DRescueSeats._relative(seat, heli)
+			var high := (prop as MeshInstance3D).get_aabb().size.y * CARGO_SCALE if prop is MeshInstance3D else 0.0
+			for k in int(c[2]):
+				var copy := prop.duplicate() as Node3D
+				root.add_child(copy)
+				copy.transform = at * Transform3D(Basis(Vector3.UP, float(c[3]) + k * STACK_YAW)
+						.scaled(Vector3.ONE * CARGO_SCALE), Vector3(0.0, k * high, CARGO_OUT))
 		props.free()
 
 	static func _box_of(pad: Node3D, name: String) -> AABB:
