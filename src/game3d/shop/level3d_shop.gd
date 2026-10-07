@@ -128,6 +128,10 @@ const DRIVE_VIEW := 15.0
 const DRIVE_TURN_RATE := 8.0
 const DRIVE_ACCEL := 5.0
 const DRIVE_SQUAT := 0.05
+# Before it, each jeep round to READY's view (_leave): to within READY_TURNED
+# degrees, at DRIVE_TURN_RATE, for READY_TURN_MAX seconds at the most.
+const READY_TURNED := 3.0
+const READY_TURN_MAX := 1.0
 # And heard, as the title's jeeps are (Level3DSplash3D): each jeep's starter
 # (jeep_start) from ENGINE_FROM into the file, the next jeep's ENGINE_STAGGER
 # later. The file cranks, catches and revs, and has settled to a run by
@@ -378,6 +382,19 @@ func _leave() -> void:
 	Level3DAudio.play("menu_pick")
 	# The words and the goods gone, the jeeps away.
 	_text.create_tween().tween_property(_text, "modulate:a", 0.0, HUD_OUT)
+	# But first every jeep round to READY's view, at the drive's rate: the
+	# man's way to his door is laid out from where the jeep stands
+	# (Bay._board), and the jeep does not wait for him -- fire from a tile
+	# that had the jeep showing its other side sent him round a jeep still
+	# turning, after it as it drove off. READY used to be a tile of its own,
+	# which turned the jeep before it could be picked.
+	_bay.hurry = true
+	var waited := 0.0
+	while not _bay.turned() and waited < READY_TURN_MAX:
+		await get_tree().process_frame
+		waited += get_process_delta_time()
+		if _state != State.LEAVING:
+			return
 	_bay.drive_off()
 	_start_engines()
 	_kill_fade()
@@ -1167,6 +1184,7 @@ class Bay:
 	const DUO_Y := 760.0
 
 	var staged := false
+	var hurry := false               # turning at the drive's rate, READY given (_leave)
 	var viewport: SubViewport
 	var _tables: Array[Node3D] = []
 	var _jeeps: Array[Level3DBtr] = []
@@ -1384,6 +1402,7 @@ class Bay:
 
 	func clear() -> void:
 		_driving = -1.0
+		hurry = false
 		for child in viewport.get_children():
 			child.queue_free()
 		_tables.clear()
@@ -1929,6 +1948,15 @@ class Bay:
 		var turned := atan2(-lane.z, lane.x)
 		return wrapf(rad_to_deg(turned + PI / 2.0) * side, -180.0, 180.0)
 
+	# Whether every jeep stands at the view it was turned to, within
+	# Level3DShop.READY_TURNED, the hand's turn and all.
+	func turned() -> bool:
+		for i in _tables.size():
+			var side := 1.0 if i == 0 else -1.0
+			if absf(wrapf(_yaw[i] + _spun[i] * side - _want[i], -180.0, 180.0)) > Level3DShop.READY_TURNED:
+				return false
+		return true
+
 	# Player `i`'s jeep to turn `degrees` off facing the camera, towards the
 	# frame's middle.
 	func turn(i: int, degrees: float) -> void:
@@ -1960,7 +1988,7 @@ class Bay:
 		_aim_solo()
 		var wave := 0.5 + 0.5 * sin(_time * Level3DShop.GHOST_PULSE)
 		var pulse := lerpf(Level3DShop.GHOST.x, Level3DShop.GHOST.y, wave)
-		var rate := Level3DShop.TURN_RATE
+		var rate := Level3DShop.DRIVE_TURN_RATE if hurry else Level3DShop.TURN_RATE
 		if _driving >= 0.0:
 			_driving += delta
 			rate = Level3DShop.DRIVE_TURN_RATE
