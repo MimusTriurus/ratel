@@ -108,6 +108,22 @@ drives the second with `2:` spans, which is how it was checked:
 godot --path . --windowed --resolution 1280x720 src/game3d/level3d_preview.tscn -- --shot out.png 0 1 top 8 --players 2 --immortal --hold w@0-8,2:l@0-8
 ```
 
+## No mouse, and classic controls
+
+The preview is played on the keys and the pads alone: nothing reads the
+mouse -- not the stage's weapons and orders, not the title, the shop, the
+game over or the Escape menu, which keeps its events from its controls --
+and the system pointer is hidden the whole time (`Level3DCrosshair`); the
+menus point with their reticle (`Level3DReticle`). The free driving, the
+modern and combined firing and the longer reaches are hidden for now
+(`Level3DSettings.MODERN_CONTROLS`): not in the Controls tab, not switched by
+V and M, not set by the Game tab's styles, which are the sound, the font and
+the look alone, and not read from a saved config, so every game drives,
+fires and reaches the classic way. Their code stays, and what is written
+below of them holds for when the flag is back on; `--free` still drives free
+for a --shot. The splash's dust blown about by the cursor, under
+`--splash-dust` and `--splash-picture`, still follows the hidden pointer.
+
 ## Gamepads
 
 `Level3DPad` (`level3d_pad.gd`), set under Settings -> Controls -> Gamepad
@@ -138,13 +154,13 @@ well). A config saved with the first layout, the weapons on the triggers,
 comes up with these (`PAD_LAYOUT`). Start is Escape, Back skips the
 Chinook. The pad shakes when a rocket or a grenade goes and when the jeep
 is blown up (Vibration). Whichever the player touched last, the pad or the
-keys and the mouse, has the aim, the crosshair and the hints (`Crew.pad`).
+keys, has the aim, the crosshair and the hints (`Crew.pad`). With the
+modern firing hidden, Aim assist is hidden from the menu with it.
 
 Whose a pad is: with one player every pad -- whatever the system lists,
 Steam Input's virtual pad and the pad itself alike. With two, the first two
 are a player's each; one alone is "One pad, two players"'s, by default the
-second's, the first keeping the keyboard and the mouse. The second player on
-a pad fires as the settings say, not only the classic way. The 2D game's own
+second's, the first keeping the keyboard. The 2D game's own
 pad for the second player (`ButtonMapping.controller`) is turned off here, or
 one pad would drive both jeeps.
 
@@ -183,9 +199,9 @@ once, each with a frame of his own colour for a cursor, the first's outside
 the second's on one tile. A tile says on each player's side what it is to him:
 its price, red when he is short of it, OWNED, IN SLOT, MAX.
 
-- Fire buys (the gun, Enter or Space, a left click, a pad's A); fire on a
-  device already owned puts it in the slot. The rocket (P, a right click,
-  right Ctrl, a pad's B) takes back the last of that tile bought in this
+- Fire buys (the gun, Enter or Space, a pad's A); fire on a
+  device already owned puts it in the slot. The rocket (P, right Ctrl, a
+  pad's B) takes back the last of that tile bought in this
   visit. Fire on READY under the matrix is a player's word that he is done;
   the next round starts, from the Chinook, when every player has given it.
 - The jeep turns on its table to show the part its player's tile is about,
@@ -344,7 +360,7 @@ few seconds.
   the top, over the sky, fading in once the guard has saluted (2.4 s), and a
   little after (4.4 s), by itself, CONTINUE and END small at the foot of the
   frame, picked as the title's entries are, with its reticle and tints; a
-  key, mouse button or pad button before that brings them at once. KIA, not
+  key or pad button before that brings them at once. KIA, not
   MIA: the players are in those graves. The summary's plate it had at first
   -- GAME OVER, each player's score and rescued, PRESS ANY KEY -- covered
   half the frame and broke the burial; the guard says who brought in how

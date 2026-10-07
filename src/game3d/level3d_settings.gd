@@ -37,6 +37,12 @@ enum Firing { CLASSIC, MODERN, COMBINED }
 # than the reach. LONG is last so that a saved 1 is still UNLIMITED; the menu
 # lists them in order of reach (Level3DMenu.REACH_ORDER).
 enum Reach { CLASSIC, UNLIMITED, LONG }
+# The modern driving and firing and the longer reaches, hidden for now: the
+# menu does not offer them, V and M do not switch to them, the styles do
+# not set them, and a saved config's are not read -- every game drives,
+# fires and reaches the classic way. Their code stays, for when they are
+# back; --free still drives free for a --shot.
+const MODERN_CONTROLS := false
 
 # The keys that can be rebound, in the order the menu lists them, and what
 # they start as: the preview's keys from before there was a menu. The turret's
@@ -181,18 +187,16 @@ var sound_gains := {}
 # the pixels as the stage is). Not saved: it is read back off the settings
 # (preset()), so that one changed on its own tab makes it CUSTOM, and a
 # config saved before there were styles comes up as whichever it is.
-# 8-bit is the NES game: its sounds on the NES's chips, the jeep's driving
-# and firing and reach, the pixel font sharp, the frame in pixels on a CRT.
-# Modern is the preview's own of each of them, and what a new config starts
-# as (load_saved). --style 8bit|modern picks one at launch (STYLE_NAMES,
+# 8-bit is the NES game: its sounds on the NES's chips, the pixel font sharp,
+# the frame in pixels on a CRT. Modern is the preview's own of each of them,
+# and what a new config starts as (load_saved). Not the controls: they are
+# classic whichever (MODERN_CONTROLS). --style 8bit|modern picks one at launch (STYLE_NAMES,
 # level3d_preview.gd).
 enum Preset { EIGHT_BIT, MODERN, CUSTOM }
 const STYLE_NAMES := {"8bit": Preset.EIGHT_BIT, "8-bit": Preset.EIGHT_BIT, "modern": Preset.MODERN}
 const PRESETS := [
-	{"sound_mode": SoundMode.CLASSIC, "driving": Driving.CLASSIC, "firing": Firing.CLASSIC,
-			"reach": Reach.CLASSIC, "font": Level3DFont.Style.CLASSIC, "look": Look.PIXELS, "crt": true},
-	{"sound_mode": SoundMode.MODERN, "driving": Driving.FREE, "firing": Firing.MODERN,
-			"reach": Reach.LONG, "font": Level3DFont.Style.MODERN, "look": Look.MODERN, "crt": false},
+	{"sound_mode": SoundMode.CLASSIC, "font": Level3DFont.Style.CLASSIC, "look": Look.PIXELS, "crt": true},
+	{"sound_mode": SoundMode.MODERN, "font": Level3DFont.Style.MODERN, "look": Look.MODERN, "crt": false},
 ]
 
 
@@ -286,9 +290,10 @@ func load_saved() -> void:
 	outline_stage = _outline(config.get_value("graphics", "outline_stage", outline_stage), outline_stage)
 	outline_vehicles = _outline(config.get_value("graphics", "outline_vehicles", outline_vehicles), outline_vehicles)
 	outline_people = _outline(config.get_value("graphics", "outline_people", outline_people), outline_people)
-	driving = clampi(config.get_value("controls", "driving", driving), 0, Driving.size() - 1)
-	firing = clampi(config.get_value("controls", "firing", firing), 0, Firing.size() - 1)
-	reach = clampi(config.get_value("controls", "reach", reach), 0, Reach.size() - 1)
+	if MODERN_CONTROLS:
+		driving = clampi(config.get_value("controls", "driving", driving), 0, Driving.size() - 1)
+		firing = clampi(config.get_value("controls", "firing", firing), 0, Firing.size() - 1)
+		reach = clampi(config.get_value("controls", "reach", reach), 0, Reach.size() - 1)
 	infinite_lives = config.get_value("cheats", "infinite_lives", infinite_lives)
 	wall_hack = config.get_value("cheats", "wall_hack", wall_hack)
 	bullet_hack = config.get_value("cheats", "bullet_hack", bullet_hack)

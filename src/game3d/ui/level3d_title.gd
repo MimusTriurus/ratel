@@ -16,7 +16,8 @@
 #
 # Keys as on the 2D game's menus: up and down (the arrows, and the keys
 # bound to the BTR's), Enter, Space or the gun to pick, and left and right to
-# change the mode or the difficulty; the mouse picks an entry by aiming the reticle at it.
+# change the mode or the difficulty. No mouse: the preview is played on the keys
+# and the pads.
 # A pad (Level3DPad) as the keys: the d-pad or the left stick, A or Start.
 # Up or down held, a key or the pad, goes on down the entries.
 # Each with the menus' clicks: menu_move onto another entry, menu_pick as one
@@ -142,7 +143,6 @@ func _ready() -> void:
 	_text.draw.connect(_draw_text)
 	add_child(_text)
 	_reticle = Level3DReticle.new()
-	_reticle.carries_mouse = true
 	add_child(_reticle)
 	_veil = ColorRect.new()
 	_veil.color = Color(0, 0, 0, 0)
@@ -207,11 +207,9 @@ func close() -> void:
 	visible = false
 
 
-# Whether the system's pointer is hidden, the reticle in its place: while the
-# title is up and the settings are not over it -- they have a reticle of
-# their own (Level3DMenu.pointer_hidden). Level3DCrosshair, which owns the
-# mouse mode, asks this too.
-func pointer_hidden() -> bool:
+# Whether its reticle is up: while the title is and the settings are not over
+# it -- they have a reticle of their own.
+func reticle_up() -> bool:
 	return visible and not (settings_open.is_valid() and settings_open.call())
 
 
@@ -248,16 +246,12 @@ func _process(delta: float) -> void:
 	if not _launching and not (settings_open.is_valid() and settings_open.call()):
 		var again := _repeat.tick(Level3DPad.held_dir(Level3DPad.connected()), delta)
 		if again.y != 0:
-			_reticle.keys()
 			_select(_selected + again.y)
-	_reticle.shown = pointer_hidden()
-	# Under the settings, out of the tree's processing too: theirs carries the
-	# hidden pointer as this one does, and the two would pull it each its way.
-	_reticle.visible = pointer_hidden()
+	_reticle.shown = reticle_up()
+	_reticle.visible = reticle_up()
 	# Until the HUD's crosshair, which owns the mouse mode, is made under the
-	# title (Level3DPreview._ready), nobody else hides the pointer; and the
-	# settings over it hide it themselves.
-	if pointer_hidden() and Input.mouse_mode != Input.MOUSE_MODE_HIDDEN:
+	# title (Level3DPreview._ready), nobody else hides the pointer.
+	if Input.mouse_mode != Input.MOUSE_MODE_HIDDEN:
 		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 
 
@@ -389,12 +383,11 @@ func _redraw() -> void:
 
 func _input(event: InputEvent) -> void:
 	# The settings over the title have the keys while they are open; while
-	# the jeeps drive off, a key or a click only hurries the fade on.
+	# the jeeps drive off, a key or a button only hurries the fade on.
 	if not visible or settings_open.is_valid() and settings_open.call():
 		return
 	if _launching:
 		var pressed: bool = event is InputEventKey and event.pressed and not event.echo \
-				or event is InputEventMouseButton and event.pressed \
 				or event is InputEventJoypadButton and event.pressed
 		if pressed and (_launch != null or _waiting > 0) and _veil.color.a == 0.0:
 			_waiting = 0
@@ -403,7 +396,6 @@ func _input(event: InputEvent) -> void:
 		return
 	var move := Level3DPad.nav(event)
 	if move != Vector2i.ZERO or Level3DPad.is_accept(event):
-		_reticle.keys()
 		if move.y != 0:
 			_select(_selected + move.y)
 		elif move.x != 0:
@@ -417,9 +409,6 @@ func _input(event: InputEvent) -> void:
 	if key != null and key.pressed and (not key.echo
 			or key.keycode in [KEY_UP, KEY_DOWN, settings.key("up"), settings.key("down")]):
 		var code := key.keycode
-		if code in [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE] \
-				or code in ["up", "down", "left", "right", "gun"].map(settings.key):
-			_reticle.keys()
 		if code in [KEY_UP, settings.key("up")]:
 			_select(_selected - 1)
 		elif code in [KEY_DOWN, settings.key("down")]:
@@ -432,30 +421,6 @@ func _input(event: InputEvent) -> void:
 		else:
 			return
 		get_viewport().set_input_as_handled()
-		return
-	var motion := event as InputEventMouseMotion
-	if motion != null:
-		var at := _entry_at()
-		if _reticle.mouse_has_it() and at >= 0:
-			_select(at)
-		return
-	var click := event as InputEventMouseButton
-	if click != null and click.pressed and click.button_index == MOUSE_BUTTON_LEFT:
-		var at := _entry_at()
-		if at >= 0:
-			_select(at, true)
-			_pick()
-			get_viewport().set_input_as_handled()
-
-
-# The entry under the mouse, or -1: the row the text is on, from where the
-# reticle stands before it to the end of the longest entry.
-func _entry_at() -> int:
-	var p := _text.get_local_mouse_position() - FRAME - MENU_AT
-	if p.x < ICON_X - 48 or p.x > 640:
-		return -1
-	var row := floori((p.y + 16.0) / ROW)
-	return row if row >= 0 and row < Entry.size() else -1
 
 
 func _draw_text() -> void:

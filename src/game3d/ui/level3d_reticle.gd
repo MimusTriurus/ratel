@@ -5,26 +5,18 @@
 # the splash's dark and the sun's colours -- breathing, its gap PULSE px in
 # and out every BREATH seconds.
 #
-# The mouse moves it freely; the keys glide it, over GLIDE seconds, speeding
-# up and slowing as the 2D game's Menu icon does, to whatever its owner aims
-# it at (aim): before the title's entry, beside the Escape menu's focused
-# control. Whichever moved last has it -- the mouse once it has moved
-# MOUSE_TAKES px from where it was when the keys took it, since the window's
-# own motion events, coming with the focus, took it to wherever the pointer
-# happened to sit. A pick closes it in and flashes it (fire).
-#
-# With `carries_mouse` the hidden system pointer goes with the keys: put at
-# once where they glide it to, so that the mouse, taking it again, starts from
-# the entry rather than throwing it in one frame to wherever the pointer was
-# left. Not while the window is out of focus, whose pointer is the user's.
+# The keys and the pads glide it, over GLIDE seconds, speeding up and
+# slowing as the 2D game's Menu icon does, to whatever its owner aims it at
+# (aim): before the title's entry, beside the Escape menu's focused control.
+# A pick closes it in and flashes it (fire). The preview is played without
+# the mouse, which neither moves it nor picks.
 #
 # A list dropped from a menu is a window of its own, drawn over every layer
 # and so over the reticle: in it the menu puts a second one, `mirror` of the
 # first, which stands where the first does, breathes and flashes with it, and
 # is drawn over the list's items.
 #
-# The owner hides the system pointer while it is `shown`, and says so to
-# Level3DCrosshair, which owns the mouse mode.
+# The system pointer is hidden the whole time (Level3DCrosshair).
 class_name Level3DReticle
 extends Control
 
@@ -36,11 +28,8 @@ const PULSE := 2.0
 const GLIDE := 0.12
 const FIRE := 0.3
 const CLOSE := 6.0             # px the gap closes by at a pick
-const MOUSE_TAKES := 8.0
 
 var shown := true
-var by_mouse := false          # the mouse has it, rather than the keys
-var carries_mouse := false     # the keys take the system pointer along
 var mirror: Level3DReticle     # the reticle this one copies, from a list's window
 
 var _at := Vector2.ZERO
@@ -49,7 +38,6 @@ var _moving := 1.0             # 0 to 1 of its glide, 1 when it stands
 var _target: Callable          # -> Vector2, where the keys have it
 var _time := 0.0
 var _fired := 1.0              # 0 to 1 of a pick's closing in, 1 when over
-var _parked := Vector2.ZERO    # the mouse when the keys took it
 
 
 func _init() -> void:
@@ -58,12 +46,9 @@ func _init() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 
 
-# The keys have it, `target.call()` where: gliding there, or put there at once.
-# With the mouse in charge it only remembers where.
+# To `target.call()`: gliding there, or put there at once.
 func aim(target: Callable, glide := true) -> void:
 	_target = target
-	if by_mouse:
-		return
 	if glide:
 		_from = _at
 		_moving = 0.0
@@ -72,31 +57,13 @@ func aim(target: Callable, glide := true) -> void:
 		_at = target.call()
 
 
-# The keys take it back from the mouse; it glides from where the mouse left it.
-func keys() -> void:
-	_parked = get_local_mouse_position()
-	if by_mouse:
-		by_mouse = false
-		_from = _at
-		_moving = 0.0
-
-
-# The menu opened: the keys have it, wherever the pointer is.
+# The menu opened: no pick closing it in.
 func park() -> void:
-	_parked = get_local_mouse_position()
-	by_mouse = false
 	_fired = 1.0
 
 
 func fire() -> void:
 	_fired = 0.0
-
-
-# Whether the mouse has it, taking it if it has moved far enough to mean it.
-func mouse_has_it() -> bool:
-	if not by_mouse and get_local_mouse_position().distance_to(_parked) > MOUSE_TAKES:
-		by_mouse = true
-	return by_mouse
 
 
 func _process(delta: float) -> void:
@@ -106,14 +73,8 @@ func _process(delta: float) -> void:
 		_copy()
 		return
 	_time += delta
-	if mouse_has_it():
-		_at = get_local_mouse_position()
-	elif _target.is_valid():
+	if _target.is_valid():
 		var goal: Vector2 = _target.call()
-		if carries_mouse and get_window().has_focus() \
-				and get_local_mouse_position().distance_to(goal) > 2.0:
-			get_viewport().warp_mouse(get_global_transform_with_canvas() * goal)
-			_parked = goal
 		if _moving < 1.0:
 			_moving = minf(_moving + delta / GLIDE, 1.0)
 			var t := _moving

@@ -79,11 +79,6 @@ func is_open() -> bool:
 	return _state != State.CLOSED
 
 
-# The system's pointer hidden while it is up, for Level3DCrosshair.
-func pointer_hidden() -> bool:
-	return is_open()
-
-
 # The mission's end: `rescued_by` the player of each prisoner rescued,
 # `total` the prisoners there were, `ticks` the mission's time; each player's
 # jeep's paint (`paints`) and kit (`kits`, Level3DRun.Kit). From the stage,

@@ -59,9 +59,8 @@
 #   * With one player there is no second column: the matrix stands at the
 #     frame's right edge, the title over it, and the jeep, larger, has the
 #     rest (SOLO_MATRIX_X, Bay.SOLO_ZOOM).
-#   * The first player has the mouse as well: over a tile picks it, a left
-#     click buys, a right click takes back -- with the title's reticle
-#     (Level3DReticle) in place of the system's pointer.
+#   * No mouse: the keys and the pads, the first player's cursor shown by
+#     the title's reticle (Level3DReticle).
 #   * Escape opens the Escape menu over it (`open_menu`), which leaves the
 #     stage paused under it when it closes (Level3DMenu.open). While it is
 #     up (`menu_open`) the shop takes no input and hides its reticle.
@@ -253,7 +252,6 @@ func _init() -> void:
 	_text.draw.connect(_draw_text)
 	add_child(_text)
 	_reticle = Level3DReticle.new()
-	_reticle.carries_mouse = true
 	_reticle.shown = false
 	add_child(_reticle)
 	_veil = ColorRect.new()
@@ -285,12 +283,6 @@ func _ready() -> void:
 
 func is_open() -> bool:
 	return _state != State.CLOSED
-
-
-# The system's pointer hidden while it is up, the reticle in its place, for
-# Level3DCrosshair, which owns the mouse mode.
-func pointer_hidden() -> bool:
-	return is_open()
 
 
 # The shop for `run`, whose kits it sells into; from the stage, to black
@@ -508,8 +500,6 @@ func _process(delta: float) -> void:
 					held.x = 0
 			var again: Vector2i = _repeats[i].tick(held, delta)
 			if again != Vector2i.ZERO:
-				if i == 0:
-					_reticle.keys()
 				_move(i, again)
 	_text.texture_filter = Level3DFont.filter()
 	_text.queue_redraw()
@@ -605,54 +595,16 @@ func _input(event: InputEvent) -> void:
 				or arrows and code in [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]):
 			return
 		if code == _key("up") or arrows and code == KEY_UP:
-			_reticle.keys()
 			_move(0, Vector2i(0, -1))
 		elif code == _key("down") or arrows and code == KEY_DOWN:
-			_reticle.keys()
 			_move(0, Vector2i(0, 1))
 		elif code == _key("left") or arrows and code == KEY_LEFT:
-			_reticle.keys()
 			_move(0, Vector2i(-1, 0))
 		elif code == _key("right") or arrows and code == KEY_RIGHT:
-			_reticle.keys()
 			_move(0, Vector2i(1, 0))
 		elif code == _key("gun") or code in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
 			_fire(0)
 		elif code == _key("rocket"):
-			_take_back(0)
-		return
-	var motion := event as InputEventMouseMotion
-	if motion != null:
-		if _state == State.OPEN and _reticle.mouse_has_it():
-			var at := _cell_at(_text.get_local_mouse_position())
-			var now := _cursor[0]
-			if at.y == PAINT_ROW:
-				# Over a swatch: the row, the paint only by a click.
-				at.x = now.x
-			if at.x >= 0 and (at.y != now.y or at.y < LIFE_ROW and at.x != now.x):
-				_cursor[0] = Vector2i(at.x, at.y)
-				Level3DAudio.play("menu_move")
-				_dress(0)
-		return
-	var click := event as InputEventMouseButton
-	if click != null and click.pressed:
-		get_viewport().set_input_as_handled()
-		if _state != State.OPEN:
-			return
-		var at := _cell_at(_text.get_local_mouse_position())
-		if at.x < 0:
-			return
-		if at.y == PAINT_ROW:
-			_cursor[0].y = PAINT_ROW
-			_dress(0)
-			if click.button_index == MOUSE_BUTTON_LEFT:
-				_repaint(0, at.x, 0)
-			return
-		_cursor[0] = Vector2i(at.x, at.y)
-		_dress(0)
-		if click.button_index == MOUSE_BUTTON_LEFT:
-			_fire(0)
-		elif click.button_index == MOUSE_BUTTON_RIGHT:
 			_take_back(0)
 		return
 	# A pad is its player's (Level3DPad.player_of): the d-pad or the left
@@ -671,8 +623,6 @@ func _input(event: InputEvent) -> void:
 		if player < 0:
 			return
 		if move != Vector2i.ZERO:
-			if player == 0:
-				_reticle.keys()
 			_move(player, move)
 		elif pad.button_index == JOY_BUTTON_A:
 			_fire(player)
@@ -688,18 +638,6 @@ func _key(action: String) -> Key:
 	if settings != null:
 		return settings.key(action)
 	return Level3DSettings.DEFAULT_KEYS.get(action, KEY_NONE)
-
-
-# The cell under `p`, (column, row), the first player's READY and swatches
-# as their rows, a swatch's x its paint; x -1 for none.
-func _cell_at(p: Vector2) -> Vector2i:
-	for k in _rects:
-		if (_rects[k] as Rect2).has_point(p):
-			var cell: Vector3i = k
-			if (cell.y == READY_ROW or cell.y == PAINT_ROW) and cell.z != 0:
-				continue
-			return Vector2i(cell.x, cell.y)
-	return Vector2i(-1, -1)
 
 
 # Player `player`'s jeep in the paint at `index` (Level3DBtr.PAINTS), or,

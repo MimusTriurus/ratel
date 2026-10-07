@@ -6,11 +6,11 @@
 # And one at each of `points`, where the players on a pad aim with the right
 # stick (level3d_preview.gd, _pad_reticles), the mouse's or not.
 #
-# It owns the mouse mode, as Main._update_cursor_visibility does in the game:
-# hidden while the reticle is drawn, visible otherwise, compared against the
-# live Input.mouse_mode rather than a flag of its own. It keeps processing
-# under the Escape menu, which pauses the tree, so that the menu gets the
-# pointer back the frame it opens.
+# It owns the mouse mode: the preview is played without the mouse, so the
+# system pointer is hidden the whole time, compared against the live
+# Input.mouse_mode rather than a flag of its own. It keeps processing under
+# the Escape menu, which pauses the tree. The mouse's reticle is the modern
+# firing's, hidden for now (Level3DSettings.MODERN_CONTROLS).
 class_name Level3DCrosshair
 extends Control
 
@@ -20,11 +20,8 @@ const GAP := Main.CROSSHAIR_GAP
 const COLOUR := Main.CROSSHAIR_COLOR
 const OUTLINE := Main.CROSSHAIR_OUTLINE
 
-# `wanted.call()`: whether the reticle is drawn this frame; `hide_pointer.call()`
-# whether the pointer is hidden all the same, something else drawing in its
-# place -- the title's reticle (Level3DTitle.pointer_hidden).
+# `wanted.call()`: whether the mouse's reticle is drawn this frame.
 var wanted: Callable
-var hide_pointer: Callable
 # `points.call()`: the pads' reticles, the viewport's positions.
 var points: Callable
 var _shown := false
@@ -38,10 +35,8 @@ func _init() -> void:
 
 func _process(_delta: float) -> void:
 	_shown = wanted.is_valid() and wanted.call()
-	var hidden: bool = _shown or hide_pointer.is_valid() and hide_pointer.call()
-	var mode := Input.MOUSE_MODE_HIDDEN if hidden else Input.MOUSE_MODE_VISIBLE
-	if Input.mouse_mode != mode:
-		Input.mouse_mode = mode
+	if Input.mouse_mode != Input.MOUSE_MODE_HIDDEN:
+		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 	queue_redraw()
 
 

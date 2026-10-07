@@ -28,13 +28,12 @@
 # The default view is a tilted perspective one, following the BTR up the
 # stage; Tab switches to the game's, straight down, orthographic, the frame
 # exactly as wide as the level, 16:9. The controls are the game's -- WASD to
-# drive, the left button or L to fire the gun up the screen, the right button
-# or P for the rocket, as the game's jeep does; M hands the aim to the mouse, or
-# half of it --
-# with the tank bench's orders from BlenderMCP/godot moved to the middle
-# button. WASD drives one of two ways
-# (level3d_btr.gd): classic, the game's jeep, eight directions at its speed,
-# or free, a throttle and a wheel:
+# drive, L to fire the gun up the screen, P for the rocket, as the game's
+# jeep does -- on the keys or a pad, never the mouse, which the preview does
+# not read at all. WASD drives one of two ways (level3d_btr.gd): classic, the
+# game's jeep, eight directions at its speed, or free, a throttle and a wheel;
+# free, the modern firing (at the cursor) and the longer reaches are hidden
+# for now (Level3DSettings.MODERN_CONTROLS), every game classic:
 #
 #   Esc                    the menu (level3d_menu.gd): continue, settings,
 #                          main menu (the title screen, level3d_title.gd,
@@ -49,22 +48,21 @@
 #                          free: drive and steer by hand
 #                          either: cancels the order
 #   V                      classic / free driving, shown by the score for a
-#                          moment (for good: the menu's Interface tab)
+#                          moment -- with MODERN_CONTROLS only
 #   M                      the firing: classic, the game's -- driving classic
 #                          the gun up the screen and the rocket the way the
 #                          BTR drives, driving free both along the hull;
 #                          modern, both at the cursor; combined, the gun up
-#                          the screen and the rocket at the cursor
-#   left button (held), L  machine gun, level3d_gun.gd
-#   right click, P         rocket, level3d_rocket.gd -- L and P are for
-#                          classic driving with the mouse off, under the
-#                          right hand while the left is on WASD. Classic,
-#                          both are the game's weapons: the gun fires on the
-#                          press and, held, slowly or at turbo's rate (T
-#                          toggles; the game's setting to start with), and the
-#                          rocket goes while the button is held, one at a time
-#   middle click           drive there (shift: add a waypoint)
-#   Backspace              stop
+#                          the screen and the rocket at the cursor -- with
+#                          MODERN_CONTROLS only
+#   L                      machine gun, level3d_gun.gd
+#   P                      rocket, level3d_rocket.gd -- under the right hand
+#                          while the left is on WASD. Classic, both are the
+#                          game's weapons: the gun fires on the press and,
+#                          held, slowly or at turbo's rate (T toggles; the
+#                          game's setting to start with), and the rocket goes
+#                          while the button is held, one at a time
+#   Backspace              stop an order (--shot's routes)
 #   Q / E                  turn the turret by hand while held; fixed keys,
 #                          not in the menu, and given up to any action
 #                          bound to them there
@@ -72,7 +70,7 @@
 #                          and bring the bunkers' guns, the soldiers, the boats,
 #                          the tanks and the boss back
 #   Space                  skip the Chinook: the BTR is simply there
-#   wheel, arrows          scroll the camera off the BTR; C follows it again
+#   arrows                 scroll the camera off the BTR; C follows it again
 #   + / -                  zoom
 #   Tab                    tilted view / top view
 #   Home / End             start / end of the level
@@ -333,9 +331,6 @@ var _menu: Level3DMenu
 var _title: Level3DTitle
 var _pixels: ColorRect
 var _crt: ColorRect
-# A click that closed the menu is not a round fired: the left button is not
-# the gun's again until it has been let go of.
-var _gun_locked := false
 
 var _live := false
 # The music's edge (_update_music): the boss armed.
@@ -345,8 +340,8 @@ const ENGINE_REV_PITCH := 1.5    # Level3DSplash3D.REV_PITCH
 const ENGINE_AT_REST := 0.8      # the idle alone's volume at rest, of its top
 var _forced_aim = null  # --fire's or --rocket's target
 var _hold_fire := false # --fire: the gun's trigger held throughout
-# How much longer a right click waits to be a rocket (Crew.rocket_wanted); see
-# _physics_process.
+# How much longer a press, driving free, waits to be a rocket
+# (Crew.rocket_wanted); see _physics_process.
 const ROCKET_WAIT := 0.8
 var _strip := []        # --strip: frames, seconds apart, px square, its middle
 var _kinds := {}        # body RID -> ground kind, see _add_collision
@@ -2487,8 +2482,6 @@ func _make_hud() -> void:
 	var crosshair := Level3DCrosshair.new()
 	crosshair.wanted = _crosshair_wanted
 	crosshair.points = _pad_reticles
-	crosshair.hide_pointer = func(): return _title != null and _title.pointer_hidden() \
-			or _menu != null and _menu.pointer_hidden() or _game_over_screen.pointer_hidden() 			or _shop.pointer_hidden()
 	layer.add_child(crosshair)
 	# Over the HUD, a layer of its own after it; the title and the Escape menu
 	# are put over it again (_ready, _make_menu).
@@ -2805,8 +2798,8 @@ func _hint_done(c: Crew, up: Dictionary) -> bool:
 
 
 # The keys a hint shows, as the player has them now: the first player's from
-# the settings, the mouse's buttons when the firing mode aims with it; the
-# second's from Main's second mapping; either's pad's while it is on one.
+# the settings; the second's from Main's second mapping; either's pad's while
+# it is on one.
 func _hint_keys(c: Crew, name: String) -> Array:
 	if c.pad:
 		match name:
@@ -2816,15 +2809,14 @@ func _hint_keys(c: Crew, name: String) -> Array:
 			"fire", "rocket", "device":
 				return [Level3DPad.name_of(settings.pad_button("gun" if name == "fire" else name))]
 	if c.input == null:
-		var mouse := settings.firing != Level3DSettings.Firing.CLASSIC
 		match name:
 			"move":
 				return [settings.key("up"), settings.key("left"), settings.key("down"), settings.key("right")] \
 						.map(func(k): return _key_name(k))
 			"fire":
-				return ["LMB"] if mouse else [_key_name(settings.key("gun"))]
+				return [_key_name(settings.key("gun"))]
 			"rocket":
-				return ["RMB"] if mouse else [_key_name(settings.key("rocket"))]
+				return [_key_name(settings.key("rocket"))]
 			"device":
 				return [_key_name(settings.key("device"))]
 	if name == "device":
@@ -2956,7 +2948,6 @@ func _make_menu() -> void:
 	_menu.settings = settings
 	_menu.from_editor = OS.get_cmdline_user_args().has("--editor")
 	_menu.changed = _settings_changed
-	_menu.resumed = func(): _gun_locked = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	_menu.main_menu = _show_title
 	# Over the HUD, so that its black hides it, and under the CRT's glass.
 	_title = Level3DTitle.new()
@@ -2995,7 +2986,6 @@ func _start_game(count: int) -> void:
 		await get_tree().process_frame
 	Level3DMap.hard = settings.hard
 	get_tree().paused = false
-	_gun_locked = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	_set_players(count)
 	_restart(true)
 
@@ -3288,7 +3278,7 @@ func _physics_process(delta: float) -> void:
 	if not _live:
 		return
 	_ticks += 1
-	# P is a press, as a right click is; a held span presses it once. Classic
+	# P is a press, driving free; a held span presses it once. Classic
 	# reads it as held instead, below.
 	if not btr.classic:
 		for h in _held:
@@ -3329,9 +3319,6 @@ func _physics_process(delta: float) -> void:
 	for c in crews:
 		if not gone[c]:
 			c.btr.step(delta)
-	var left_button := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
-	if not left_button:
-		_gun_locked = false
 	for c in crews:
 		guns.acting = c
 		_fire(c, gone[c], cursor, delta)
@@ -3485,7 +3472,6 @@ func _game_over() -> bool:
 # it (_saved) -- on the first round, fresh lives and no score, as the game's.
 func _continue_game() -> void:
 	get_tree().paused = false
-	_gun_locked = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	if _saved == null:
 		_restart()
 		return
@@ -3506,7 +3492,7 @@ func _fire(c: Crew, gone: bool, cursor, delta: float) -> void:
 	var vehicle := c.btr
 	var pads := _pads(c)
 	var trigger := c.input.is_gun() or _held_key("gun", c.index) if not first else \
-			(_hold_fire or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _gun_locked or _key("gun"))
+			(_hold_fire or _key("gun"))
 	trigger = trigger or Level3DPad.held(pads, settings.pad_button("gun"))
 	c.gun.trigger = not gone and trigger
 	c.gun.aim_point = vehicle.aim_point
@@ -3526,7 +3512,7 @@ func _fire(c: Crew, gone: bool, cursor, delta: float) -> void:
 	c.launcher.has_missiles = c.carrier.has_missiles
 	c.launcher.missile_power = c.carrier.missile_power
 	var rocket := c.input.is_grenade() or _held_key("rocket", c.index) if not first else \
-			(_key("rocket") or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT))
+			_key("rocket")
 	var pad_rocket := Level3DPad.held(pads, settings.pad_button("rocket"))
 	# Player.update's grenade: held, it goes the tick it can, and it has to be
 	# let go of between two. A press while the last one is still in the air is
@@ -3540,7 +3526,7 @@ func _fire(c: Crew, gone: bool, cursor, delta: float) -> void:
 		else:
 			c.fire_released = true
 	elif not first and rocket and not c.rocket_held or pad_rocket and not c.pad_rocket_held:
-		# The first player's keys and mouse press by events (_unhandled_input).
+		# The first player's keys press by events (_unhandled_input).
 		c.rocket_wanted = ROCKET_WAIT
 	c.rocket_held = rocket
 	c.pad_rocket_held = pad_rocket
@@ -3567,25 +3553,19 @@ func _pads(c: Crew) -> Array[int]:
 	return Level3DPad.devices(c.index, crews.size())
 
 
-# Whose the aim is, the pad's or the keys' and the mouse's: whichever was
-# touched last (Crew.pad). The mouse only counts once it has moved.
-var _mouse_at := Vector2.INF
-
+# Whose the aim and the hints are, the pad's or the keys': whichever was
+# touched last (Crew.pad).
 func _note_pads() -> void:
-	var mouse := get_viewport().get_mouse_position()
-	var mouse_moved := _mouse_at != Vector2.INF and mouse.distance_to(_mouse_at) > 2.0
-	_mouse_at = mouse
 	for c in crews:
 		var pads := _pads(c)
 		if Level3DPad.touched(pads, settings.pad_bindings()):
 			c.pad = true
-		elif pads.is_empty() or _keys_touched(c) or c.input == null and mouse_moved:
+		elif pads.is_empty() or _keys_touched(c):
 			c.pad = false
 		_steer_reticle(c, Level3DPad.right(pads))
 
 
-# Whether a player's keys -- the directions and the weapons -- or, the first
-# player's, the mouse's buttons are held.
+# Whether a player's keys -- the directions and the weapons -- are held.
 func _keys_touched(c: Crew) -> bool:
 	if c.input != null:
 		return c.input.is_up() or c.input.is_down() or c.input.is_left() or c.input.is_right() \
@@ -3593,7 +3573,7 @@ func _keys_touched(c: Crew) -> bool:
 	for action in Level3DSettings.ACTIONS:
 		if Input.is_key_pressed(settings.key(action)):
 			return true
-	return Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	return false
 
 
 # The right stick's reticle, as twin-stick games have it with a point to
@@ -3825,11 +3805,8 @@ static func _axis(negative: Key, positive: Key) -> float:
 func _unhandled_input(event: InputEvent) -> void:
 	if not _live:
 		return
-	# The summary waits for a press: any key, Escape too, any button of the
-	# mouse but its wheel, which is not pressed but turned, or of a pad.
+	# The summary waits for a press: any key, Escape too, or a pad's button.
 	if _summary.shown and ((event is InputEventKey and event.pressed and not event.echo)
-			or (event is InputEventMouseButton and event.pressed and event.button_index not in [
-				MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT])
 			or (event is InputEventJoypadButton and event.pressed)):
 		_summary.dismiss()
 		get_viewport().set_input_as_handled()
@@ -3848,8 +3825,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			_menu.open()
 			return
-		# P, unless it is rebound: a press, as a right click is. Classic reads
-		# it as held instead, in _physics_process.
+		# P, unless it is rebound: a press, driving free. Classic reads it as
+		# held instead, in _physics_process.
 		if event.keycode == settings.key("rocket"):
 			if not btr.classic:
 				crews[0].rocket_wanted = ROCKET_WAIT
@@ -3873,7 +3850,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				focus.y = level_aabb.position.z
 			KEY_C:
 				following = true
-			KEY_M:
+			KEY_M when Level3DSettings.MODERN_CONTROLS:
 				settings.firing = (settings.firing + 1) % Level3DSettings.Firing.size()
 				_settings_changed()
 				_flash_modes()
@@ -3887,7 +3864,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_H:
 				Level3DFx.real_shadows = not Level3DFx.real_shadows
 				print("rockets and bombs: ", "shadows" if Level3DFx.real_shadows else "spots")
-			KEY_V:
+			KEY_V when Level3DSettings.MODERN_CONTROLS:
 				settings.driving = Level3DSettings.Driving.FREE if btr.classic \
 						else Level3DSettings.Driving.CLASSIC
 				_settings_changed()
@@ -3899,22 +3876,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				_restart()
 			KEY_BACKSPACE:
 				btr.stop()
-	elif event is InputEventMouseButton and event.pressed:
-		match event.button_index:
-			# The left button is the gun's, read as held in _physics_process.
-			MOUSE_BUTTON_RIGHT:
-				if not btr.classic:
-					crews[0].rocket_wanted = ROCKET_WAIT
-			MOUSE_BUTTON_MIDDLE:
-				var at = _cursor_on_ground()
-				if at != null:
-					btr.order(at, event.shift_pressed)
-			MOUSE_BUTTON_WHEEL_UP:
-				following = false
-				focus.y -= 2.0 / zoom
-			MOUSE_BUTTON_WHEEL_DOWN:
-				following = false
-				focus.y += 2.0 / zoom
 
 
 # R, and a game from the title screen: the run from nothing, round 1 (or
@@ -4364,7 +4325,6 @@ func _open_shop(at_once := false) -> void:
 # goes back to.
 func _shop_done(run: Level3DRun) -> void:
 	get_tree().paused = false
-	_gun_locked = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	_restore(run)
 	# The paints chosen in it, kept for the next game too, and the lives'
 	# icons in them.

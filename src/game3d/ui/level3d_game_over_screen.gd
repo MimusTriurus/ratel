@@ -108,7 +108,7 @@ var _selected := 0
 var _ending := false            # END picked: the guard leaving, and slowly to black
 var _words := 1.0              # the title's and the entries' share, 0 once picked
 var _hurried := false           # and a key pressed while it went
-var _entry_rects: Array[Rect2] = []   # this frame's, for the mouse
+var _entry_rects: Array[Rect2] = []   # this frame's, for the reticle
 
 
 func _init() -> void:
@@ -120,7 +120,6 @@ func _init() -> void:
 	_text.draw.connect(_draw_text)
 	add_child(_text)
 	_reticle = Level3DReticle.new()
-	_reticle.carries_mouse = true
 	_reticle.shown = false
 	add_child(_reticle)
 	_veil = ColorRect.new()
@@ -132,13 +131,6 @@ func _init() -> void:
 
 func is_open() -> bool:
 	return _state != State.CLOSED
-
-
-# The system's pointer hidden the whole time it is up -- the reticle in its
-# place while there is a choice to aim at -- for Level3DCrosshair, which owns
-# the mouse mode.
-func pointer_hidden() -> bool:
-	return is_open()
 
 
 # The run's end: `p_rescued` each player's rescued, one entry each, `p_total`
@@ -320,8 +312,6 @@ func _input(event: InputEvent) -> void:
 	if key != null and key.pressed and not key.echo:
 		var code := key.keycode
 		var settings := _settings()
-		if code != KEY_ESCAPE:
-			_reticle.keys()
 		if code in [KEY_LEFT, KEY_UP] or settings != null and code in [settings.key("left"), settings.key("up")]:
 			_select(_selected - 1)
 		elif code in [KEY_RIGHT, KEY_DOWN] or settings != null and code in [settings.key("right"), settings.key("down")]:
@@ -330,31 +320,14 @@ func _input(event: InputEvent) -> void:
 			_pick()
 		get_viewport().set_input_as_handled()
 		return
-	var motion := event as InputEventMouseMotion
-	if motion != null:
-		var at := _entry_at()
-		if _reticle.mouse_has_it() and at >= 0:
-			_select(at)
-		return
-	var click := event as InputEventMouseButton
-	if click != null and click.pressed:
-		get_viewport().set_input_as_handled()
-		if click.button_index == MOUSE_BUTTON_LEFT:
-			var at := _entry_at()
-			if at >= 0:
-				_select(at, true)
-				_pick()
-		return
 	# The d-pad or the left stick (Level3DPad), A or Start.
 	var move := Level3DPad.nav(event)
 	if move != Vector2i.ZERO:
 		get_viewport().set_input_as_handled()
-		_reticle.keys()
 		_select(_selected + (-1 if move.x < 0 or move.y < 0 else 1))
 	elif event is InputEventJoypadButton and event.pressed:
 		get_viewport().set_input_as_handled()
 		if Level3DPad.is_accept(event):
-			_reticle.keys()
 			_pick()
 
 
@@ -369,11 +342,9 @@ func _to_menu() -> void:
 	_reticle.aim(_slot, false)
 
 
-# A key, a button of the mouse but its wheel, or a pad's, pressed.
+# A key or a pad's button pressed: no mouse.
 static func _is_press(event: InputEvent) -> bool:
 	return event is InputEventKey and event.pressed and not event.echo \
-			or event is InputEventMouseButton and event.pressed and event.button_index not in [
-				MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT] \
 			or event is InputEventJoypadButton and event.pressed
 
 
@@ -383,16 +354,6 @@ func _settings() -> Level3DSettings:
 	if preview != null and "settings" in preview:
 		return preview.settings as Level3DSettings
 	return null
-
-
-func _entry_at() -> int:
-	var p := _text.get_local_mouse_position()
-	for i in _entry_rects.size():
-		# From where the reticle stands before it to its end.
-		var reach := -RETICLE_X * scale_factor + 24.0
-		if _entry_rects[i].grow_individual(reach, 12.0, 12.0, 12.0).has_point(p):
-			return i
-	return -1
 
 
 func _draw_text() -> void:

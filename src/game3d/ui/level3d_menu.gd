@@ -25,15 +25,15 @@
 # motion past its dead zone; the d-pad or the stick held moves again and
 # again (Level3DPad.Repeat), as a held key does.
 #
-# It points with the title screen's reticle (Level3DReticle) rather than the
-# system's pointer: the mouse moves it, and the keys, which move Godot's
-# focus, glide it to beside the focused control (BESIDE px to its left). A
-# list an OptionButton drops is a window of its own, drawn over everything
-# the menu draws, the reticle too: while one is open the pointer is back.
+# It points with the title screen's reticle (Level3DReticle): the keys and
+# the pads, which move Godot's focus, glide it to beside the focused control
+# (BESIDE px to its left). A list an OptionButton drops is a window of its
+# own, drawn over everything the menu draws, with a reticle of its own. No
+# mouse: the preview is played without it, and the menu lets none of its
+# events through to the controls (_input).
 #
 # It clicks as the title does (Level3DAudio's menu_move, menu_pick): a move
-# as the keys take the focus to another control or the reticle comes over
-# one, a pick as a button is pressed, a box ticked, a list's entry picked or
+# as the focus goes to another control, a pick as a button is pressed, a box ticked, a list's entry picked or
 # a tab changed (_hook). The sliders are left quiet -- the Sound and Mixer
 # tabs' play what they set -- and so is the focus a page takes as it opens
 # or a pick hands on (_hushed).
@@ -123,7 +123,6 @@ var from_editor := false
 # from the level editor, which has no title.
 var main_menu: Callable
 var _paused_before := false   # the tree's pause when open() was called
-var _pointer_before := Vector2.ZERO   # and the pointer, the viewport's
 # Where the settings' Back goes when they were opened over the title
 # (open_settings) rather than from the first page.
 var _back: Callable
@@ -206,7 +205,6 @@ var _reticle: Level3DReticle
 var _list_reticle: Level3DReticle  # in a dropped list's window (_list_reticle_follow)
 var _last_beside := Vector2.ZERO
 var _hushed := -1            # the frame a pick or a page took the focus in
-var _hovered: Control        # the control the reticle was last over
 var _scroll_rest := 0.0      # the right stick's scroll short of a whole pixel
 var _repeat := Level3DPad.Repeat.new()
 
@@ -239,11 +237,7 @@ func _ready() -> void:
 	centre.add_child(_main_page)
 	_settings_page = _make_settings_page()
 	centre.add_child(_settings_page)
-	# The hidden pointer carried with the keys, as the title's is: else the
-	# mouse, moved, threw the reticle from the focused control to wherever
-	# the pointer had been left.
 	_reticle = Level3DReticle.new()
-	_reticle.carries_mouse = true
 	add_child(_reticle)
 	get_viewport().gui_focus_changed.connect(_focus_changed)
 	Input.joy_connection_changed.connect(func(_device: int, _connected: bool):
@@ -286,10 +280,9 @@ func is_open() -> bool:
 	return visible
 
 
-# Whether the system's pointer is hidden, the reticle in its place: while the
-# menu is up, a list dropped from it too, which has a reticle of its own
-# (_list_reticle). Level3DCrosshair, which owns the mouse mode, asks this too.
-func pointer_hidden() -> bool:
+# Whether the reticle is up: while the menu is, a list dropped from it too,
+# which has a reticle of its own (_list_reticle).
+func reticle_up() -> bool:
 	return visible
 
 
@@ -324,34 +317,17 @@ func _process(delta: float) -> void:
 	var again := _repeat.tick(Level3DPad.held_dir(Level3DPad.connected()), delta)
 	if again != Vector2i.ZERO and _waiting_pad == "" and _open_list() == null:
 		_move(again)
-	_reticle.shown = pointer_hidden()
+	_reticle.shown = reticle_up()
 	_list_reticle_follow()
-	var mode := Input.MOUSE_MODE_HIDDEN if pointer_hidden() else Input.MOUSE_MODE_VISIBLE
-	if Input.mouse_mode != mode:
-		Input.mouse_mode = mode
-	# The reticle onto another control: a move.
-	var over: Control = null
-	if pointer_hidden() and _reticle.by_mouse and _open_list() == null:
-		over = get_viewport().gui_get_hovered_control()
-		while over != null and over != _main_page and over != _settings_page \
-				and not (over is BaseButton or over is Slider):
-			over = over.get_parent() as Control
-		if not (over is BaseButton or over is Slider):
-			over = null
-	if over != _hovered:
-		_hovered = over
-		if over != null:
-			Level3DAudio.play("menu_move")
+	if Input.mouse_mode != Input.MOUSE_MODE_HIDDEN:
+		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 
 
-# The keys moved the focus: the reticle goes beside the control, following
-# it as a scroll moves it.
 # A move of the focus, as the arrows make it: the ui action, pressed and let
 # go, which the controls take as they take the keys.
 func _move(dir: Vector2i) -> void:
 	var action := "ui_up" if dir.y < 0 else "ui_down" if dir.y > 0 \
 			else "ui_left" if dir.x < 0 else "ui_right"
-	_reticle.keys()
 	for down in [true, false]:
 		var event := InputEventAction.new()
 		event.action = action
@@ -376,10 +352,12 @@ func _scroll_by_stick(delta: float) -> void:
 	scroll.scroll_vertical += whole
 
 
+# The focus moved: the reticle goes beside the control, following it as a
+# scroll moves it.
 func _focus_changed(control: Control) -> void:
 	if visible and is_ancestor_of(control):
 		_reticle.aim(_beside.bind(control))
-		if not _reticle.by_mouse and Engine.get_process_frames() != _hushed:
+		if Engine.get_process_frames() != _hushed:
 			Level3DAudio.play("menu_move")
 
 
@@ -390,7 +368,7 @@ func _beside(control: Control) -> Vector2:
 	return _last_beside
 
 
-# Opened: the keys have the reticle, beside the focused control.
+# Opened: the reticle beside the focused control.
 func _park_reticle() -> void:
 	_reticle.park()
 	var focused := get_viewport().gui_get_focus_owner()
@@ -403,7 +381,6 @@ func _park_reticle() -> void:
 func open() -> void:
 	visible = true
 	_paused_before = get_tree().paused
-	_pointer_before = get_viewport().get_mouse_position()
 	get_tree().paused = true
 	Level3DAudio.play("pause")
 	_show_main()
@@ -435,10 +412,6 @@ func close() -> void:
 	Level3DAudio.end_music_audition()
 	get_tree().paused = _paused_before
 	_paused_before = false
-	# Only the keys used: the pointer the reticle carried back to where it was,
-	# so that the mouse's aim on the stage is not left on a button.
-	if not _reticle.by_mouse and get_window().has_focus():
-		get_viewport().warp_mouse(_pointer_before)
 	Level3DAudio.play("pause")
 	if resumed.is_valid():
 		resumed.call()
@@ -659,6 +632,10 @@ func _make_interface_tab() -> Control:
 	_hud_pows = _check(tab, "Prisoners aboard", func(on: bool): settings.hud_pows = on)
 	_hud_modes = _check(tab, "Driving and firing modes", func(on: bool): settings.hud_modes = on)
 	_note(tab, "Off: a mode is shown for a couple of seconds when V or M changes it.")
+	# Classic is all there is while the modern ones are hidden.
+	if not Level3DSettings.MODERN_CONTROLS:
+		_hud_modes.visible = false
+		tab.get_child(tab.get_child_count() - 1).visible = false
 	_hud_cheats = _check(tab, "Active cheats", func(on: bool): settings.hud_cheats = on)
 	_hud_pad_arrow = _check(tab, "Arrow to the helicopter", func(on: bool): settings.hud_pad_arrow = on)
 	_note(tab, "While prisoners are aboard and the helicopter that will take them is off the screen.")
@@ -677,6 +654,11 @@ func _make_interface_tab() -> Control:
 	_hud_crosshair = _check(tab, "Crosshair in place of the cursor", func(on: bool): settings.hud_crosshair = on)
 	_note(tab, "In the modern and combined firing modes, which aim with the mouse. Works without the HUD too.")
 	tab.add_child(HSeparator.new())
+	# The modern firing's, hidden with it (Level3DSettings.MODERN_CONTROLS).
+	if not Level3DSettings.MODERN_CONTROLS:
+		var count := tab.get_child_count()
+		for i in range(count - 3, count):
+			(tab.get_child(i) as Control).visible = false
 	var layout := _grid(tab)
 	_hud_corner = _choice(layout, "Position", ["Top", "Bottom"],
 			func(i: int): settings.hud_corner = i)
@@ -930,7 +912,10 @@ func _show_db(slider: HSlider, db: float, saved: float) -> void:
 
 func _make_controls_tab() -> Control:
 	var tab := _tab("Controls")
-	# The modes first: they are changed far more often than the keys.
+	# The modes first: they are changed far more often than the keys. Hidden
+	# while the modern ones are (Level3DSettings.MODERN_CONTROLS): classic
+	# is all there is to pick.
+	var first_key := tab.get_child_count()
 	var modes := _grid(tab)
 	_driving = _choice(modes, "Driving", ["Classic", "Modern"],
 			func(i: int): settings.driving = i)
@@ -949,6 +934,9 @@ func _make_controls_tab() -> Control:
 			+ "Unlimited: they fly until they hit something. "
 			+ "Rounds and rockets aimed with the cursor stop at it, but no further than the reach.")
 	tab.add_child(HSeparator.new())
+	if not Level3DSettings.MODERN_CONTROLS:
+		for i in range(first_key, tab.get_child_count()):
+			(tab.get_child(i) as Control).visible = false
 	_heading(tab, "Keys")
 	var keys := _grid(tab)
 	for action in Level3DSettings.ACTIONS:
@@ -971,7 +959,7 @@ func _make_controls_tab() -> Control:
 	tab.add_child(defaults)
 	_note(tab, "Second player: the 2D game's second-player keys, by default the arrows, "
 			+ "right Alt (machine gun) and right Ctrl (rockets). Rebound in the game: "
-			+ "Options → 2p input. Fires the classic way, but on a gamepad.")
+			+ "Options → 2p input.")
 	tab.add_child(HSeparator.new())
 	_heading(tab, "Gamepad")
 	_pad = _check(tab, "Use a gamepad", func(on: bool): settings.pad = on)
@@ -987,6 +975,10 @@ func _make_controls_tab() -> Control:
 			func(i: int): settings.pad_names = i)
 	_pad_assist = _choice(pad, "Aim assist", PAD_ASSIST_CHOICES,
 			func(i: int): settings.pad_assist = i)
+	# The right stick's aim is the modern firing's, hidden with it.
+	if not Level3DSettings.MODERN_CONTROLS:
+		_pad_assist.visible = false
+		pad.get_child(pad.get_child_count() - 2).visible = false
 	for action in Level3DSettings.PAD_ACTIONS:
 		var label := Label.new()
 		label.text = ACTION_NAMES[action]
@@ -1006,11 +998,8 @@ func _make_controls_tab() -> Control:
 		settings.reset_pad()
 		_changed())
 	tab.add_child(pad_defaults)
-	_note(tab, "Classic driving: left stick or d-pad. Modern driving: R2 throttle, L2 brake "
-			+ "and reverse, left stick steers. Right stick: aim, with modern or combined firing; "
-			+ "the further it is tilted, the further the reticle, up to the reach. "
-			+ "Aim assist pulls the reticle on to an enemy near where the stick points, "
-			+ "and with the stick let go keeps it on him while the machine gun fires. "
+	var sticks := "Left stick or d-pad: drive. " if not Level3DSettings.MODERN_CONTROLS 			else "Classic driving: left stick or d-pad. Modern driving: R2 throttle, L2 brake " 			+ "and reverse, left stick steers. Right stick: aim, with modern or combined firing; " 			+ "the further it is tilted, the further the reticle, up to the reach. " 			+ "Aim assist pulls the reticle on to an enemy near where the stick points, " 			+ "and with the stick let go keeps it on him while the machine gun fires. "
+	_note(tab, sticks
 			+ "Start: this menu. Back: skip the landing. "
 			+ "With one player every gamepad is his; with two, the first two are a player's each, "
 			+ "and a single one is the player's picked above, the other keeping the keyboard. "
@@ -1053,17 +1042,15 @@ func _prompt_pad(action: String) -> void:
 func _input(event: InputEvent) -> void:
 	if not visible:
 		return
-	# A key or a pad takes the reticle to the focus; a pick, by key, button
-	# or click, fires it.
+	# No mouse: its clicks, wheel and hover kept from the controls.
+	if event is InputEventMouse:
+		get_viewport().set_input_as_handled()
+		return
+	# A pick, by key or button, fires the reticle.
 	if event is InputEventKey and event.pressed and not event.echo:
-		_reticle.keys()
 		if event.is_action("ui_accept"):
 			_reticle.fire()
-	elif Level3DPad.is_pad(event):
-		_reticle.keys()
-		if event.is_action_pressed("ui_accept"):
-			_reticle.fire()
-	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+	elif Level3DPad.is_pad(event) and event.is_action_pressed("ui_accept"):
 		_reticle.fire()
 	if _waiting_pad != "":
 		_pad_prompt_input(event)
