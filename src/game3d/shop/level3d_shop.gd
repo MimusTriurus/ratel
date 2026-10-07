@@ -93,6 +93,7 @@ const READY_PAD := Vector2(32.0, 16.0)
 # READY_PULSE seconds, eased -- an arcade's on and off was too harsh -- and
 # as small as it must be to fit the column.
 const READY_PROMPT := "PRESS FIRE WHEN READY"
+const READY_OUTLINE := 0.09     # READY's outline, of its height
 const READY_PULSE := 1.6
 const READY_DIM := 0.35
 # The layout, in the HUD's 2048 x 1152 at 100%.
@@ -831,7 +832,8 @@ func _draw_text() -> void:
 	for i in range(_players - 1, -1, -1):
 		var at := _cursor[i]
 		var key := _cursor_key(i)
-		if not _rects.has(key):
+		# Ready, his READY is outlined in his colour instead.
+		if not _rects.has(key) or _set[i]:
 			continue
 		var r: Rect2 = _rects[key]
 		var inset := 0.0
@@ -955,8 +957,8 @@ func _draw_side(i: int, s: float, g: float, sg: float, pg: float) -> void:
 	Level3DFont.draw(_text, money, roundf(x), y, pg)
 	_draw_words(i, Rect2(x0, 0.0, width, 0.0), s, g, sg)
 	_draw_paints(i, x0, width, s)
-	# Done, READY in his colour, his cursor round it; not yet, PRESS FIRE
-	# WHEN READY breathing, as small as the column needs.
+	# Done, READY in white outlined in his colour, no cursor round it; not
+	# yet, PRESS FIRE WHEN READY breathing, as small as the column needs.
 	var ready := "READY" if _set[i] else READY_PROMPT
 	var rg := _whole(READY_GLYPH * s)
 	var pad := (READY_PAD * s).round()
@@ -968,9 +970,14 @@ func _draw_side(i: int, s: float, g: float, sg: float, pg: float) -> void:
 			rw + pad.x * 2.0, rg + pad.y * 2.0)
 	_rects[Vector3i(0, READY_ROW, i)] = rect
 	if _set[i]:
-		_text.draw_rect(rect, colour)
-		_text.draw_rect(rect, Color(1, 1, 1, 0.85), false, maxf(roundf(RING * s), 1.0))
-		Level3DFont.draw(_text, ready, rect.position.x + pad.x, rect.position.y + pad.y, rg)
+		# White, outlined in his colour: the words drawn in it a few pixels
+		# round, then over them in white -- words, not a button.
+		var at := Vector2(rect.position.x + pad.x, rect.position.y + pad.y)
+		var o := maxf(roundf(rg * READY_OUTLINE), 2.0)
+		for d in [Vector2(-1, -1), Vector2(0, -1), Vector2(1, -1), Vector2(-1, 0),
+				Vector2(1, 0), Vector2(-1, 1), Vector2(0, 1), Vector2(1, 1)]:
+			Level3DFont.draw(_text, ready, at.x + d.x * o, at.y + d.y * o, rg, Level3DFont.WHITE, colour)
+		Level3DFont.draw(_text, ready, at.x, at.y, rg)
 	else:
 		var breath := 0.5 + 0.5 * cos(_time * TAU / READY_PULSE)
 		var tint := Color(1.0, 1.0, 1.0, lerpf(READY_DIM, 1.0, breath))
