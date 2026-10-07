@@ -12,13 +12,13 @@ blend does all of it, from the download):
   whole scaled to 8.08 m nose to fin, the skids on the ground, the mast on
   the origin;
 - the textures replaced by a flat colour for each part, olive drab, the
-  canopy opaque dark glass where it was see-through, the main blades' tips
+  canopy glass tinted blue and still see-through (alpha 0.45), the main blades' tips
   khaki and the tail rotor's orange; shaded smooth with the edges over 40
   degrees sharp;
 - the parts joined into one mesh on a rig of three bones, Root and the two
   rotors, with a Fly clip turning them;
 - a contour shell (a Solidify in an M6_Contour material) on the silhouette
-  and the big parts;
+  and the big parts, not on the canopy;
 - added, not in the original: the MH-6's external personnel benches, a
   plank either side on the skids' struts, as an object of its own,
   UpBenches, on unless --no-heli-benches;
