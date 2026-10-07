@@ -2464,6 +2464,8 @@ func _make_hud() -> void:
 	_shop = Level3DShop.new()
 	_shop.scene_layer = CEMETERY_LAYER
 	_shop.hud = _hud
+	_shop.open_menu = func(): _menu.open()
+	_shop.menu_open = func(): return _menu.visible
 	_shop.done = _shop_done
 	add_child(_shop)
 
@@ -2922,6 +2924,9 @@ func _make_menu() -> void:
 # seconds, its song coming up with it, if given (the game over's END).
 func _show_title(from_black := 0.0) -> void:
 	_menu.leave()
+	# From the shop's Escape menu: the run given up there too.
+	if _shop != null:
+		_shop.close()
 	get_tree().paused = true
 	Level3DAudio.play_music("title")
 	if from_black > 0.0:
@@ -3026,6 +3031,7 @@ func _apply_settings() -> void:
 	lighting = Level3DLighting.from_name(OS.get_cmdline_user_args()[light_flag + 1]) 			if light_flag >= 0 else settings.light as Level3DLighting.Preset
 	_apply_lighting()
 	_crt.visible = settings.crt
+	(_crt.material as ShaderMaterial).set_shader_parameter("curve", settings.crt_curve)
 	# --outline over the settings, for a --shot: stage, vehicles, people.
 	var outlines := [settings.outline_stage, settings.outline_vehicles, settings.outline_people]
 	var outline_flag := OS.get_cmdline_user_args().find("--outline")

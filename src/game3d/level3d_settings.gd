@@ -59,6 +59,11 @@ var camera := Camera.TILTED
 var look := Look.MODERN
 # The CRT monitor, over either look.
 var crt := false
+# How far its glass bulges, one of CRT_CURVES: level3d_screen.gdshader's
+# `curve`, 0 flat, 0.08 the one it always had. Not in the styles: 8-bit
+# turns the CRT on, not how round it is.
+const CRT_CURVES: Array[float] = [0.0, 0.04, 0.08, 0.12, 0.18]
+var crt_curve := 0.08
 # The stage's light (Level3DLighting.Preset), the one a run's sunrise ends
 # in: the day, Blender's, or the title's low sun.
 var light := Level3DLighting.Preset.DAY as int
@@ -222,6 +227,8 @@ func load_saved() -> void:
 	resolution = clampi(config.get_value("graphics", "resolution", resolution), 0, Resolution.size() - 1)
 	antialias = clampi(config.get_value("graphics", "antialias", antialias), 0, Antialias.size() - 1)
 	light = clampi(config.get_value("graphics", "light", light), 0, Level3DLighting.NAMES.size() - 1)
+	var curve = config.get_value("graphics", "crt_curve", crt_curve)
+	crt_curve = float(curve) if (curve is int or curve is float) and CRT_CURVES.has(float(curve)) else 0.08
 	if config.has_section_key("graphics", "render"):
 		look = clampi(config.get_value("graphics", "render", look), 0, Look.size() - 1)
 		crt = config.get_value("graphics", "crt", crt)
@@ -303,6 +310,7 @@ func save() -> void:
 	config.set_value("graphics", "resolution", resolution)
 	config.set_value("graphics", "antialias", antialias)
 	config.set_value("graphics", "crt", crt)
+	config.set_value("graphics", "crt_curve", crt_curve)
 	config.set_value("graphics", "light", light)
 	config.set_value("graphics", "outline_stage", outline_stage)
 	config.set_value("graphics", "outline_vehicles", outline_vehicles)

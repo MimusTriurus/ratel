@@ -22,7 +22,8 @@ seconds' drive below the boss, the way there left unspawned.
 
 The 3D preview's Escape menu opens its settings on a Game tab whose Style is
 8-bit or modern, each a preset of the sound mode, the driving, the firing,
-the reach, the font, the look and the CRT (`Level3DSettings.PRESETS`). It is
+the reach, the font, the look and the CRT (`Level3DSettings.PRESETS`; how
+round the CRT's glass is, Graphics -> Screen curvature, is not in them). It is
 the one place the style is picked: every screen reads the settings it sets,
 the shop's bay under the pixels and the CRT as the stage is. The style is not
 saved but read back off those settings, so changing one on its own tab shows
@@ -133,7 +134,9 @@ its price, red when he is short of it, OWNED, IN SLOT, MAX.
   the next round starts, from the Chinook, when every player has given it.
 - The jeep turns on its table to show the part its player's tile is about,
   the part on trial standing on it see-through and pulsing.
-- Escape does nothing there: the Escape menu would unpause the stage under it.
+- Escape opens the Escape menu over it, as on the stage; closing it leaves
+  the stage paused under the shop (`Level3DMenu` puts the pause back as it
+  found it), and its "Main menu" gives the run up there too.
 - The bay is on the cemetery's layer (`scene_layer`, `CEMETERY_LAYER`), under
   the pixels and the CRT, its words over the pixels as the HUD's are; the
   HUD is hidden while it stands.

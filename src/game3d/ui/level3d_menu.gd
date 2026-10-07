@@ -113,6 +113,7 @@ var from_editor := false
 # `main_menu.call()`: the title screen (Level3DTitle), the run given up. None
 # from the level editor, which has no title.
 var main_menu: Callable
+var _paused_before := false   # the tree's pause when open() was called
 # Where the settings' Back goes when they were opened over the title
 # (open_settings) rather than from the first page.
 var _back: Callable
@@ -130,6 +131,7 @@ var _camera: OptionButton
 var _look: OptionButton
 var _light: OptionButton
 var _crt: CheckBox
+var _crt_curve: OptionButton
 var _outline_stage: OptionButton
 var _outline_vehicles: OptionButton
 var _outline_people: OptionButton
@@ -335,9 +337,11 @@ func _park_reticle() -> void:
 		_reticle.aim(_beside.bind(focused), false)
 
 
-# With GameMode's pause sound, which its pause key plays both ways.
+# With GameMode's pause sound, which its pause key plays both ways. Over the
+# shop the tree is paused already, and close() leaves it so (_paused_before).
 func open() -> void:
 	visible = true
+	_paused_before = get_tree().paused
 	get_tree().paused = true
 	Level3DAudio.play("pause")
 	_show_main()
@@ -365,7 +369,8 @@ func close() -> void:
 	visible = false
 	# The stage's song again, if the Mixer tab put a part of another on.
 	Level3DAudio.end_music_audition()
-	get_tree().paused = false
+	get_tree().paused = _paused_before
+	_paused_before = false
 	Level3DAudio.play("pause")
 	if resumed.is_valid():
 		resumed.call()
@@ -403,6 +408,8 @@ func refresh() -> void:
 	_look.select(settings.look)
 	_light.select(settings.light)
 	_crt.set_pressed_no_signal(settings.crt)
+	_crt_curve.select(Level3DSettings.CRT_CURVES.find(settings.crt_curve))
+	_crt_curve.disabled = not settings.crt   # greyed out, as the HUD's are
 	_outline_stage.select(Level3DSettings.OUTLINES.find(settings.outline_stage))
 	_outline_vehicles.select(Level3DSettings.OUTLINES.find(settings.outline_vehicles))
 	_outline_people.select(Level3DSettings.OUTLINES.find(settings.outline_people))
@@ -553,6 +560,8 @@ func _make_graphics_tab() -> Control:
 	_outline_people = _choice(grid, "Outline: people", widths,
 			func(i: int): settings.outline_people = Level3DSettings.OUTLINES[i])
 	_crt = _check(tab, "CRT monitor", func(on: bool): settings.crt = on)
+	_crt_curve = _choice(_grid(tab), "Screen curvature", ["Flat", "Slight", "Normal", "Strong", "Very strong"],
+			func(i: int): settings.crt_curve = Level3DSettings.CRT_CURVES[i])
 	_note(tab, "Outlines are in pixels of a 1080-line screen. People: soldiers, prisoners and the helicopter's crewman.")
 	return tab.get_parent().get_parent()
 

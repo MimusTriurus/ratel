@@ -53,6 +53,14 @@ func _all() -> void:
 	quit(failures)
 
 
+func _escape() -> void:
+	for down in [true, false]:
+		var key := InputEventKey.new()
+		key.keycode = KEY_ESCAPE
+		key.pressed = down
+		root.push_input(key)
+
+
 # Rounds: the run kept between them, the summary to the shop to round 2, CONTINUE, R.
 func _rounds() -> void:
 	while not scene.get("_live"):
@@ -133,6 +141,15 @@ func _shop() -> void:
 	for i in 20:
 		await process_frame
 	check("shop open, tree paused", shop.is_open() and paused)
+	# Escape: the menu over the shop; Escape again closes it, the stage still
+	# paused under the shop.
+	var menu: Level3DMenu = scene.get("_menu")
+	_escape()
+	await process_frame
+	check("Escape in the shop opens the menu", menu.visible and shop.is_open())
+	_escape()
+	await process_frame
+	check("the menu closed, the shop on, the tree still paused", not menu.visible and shop.is_open() and paused)
 	var kit: Level3DRun.Kit = shop._run.kits[0]
 	_at(shop, 0, "life"); shop._fire(0)
 	_at(shop, 0, "launcher"); shop._fire(0); shop._fire(0)

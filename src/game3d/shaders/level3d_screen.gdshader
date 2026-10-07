@@ -9,7 +9,8 @@ shader_type canvas_item;
 uniform sampler2D screen : hint_screen_texture, filter_linear;
 uniform sampler2D screen_nearest : hint_screen_texture, filter_nearest;
 uniform int mode = 1;
-// CRT: how far the glass bulges, and how many scanlines the frame is tall --
+// CRT: how far the glass bulges (Level3DSettings.crt_curve, Graphics ->
+// Screen curvature), and how many scanlines the frame is tall --
 // 270 is a quarter of 1080, a line to every four pixels of a full HD screen.
 uniform float curve = 0.08;
 uniform float lines = 270.0;

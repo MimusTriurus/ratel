@@ -59,8 +59,9 @@
 #   * The first player has the mouse as well: over a tile picks it, a left
 #     click buys, a right click takes back -- with the title's reticle
 #     (Level3DReticle) in place of the system's pointer.
-#   * Escape is nothing here: the Escape menu would unpause the stage under
-#     it.
+#   * Escape opens the Escape menu over it (`open_menu`), which leaves the
+#     stage paused under it when it closes (Level3DMenu.open). While it is
+#     up (`menu_open`) the shop takes no input and hides its reticle.
 #
 # Its own layer, processing while the tree is paused, the bay on one under it
 # (scene_layer). The jeeps are in a
@@ -207,6 +208,10 @@ var paints: Array[String] = []
 # hidden while the bay stands, or null: under the shop's now, not over it.
 var scene_layer := -1
 var hud: CanvasLayer
+# The Escape menu: `open_menu.call()` opens it, `menu_open.call()` says it
+# is up. Unset (F6), Escape does nothing.
+var open_menu: Callable
+var menu_open: Callable
 
 var _state := State.CLOSED
 var _run: Level3DRun
@@ -472,8 +477,8 @@ func _process(delta: float) -> void:
 	if _state == State.CLOSED:
 		return
 	_time += delta
-	_reticle.shown = _state == State.OPEN and _veil.color.a < 0.5
-	if _state == State.OPEN:
+	_reticle.shown = _state == State.OPEN and _veil.color.a < 0.5 and not _menu_up()
+	if _state == State.OPEN and not _menu_up():
 		for i in _players:
 			if inputs.size() > i and inputs[i] is HumanInput:
 				_poll(i, inputs[i])
@@ -547,11 +552,16 @@ func _poll(player: int, input: HumanInput) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if _state == State.CLOSED:
+	if _state == State.CLOSED or _menu_up():
 		return
 	# Nothing gets past it to the stage paused under it.
 	var key := event as InputEventKey
 	if key != null:
+		if key.pressed and not key.echo and key.keycode == KEY_ESCAPE \
+				and _state == State.OPEN and open_menu.is_valid():
+			get_viewport().set_input_as_handled()
+			open_menu.call()
+			return
 		# The second player's keys go on to his HumanInput as KeySides
 		# (level3d_preview.gd) would have sent them, had this not stopped them.
 		HumanInput.key_event(key)
@@ -624,6 +634,10 @@ func _input(event: InputEvent) -> void:
 			JOY_BUTTON_DPAD_RIGHT: _move(0, Vector2i(1, 0))
 			JOY_BUTTON_A: _fire(0)
 			JOY_BUTTON_B: _take_back(0)
+
+
+func _menu_up() -> bool:
+	return menu_open.is_valid() and menu_open.call()
 
 
 func _key(action: String) -> Key:
