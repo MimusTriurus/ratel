@@ -17,6 +17,7 @@
 # Keys as on the 2D game's menus: up and down (the arrows, and the keys
 # bound to the BTR's), Enter, Space or the gun to pick, and left and right to
 # change the mode or the difficulty; the mouse picks an entry by aiming the reticle at it.
+# A pad (Level3DPad) as the keys: the d-pad or the left stick, A or Start.
 # Each with the menus' clicks: menu_move onto another entry, menu_pick as one
 # is picked or changed (Level3DAudio).
 class_name Level3DTitle
@@ -386,11 +387,24 @@ func _input(event: InputEvent) -> void:
 		return
 	if _launching:
 		var pressed: bool = event is InputEventKey and event.pressed and not event.echo \
-				or event is InputEventMouseButton and event.pressed
+				or event is InputEventMouseButton and event.pressed \
+				or event is InputEventJoypadButton and event.pressed
 		if pressed and (_launch != null or _waiting > 0) and _veil.color.a == 0.0:
 			_waiting = 0
 			_fade_out(_selected + 1, 0.0)
 			get_viewport().set_input_as_handled()
+		return
+	var move := Level3DPad.nav(event)
+	if move != Vector2i.ZERO or Level3DPad.is_accept(event):
+		_reticle.keys()
+		if move.y != 0:
+			_select(_selected + move.y)
+		elif move.x != 0:
+			if _selected in [Entry.MODE, Entry.DIFFICULTY]:
+				_pick()
+		else:
+			_pick()
+		get_viewport().set_input_as_handled()
 		return
 	var key := event as InputEventKey
 	if key != null and key.pressed and not key.echo:

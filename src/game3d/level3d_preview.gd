@@ -85,6 +85,13 @@
 #                          fired; --spots starts with spots. The rounds fly
 #                          low and always cast one
 #
+# A gamepad (level3d_pad.gd) drives as the keys do, by the settings' Gamepad
+# section: the left stick or the d-pad drive, the right stick aims where the
+# firing aims at the cursor, R2 the gun, L2 the rocket, R1 the device (all
+# three rebound in the menu), Start the Escape menu, Back skips the Chinook.
+# Whichever the player touched last, the pad or the keys and the mouse, has
+# the aim and the hints (Crew.pad). A --shot reads no pad.
+#
 # Like the map editor it can render one view and quit (a real window is needed,
 # --headless has no framebuffer to read back):
 #
@@ -354,6 +361,11 @@ func _ready() -> void:
 	_persist = not (run_args.has("--shot") or run_args.has("--obstacle-map"))
 	if _persist:
 		settings.load_saved()
+	else:
+		# A shot is the same whatever pad lies on the desk.
+		settings.pad = false
+	Level3DPad.settings = settings
+	Level3DPad.install()
 	# --style 8bit|modern: the Game tab's style, as if picked there -- saved,
 	# but for a --shot, which saves nothing.
 	var style_flag := run_args.find("--style")
@@ -450,6 +462,9 @@ func _ready() -> void:
 	_mapping.load_saved()
 	_mapping_2 = ButtonMapping.second_player(_mapping)
 	_mapping_2.load_saved()
+	# Its pad is Level3DPad's here, by the preview's settings: the 2D game's
+	# would have the second jeep on the same pad as the first.
+	_mapping_2.controller = false
 	_make_hud()
 	if titled:
 		move_child(_title, -1)
@@ -614,6 +629,13 @@ class Crew:
 	var device_held := false
 	var strikes := 0
 	var mines: Array[Node3D] = []
+	# The pad (Level3DPad): whether it was the last thing the player touched,
+	# rather than the keys or the mouse -- the aim and the hints go by it;
+	# the right stick's last direction, a level one, up the screen to start;
+	# the rocket's binding on the last tick, for its press.
+	var pad := false
+	var pad_aim := Vector3.FORWARD
+	var pad_rocket_held := false
 
 
 # Every key event to HumanInput.key_event, the Escape menu or not (it pauses
@@ -2407,6 +2429,7 @@ func _player_box(c: Crew) -> Rect2:
 # (Level3DWreck); the game's jeep is simply gone.
 func _explode_btr(c: Crew, by: String) -> void:
 	var vehicle := c.btr
+	Level3DPad.rumble(_pads(c), 0.6, 1.0, 0.6)
 	_spawn_blast(vehicle.position + Vector3.UP * 0.6, 1.0, 0.0, "player_explodes")
 	# Player.explode: the last life going takes the music with it -- the last
 	# of both players'.
@@ -2771,8 +2794,14 @@ func _hint_done(c: Crew, up: Dictionary) -> bool:
 
 # The keys a hint shows, as the player has them now: the first player's from
 # the settings, the mouse's buttons when the firing mode aims with it; the
-# second's from Main's second mapping.
+# second's from Main's second mapping; either's pad's while it is on one.
 func _hint_keys(c: Crew, name: String) -> Array:
+	if c.pad:
+		match name:
+			"move":
+				return ["L-STICK"]
+			"fire", "rocket", "device":
+				return [Level3DPad.name_of(settings.pad_button("gun" if name == "fire" else name))]
 	if c.input == null:
 		var mouse := settings.firing != Level3DSettings.Firing.CLASSIC
 		match name:
@@ -2872,7 +2901,7 @@ func _test_game_over(spec: String) -> void:
 # gone -- as the game's is gated on playing, unpaused and aiming.
 func _crosshair_wanted() -> bool:
 	return _live and settings.hud_crosshair \
-			and settings.firing != Level3DSettings.Firing.CLASSIC \
+			and settings.firing != Level3DSettings.Firing.CLASSIC and not crews[0].pad \
 			and not _menu.is_open() and not _title.is_open() and chinook == null and crews[0].respawning == 0 and not crews[0].out
 
 
@@ -3249,14 +3278,17 @@ func _physics_process(delta: float) -> void:
 				crews[0].rocket_wanted = ROCKET_WAIT
 	if crews.size() > 1:
 		crews[1].input.snap()
+	_note_pads()
 	for c in crews:
 		_drive(c)
 	# The firing (Level3DSettings.Firing). Classic is the game's: driving
 	# classic, the gun up the screen whatever the jeep does and the grenade
 	# the way it drives or faces; driving free, both along the hull. Modern
 	# has both at the cursor. Combined has the launcher at the cursor and the
-	# turret up the screen, however the BTR drives. The second player has no
-	# cursor and fires the classic way whatever the setting.
+	# turret up the screen, however the BTR drives. The right stick is a
+	# player's cursor while the pad is his (_pad_cursor). The second player
+	# has no mouse, and without a pad fires the classic way whatever the
+	# setting.
 	var cursor = null
 	if _forced_aim == null and settings.firing != Level3DSettings.Firing.CLASSIC:
 		cursor = _cursor_on_ground()
@@ -3339,12 +3371,16 @@ func _drive(c: Crew) -> void:
 	var down := _key("down") if c.input == null else c.input.is_down() or _held_key("down", c.index)
 	var left := _key("left") if c.input == null else c.input.is_left() or _held_key("left", c.index)
 	var right := _key("right") if c.input == null else c.input.is_right() or _held_key("right", c.index)
+	# The left stick or the d-pad: the eight directions classic, and how far
+	# it is pushed driving free.
+	var stick := Level3DPad.left(_pads(c))
 	var vehicle := c.btr
 	if vehicle.classic:
-		vehicle.key_up = up
-		vehicle.key_down = down
-		vehicle.key_left = left
-		vehicle.key_right = right
+		var dirs := Level3DPad.digital(stick)
+		vehicle.key_up = up or dirs[0]
+		vehicle.key_down = down or dirs[1]
+		vehicle.key_left = left or dirs[2]
+		vehicle.key_right = right or dirs[3]
 		vehicle.throttle = 0.0
 		vehicle.steer = 0.0
 	else:
@@ -3352,23 +3388,23 @@ func _drive(c: Crew) -> void:
 		vehicle.key_down = false
 		vehicle.key_left = false
 		vehicle.key_right = false
-		vehicle.throttle = float(up) - float(down)
-		vehicle.steer = float(left) - float(right)
+		vehicle.throttle = clampf(float(up) - float(down) - stick.y, -1.0, 1.0)
+		vehicle.steer = clampf(float(left) - float(right) - stick.x, -1.0, 1.0)
 	# By hand while held; let go, the aim below has the turret again, except
 	# driving free with the classic firing, which leaves it where it is.
 	if c.input == null:
 		vehicle.turret_input = float(_turret_key("turret_left")) - float(_turret_key("turret_right"))
 
 
-# Where a player's turret points (Level3DBtr.aim_point), by the firing; the
-# second player's always the classic way.
+# Where a player's turret points (Level3DBtr.aim_point), by the firing
+# (_firing).
 func _aim(c: Crew, cursor) -> void:
-	var firing := settings.firing if c.input == null else Level3DSettings.Firing.CLASSIC
+	var firing := _firing(c)
 	var vehicle := c.btr
 	if _forced_aim != null and c.input == null:
 		vehicle.aim_point = _forced_aim
 	elif firing == Level3DSettings.Firing.MODERN:
-		vehicle.aim_point = cursor
+		vehicle.aim_point = _pad_cursor(c) if c.pad else cursor
 	elif vehicle.classic or firing == Level3DSettings.Firing.COMBINED:
 		vehicle.aim_point = vehicle.position + _game_direction(270.0) * Level3DGun.RANGE
 	else:
@@ -3447,20 +3483,24 @@ func _end_game() -> void:
 # prisoners have given.
 func _fire(c: Crew, gone: bool, cursor, delta: float) -> void:
 	var first := c.input == null
-	var firing := settings.firing if first else Level3DSettings.Firing.CLASSIC
+	var firing := _firing(c)
 	var vehicle := c.btr
+	var pads := _pads(c)
 	var trigger := c.input.is_gun() or _held_key("gun", c.index) if not first else \
 			(_hold_fire or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _gun_locked or _key("gun"))
+	trigger = trigger or Level3DPad.held(pads, settings.pad_button("gun"))
 	c.gun.trigger = not gone and trigger
 	c.gun.aim_point = vehicle.aim_point
-	c.gun.at_cursor = first and (_forced_aim != null or firing == Level3DSettings.Firing.MODERN and cursor != null)
+	# The stick's aim is a direction, not a point to stop at.
+	c.gun.at_cursor = first and not c.pad \
+			and (_forced_aim != null or firing == Level3DSettings.Firing.MODERN and cursor != null)
 	c.gun.step(delta)
 	c.launcher.aim_point = vehicle.aim_point
 	c.launcher.at_cursor = c.gun.at_cursor
 	if not first or _forced_aim == null:
 		if firing == Level3DSettings.Firing.COMBINED:
-			c.launcher.aim_point = cursor
-			c.launcher.at_cursor = cursor != null
+			c.launcher.aim_point = _pad_cursor(c) if c.pad else cursor
+			c.launcher.at_cursor = not c.pad and cursor != null
 		elif firing == Level3DSettings.Firing.CLASSIC and vehicle.classic:
 			c.launcher.aim_point = vehicle.position \
 					+ _game_direction(vehicle.classic_fire_angle()) * Level3DLauncher.RANGE
@@ -3468,20 +3508,23 @@ func _fire(c: Crew, gone: bool, cursor, delta: float) -> void:
 	c.launcher.missile_power = c.carrier.missile_power
 	var rocket := c.input.is_grenade() or _held_key("rocket", c.index) if not first else \
 			(_key("rocket") or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT))
+	var pad_rocket := Level3DPad.held(pads, settings.pad_button("rocket"))
 	# Player.update's grenade: held, it goes the tick it can, and it has to be
 	# let go of between two. A press while the last one is still in the air is
 	# not lost if the button is still down when it is over.
 	if vehicle.classic:
-		if rocket:
+		if rocket or pad_rocket:
 			if c.fire_released and not gone and c.launcher.fire():
 				c.fire_released = false
 				c.rockets += 1
+				Level3DPad.rumble(pads, 0.35, 0.0, 0.12)
 		else:
 			c.fire_released = true
-	elif not first and rocket and not c.rocket_held:
-		# The first player's press is an event (_unhandled_input).
+	elif not first and rocket and not c.rocket_held or pad_rocket and not c.pad_rocket_held:
+		# The first player's keys and mouse press by events (_unhandled_input).
 		c.rocket_wanted = ROCKET_WAIT
 	c.rocket_held = rocket
+	c.pad_rocket_held = pad_rocket
 	# A click waits for the mount to come round and the rails to be loaded,
 	# rather than being lost while they are not.
 	if c.rocket_wanted > 0.0:
@@ -3489,7 +3532,60 @@ func _fire(c: Crew, gone: bool, cursor, delta: float) -> void:
 		if not gone and c.launcher.fire():
 			c.rocket_wanted = 0.0
 			c.rockets += 1
+			Level3DPad.rumble(pads, 0.35, 0.0, 0.12)
 	c.launcher.step(delta)
+
+
+# The firing a player has (Level3DSettings.Firing): the settings', but the
+# classic way for the second player without a pad, who has nothing to aim
+# with.
+func _firing(c: Crew) -> Level3DSettings.Firing:
+	return settings.firing if c.input == null or c.pad else Level3DSettings.Firing.CLASSIC
+
+
+# The pads a player drives with (Level3DPad.devices).
+func _pads(c: Crew) -> Array[int]:
+	return Level3DPad.devices(c.index, crews.size())
+
+
+# Whose the aim is, the pad's or the keys' and the mouse's: whichever was
+# touched last (Crew.pad). The mouse only counts once it has moved.
+var _mouse_at := Vector2.INF
+
+func _note_pads() -> void:
+	var mouse := get_viewport().get_mouse_position()
+	var mouse_moved := _mouse_at != Vector2.INF and mouse.distance_to(_mouse_at) > 2.0
+	_mouse_at = mouse
+	for c in crews:
+		var pads := _pads(c)
+		if Level3DPad.touched(pads, settings.pad_bindings()):
+			c.pad = true
+			var aim := Level3DPad.right(pads)
+			if aim != Vector2.ZERO:
+				c.pad_aim = Vector3(aim.x, 0.0, aim.y).normalized()
+		elif pads.is_empty() or _keys_touched(c) or c.input == null and mouse_moved:
+			c.pad = false
+
+
+# Whether a player's keys -- the directions and the weapons -- or, the first
+# player's, the mouse's buttons are held.
+func _keys_touched(c: Crew) -> bool:
+	if c.input != null:
+		return c.input.is_up() or c.input.is_down() or c.input.is_left() or c.input.is_right() \
+				or c.input.is_gun() or c.input.is_grenade()
+	for action in Level3DSettings.ACTIONS:
+		if Input.is_key_pressed(settings.key(action)):
+			return true
+	return Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+
+
+# The right stick's cursor: PAD_REACH along its last direction, which the
+# gun's and the launcher's reach bring in to their own (Level3DGun._fire,
+# Level3DRocket) -- the stick says which way, not how far.
+const PAD_REACH := 100.0
+
+func _pad_cursor(c: Crew) -> Vector3:
+	return c.btr.position + c.pad_aim * PAD_REACH
 
 
 func _process(delta: float) -> void:
@@ -3585,6 +3681,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			or (event is InputEventJoypadButton and event.pressed)):
 		_summary.dismiss()
 		get_viewport().set_input_as_handled()
+		return
+	# A pad's Start is Escape, its Back the Space that skips the Chinook.
+	if Level3DPad.pressed(event, JOY_BUTTON_START):
+		get_viewport().set_input_as_handled()
+		_menu.open()
+		return
+	if Level3DPad.pressed(event, JOY_BUTTON_BACK):
+		if chinook != null:
+			chinook.skip()
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
@@ -3759,7 +3864,8 @@ var _no_points := false           # an airstrike's kills: worth nothing
 func _use_device(c: Crew, gone: bool) -> void:
 	if c.device_wait > 0:
 		c.device_wait -= 1
-	var held := (_key("device") if c.input == null else KeySides.device_2) or _held_key("device", c.index)
+	var held := (_key("device") if c.input == null else KeySides.device_2) or _held_key("device", c.index) \
+			or Level3DPad.held(_pads(c), settings.pad_button("device"))
 	var pressed := held and not c.device_held
 	c.device_held = held
 	if not pressed or gone or c.device == "" or c.device_wait > 0:

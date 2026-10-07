@@ -625,18 +625,29 @@ func _input(event: InputEvent) -> void:
 		elif click.button_index == MOUSE_BUTTON_RIGHT:
 			_take_back(0)
 		return
+	# A pad is its player's (Level3DPad.player_of): the d-pad or the left
+	# stick move his cursor, A buys, B takes back, Start is Escape.
+	var move := Level3DPad.nav(event)
 	var pad := event as InputEventJoypadButton
-	if pad != null and pad.pressed:
+	if move != Vector2i.ZERO or pad != null and pad.pressed:
 		get_viewport().set_input_as_handled()
 		if _state != State.OPEN:
 			return
-		match pad.button_index:
-			JOY_BUTTON_DPAD_UP: _move(0, Vector2i(0, -1))
-			JOY_BUTTON_DPAD_DOWN: _move(0, Vector2i(0, 1))
-			JOY_BUTTON_DPAD_LEFT: _move(0, Vector2i(-1, 0))
-			JOY_BUTTON_DPAD_RIGHT: _move(0, Vector2i(1, 0))
-			JOY_BUTTON_A: _fire(0)
-			JOY_BUTTON_B: _take_back(0)
+		if Level3DPad.pressed(event, JOY_BUTTON_START):
+			if open_menu.is_valid():
+				open_menu.call()
+			return
+		var player := Level3DPad.player_of(event.device, _players)
+		if player < 0:
+			return
+		if move != Vector2i.ZERO:
+			if player == 0:
+				_reticle.keys()
+			_move(player, move)
+		elif pad.button_index == JOY_BUTTON_A:
+			_fire(player)
+		elif pad.button_index == JOY_BUTTON_B:
+			_take_back(player)
 
 
 func _menu_up() -> bool:

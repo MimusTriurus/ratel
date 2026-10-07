@@ -108,6 +108,37 @@ drives the second with `2:` spans, which is how it was checked:
 godot --path . --windowed --resolution 1280x720 src/game3d/level3d_preview.tscn -- --shot out.png 0 1 top 8 --players 2 --immortal --hold w@0-8,2:l@0-8
 ```
 
+## Gamepads
+
+`Level3DPad` (`level3d_pad.gd`), set under Settings -> Controls -> Gamepad
+(`Level3DSettings.pad*`, in `user://preview3d.cfg`'s `[pad]`). On the stage
+the left stick or the d-pad drive -- classic, as the eight directions'
+keys (`Level3DPad.digital`); free, as far as it is pushed -- and the right
+stick aims wherever the firing aims at the cursor (modern, combined): a
+direction rather than a point, `PAD_REACH` along it, which the reach brings
+in. R2, L2 and R1 are the gun, the rocket and the device, rebound in the
+menu (a button or a trigger, never the d-pad); Start is Escape, Back skips
+the Chinook. The pad shakes when a rocket or a grenade goes and when the jeep
+is blown up (Vibration). Whichever the player touched last, the pad or the
+keys and the mouse, has the aim, the crosshair and the hints (`Crew.pad`).
+
+Whose a pad is: with one player every pad -- whatever the system lists,
+Steam Input's virtual pad and the pad itself alike. With two, the first two
+are a player's each; one alone is "One pad, two players"'s, by default the
+second's, the first keeping the keyboard and the mouse. The second player on
+a pad fires as the settings say, not only the classic way. The 2D game's own
+pad for the second player (`ButtonMapping.controller`) is turned off here, or
+one pad would drive both jeeps.
+
+The title, the shop (each pad its player's cursor, A buys, B takes back), the
+game over and the Escape menu (A picks, B and Start go back, L1/R1 turn the
+tabs) go by the d-pad or the left stick. The menu is Godot's controls, whose
+`ui_accept` and `ui_cancel` have no pad buttons in 4.7: `Level3DPad.install`
+adds A and B. The buttons are named after the pad (`Button names`): a
+DualSense as Cross, L2, R2..., anything else as an Xbox pad; under Steam
+Input a DualSense can call itself an Xbox one, which the setting overrides.
+A --shot reads no pad.
+
 
 ## Rounds and the run
 

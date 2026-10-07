@@ -4,7 +4,7 @@
 # the font, the look, the driving and firing), graphics (the camera and the
 # look), interface (what the
 # HUD shows, where and how big), sound (original, classic or modern, the volumes, the
-# enemies' fire), controls (the keys, how the BTR drives and how it fires) and
+# enemies' fire), controls (the keys, the gamepad, how the BTR drives and fires) and
 # cheats -- and the mixer, the game's own gain for every sound and every part
 # of the music in each mode, which is Level3DAudio's mix and is saved into the
 # project rather than the player's settings. Every settings change is handed
@@ -18,7 +18,9 @@
 # were baked from: Press Start 2P sharp or smoothed, or Black Ops One.
 #
 # Escape goes back a step: out of a key prompt, out of the settings, and from
-# the first page back to the stage.
+# the first page back to the stage. A pad (Level3DPad) goes about it as the
+# keys do: the d-pad or the left stick move the focus, A picks, B and Start
+# are Escape, and L1 and R1 turn the settings' tabs.
 #
 # It points with the title screen's reticle (Level3DReticle) rather than the
 # system's pointer: the mouse moves it, and the keys, which move Godot's
@@ -103,6 +105,7 @@ const ACTION_NAMES := {
 	"up": "Forward / up", "down": "Back / down", "left": "Left", "right": "Right",
 	"gun": "Machine gun", "rocket": "Rocket", "device": "Device",
 }
+const PAD_NAME_CHOICES := ["Auto", "PlayStation", "Xbox"]
 
 var settings: Level3DSettings
 var changed: Callable        # after every change, with the menu still open
@@ -184,6 +187,13 @@ var _mix_status: Label
 var _mix_save: Button
 var _key_buttons := {}       # action -> Button
 var _waiting := ""           # the action a key prompt is open for
+var _pad: CheckBox
+var _pad_single: OptionButton
+var _pad_names: OptionButton
+var _pad_vibration: CheckBox
+var _pad_status: Label
+var _pad_buttons := {}       # Level3DSettings.PAD_ACTIONS' action -> Button
+var _waiting_pad := ""       # the action a pad prompt is open for
 var _continue: Button
 var _reticle: Level3DReticle
 var _list_reticle: Level3DReticle  # in a dropped list's window (_list_reticle_follow)
@@ -227,6 +237,9 @@ func _ready() -> void:
 	_reticle.carries_mouse = true
 	add_child(_reticle)
 	get_viewport().gui_focus_changed.connect(_focus_changed)
+	Input.joy_connection_changed.connect(func(_device: int, _connected: bool):
+		if visible:
+			refresh())
 	for node in find_children("*", "Control", true, false):
 		_hook(node)
 	# And whatever a tab builds later.
@@ -366,12 +379,14 @@ func open_settings(back: Callable) -> void:
 # Out of sight with the tree left paused, for the title screen.
 func leave() -> void:
 	_waiting = ""
+	_waiting_pad = ""
 	visible = false
 	Level3DAudio.end_music_audition()
 
 
 func close() -> void:
 	_waiting = ""
+	_waiting_pad = ""
 	visible = false
 	# The stage's song again, if the Mixer tab put a part of another on.
 	Level3DAudio.end_music_audition()
@@ -388,6 +403,7 @@ func close() -> void:
 
 func _show_main() -> void:
 	_waiting = ""
+	_waiting_pad = ""
 	_hush()
 	_apply_font()
 	if _back.is_valid():
@@ -481,6 +497,19 @@ func refresh() -> void:
 	for action in _key_buttons:
 		var button: Button = _key_buttons[action]
 		button.text = "..." if action == _waiting else OS.get_keycode_string(settings.key(action))
+	_pad.set_pressed_no_signal(settings.pad)
+	_pad_single.select(settings.pad_single)
+	_pad_names.select(settings.pad_names)
+	_pad_vibration.set_pressed_no_signal(settings.pad_vibration)
+	for widget in [_pad_single, _pad_names, _pad_vibration]:
+		widget.disabled = not settings.pad
+	for action in _pad_buttons:
+		var button: Button = _pad_buttons[action]
+		button.text = "..." if action == _waiting_pad else Level3DPad.name_of(settings.pad_button(action))
+		button.disabled = not settings.pad
+	var pads := Level3DPad.connected()
+	_pad_status.text = "No gamepad connected." if pads.is_empty() else "Connected: " \
+			+ ", ".join(pads.map(func(d: int): return Input.get_joy_name(d))) + "."
 
 
 func _changed() -> void:
@@ -896,9 +925,46 @@ func _make_controls_tab() -> Control:
 		settings.reset_keys()
 		_changed())
 	tab.add_child(defaults)
-	_note(tab, "Second player: the 2D game's second-player keys and pad, by default the arrows, "
+	_note(tab, "Second player: the 2D game's second-player keys, by default the arrows, "
 			+ "right Alt (machine gun) and right Ctrl (rockets). Rebound in the game: "
-			+ "Options → 2p input. Always fires the classic way.")
+			+ "Options → 2p input. Fires the classic way, but on a gamepad.")
+	tab.add_child(HSeparator.new())
+	_heading(tab, "Gamepad")
+	_pad = _check(tab, "Use a gamepad", func(on: bool): settings.pad = on)
+	_pad_status = Label.new()
+	_font_size(_pad_status, -6)
+	_pad_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_pad_status.custom_minimum_size = Vector2(640, 0)
+	tab.add_child(_pad_status)
+	var pad := _grid(tab)
+	_pad_single = _choice(pad, "One pad, two players", ["Player 1", "Player 2"],
+			func(i: int): settings.pad_single = i)
+	_pad_names = _choice(pad, "Button names", PAD_NAME_CHOICES,
+			func(i: int): settings.pad_names = i)
+	for action in Level3DSettings.PAD_ACTIONS:
+		var label := Label.new()
+		label.text = ACTION_NAMES[action]
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		pad.add_child(label)
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(220, 0)
+		button.pressed.connect(func(): _prompt_pad(action))
+		pad.add_child(button)
+		_pad_buttons[action] = button
+	_pad_vibration = _check(tab, "Vibration", func(on: bool): settings.pad_vibration = on)
+	var pad_defaults := Button.new()
+	pad_defaults.text = "Default buttons"
+	pad_defaults.size_flags_horizontal = Control.SIZE_SHRINK_END
+	pad_defaults.pressed.connect(func():
+		_waiting_pad = ""
+		settings.reset_pad()
+		_changed())
+	tab.add_child(pad_defaults)
+	_note(tab, "Left stick or d-pad: drive. Right stick: aim, with modern or combined firing. "
+			+ "Start: this menu. Back: skip the landing. "
+			+ "With one player every gamepad is his; with two, the first two are a player's each, "
+			+ "and a single one is the player's picked above, the other keeping the keyboard. "
+			+ "Button names: under Steam Input a DualSense may call itself an Xbox pad.")
 	return tab.get_parent().get_parent()
 
 
@@ -923,20 +989,35 @@ func _make_cheats_tab() -> Control:
 # Key prompts
 
 func _prompt(action: String) -> void:
+	_waiting_pad = ""
 	_waiting = action
+	refresh()
+
+
+func _prompt_pad(action: String) -> void:
+	_waiting = ""
+	_waiting_pad = action
 	refresh()
 
 
 func _input(event: InputEvent) -> void:
 	if not visible:
 		return
-	# A key takes the reticle to the focus; a pick, by key or click, fires it.
+	# A key or a pad takes the reticle to the focus; a pick, by key, button
+	# or click, fires it.
 	if event is InputEventKey and event.pressed and not event.echo:
 		_reticle.keys()
 		if event.is_action("ui_accept"):
 			_reticle.fire()
+	elif Level3DPad.is_pad(event):
+		_reticle.keys()
+		if event.is_action_pressed("ui_accept"):
+			_reticle.fire()
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		_reticle.fire()
+	if _waiting_pad != "":
+		_pad_prompt_input(event)
+		return
 	if _waiting == "":
 		return
 	var key := event as InputEventKey
@@ -952,11 +1033,42 @@ func _input(event: InputEvent) -> void:
 	button.grab_focus()
 
 
+# A pad prompt's: a button pressed or a trigger pulled is bound; Start or
+# Escape lets it be. The d-pad and the sticks are not bound -- they drive and
+# aim -- and nothing else gets past while it waits, the focus included.
+func _pad_prompt_input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	var binding := Level3DPad.binding_of(event)
+	var cancel := key != null and key.pressed and not key.echo and key.keycode == KEY_ESCAPE \
+			or binding == JOY_BUTTON_START
+	if key == null and not event is InputEventJoypadButton and not event is InputEventJoypadMotion:
+		return
+	get_viewport().set_input_as_handled()
+	if not cancel and (binding < 0 or Level3DPad.DPAD_NAMES.has(binding)):
+		return
+	var button: Button = _pad_buttons[_waiting_pad]
+	if not cancel:
+		settings.bind_pad(_waiting_pad, binding)
+	_waiting_pad = ""
+	_changed()
+	button.grab_focus()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible:
 		return
+	# L1 and R1 turn the settings' tabs, the focus on the tabs' bar.
+	if _settings_page.visible and (Level3DPad.pressed(event, JOY_BUTTON_LEFT_SHOULDER)
+			or Level3DPad.pressed(event, JOY_BUTTON_RIGHT_SHOULDER)):
+		get_viewport().set_input_as_handled()
+		var step := 1 if Level3DPad.pressed(event, JOY_BUTTON_RIGHT_SHOULDER) else -1
+		_tabs.current_tab = wrapi(_tabs.current_tab + step, 0, _tabs.get_tab_count())
+		_tabs.get_tab_bar().grab_focus()
+		return
 	var key := event as InputEventKey
-	if key == null or not key.pressed or key.echo or key.keycode != KEY_ESCAPE:
+	var escape := key != null and key.pressed and not key.echo and key.keycode == KEY_ESCAPE \
+			or Level3DPad.pressed(event, JOY_BUTTON_B) or Level3DPad.pressed(event, JOY_BUTTON_START)
+	if not escape:
 		return
 	get_viewport().set_input_as_handled()
 	if _settings_page.visible:
@@ -993,6 +1105,8 @@ func _tab(title: String) -> VBoxContainer:
 	var scroll := ScrollContainer.new()
 	scroll.name = title
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# The focus in view as the keys or a pad take it down a long tab.
+	scroll.follow_focus = true
 	var margin := MarginContainer.new()
 	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for side in ["left", "right", "top", "bottom"]:

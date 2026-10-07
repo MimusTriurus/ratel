@@ -345,16 +345,17 @@ func _input(event: InputEvent) -> void:
 				_select(at, true)
 				_pick()
 		return
-	var pad := event as InputEventJoypadButton
-	if pad != null and pad.pressed:
+	# The d-pad or the left stick (Level3DPad), A or Start.
+	var move := Level3DPad.nav(event)
+	if move != Vector2i.ZERO:
 		get_viewport().set_input_as_handled()
-		match pad.button_index:
-			JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_DPAD_UP:
-				_select(_selected - 1)
-			JOY_BUTTON_DPAD_RIGHT, JOY_BUTTON_DPAD_DOWN:
-				_select(_selected + 1)
-			JOY_BUTTON_A, JOY_BUTTON_START:
-				_pick()
+		_reticle.keys()
+		_select(_selected + (-1 if move.x < 0 or move.y < 0 else 1))
+	elif event is InputEventJoypadButton and event.pressed:
+		get_viewport().set_input_as_handled()
+		if Level3DPad.is_accept(event):
+			_reticle.keys()
+			_pick()
 
 
 func _to_menu() -> void:

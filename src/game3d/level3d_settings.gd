@@ -1,8 +1,8 @@
 # What the 3D preview's Escape menu sets (level3d_menu.gd): the camera, the
-# look, what the HUD shows, the sound, how the BTR drives and fires, the keys,
-# and the cheats, and the Game tab's two presets of them (PRESETS). Kept in
-# user://preview3d.cfg, apart from the game's buttons.cfg and audio.cfg: the
-# preview is not the game, and its keys are not the game's.
+# look, what the HUD shows, the sound, how the BTR drives and fires, the keys
+# and the gamepad, and the cheats, and the Game tab's two presets of them
+# (PRESETS). Kept in user://preview3d.cfg, apart from the game's buttons.cfg
+# and audio.cfg: the preview is not the game, and its keys are not the game's.
 #
 # A --shot or an --obstacle-map run neither loads nor saves it, so what a
 # shot shows does not depend on what was last picked in the menu.
@@ -50,6 +50,24 @@ const DEFAULT_KEYS := {
 	"up": KEY_W, "down": KEY_S, "left": KEY_A, "right": KEY_D,
 	"gun": KEY_L, "rocket": KEY_P, "device": KEY_K, "turret_left": KEY_Q, "turret_right": KEY_E,
 }
+
+# The gamepads (Level3DPad): whether they drive at all; with two players and
+# one pad, whose it is (0 the first, 1 the second, who has no mouse to aim
+# with); whether they shake; and whose names the buttons go by, AUTO the
+# pad's -- under Steam Input a DualSense may call itself an Xbox pad. The
+# sticks and the d-pad are fixed: the left drives, the right aims, Start is
+# the menu. The weapons and the device are bound, PAD_ACTIONS, as the keys
+# are: a JoyButton, or a trigger (Level3DPad.TRIGGER_*).
+const PAD_ACTIONS: Array[String] = ["gun", "rocket", "device"]
+const DEFAULT_PAD := {
+	"gun": Level3DPad.TRIGGER_RIGHT, "rocket": Level3DPad.TRIGGER_LEFT,
+	"device": JOY_BUTTON_RIGHT_SHOULDER,
+}
+var pad := true
+var pad_single := 1
+var pad_vibration := true
+var pad_names := Level3DPad.Names.AUTO
+var pad_buttons := DEFAULT_PAD.duplicate()
 
 # The title screen's difficulty (Level3DTitle, Level3DMap.hard).
 var hard := false
@@ -211,6 +229,26 @@ func reset_keys() -> void:
 	keys = DEFAULT_KEYS.duplicate()
 
 
+func pad_button(action: String) -> int:
+	return pad_buttons.get(action, DEFAULT_PAD[action])
+
+
+func pad_bindings() -> Array:
+	return PAD_ACTIONS.map(pad_button)
+
+
+# As bind: the action that had `binding` takes `action`'s old one.
+func bind_pad(action: String, binding: int) -> void:
+	for other in PAD_ACTIONS:
+		if other != action and pad_button(other) == binding:
+			pad_buttons[other] = pad_button(action)
+	pad_buttons[action] = binding
+
+
+func reset_pad() -> void:
+	pad_buttons = DEFAULT_PAD.duplicate()
+
+
 func load_saved() -> void:
 	var config := ConfigFile.new()
 	if config.load(SAVE_PATH) != OK:
@@ -286,6 +324,14 @@ func load_saved() -> void:
 		var saved = config.get_value("keys", action, DEFAULT_KEYS[action])
 		if saved is int and saved != KEY_NONE:
 			keys[action] = saved
+	pad = config.get_value("pad", "enabled", pad)
+	pad_single = clampi(config.get_value("pad", "single", pad_single), 0, 1)
+	pad_vibration = config.get_value("pad", "vibration", pad_vibration)
+	pad_names = clampi(config.get_value("pad", "names", pad_names), 0, Level3DPad.Names.size() - 1)
+	for action in PAD_ACTIONS:
+		var saved = config.get_value("pad", action, DEFAULT_PAD[action])
+		if saved is int and saved >= 0:
+			pad_buttons[action] = saved
 
 
 static func _volume(saved) -> float:
@@ -353,4 +399,10 @@ func save() -> void:
 			config.set_value("sound_gains", name, sound_gains[name])
 	for action in ACTIONS:
 		config.set_value("keys", action, key(action))
+	config.set_value("pad", "enabled", pad)
+	config.set_value("pad", "single", pad_single)
+	config.set_value("pad", "vibration", pad_vibration)
+	config.set_value("pad", "names", pad_names)
+	for action in PAD_ACTIONS:
+		config.set_value("pad", action, pad_button(action))
 	config.save(SAVE_PATH)
