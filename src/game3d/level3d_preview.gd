@@ -86,9 +86,12 @@
 #                          low and always cast one
 #
 # A gamepad (level3d_pad.gd) drives as the keys do, by the settings' Gamepad
-# section: the left stick or the d-pad drive, the right stick aims where the
-# firing aims at the cursor, R2 the gun, L2 the rocket, R1 the device (all
-# three rebound in the menu), Start the Escape menu, Back skips the Chinook.
+# section: classic, the left stick or the d-pad are the eight directions;
+# free, the racing way, R2 the throttle, L2 the brake and reverse, the left
+# stick's x the wheel. The right stick aims where the firing aims at the
+# cursor, its reticle within the reach, swept there (_steer_reticle). L1 the gun, R1 the
+# launcher, Square / X the device (all three rebound in the menu), Start the
+# Escape menu, Back skips the Chinook.
 # Whichever the player touched last, the pad or the keys and the mouse, has
 # the aim and the hints (Crew.pad). A --shot reads no pad.
 #
@@ -631,10 +634,18 @@ class Crew:
 	var mines: Array[Node3D] = []
 	# The pad (Level3DPad): whether it was the last thing the player touched,
 	# rather than the keys or the mouse -- the aim and the hints go by it;
-	# the right stick's last direction, a level one, up the screen to start;
+	# the right stick's reticle about the jeep (_steer_reticle), its bearing
+	# on the screen -- up it, to start -- and its distance, -1 for the reach,
+	# the stick's tilt on the last tick, and where it is taking the reticle;
 	# the rocket's binding on the last tick, for its press.
 	var pad := false
-	var pad_aim := Vector3.FORWARD
+	var reticle_angle := -PI / 2.0
+	var reticle_distance := -1.0
+	var stick_tilt := 0.0
+	var reticle_goal := Vector2(-PI / 2.0, -1.0)
+	# The enemy the aim assist has the reticle on, level x, z about the jeep's
+	# position then; INF for none (_assist).
+	var assist_at := Vector2.INF
 	var pad_rocket_held := false
 
 
@@ -2475,6 +2486,7 @@ func _make_hud() -> void:
 	layer.add_child(_banners)
 	var crosshair := Level3DCrosshair.new()
 	crosshair.wanted = _crosshair_wanted
+	crosshair.points = _pad_reticles
 	crosshair.hide_pointer = func(): return _title != null and _title.pointer_hidden() \
 			or _menu != null and _menu.pointer_hidden() or _game_over_screen.pointer_hidden() 			or _shop.pointer_hidden()
 	layer.add_child(crosshair)
@@ -2799,7 +2811,8 @@ func _hint_keys(c: Crew, name: String) -> Array:
 	if c.pad:
 		match name:
 			"move":
-				return ["L-STICK"]
+				return ["L-STICK"] if c.btr.classic \
+						else [Level3DPad.name_of(Level3DPad.TRIGGER_RIGHT), "L-STICK"]
 			"fire", "rocket", "device":
 				return [Level3DPad.name_of(settings.pad_button("gun" if name == "fire" else name))]
 	if c.input == null:
@@ -2900,9 +2913,14 @@ func _test_game_over(spec: String) -> void:
 # not over the Escape menu, not while the Chinook flies it in, not while it is
 # gone -- as the game's is gated on playing, unpaused and aiming.
 func _crosshair_wanted() -> bool:
-	return _live and settings.hud_crosshair \
-			and settings.firing != Level3DSettings.Firing.CLASSIC and not crews[0].pad \
-			and not _menu.is_open() and not _title.is_open() and chinook == null and crews[0].respawning == 0 and not crews[0].out
+	return _crosshair_shown() and settings.firing != Level3DSettings.Firing.CLASSIC \
+			and not crews[0].pad and crews[0].respawning == 0 and not crews[0].out
+
+
+# Whether a reticle is drawn at all: the HUD's setting, and on the stage.
+func _crosshair_shown() -> bool:
+	return _live and settings.hud_crosshair and not _menu.is_open() and not _title.is_open() \
+			and chinook == null
 
 
 # V and M: the modes on the HUD line for MODES_FLASH_TIME after the last press
@@ -3371,9 +3389,10 @@ func _drive(c: Crew) -> void:
 	var down := _key("down") if c.input == null else c.input.is_down() or _held_key("down", c.index)
 	var left := _key("left") if c.input == null else c.input.is_left() or _held_key("left", c.index)
 	var right := _key("right") if c.input == null else c.input.is_right() or _held_key("right", c.index)
-	# The left stick or the d-pad: the eight directions classic, and how far
-	# it is pushed driving free.
-	var stick := Level3DPad.left(_pads(c))
+	# The left stick or the d-pad: the eight directions classic; driving free
+	# its x the wheel, and the triggers the throttle and the brake.
+	var pads := _pads(c)
+	var stick := Level3DPad.left(pads)
 	var vehicle := c.btr
 	if vehicle.classic:
 		var dirs := Level3DPad.digital(stick)
@@ -3388,7 +3407,7 @@ func _drive(c: Crew) -> void:
 		vehicle.key_down = false
 		vehicle.key_left = false
 		vehicle.key_right = false
-		vehicle.throttle = clampf(float(up) - float(down) - stick.y, -1.0, 1.0)
+		vehicle.throttle = clampf(float(up) - float(down) + Level3DPad.throttle(pads), -1.0, 1.0)
 		vehicle.steer = clampf(float(left) - float(right) - stick.x, -1.0, 1.0)
 	# By hand while held; let go, the aim below has the turret again, except
 	# driving free with the classic firing, which leaves it where it is.
@@ -3491,16 +3510,16 @@ func _fire(c: Crew, gone: bool, cursor, delta: float) -> void:
 	trigger = trigger or Level3DPad.held(pads, settings.pad_button("gun"))
 	c.gun.trigger = not gone and trigger
 	c.gun.aim_point = vehicle.aim_point
-	# The stick's aim is a direction, not a point to stop at.
-	c.gun.at_cursor = first and not c.pad \
-			and (_forced_aim != null or firing == Level3DSettings.Firing.MODERN and cursor != null)
+	# The stick's reticle is a point as the mouse's is, at the reach.
+	c.gun.at_cursor = first and _forced_aim != null \
+			or firing == Level3DSettings.Firing.MODERN and (c.pad or first and cursor != null)
 	c.gun.step(delta)
 	c.launcher.aim_point = vehicle.aim_point
 	c.launcher.at_cursor = c.gun.at_cursor
 	if not first or _forced_aim == null:
 		if firing == Level3DSettings.Firing.COMBINED:
 			c.launcher.aim_point = _pad_cursor(c) if c.pad else cursor
-			c.launcher.at_cursor = not c.pad and cursor != null
+			c.launcher.at_cursor = c.pad or cursor != null
 		elif firing == Level3DSettings.Firing.CLASSIC and vehicle.classic:
 			c.launcher.aim_point = vehicle.position \
 					+ _game_direction(vehicle.classic_fire_angle()) * Level3DLauncher.RANGE
@@ -3560,11 +3579,9 @@ func _note_pads() -> void:
 		var pads := _pads(c)
 		if Level3DPad.touched(pads, settings.pad_bindings()):
 			c.pad = true
-			var aim := Level3DPad.right(pads)
-			if aim != Vector2.ZERO:
-				c.pad_aim = Vector3(aim.x, 0.0, aim.y).normalized()
 		elif pads.is_empty() or _keys_touched(c) or c.input == null and mouse_moved:
 			c.pad = false
+		_steer_reticle(c, Level3DPad.right(pads))
 
 
 # Whether a player's keys -- the directions and the weapons -- or, the first
@@ -3579,13 +3596,148 @@ func _keys_touched(c: Crew) -> bool:
 	return Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
 
 
-# The right stick's cursor: PAD_REACH along its last direction, which the
-# gun's and the launcher's reach bring in to their own (Level3DGun._fire,
-# Level3DRocket) -- the stick says which way, not how far.
-const PAD_REACH := 100.0
+# The right stick's reticle, as twin-stick games have it with a point to
+# aim at: anywhere within the gun's reach (_pad_reach), from RETICLE_NEAR at
+# the least tilt read to the reach at full tilt, and the stick's direction
+# which way. The reticle does not jump there: its bearing comes round at
+# RETICLE_TAU, never faster than RETICLE_TURN nor, the last few degrees,
+# slower than RETICLE_SETTLE, and its distance follows at RETICLE_TAU, so a
+# flick across is a quick sweep rather than a teleport and a nudge is at
+# once. Let go, a stick springs back through
+# the middle and out the other side; the reticle is not taken along -- a
+# tilt under STICK_HOLD, or falling faster than STICK_LETGO a tick, is not
+# read, and the reticle stays where it was about the jeep.
+const STICK_HOLD := 0.15
+const STICK_LETGO := 0.12
+const RETICLE_TAU := 0.04
+const RETICLE_TURN := deg_to_rad(720.0)
+const RETICLE_SETTLE := deg_to_rad(90.0)
+const RETICLE_NEAR := 2.0
 
+func _steer_reticle(c: Crew, stick: Vector2) -> void:
+	var reach := _pad_reach()
+	var near := minf(RETICLE_NEAR, reach)
+	var tilt := stick.length()
+	if tilt >= STICK_HOLD and tilt > c.stick_tilt - STICK_LETGO:
+		c.reticle_goal = _assist(c, Vector2(stick.angle(), lerpf(near, reach, minf(tilt, 1.0))), reach)
+	elif c.assist_at != Vector2.INF and Level3DPad.held(_pads(c), settings.pad_button("gun")):
+		c.reticle_goal = _follow_assisted(c, reach)
+	else:
+		c.assist_at = Vector2.INF
+	c.stick_tilt = tilt
+	var delta := 1.0 / Engine.physics_ticks_per_second
+	var k := 1.0 - exp(-delta / RETICLE_TAU)
+	var turn := wrapf(c.reticle_goal.x - c.reticle_angle, -PI, PI)
+	var step := clampf(absf(turn) * k, minf(absf(turn), RETICLE_SETTLE * delta), RETICLE_TURN * delta)
+	c.reticle_angle = wrapf(c.reticle_angle + signf(turn) * step, -PI, PI)
+	var goal := reach if c.reticle_goal.y < 0.0 else c.reticle_goal.y
+	var distance := reach if c.reticle_distance < 0.0 else c.reticle_distance
+	# Within the reach, whatever it is now: the setting can change under it.
+	c.reticle_distance = clampf(lerpf(distance, goal, k), near, reach)
+
+
+# The aim assist, as twin-stick games have it on a pad: an enemy within the
+# setting's cone about the stick's bearing (Level3DPad.ASSISTS) and within
+# the reach pulls the reticle's goal -- bearing and distance, so that the
+# rounds, which stop at the reticle, get to it -- on to itself: all the way
+# in the cone's middle, less towards its edge. The one it had the reticle on
+# last is kept while it is still in the cone, rather than the reticle
+# flicking between two; and with the stick let go and the gun held, it is
+# followed as it moves (_follow_assisted). `goal` is the stick's (bearing,
+# distance); returns the assisted one.
+func _assist(c: Crew, goal: Vector2, reach: float) -> Vector2:
+	var strength: Dictionary = Level3DPad.ASSISTS[settings.pad_assist]
+	var kept_was := c.assist_at
+	c.assist_at = Vector2.INF
+	if strength.is_empty():
+		return goal
+	var cone := deg_to_rad(strength.cone)
+	var from := Vector2(c.btr.position.x, c.btr.position.z)
+	var best := Vector2.INF
+	var best_score := INF
+	for at in _assist_targets():
+		var to: Vector2 = at - from
+		var distance := to.length()
+		if distance < 0.5 or distance > reach + 0.5:
+			continue
+		var off := absf(wrapf(to.angle() - goal.x, -PI, PI))
+		if off > cone:
+			continue
+		var score := off / cone + 0.5 * absf(distance - goal.y) / reach
+		if kept_was != Vector2.INF and to.distance_to(kept_was) < ASSIST_KEEP:
+			score *= 0.5
+		if score < best_score:
+			best_score = score
+			best = to
+	if best == Vector2.INF:
+		return goal
+	c.assist_at = best
+	var off := absf(wrapf(best.angle() - goal.x, -PI, PI)) / cone
+	var pull: float = strength.pull if off <= strength.inner \
+			else strength.pull * (1.0 - smoothstep(strength.inner, 1.0, off))
+	return Vector2(goal.x + wrapf(best.angle() - goal.x, -PI, PI) * pull,
+			clampf(lerpf(goal.y, best.length(), pull), minf(RETICLE_NEAR, reach), reach))
+
+
+# The enemy the assist had, followed with the stick let go and the gun held:
+# the nearest to where it was, if one is within ASSIST_KEEP of it and the
+# reach; else the reticle stays where it is.
+const ASSIST_KEEP := 1.0
+
+func _follow_assisted(c: Crew, reach: float) -> Vector2:
+	var from := Vector2(c.btr.position.x, c.btr.position.z)
+	var best := Vector2.INF
+	for at in _assist_targets():
+		var to: Vector2 = at - from
+		if to.distance_to(c.assist_at) < ASSIST_KEEP and to.length() <= reach + 0.5 \
+				and (best == Vector2.INF or to.distance_to(c.assist_at) < best.distance_to(c.assist_at)):
+			best = to
+	if best == Vector2.INF:
+		c.assist_at = Vector2.INF
+		return c.reticle_goal
+	c.assist_at = best
+	return Vector2(best.angle(), clampf(best.length(), minf(RETICLE_NEAR, reach), reach))
+
+
+# Every enemy the assist can take, level x, z: as the radar marks them.
+func _assist_targets() -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	if settings.pad_assist == Level3DPad.Assist.OFF:
+		return out
+	out.append_array(soldiers.targets())
+	out.append_array(guns.targets())
+	out.append_array(tanks.targets())
+	out.append_array(boats.targets())
+	out.append_array(boss.targets())
+	out.append_array(missile_bunkers.targets())
+	return out
+
+
+# How far the stick's reticle may go: the gun's reach. Unlimited, the long
+# reach's launcher, as far as the frame shows well; the launcher's own reach
+# brings it in where it is the shorter (Level3DRocket).
+func _pad_reach() -> float:
+	return Level3DLauncher.RANGE if settings.reach == Level3DSettings.Reach.UNLIMITED else _gun_reach()
+
+
+# The right stick's cursor, and its reticle (Level3DCrosshair.points).
 func _pad_cursor(c: Crew) -> Vector3:
-	return c.btr.position + c.pad_aim * PAD_REACH
+	var distance := _pad_reach() if c.reticle_distance < 0.0 else c.reticle_distance
+	return c.btr.position + Vector3(cos(c.reticle_angle), 0.0, sin(c.reticle_angle)) * distance
+
+
+# Where the players on a pad aim, on the screen: their reticles, while they
+# aim with the right stick and the mouse's would be drawn (_crosshair_shown).
+func _pad_reticles() -> Array[Vector2]:
+	var at: Array[Vector2] = []
+	if not _crosshair_shown() or _forced_aim != null:
+		return at
+	for c in crews:
+		if c.pad and _firing(c) != Level3DSettings.Firing.CLASSIC and c.respawning == 0 and not c.out:
+			var point := _pad_cursor(c)
+			if not camera.is_position_behind(point):
+				at.append(camera.unproject_position(point))
+	return at
 
 
 func _process(delta: float) -> void:

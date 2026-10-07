@@ -3,6 +3,9 @@
 # four bars over a black pass grown round them, at the same sizes -- the HUD's
 # 2048x1152 layout is the game's frame, so they come out as they do there.
 #
+# And one at each of `points`, where the players on a pad aim with the right
+# stick (level3d_preview.gd, _pad_reticles), the mouse's or not.
+#
 # It owns the mouse mode, as Main._update_cursor_visibility does in the game:
 # hidden while the reticle is drawn, visible otherwise, compared against the
 # live Input.mouse_mode rather than a flag of its own. It keeps processing
@@ -22,6 +25,8 @@ const OUTLINE := Main.CROSSHAIR_OUTLINE
 # place -- the title's reticle (Level3DTitle.pointer_hidden).
 var wanted: Callable
 var hide_pointer: Callable
+# `points.call()`: the pads' reticles, the viewport's positions.
+var points: Callable
 var _shown := false
 
 
@@ -41,10 +46,17 @@ func _process(_delta: float) -> void:
 
 
 func _draw() -> void:
-	if not _shown:
-		return
+	if _shown:
+		_draw_reticle(get_local_mouse_position())
+	if points.is_valid():
+		var to_local := get_global_transform_with_canvas().affine_inverse()
+		for p: Vector2 in points.call():
+			_draw_reticle(to_local * p)
+
+
+func _draw_reticle(where: Vector2) -> void:
 	# Whole pixels, as the game's: a reticle between two would blur.
-	var at := get_local_mouse_position().round()
+	var at := where.round()
 	var half := UNIT * 0.5
 	var bars: Array[Rect2] = [
 		Rect2(at.x + GAP, at.y - half, ARM, UNIT),          # east

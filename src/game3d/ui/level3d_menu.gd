@@ -106,6 +106,7 @@ const ACTION_NAMES := {
 	"gun": "Machine gun", "rocket": "Rocket", "device": "Device",
 }
 const PAD_NAME_CHOICES := ["Auto", "PlayStation", "Xbox"]
+const PAD_ASSIST_CHOICES := ["Off", "Light", "Normal", "Strong"]
 
 var settings: Level3DSettings
 var changed: Callable        # after every change, with the menu still open
@@ -190,6 +191,7 @@ var _waiting := ""           # the action a key prompt is open for
 var _pad: CheckBox
 var _pad_single: OptionButton
 var _pad_names: OptionButton
+var _pad_assist: OptionButton
 var _pad_vibration: CheckBox
 var _pad_status: Label
 var _pad_buttons := {}       # Level3DSettings.PAD_ACTIONS' action -> Button
@@ -500,8 +502,9 @@ func refresh() -> void:
 	_pad.set_pressed_no_signal(settings.pad)
 	_pad_single.select(settings.pad_single)
 	_pad_names.select(settings.pad_names)
+	_pad_assist.select(settings.pad_assist)
 	_pad_vibration.set_pressed_no_signal(settings.pad_vibration)
-	for widget in [_pad_single, _pad_names, _pad_vibration]:
+	for widget in [_pad_single, _pad_names, _pad_assist, _pad_vibration]:
 		widget.disabled = not settings.pad
 	for action in _pad_buttons:
 		var button: Button = _pad_buttons[action]
@@ -941,6 +944,8 @@ func _make_controls_tab() -> Control:
 			func(i: int): settings.pad_single = i)
 	_pad_names = _choice(pad, "Button names", PAD_NAME_CHOICES,
 			func(i: int): settings.pad_names = i)
+	_pad_assist = _choice(pad, "Aim assist", PAD_ASSIST_CHOICES,
+			func(i: int): settings.pad_assist = i)
 	for action in Level3DSettings.PAD_ACTIONS:
 		var label := Label.new()
 		label.text = ACTION_NAMES[action]
@@ -960,7 +965,11 @@ func _make_controls_tab() -> Control:
 		settings.reset_pad()
 		_changed())
 	tab.add_child(pad_defaults)
-	_note(tab, "Left stick or d-pad: drive. Right stick: aim, with modern or combined firing. "
+	_note(tab, "Classic driving: left stick or d-pad. Modern driving: R2 throttle, L2 brake "
+			+ "and reverse, left stick steers. Right stick: aim, with modern or combined firing; "
+			+ "the further it is tilted, the further the reticle, up to the reach. "
+			+ "Aim assist pulls the reticle on to an enemy near where the stick points, "
+			+ "and with the stick let go keeps it on him while the machine gun fires. "
 			+ "Start: this menu. Back: skip the landing. "
 			+ "With one player every gamepad is his; with two, the first two are a player's each, "
 			+ "and a single one is the player's picked above, the other keeping the keyboard. "

@@ -56,17 +56,25 @@ const DEFAULT_KEYS := {
 # with); whether they shake; and whose names the buttons go by, AUTO the
 # pad's -- under Steam Input a DualSense may call itself an Xbox pad. The
 # sticks and the d-pad are fixed: the left drives, the right aims, Start is
-# the menu. The weapons and the device are bound, PAD_ACTIONS, as the keys
-# are: a JoyButton, or a trigger (Level3DPad.TRIGGER_*).
+# the menu, and driving free R2 and L2 are the throttle and the brake. The
+# weapons and the device are bound, PAD_ACTIONS, as the keys are: a
+# JoyButton, or a trigger (Level3DPad.TRIGGER_*) -- which driving free is the
+# throttle's as well. L1 the gun and R1 the launcher either way, the
+# triggers being the throttle's.
 const PAD_ACTIONS: Array[String] = ["gun", "rocket", "device"]
 const DEFAULT_PAD := {
-	"gun": Level3DPad.TRIGGER_RIGHT, "rocket": Level3DPad.TRIGGER_LEFT,
-	"device": JOY_BUTTON_RIGHT_SHOULDER,
+	"gun": JOY_BUTTON_LEFT_SHOULDER, "rocket": JOY_BUTTON_RIGHT_SHOULDER, "device": JOY_BUTTON_X,
 }
+# The bindings' layout: saved ones of an older layout -- the weapons on the
+# triggers -- are let go of for DEFAULT_PAD's.
+const PAD_LAYOUT := 2
 var pad := true
 var pad_single := 1
 var pad_vibration := true
 var pad_names := Level3DPad.Names.AUTO
+# The right stick's aim assist (level3d_preview.gd, _assist): off, or one of
+# Level3DPad.ASSISTS' strengths.
+var pad_assist := Level3DPad.Assist.NORMAL
 var pad_buttons := DEFAULT_PAD.duplicate()
 
 # The title screen's difficulty (Level3DTitle, Level3DMap.hard).
@@ -328,10 +336,12 @@ func load_saved() -> void:
 	pad_single = clampi(config.get_value("pad", "single", pad_single), 0, 1)
 	pad_vibration = config.get_value("pad", "vibration", pad_vibration)
 	pad_names = clampi(config.get_value("pad", "names", pad_names), 0, Level3DPad.Names.size() - 1)
-	for action in PAD_ACTIONS:
-		var saved = config.get_value("pad", action, DEFAULT_PAD[action])
-		if saved is int and saved >= 0:
-			pad_buttons[action] = saved
+	pad_assist = clampi(config.get_value("pad", "assist", pad_assist), 0, Level3DPad.Assist.size() - 1)
+	if config.get_value("pad", "layout", 1) == PAD_LAYOUT:
+		for action in PAD_ACTIONS:
+			var saved = config.get_value("pad", action, DEFAULT_PAD[action])
+			if saved is int and saved >= 0:
+				pad_buttons[action] = saved
 
 
 static func _volume(saved) -> float:
@@ -403,6 +413,8 @@ func save() -> void:
 	config.set_value("pad", "single", pad_single)
 	config.set_value("pad", "vibration", pad_vibration)
 	config.set_value("pad", "names", pad_names)
+	config.set_value("pad", "assist", pad_assist)
+	config.set_value("pad", "layout", PAD_LAYOUT)
 	for action in PAD_ACTIONS:
 		config.set_value("pad", action, pad_button(action))
 	config.save(SAVE_PATH)

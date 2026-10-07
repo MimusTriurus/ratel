@@ -1,5 +1,6 @@
 # Gamepads in the 3D preview: whose a pad is, what a binding is and what it
-# is called on the pad in hand, the sticks with their dead zone, a menu's
+# is called on the pad in hand, the sticks with their dead zone, the
+# triggers as a throttle, a menu's
 # moves and picks from a pad's events, and the rumble. The stage reads the
 # pads as it reads the keys, held, once a tick (level3d_preview.gd, _drive,
 # _aim, _fire, _use_device); the title, the shop, the game over and the
@@ -27,6 +28,9 @@ const TRIGGER_DOWN := 0.5
 # The sticks' dead zone, radial, and the rest of the way rescaled to 0..1, so
 # that a stick just past it drives slowly rather than at a third.
 const DEADZONE := 0.25
+# The triggers' dead zone as a throttle, a resting trigger reading a little
+# off 0 on some pads.
+const TRIGGER_DEADZONE := 0.05
 # A stick tilted this far is one of the eight directions, for the classic
 # driving's keys; within sin(22.5 deg) of an axis it is not that axis's.
 const DIGITAL := 0.4
@@ -37,6 +41,18 @@ const NAV_DOWN := 0.6
 const NAV_UP := 0.3
 
 enum Names { AUTO, PLAYSTATION, XBOX }
+
+# The aim assist's strengths (level3d_preview.gd, _assist): the cone about
+# the stick's bearing an enemy is pulled from, degrees; the share of it, from
+# the middle, where the reticle goes all the way on to the enemy; and how far
+# it goes on to one at the cone's edge... up to there, 0 to 1.
+enum Assist { OFF, LIGHT, NORMAL, STRONG }
+const ASSISTS := [
+	{},
+	{"cone": 8.0, "inner": 0.0, "pull": 0.6},
+	{"cone": 12.0, "inner": 0.35, "pull": 1.0},
+	{"cone": 18.0, "inner": 0.5, "pull": 1.0},
+]
 
 static var settings: Level3DSettings
 
@@ -139,13 +155,29 @@ static func digital(v: Vector2) -> Array[bool]:
 	return [v.y < -k, v.y > k, v.x < -k, v.x > k]
 
 
+# Driving free, the racing way: R2 the throttle, L2 the brake and then
+# reverse, -1 to 1, the strongest of `pads`'.
+static func throttle(pads: Array[int]) -> float:
+	var best := 0.0
+	for d in pads:
+		var v := _trigger(d, JOY_AXIS_TRIGGER_RIGHT) - _trigger(d, JOY_AXIS_TRIGGER_LEFT)
+		if absf(v) > absf(best):
+			best = v
+	return best
+
+
+static func _trigger(device: int, axis: JoyAxis) -> float:
+	var v := Input.get_joy_axis(device, axis)
+	return 0.0 if v <= TRIGGER_DEADZONE else minf((v - TRIGGER_DEADZONE) / (1.0 - TRIGGER_DEADZONE), 1.0)
+
+
 # Whether anything of `pads` is in use: a stick out of its dead zone, the
-# d-pad, or one of the bindings -- which hands the player's aim and the
-# hints over to the pad (Crew.pad).
+# d-pad, a trigger, or one of the bindings -- which hands the player's aim
+# and the hints over to the pad (Crew.pad).
 static func touched(pads: Array[int], bindings: Array) -> bool:
 	if pads.is_empty():
 		return false
-	if left(pads) != Vector2.ZERO or right(pads) != Vector2.ZERO:
+	if left(pads) != Vector2.ZERO or right(pads) != Vector2.ZERO or throttle(pads) != 0.0:
 		return true
 	for b in bindings:
 		if held(pads, b):

@@ -111,14 +111,32 @@ godot --path . --windowed --resolution 1280x720 src/game3d/level3d_preview.tscn 
 ## Gamepads
 
 `Level3DPad` (`level3d_pad.gd`), set under Settings -> Controls -> Gamepad
-(`Level3DSettings.pad*`, in `user://preview3d.cfg`'s `[pad]`). On the stage
-the left stick or the d-pad drive -- classic, as the eight directions'
-keys (`Level3DPad.digital`); free, as far as it is pushed -- and the right
-stick aims wherever the firing aims at the cursor (modern, combined): a
-direction rather than a point, `PAD_REACH` along it, which the reach brings
-in. R2, L2 and R1 are the gun, the rocket and the device, rebound in the
-menu (a button or a trigger, never the d-pad); Start is Escape, Back skips
-the Chinook. The pad shakes when a rocket or a grenade goes and when the jeep
+(`Level3DSettings.pad*`, in `user://preview3d.cfg`'s `[pad]`). Driving
+classic, the left stick or the d-pad are the eight directions' keys
+(`Level3DPad.digital`). Driving free it is the racing way: R2 the throttle,
+L2 the brake and then reverse, both as far as they are pulled
+(`Level3DPad.throttle`), the left stick's x the wheel -- the wheel the
+vehicle's, not the screen's, as the keys' is. The right stick aims wherever
+the firing aims at the cursor (modern, combined), as a reticle anywhere
+within the gun's reach (`_pad_reach`; unlimited, the long launcher's 16 m):
+the stick's direction which way, its tilt how far, from 2 m to the reach.
+The reticle is swept there rather than put (`_steer_reticle`): its bearing
+eases round, at most 720 degrees a second, its distance eases out and in, so
+a flick across takes about a third of a second and a nudge is at once. Let
+go, the stick's spring back through the middle is not read, and the reticle
+stays where it was about the jeep; the turret follows it, smooth in classic
+driving too. Aim assist (Off / Light / Normal / Strong, `_assist`): an
+enemy -- anything the radar marks -- within a cone about the stick's bearing
+(8, 12, 18 degrees) and within the reach pulls the reticle's bearing and
+distance on to itself, all the way in the cone's middle and less towards its
+edge (`Level3DPad.ASSISTS`); the one it had is kept over another while still
+in the cone, and with the stick let go and the gun held it is followed as it
+moves (`_follow_assisted`). L1, R1 and Square / X are the gun, the
+launcher and the device, in either driving, rebound in the menu (a button
+or a trigger, never the d-pad; a trigger driving free is the throttle's as
+well). A config saved with the first layout, the weapons on the triggers,
+comes up with these (`PAD_LAYOUT`). Start is Escape, Back skips the
+Chinook. The pad shakes when a rocket or a grenade goes and when the jeep
 is blown up (Vibration). Whichever the player touched last, the pad or the
 keys and the mouse, has the aim, the crosshair and the hints (`Crew.pad`).
 
