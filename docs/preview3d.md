@@ -170,7 +170,7 @@ one pad would drive both jeeps.
 
 The title, the shop (each pad its player's cursor, A buys, B takes back, the
 right stick turns his jeep on its table, `Level3DShop.SPIN_RATE`, until he
-picks another tile), the game over and the Escape menu (A picks, B and Start
+picks another tile, L1 or R1 ready, Start the Escape menu), the game over and the Escape menu (A picks, B and Start
 go back, L1/R1 turn the tabs, the right stick scrolls the tab,
 `Level3DMenu.SCROLL_SPEED`) go by the d-pad or the left stick; held, either
 moves on and on, after 0.35 s every 0.08 s (`Level3DPad.Repeat`), as the
@@ -203,11 +203,20 @@ once, each with a frame of his own colour for a cursor, the first's outside
 the second's on one tile. A tile says on each player's side what it is to him:
 its price, red when he is short of it, OWNED, IN SLOT, MAX.
 
-- Fire buys (the gun, Enter or Space, a pad's A); fire on a
-  device already owned puts it in the slot. The rocket (P, right Ctrl, a
-  pad's B) takes back the last of that tile bought in this
-  visit. Fire on READY under the matrix is a player's word that he is done;
-  the next round starts, from the Chinook, when every player has given it.
+- Buy (Enter or Space, right Shift for the second player, a pad's A) buys
+  the tile; on a device already owned it puts it in the slot. Back
+  (Backspace, right Ctrl, a pad's B) takes back the last of that tile bought
+  in this visit. Fire -- either weapon: L or P, right Alt, a pad's L1 or R1
+  -- is a player's word that he is done, from wherever his cursor is, as
+  PRESS FIRE WHEN READY, fading in and out under his paints, says: his cursor goes to
+  READY and his jeep turns to go, and Back takes it back, the cursor where it
+  was. The next round starts, from the Chinook, when every player has given
+  it.
+- The paints under each jeep are reached down from LIFE, or off the
+  matrix's edge on the player's side: left from its first column (or LIFE)
+  for the first player, right from its last for the second; and back on to
+  the matrix, the row the cursor came from, past the last free paint towards
+  it.
 - The jeep turns on its table to show the part its player's tile is about,
   the part on trial standing on it see-through and pulsing.
 - Escape opens the Escape menu over it, as on the stage; closing it leaves

@@ -15,7 +15,7 @@
 #                      ???         ???          ???
 #                      LIFE ----------------------------
 #     [paint swatches]                                  [paint swatches]
-#     READY                                                        READY
+#     PRESS FIRE WHEN READY                        PRESS FIRE WHEN READY
 #
 # The side says no more than the money: the lives are on LIFE's tile, the
 # launcher's step on the jeep and LAUNCHER's tile, and the device's slot is
@@ -31,14 +31,19 @@
 # nothing but ??? under its stamp: not for sale, for the player to unlock
 # later.
 #
-#   * Fire buys (the gun: L, the left button, right Alt for the second
-#     player, Enter and Space for the first, a pad's A); a device already
-#     owned goes in the slot instead. The rocket (P, the right button, right
-#     Ctrl) takes back the last of that tile bought in this visit, its price
-#     back on the score. Fire on READY, under the matrix, is the player's
-#     word that he is done; the round starts when every player has given it:
-#     the words and the goods go, the jeeps turn forward and drive off their
-#     spots, out of the frame, and the black comes down over them (DRIVE_*).
+#   * Buy (Enter or Space for the first player, right Shift for the second,
+#     a pad's A) buys the tile; a device already owned goes in the slot
+#     instead. Back (Backspace, right Ctrl, a pad's B) takes back the last of
+#     that tile bought in this visit, its price back on the score. Fire --
+#     either weapon: L or P, right Alt for the second, a pad's L1 or R1 --
+#     is the player's word that he is done, from wherever his cursor is
+#     (_give_ready), as PRESS FIRE WHEN READY breathing under his paints
+#     says: his cursor leaves the matrix for READY, and his jeep turns to go;
+#     Back then is his word taken back (_cancel), the cursor where it was.
+#     The round starts when every player has given it: the words and the
+#     goods go, the jeeps turn forward and drive off their spots, out of the
+#     frame, and the black comes down over them (DRIVE_*). Escape, or a
+#     pad's Start, is the Escape menu.
 #   * The jeep turns on its table to show the part the tile is about
 #     (SHOWS), and a part not yet his stands on it see-through, pulsing --
 #     the twin gun in the single one's place, the launcher's next step in
@@ -50,9 +55,13 @@
 #     cross the hull.
 #   * Under the jeep, over READY, the paints (Level3DBtr.PAINTS): a row of
 #     swatches, free, left and right on it repainting the jeep there and
-#     then, a click on one the mouse's way; another player's paint is not to
-#     be had, two jeeps alike on the stage not telling whose is whose. The
-#     preview keeps them in its settings, for the next game too.
+#     then; another player's paint is not to be had, two jeeps alike on the
+#     stage not telling whose is whose. The cursor gets to them down from
+#     LIFE, or off the matrix's edge on the player's side -- left from the
+#     first column for the first, right from the last for the second
+#     (_toward_paints) -- and back past the last paint free towards the
+#     matrix, on to the row it came from. The preview keeps them in its settings, for the next
+#     game too.
 #   * A pad's right stick turns its player's jeep on its table by hand, to
 #     look it over (SPIN_RATE); another tile, or READY, and it turns back to
 #     show that one's part from wherever it was turned to.
@@ -80,6 +89,12 @@ const SMALL := 16.0             # the tiles' prices, the descriptions
 const PLAYER_GLYPH := 48.0     # the players' money, as large as the title
 const READY_GLYPH := 32.0
 const READY_PAD := Vector2(32.0, 16.0)
+# PRESS FIRE WHEN READY, breathing: from READY_DIM to full and back every
+# READY_PULSE seconds, eased -- an arcade's on and off was too harsh -- and
+# as small as it must be to fit the column.
+const READY_PROMPT := "PRESS FIRE WHEN READY"
+const READY_PULSE := 1.6
+const READY_DIM := 0.35
 # The layout, in the HUD's 2048 x 1152 at 100%.
 const TITLE_Y := 48.0
 const MATRIX := Rect2(640, 150, 768, 832.5)   # the goods: five rows of tiles 126.5 high, and the life's
@@ -220,9 +235,12 @@ var _run: Level3DRun
 var _players := 1
 var _cursor: Array[Vector2i] = []   # (column, row)
 var _set: Array[bool] = []          # each player's READY
+var _back_to: Array[Vector2i] = []  # each player's cursor before READY, for _cancel
+var _paints_from: Array[int] = []   # each player's row before his paints, to go back to
 var _bought: Array = []             # each player's ids bought this visit, in order
 var _was: Array = []                # the second player's buttons last frame, for presses
 var _repeats: Array = []            # per player, his held direction's (Level3DPad.Repeat)
+var _pulled := {}                   # a trigger held past half, device * 16 + axis -> bool
 var _bay: Bay
 var _bay_layer: CanvasLayer
 var _text: Control
@@ -287,6 +305,8 @@ func open(run: Level3DRun, at_once := false) -> void:
 	_players = run.kits.size()
 	_cursor.clear()
 	_set.clear()
+	_back_to.clear()
+	_paints_from.clear()
 	_bought.clear()
 	_was.clear()
 	_repeats.clear()
@@ -295,6 +315,8 @@ func open(run: Level3DRun, at_once := false) -> void:
 	for i in _players:
 		_cursor.append(Vector2i(0, 0))
 		_set.append(false)
+		_back_to.append(Vector2i.ZERO)
+		_paints_from.append(LIFE_ROW)
 		_bought.append([])
 		_was.append({})
 		_repeats.append(Level3DPad.Repeat.new())
@@ -388,19 +410,79 @@ func _item(player: int) -> Dictionary:
 
 
 func _move(player: int, by: Vector2i) -> void:
+	if _set[player]:
+		return
 	var at := _cursor[player]
 	var to := at
 	if by.y != 0:
-		to.y = clampi(at.y + by.y, 0, READY_ROW)
+		to.y = clampi(at.y + by.y, 0, PAINT_ROW)
 	elif at.y == PAINT_ROW:
-		_repaint(player, Level3DBtr.paint_index(paints[player]) + by.x, by.x)
-		return
+		var now := Level3DBtr.paint_index(paints[player])
+		# Past the last paint free that way, towards the matrix: back on to
+		# it, at its edge, in the row he came from.
+		if by.x == _toward_matrix(player) and _free_paint(player, now + by.x, by.x) < 0:
+			to = Vector2i(0 if player == 0 else Level3DShopCatalog.COLUMNS - 1, _paints_from[player])
+		else:
+			_repaint(player, now + by.x, by.x)
+			return
+	elif _toward_paints(player, at, by.x):
+		# Off the matrix's edge on his side, where his paints are under his
+		# jeep: on to them, as down from LIFE goes.
+		to.y = PAINT_ROW
 	elif at.y < LIFE_ROW:
 		to.x = clampi(at.x + by.x, 0, Level3DShopCatalog.COLUMNS - 1)
 	if to != at:
+		if to.y == PAINT_ROW:
+			_paints_from[player] = at.y
 		_cursor[player] = to
 		Level3DAudio.play("menu_move")
 		_dress(player)
+
+
+# The way from player `player`'s paints to the matrix: the first's are left
+# of it, the second's right.
+func _toward_matrix(player: int) -> int:
+	return 1 if player == 0 else -1
+
+
+# Whether `dx` from `at` goes off the matrix towards player `player`'s paints:
+# the first's are left of it, the second's right; from a tile in the edge
+# column, or from LIFE, which runs the matrix's width.
+func _toward_paints(player: int, at: Vector2i, dx: int) -> bool:
+	if at.y > LIFE_ROW or dx == 0:
+		return false
+	if dx != -_toward_matrix(player):
+		return false
+	return at.y == LIFE_ROW or at.x == (0 if player == 0 else Level3DShopCatalog.COLUMNS - 1)
+
+
+# Fire: the player is done, from wherever his cursor is -- it goes to READY,
+# where it was kept for _cancel, his jeep turned to go; every player done,
+# the round.
+func _give_ready(player: int) -> void:
+	if _state != State.OPEN or _set[player]:
+		return
+	_back_to[player] = _cursor[player]
+	_cursor[player] = Vector2i(_cursor[player].x, READY_ROW)
+	_set[player] = true
+	Level3DAudio.play("menu_pick")
+	_dress(player)
+	if _set.all(func(r: bool): return r):
+		_leave()
+
+
+# Back: done taken back, the cursor where it was; not done, the last of the
+# tile bought taken back.
+func _cancel(player: int) -> void:
+	if _state != State.OPEN:
+		return
+	if not _set[player]:
+		_take_back(player)
+		return
+	_set[player] = false
+	_cursor[player] = _back_to[player]
+	Level3DAudio.play("menu_move")
+	_dress(player)
 
 
 func _fire(player: int) -> void:
@@ -409,11 +491,7 @@ func _fire(player: int) -> void:
 	if _cursor[player].y == PAINT_ROW:
 		Level3DAudio.play("menu_pick")
 		return
-	if _cursor[player].y == READY_ROW:
-		_set[player] = not _set[player]
-		Level3DAudio.play("menu_pick")
-		if _set.all(func(r: bool): return r):
-			_leave()
+	if _set[player]:
 		return
 	var it := _item(player)
 	var kit: Level3DRun.Kit = _run.kits[player]
@@ -535,7 +613,8 @@ func _stop_engines() -> void:
 
 
 # The second player's buttons, read off his HumanInput as the stage does,
-# a press each time one goes down.
+# a press each time one goes down: right Alt, the gun, is fire, right Ctrl
+# back; his buy, right Shift, is a key event (_input).
 func _poll(player: int, input: HumanInput) -> void:
 	input.snap()
 	var now := {"up": input.is_up(), "down": input.is_down(), "left": input.is_left(),
@@ -548,8 +627,8 @@ func _poll(player: int, input: HumanInput) -> void:
 				"down": _move(player, Vector2i(0, 1))
 				"left": _move(player, Vector2i(-1, 0))
 				"right": _move(player, Vector2i(1, 0))
-				"gun": _fire(player)
-				"rocket": _take_back(player)
+				"gun": _give_ready(player)
+				"rocket": _cancel(player)
 	_was[player] = now
 
 
@@ -571,6 +650,10 @@ func _input(event: InputEvent) -> void:
 		if not key.pressed or _state != State.OPEN:
 			return
 		var code := key.keycode
+		# The second player's buy.
+		if _players > 1 and code == KEY_SHIFT and key.location == KEY_LOCATION_RIGHT and not key.echo:
+			_fire(1)
+			return
 		# The arrows are the second player's with two, as on the stage.
 		var arrows := _players == 1
 		# A direction held goes on moving, by the key's echo; nothing else.
@@ -585,13 +668,16 @@ func _input(event: InputEvent) -> void:
 			_move(0, Vector2i(-1, 0))
 		elif code == _key("right") or arrows and code == KEY_RIGHT:
 			_move(0, Vector2i(1, 0))
-		elif code == _key("gun") or code in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
+		elif code in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
 			_fire(0)
-		elif code == _key("rocket"):
-			_take_back(0)
+		elif code == _key("gun") or code == _key("rocket"):
+			_give_ready(0)
+		elif code == KEY_BACKSPACE:
+			_cancel(0)
 		return
 	# A pad is its player's (Level3DPad.player_of): the d-pad or the left
-	# stick move his cursor, A buys, B takes back, Start is Escape.
+	# stick move his cursor, A buys, B is back, the weapons' buttons fire
+	# (Level3DSettings.pad_button), Start is Escape.
 	var move := Level3DPad.nav(event)
 	var pad := event as InputEventJoypadButton
 	if move != Vector2i.ZERO or pad != null and pad.pressed:
@@ -610,11 +696,30 @@ func _input(event: InputEvent) -> void:
 		elif pad.button_index == JOY_BUTTON_A:
 			_fire(player)
 		elif pad.button_index == JOY_BUTTON_B:
-			_take_back(player)
+			_cancel(player)
+		elif pad.button_index in _fire_buttons():
+			_give_ready(player)
+	# The weapons' buttons bound to a trigger: a pull past half is a press.
+	var pull := event as InputEventJoypadMotion
+	if pull != null and _state == State.OPEN:
+		var binding := Level3DPad.binding_of(event)
+		if binding >= Level3DPad.TRIGGER \
+				and binding in _fire_buttons() \
+				and not _pulled.get(pull.device * 16 + pull.axis, false):
+			var player := Level3DPad.player_of(pull.device, _players)
+			if player >= 0:
+				_give_ready(player)
+		_pulled[pull.device * 16 + pull.axis] = binding >= Level3DPad.TRIGGER
 
 
 func _menu_up() -> bool:
 	return menu_open.is_valid() and menu_open.call()
+
+
+# The pad's fire: the weapons' buttons, as the settings bind them.
+func _fire_buttons() -> Array:
+	var bound := settings if settings != null else Level3DSettings.new()
+	return [bound.pad_button("gun"), bound.pad_button("rocket")]
 
 
 func _key(action: String) -> Key:
@@ -627,12 +732,8 @@ func _key(action: String) -> Key:
 # that one being another player's, the next on the way `step` goes;
 # nothing past either end, nor with `step` 0 (a click) on a taken one.
 func _repaint(player: int, index: int, step: int) -> void:
-	while index >= 0 and index < Level3DBtr.PAINTS.size() and _taken(player, Level3DBtr.PAINTS[index].id):
-		if step == 0:
-			index = -1
-			break
-		index += step
-	if index < 0 or index >= Level3DBtr.PAINTS.size():
+	index = _free_paint(player, index, step)
+	if index < 0:
 		Level3DAudio.play("hit_dull")
 		return
 	var id: String = Level3DBtr.PAINTS[index].id
@@ -641,6 +742,16 @@ func _repaint(player: int, index: int, step: int) -> void:
 	paints[player] = id
 	_bay.paint(player, id)
 	Level3DAudio.play("menu_move")
+
+
+# The paint at `index`, or the first free one from it the way `step` goes;
+# -1 for none -- past either end, or `step` 0 on a taken one.
+func _free_paint(player: int, index: int, step: int) -> int:
+	while index >= 0 and index < Level3DBtr.PAINTS.size() and _taken(player, Level3DBtr.PAINTS[index].id):
+		if step == 0:
+			return -1
+		index += step
+	return index if index >= 0 and index < Level3DBtr.PAINTS.size() else -1
 
 
 # Whether paint `id` is on another player's jeep: two alike on the stage
@@ -827,17 +938,27 @@ func _draw_side(i: int, s: float, g: float, sg: float, pg: float) -> void:
 	Level3DFont.draw(_text, money, roundf(x), y, pg)
 	_draw_words(i, Rect2(x0, 0.0, width, 0.0), s, g, sg)
 	_draw_paints(i, x0, width, s)
-	# READY.
-	var ready := "READY!" if _set[i] else "READY"
+	# Done, READY in his colour, his cursor round it; not yet, PRESS FIRE
+	# WHEN READY breathing, as small as the column needs.
+	var ready := "READY" if _set[i] else READY_PROMPT
 	var rg := _whole(READY_GLYPH * s)
 	var pad := (READY_PAD * s).round()
+	var fits := width - pad.x * 2.0
+	if Level3DFont.width(ready, rg) > fits:
+		rg = _whole(rg * fits / Level3DFont.width(ready, rg))
 	var rw := Level3DFont.width(ready, rg)
 	var rect := Rect2(roundf(x0 + width * 0.5 - rw * 0.5 - pad.x), roundf(READY_Y * s - pad.y),
 			rw + pad.x * 2.0, rg + pad.y * 2.0)
 	_rects[Vector3i(0, READY_ROW, i)] = rect
-	_text.draw_rect(rect, colour if _set[i] else TILE_FILL)
-	_text.draw_rect(rect, Color(1, 1, 1, 0.85), false, maxf(roundf(RING * s), 1.0))
-	Level3DFont.draw(_text, ready, rect.position.x + pad.x, rect.position.y + pad.y, rg)
+	if _set[i]:
+		_text.draw_rect(rect, colour)
+		_text.draw_rect(rect, Color(1, 1, 1, 0.85), false, maxf(roundf(RING * s), 1.0))
+		Level3DFont.draw(_text, ready, rect.position.x + pad.x, rect.position.y + pad.y, rg)
+	else:
+		var breath := 0.5 + 0.5 * cos(_time * TAU / READY_PULSE)
+		var tint := Color(1.0, 1.0, 1.0, lerpf(READY_DIM, 1.0, breath))
+		Level3DFont.draw(_text, ready, rect.position.x + pad.x, rect.position.y + pad.y, rg,
+				Level3DFont.WHITE, tint)
 
 
 # Player `i`'s swatches over his READY, across the middle of his column,

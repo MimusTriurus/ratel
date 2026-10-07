@@ -103,8 +103,7 @@ func _rounds() -> void:
 	for i in 60:
 		await process_frame
 	for p in 2:
-		shop._cursor[p] = Vector2i(0, Level3DShop.READY_ROW)
-		shop._fire(p)
+		shop._give_ready(p)
 	for i in 200:
 		await process_frame
 	check("round 2 after the shop", scene.get("_round") == 2)
@@ -173,12 +172,15 @@ func _shop() -> void:
 	check("2P: radar from his 9000", kit2.score == 1000 and kit2.upgrades.has("radar") and kit.score == 0)
 	_at(shop, 1, "twin"); shop._fire(1)
 	check("2P: short of the twin gun", not kit2.upgrades.has("twin"))
-	# Ready, both.
-	shop._cursor[0] = Vector2i(0, Level3DShop.READY_ROW)
-	shop._cursor[1] = Vector2i(0, Level3DShop.READY_ROW)
-	shop._fire(0)
+	# Ready, both: fire from anywhere; back takes it back, the cursor where it was.
+	var was: Vector2i = shop._cursor[0]
+	shop._give_ready(0)
+	check("fire: 1P ready, his cursor on READY", shop._set[0] and shop._cursor[0].y == Level3DShop.READY_ROW)
+	shop._cancel(0)
+	check("back: 1P not ready, his cursor back", not shop._set[0] and shop._cursor[0] == was)
+	shop._give_ready(0)
 	check("one ready is not enough", shop.is_open() and shop._state == Level3DShop.State.OPEN)
-	shop._fire(1)
+	shop._give_ready(1)
 	# The jeeps' start and drive off, the black down and up again.
 	await create_timer(Level3DShop.DRIVE_TIME + Level3DShop.LEAVE * 2.0 + 0.5).timeout
 	check("both ready: the shop gone, round 2", not shop.is_open() and scene.get("_round") == 2 and not paused)
