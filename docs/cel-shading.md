@@ -698,8 +698,11 @@ Chinook, Little Bird (`jackal_littlebird_lowpoly.blend`,
 сейчас MH-6 A.I.R с Sketchfab, CC BY 4.0, — `jackal_littlebird_mh6_lowpoly.blend`,
 скрипт `jackal_littlebird_mh6.py` переводит скачанное в этот стиль, атрибуция в
 `jackal_littlebird_mh6.txt`; он затенён гладко с острыми рёбрами, а не плоско:
-его неровная триангуляция давала рваную границу света; рендер —
-`docs/renders/littlebird_mh6_3q.png`), солдат по листу модели
+его неровная триангуляция давала рваную границу света; десантные скамьи
+по бокам — отдельный объект-апгрейд `UpBenches`, включён по умолчанию
+(`--no-heli-benches` снимает); метки мест `Seat_*`, куда `Level3DRescueSeats`
+сажает пилота, члена экипажа и пленных; рендеры —
+`docs/renders/littlebird_mh6_3q.png`, `littlebird_mh6_benches.png`), солдат по листу модели
 (`jackal_soldier_lowpoly.blend`, враг и пленный), катер, оба танка,
 бункер с орудием (`docs/level3d-pipeline.md`, раздел 5b), снабжение
 магазина (`jackal_supply_lowpoly.blend`, скрипт `jackal_supply.py`: ящики,

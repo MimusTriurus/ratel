@@ -1260,11 +1260,17 @@ class Bay:
 		middle.y = 0.0
 		_crates(root, middle, CRATES_BY_HELI, side)
 		var heli: Node3D = (load(LITTLEBIRD.path) as PackedScene).instantiate()
+		Level3DRescue.set_benches(heli, Level3DRescue.benches_wanted())
 		root.add_child(heli)
 		heli.scale = Vector3.ONE * Level3DBtr.MODEL_SCALE * (HELI_SCALE if zoom != 1.0 else DUO_HELI_SCALE)
 		heli.position = middle
 		# Three quarters, its nose to the frame's edge and the camera.
 		heli.rotation.y = HELI_YAW * side
+		# Its pilot in his seat, beside the model rather than in it: the paint
+		# (_paint_heli) goes over all of the model.
+		var pilot := Level3DRescueSeats.seat_pilot(heli, root, heli.transform)
+		if pilot != null:
+			_soften(pilot)
 		return heli
 
 	# The concrete's slabs, SLAB m, laid along `pad`, the first landing

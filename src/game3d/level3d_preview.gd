@@ -4314,7 +4314,7 @@ func _screenshot_mode() -> void:
 	# they are not waypoints.
 	for own in ["--fade-corpses", "--btr", "--jeep", "--armored", "--baked-contour", "--engine-creases", "--btr-noline", "--no-contour",
 			"--no-wind", "--wind-steps", "--spots", "--audio-debug", "--editor", "--no-chinook", "--boss",
-			"--landing-dust", "--old-soldiers"]:
+			"--landing-dust", "--old-soldiers", "--no-heli-benches"]:
 		var at := args.find(own)
 		if at >= 0:
 			args.remove_at(at)

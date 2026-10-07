@@ -59,8 +59,12 @@
 #   * The rotor. The original turns it 15 degrees a tick idling and 30 flying;
 #     at 100 ticks a second four blades would strobe backwards at 60 fps. They
 #     turn that far a frame instead, as the Chinook's do.
-#   * Size. It is at the BTR's scale, Level3DBtr.MODEL_SCALE, which its lines
-#     are drawn for: 2.6 m nose to fin against the sprite's 128 px, 1.9 m.
+#   * Size. It is at the people's scale, Level3DFriends.MODEL's 0.55, not
+#     the BTR's 0.31 (Level3DBtr.MODEL_SCALE) the vehicles are at: the
+#     prisoners sit in it (Level3DRescueSeats), and at the BTR's they had to
+#     shrink as they sat, a man on the ground being as tall as its rotor. So
+#     it is 4.4 m nose to fin against the sprite's 128 px, 1.9 m -- big, as
+#     the people are next to the vehicles.
 class_name Level3DRescue
 extends Node3D
 
@@ -71,7 +75,7 @@ const MODEL_PATH := "res://resources/3d/jackal_littlebird_mh6.glb"
 const SOUND := "rescue_rotor"
 const PICKUP_SOUND := "rescue_pickup"
 const UPGRADE_SOUND := "upgrade"
-const MODEL_SCALE := Level3DBtr.MODEL_SCALE
+const MODEL_SCALE: float = Level3DFriends.MODEL.scale
 const PX := Level3DMap.PX
 
 const ALTITUDE := 3.0
@@ -117,6 +121,9 @@ var verbose := false
 # let off (Level3DRescueCrew); `_to_let_off` whether anyone is bringing some
 # and not letting them off yet, as _update_pick_up last saw it.
 var crew: Level3DRescueCrew
+# Its pilot, its crewman when in and the prisoners aboard, sitting
+# (Level3DRescueSeats).
+var seats: Level3DRescueSeats
 var _to_let_off := false
 
 var state := NONE
@@ -175,6 +182,11 @@ func _ready() -> void:
 	crew = Level3DRescueCrew.new()
 
 	add_child(crew)
+	seats = Level3DRescueSeats.new()
+	seats.friends = friends
+	seats.ground = ground
+	add_child(seats)
+	seats.bind(_model)
 	_find_port()
 	reset()
 
@@ -188,7 +200,26 @@ func _instance(scene: PackedScene, shadows: int) -> Node3D:
 	clips.get_animation("Fly").loop_mode = Animation.LOOP_LINEAR
 	clips.play("Fly")
 	_players.append(clips)
+	set_benches(root, benches_wanted())
 	return root
+
+
+# The MH-6's external personnel benches, a plank either side on the skids'
+# struts: UpBenches in the glb (jackal_littlebird_mh6.py's benches()), an
+# upgrade of its own as the jeeps' are parts of their own, the prisoners'
+# first seats (Level3DRescueSeats). On unless --no-heli-benches, here and in
+# the shop.
+const BENCHES := "UpBenches"
+
+
+static func set_benches(model: Node, on: bool) -> void:
+	var part := model.find_child(BENCHES, true, false) as Node3D
+	if part != null:
+		part.visible = on
+
+
+static func benches_wanted() -> bool:
+	return not OS.get_cmdline_user_args().has("--no-heli-benches")
 
 
 # GameMode.process_trigger's LANDING_PORT_*, and LandingPort._init's spot for
@@ -248,6 +279,8 @@ func reset() -> void:
 	state = NONE
 	if crew != null:
 		crew.reset()
+	if seats != null:
+		seats.reset()
 	rescued = 0
 	walking_soldiers = 0
 	_trigger_y = map.stage.map_height
@@ -357,6 +390,9 @@ func tick() -> void:
 		crew.tick(pad_position(), -1.0 if left_stop else 1.0,
 				state == PICK_UP and _to_let_off and walking_soldiers == 0)
 	_pose()
+	if seats != null:
+		seats.verbose = verbose
+		seats.tick(x, state >= LIFTING_OFF, crew == null or crew.state == Level3DRescueCrew.IN)
 
 
 # The rows the frame's top has passed, as the other spawners take them.

@@ -22,7 +22,8 @@ extends Node3D
 
 const SUIT := Color8(232, 112, 24)
 const SUIT_DARK := Color8(150, 62, 10)
-const DOOR := Vector2(0.7, 0.3)        # level metres off the pad's middle, east and south, his start
+const DOOR := Vector2(0.95, 0.3)       # level metres off the pad's middle, east and south, his start:
+                                        # outside the bench, at the helicopter's 0.55 (Level3DRescue)
 const STAND := Vector2(2.0, 0.9)       # and where he waves from
 const SPEED := 1.2                      # metres a second
 const FACING := 0.6                     # radians off due south, towards the jeep's side, as he waves

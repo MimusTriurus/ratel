@@ -18,4 +18,9 @@ blend does all of it, from the download):
 - the parts joined into one mesh on a rig of three bones, Root and the two
   rotors, with a Fly clip turning them;
 - a contour shell (a Solidify in an M6_Contour material) on the silhouette
-  and the big parts.
+  and the big parts;
+- added, not in the original: the MH-6's external personnel benches, a
+  plank either side on the skids' struts, as an object of its own,
+  UpBenches, on unless --no-heli-benches;
+- added: the seats' marks, empties Seat_* (the benches' six, the cabin's two,
+  the pilot's and the crewman's), where the preview sits people.

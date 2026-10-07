@@ -28,6 +28,10 @@ Changed from the original glb:
   arm up over the head, waving) and Run_Unarmed (a jog, the arms bent) for
   its prisoners and the rescue helicopter's crewman (soldier_friend.py,
   soldier_walk.py);
+- Sit (a passenger), Sit_Hold (on a bench, holding its edge) and Sit_Pilot
+  (the hands on the cyclic and the collective) added for the rescue
+  helicopter's prisoners, crewman and pilot (soldier_sit.py), each standing
+  on its seat's point rather than on the ground;
 - a contour shell (a Solidify in a Soldier_Contour material) on every mesh,
   and the glb, low_poly_soldier.glb, exported with those clips and Walk
   (soldier_export.py).
