@@ -519,15 +519,16 @@ func _make_settings_page() -> Control:
 func _make_game_tab() -> Control:
 	var tab := _tab("Game")
 	var grid := _grid(tab)
-	_game_mode = _choice(grid, "Mode", ["8-bit", "Modern", "Custom"],
+	_game_mode = _choice(grid, "Style", ["8-bit", "Modern", "Custom"],
 			func(i: int): settings.apply_preset(i as Level3DSettings.Preset))
 	_game_mode.set_item_disabled(Level3DSettings.Preset.CUSTOM, true)
 	_note(tab, "8-bit: the sounds and music as an NES plays them (classic sound), classic driving, "
 			+ "firing and reach, the Press Start 2P pixel font, the pixel look and the CRT monitor.")
 	_note(tab, "Modern: the new positional sound and its own music, modern driving (throttle and steering), "
 			+ "firing at the cursor with the long reach, the Black Ops One font, the modern look without the CRT.")
-	_note(tab, "A mode is a set of the settings on the other tabs. Change one of them there and the mode is "
-			+ "custom; the camera, resolution, interface, volumes, keys and cheats do not depend on it.")
+	_note(tab, "A style is a set of the settings on the other tabs. Change one of them there and the style is "
+			+ "custom; the camera, resolution, interface, volumes, keys and cheats do not depend on it. "
+			+ "Launched with --style 8bit or --style modern, the game starts in that style.")
 	return tab.get_parent().get_parent()
 
 

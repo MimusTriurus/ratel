@@ -71,6 +71,8 @@ const OUTLINES: Array[float] = [1.0, 1.5, 2.0, 2.5, 3.0, 4.0]
 var outline_stage: float = Level3DHull.DEFAULT_PIXELS[Level3DHull.Kind.STAGE]
 var outline_vehicles: float = Level3DHull.DEFAULT_PIXELS[Level3DHull.Kind.VEHICLES]
 var outline_people: float = Level3DHull.DEFAULT_PIXELS[Level3DHull.Kind.PEOPLE]
+# The game's, for a --shot (whose --free drives free); a new config takes
+# modern's style instead (load_saved).
 var driving := Driving.CLASSIC
 var firing := Firing.CLASSIC
 var reach := Reach.CLASSIC
@@ -142,14 +144,19 @@ var enemy_fire_volume := 0.8
 # 0 to Level3DAudio.MAX_GAIN over the level it was set to; one left out is at 1.
 var sound_gains := {}
 
-# The Game tab's mode: a preset of the settings above, PRESETS[mode] the
-# value it gives each, set by name. Not saved: it is read back off the
-# settings (preset()), so that one changed on its own tab makes it CUSTOM,
-# and a config saved before there were modes comes up as whichever it is.
+# The Game tab's style: a preset of the settings above, PRESETS[mode] the
+# value it gives each, set by name -- the one place 8-bit or modern is
+# picked, every screen reading the settings it sets (the shop's bay is under
+# the pixels as the stage is). Not saved: it is read back off the settings
+# (preset()), so that one changed on its own tab makes it CUSTOM, and a
+# config saved before there were styles comes up as whichever it is.
 # 8-bit is the NES game: its sounds on the NES's chips, the jeep's driving
 # and firing and reach, the pixel font sharp, the frame in pixels on a CRT.
-# Modern is the preview's own of each of them.
+# Modern is the preview's own of each of them, and what a new config starts
+# as (load_saved). --style 8bit|modern picks one at launch (STYLE_NAMES,
+# level3d_preview.gd).
 enum Preset { EIGHT_BIT, MODERN, CUSTOM }
+const STYLE_NAMES := {"8bit": Preset.EIGHT_BIT, "8-bit": Preset.EIGHT_BIT, "modern": Preset.MODERN}
 const PRESETS := [
 	{"sound_mode": SoundMode.CLASSIC, "driving": Driving.CLASSIC, "firing": Firing.CLASSIC,
 			"reach": Reach.CLASSIC, "font": Level3DFont.Style.CLASSIC, "look": Look.PIXELS, "crt": true},
@@ -202,6 +209,9 @@ func reset_keys() -> void:
 func load_saved() -> void:
 	var config := ConfigFile.new()
 	if config.load(SAVE_PATH) != OK:
+		# None yet: one style, not the defaults' mix of the two -- the
+		# modern look under Press Start 2P.
+		apply_preset(Preset.MODERN)
 		return
 	hard = config.get_value("game", "hard", hard)
 	for i in paints.size():
@@ -239,7 +249,10 @@ func load_saved() -> void:
 	hud_pad_arrow = config.get_value("interface", "pad_arrow", hud_pad_arrow)
 	hud_help = config.get_value("interface", "help", hud_help)
 	hud_hints = config.get_value("interface", "hints", hud_hints)
-	font = clampi(config.get_value("interface", "font", font), 0, Level3DFont.Style.size() - 1)
+	# Saved before the font was: the look's, not the default's Press Start 2P,
+	# which over the modern look was neither style.
+	var look_font := Level3DFont.Style.CLASSIC if look == Look.PIXELS else Level3DFont.Style.MODERN
+	font = clampi(config.get_value("interface", "font", look_font), 0, Level3DFont.Style.size() - 1)
 	hud_cheats = config.get_value("interface", "cheats", hud_cheats)
 	hud_crosshair = config.get_value("interface", "crosshair", hud_crosshair)
 	banner_stage = config.get_value("interface", "banner_stage", banner_stage)

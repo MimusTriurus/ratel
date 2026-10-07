@@ -62,7 +62,8 @@
 #   * Escape is nothing here: the Escape menu would unpause the stage under
 #     it.
 #
-# Its own layer, processing while the tree is paused. The jeeps are in a
+# Its own layer, processing while the tree is paused, the bay on one under it
+# (scene_layer). The jeeps are in a
 # world of their own (Bay), lit by a sun of their own; the preview's _toon and
 # contour reach every mesh in the tree, a SubViewport's too, so they look as
 # they do on the stage. Run on its own (F6, level3d_shop.tscn) it opens with
@@ -199,6 +200,13 @@ var settings: Level3DSettings
 var inputs: Array = []
 var colours: Array[Color] = []
 var paints: Array[String] = []
+# The bay's layer, as the game over's cemetery's (Level3DGameOverScreen): the
+# preview's CEMETERY_LAYER, under its pixels and its CRT, so that 8-bit's look
+# takes the jeeps as it takes the stage; the words stay over the pixels, as
+# the HUD does. -1 for the shop's own layer less one (F6). `hud`, the layer
+# hidden while the bay stands, or null: under the shop's now, not over it.
+var scene_layer := -1
+var hud: CanvasLayer
 
 var _state := State.CLOSED
 var _run: Level3DRun
@@ -208,6 +216,7 @@ var _set: Array[bool] = []          # each player's READY
 var _bought: Array = []             # each player's ids bought this visit, in order
 var _was: Array = []                # the second player's buttons last frame, for presses
 var _bay: Bay
+var _bay_layer: CanvasLayer
 var _text: Control
 var _veil: ColorRect
 var _reticle: Level3DReticle
@@ -224,8 +233,10 @@ func _init() -> void:
 	layer = 51
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
+	_bay_layer = CanvasLayer.new()
+	add_child(_bay_layer)
 	_bay = Bay.new()
-	add_child(_bay)
+	_bay_layer.add_child(_bay)
 	_text = Control.new()
 	_text.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -310,11 +321,19 @@ func close() -> void:
 	_veil.color.a = 0.0
 	_reticle.shown = false
 	_bay.clear()
+	_show_hud(true)
+
+
+func _show_hud(on: bool) -> void:
+	if hud != null:
+		hud.visible = on
 
 
 func _show() -> void:
 	_fade = null
 	_text.modulate.a = 1.0
+	_bay_layer.layer = scene_layer if scene_layer >= 0 else layer - 1
+	_show_hud(false)
 	_bay.stage(_players, paints)
 	_swatch_colours()
 	_time = 0.0
@@ -351,6 +370,7 @@ func _leave() -> void:
 	_fade.tween_callback(func():
 		_stop_engines()
 		_bay.clear()
+		_show_hud(true)
 		_text.queue_redraw()
 		if done.is_valid():
 			done.call(_run)

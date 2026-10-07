@@ -350,6 +350,17 @@ func _ready() -> void:
 	_persist = not (run_args.has("--shot") or run_args.has("--obstacle-map"))
 	if _persist:
 		settings.load_saved()
+	# --style 8bit|modern: the Game tab's style, as if picked there -- saved,
+	# but for a --shot, which saves nothing.
+	var style_flag := run_args.find("--style")
+	if style_flag >= 0:
+		var style_name := run_args[style_flag + 1].to_lower() if style_flag + 1 < run_args.size() else ""
+		if Level3DSettings.STYLE_NAMES.has(style_name):
+			settings.apply_preset(Level3DSettings.STYLE_NAMES[style_name])
+			if _persist:
+				settings.save()
+		else:
+			push_warning("--style wants one of %s, not '%s'" % [", ".join(Level3DSettings.STYLE_NAMES.keys()), style_name])
 	Level3DMap.hard = settings.hard
 	get_tree().node_added.connect(_toon)
 	# First, so that everything added after it has something to be heard
@@ -2448,8 +2459,11 @@ func _make_hud() -> void:
 	_game_over_screen.continue_game = _continue_game
 	_game_over_screen.end_game = _end_game
 	add_child(_game_over_screen)
-	# The shop between rounds, over the HUD as well (Level3DShop).
+	# The shop between rounds, over the HUD as well (Level3DShop); its bay on
+	# the cemetery's layer, under the pixels, the two never up together.
 	_shop = Level3DShop.new()
+	_shop.scene_layer = CEMETERY_LAYER
+	_shop.hud = _hud
 	_shop.done = _shop_done
 	add_child(_shop)
 
@@ -4390,7 +4404,7 @@ func _screenshot_mode() -> void:
 	var log_rounds := args.find("--log-rounds")
 	if log_rounds >= 0:
 		args.remove_at(log_rounds)
-	for flag in ["--level", "--file", "--players", "--light", "--outline", "--round", "--upgrades"]:
+	for flag in ["--level", "--file", "--players", "--light", "--outline", "--round", "--upgrades", "--style"]:
 		var at := args.find(flag)
 		if at >= 0:
 			args = args.slice(0, at) + args.slice(at + 2)  # read in _ready

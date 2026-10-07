@@ -20,11 +20,15 @@ more soldiers, tanks and boats. A --shot and the level editor's Play skip it.
 `--no-chinook` skips the Chinook's run and `--boss` starts each run a few
 seconds' drive below the boss, the way there left unspawned.
 
-The 3D preview's Escape menu opens its settings on a Game tab: 8-bit or
-modern, each a preset of the sound mode, the driving, the firing, the reach,
-the font, the look and the CRT (`Level3DSettings.PRESETS`). The mode is not
+The 3D preview's Escape menu opens its settings on a Game tab whose Style is
+8-bit or modern, each a preset of the sound mode, the driving, the firing,
+the reach, the font, the look and the CRT (`Level3DSettings.PRESETS`). It is
+the one place the style is picked: every screen reads the settings it sets,
+the shop's bay under the pixels and the CRT as the stage is. The style is not
 saved but read back off those settings, so changing one on its own tab shows
-it as "Custom". The menu is in English, drawn in the HUD's font from the
+it as "Custom". A new config starts as modern; one saved before the font was
+takes the font of its look. `--style 8bit|modern` picks one at launch, as
+the menu would, and saves it (not under a --shot). The menu is in English, drawn in the HUD's font from the
 .ttf files its sheets were baked from: Press Start 2P (scaled by 2/3 to fit
 the panels) for both classic styles, Black Ops One for modern.
 
@@ -130,6 +134,9 @@ its price, red when he is short of it, OWNED, IN SLOT, MAX.
 - The jeep turns on its table to show the part its player's tile is about,
   the part on trial standing on it see-through and pulsing.
 - Escape does nothing there: the Escape menu would unpause the stage under it.
+- The bay is on the cemetery's layer (`scene_layer`, `CEMETERY_LAYER`), under
+  the pixels and the CRT, its words over the pixels as the HUD's are; the
+  HUD is hidden while it stands.
 - Everything is on sale at once; price is the balance. Lives cost 15000, each
   one 5000 more, up to 9; the launcher's steps 10000, 15000, 20000.
 - `--shop` opens it at once over the stage, as if a round were won;
