@@ -5,7 +5,7 @@
 #     CHEATS: LIVES  WALLS  GUN X2
 #     CLASSIC DRIVE  CURSOR FIRE
 #     004500
-#     [jeep] 3   [prisoner] 3
+#     [jeep] ×3   [prisoner] ×3
 #
 #   * the score as GameMode._draw_score writes it, the number without its
 #     "1P", in the font's white (the sheet calls it black: white glyphs, dark
@@ -29,7 +29,9 @@
 #     faded: a faded white over stage 1's sand all but went. A life or a
 #     prisoner gained flashes its count and hops it and its icon as points
 #     do the score; one lost does not, the jeep's blast or the helicopter
-#     taking him being what is watched then;
+#     taking him being what is watched then. Each count has a × before it
+#     (_times), so that it reads as so many of the icon, as a count does in
+#     a game's HUD, and not as one more number beside the score;
 #   * not the weapon, which had an icon of its own, its round, until it was
 #     taken off: an upgrade is said by the "POWER UP" over the vehicle
 #     (Level3DPreview._crew_pop);
@@ -84,6 +86,7 @@ enum { WHITE, GRAY }
 # The glyphs' shadow, under the infinity: white on the font's dark, since
 # stage 1's sand is the font's orange, near enough.
 const SHADOW := Color(0.2, 0.2, 0.2)
+const TIMES_GRAY := Color(0.62, 0.62, 0.62)   # the × before a count of none (_times)
 const OUTLINE := 3.0                    # the icons' white ring, frame px at 100%
 const OUTLINE_LINE := 1.0               # the black line outside it
 const DIM := 0.45                       # a dimmed icon's alpha
@@ -306,6 +309,7 @@ func _line(x: float, top: float, g: float, row: float, which := ALL) -> float:
 		var dim := 1.0 if lives != 0 else DIM
 		var hop := _hop(_lives_time, g)
 		x = _icon(icons.get(lives_icon, icons.get("lives")), LIFE_SPRITE, x, top - hop, row, dim) + g * 0.25
+		x = _times(x, y - hop, g, WHITE if lives != 0 else GRAY, _flash(_lives_time))
 		x = _infinity(x, y, g) if lives < 0 \
 				else _text(str(lives), x, y - hop, g, WHITE if lives > 0 else GRAY, 1.0, _flash(_lives_time))
 	if show.pows:
@@ -314,6 +318,7 @@ func _line(x: float, top: float, g: float, row: float, which := ALL) -> float:
 		var dim := 1.0 if pows > 0 else DIM
 		var hop := _hop(_pows_time, g)
 		x = _icon(icons.get("pow"), POW_SPRITE, x, top - hop, row, dim) + g * 0.25
+		x = _times(x, y - hop, g, WHITE if pows > 0 else GRAY, _flash(_pows_time))
 		x = _text(str(pows), x, y - hop, g, WHITE if pows > 0 else GRAY, 1.0, _flash(_pows_time))
 	if show.get("device", false) and device != "":
 		x = _gap(x, g, groups)
@@ -411,6 +416,29 @@ func _icon(icon: Texture2D, sprite: String, x: float, top: float, row: float, al
 	if alpha > 0.0:
 		_rings[0 if alpha >= 1.0 else 1].append([s.tex, Rect2(x, top + (row - h) * 0.5, sw, h), s.region])
 	return x + sw + ring
+
+
+# The "×" before a count -- the lives, the prisoners -- which says it is that
+# many of the icon before it, not another number by it. The fonts have no ×,
+# and their X is a letter, as tall as the digits, so it is drawn, a little
+# smaller than they are and in the middle of their height, with their shadow
+# under it, as the infinity is: in font pixels, a 5x5 cross of them, for the
+# pixel font; for the modern one, two strokes as thick. Returns where it ends.
+func _times(x: float, y: float, g: float, colour: int, tint: Color) -> float:
+	var px := g / 8.0
+	if _measuring:
+		return x + px * 6.0
+	var ink := (Color.WHITE if colour == WHITE else TIMES_GRAY) * tint
+	for pass_colour in [SHADOW, ink]:
+		var at := Vector2(x, y + px) + (Vector2(px, px) if pass_colour == SHADOW else Vector2.ZERO)
+		if Level3DFont.style == Level3DFont.Style.MODERN:
+			draw_line(at + Vector2(px, px) * 0.5, at + Vector2(px, px) * 4.5, pass_colour, px, true)
+			draw_line(at + Vector2(px * 4.5, px * 0.5), at + Vector2(px * 0.5, px * 4.5), pass_colour, px, true)
+		else:
+			for i in 5:
+				for cell in [Vector2(i, i), Vector2(4 - i, i)]:
+					draw_rect(Rect2(at + cell * px, Vector2(px, px)), pass_colour)
+	return x + px * 6.0
 
 
 # The infinity the font does not have: two rings in the glyphs' white with
