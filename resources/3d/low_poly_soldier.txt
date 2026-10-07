@@ -32,6 +32,9 @@ Changed from the original glb:
   (the hands on the cyclic and the collective) added for the rescue
   helicopter's prisoners, crewman and pilot (soldier_sit.py), each standing
   on its seat's point rather than on the ground;
+- Talk (standing easy, the right hand making his points, palm up) and
+  Listen (the arms hanging, nodding) added for the shop's pilot and jeep's
+  man going over the supply by turns (soldier_talk.py);
 - a contour shell (a Solidify in a Soldier_Contour material) on every mesh,
   and the glb, low_poly_soldier.glb, exported with those clips and Walk
   (soldier_export.py).

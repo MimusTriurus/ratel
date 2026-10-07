@@ -92,8 +92,9 @@
 #         -- --shot out.png <position 0-1 or x,z> <zoom> <top|tilt> [<seconds> <x,z> ...] \
 #            [--destroy <name>,...] [--fire <x,z>] [--rocket <x,z>[@<seconds>]] [--immortal]
 #            [--at <x,z>] [--free] [--hold <keys>@<from>-<to>[,...]] [--weapon <0-3>]
-#            [--intro] [--pows <n>] [--score <n>] [--summary <seconds>] [--strip <frames>,<seconds>[,<px>]] [--die <seconds>]
+#            [--intro] [--pows <n>] [--score <n>] [--summary <seconds>] [--strip <frames>,<seconds>[,<px>[,<x>,<y>]]] [--die <seconds>]
 #            [--game-over <n>[,<n>][:<total>]] [--round <n>] [--upgrades <id>,...] [--shop]
+#            [--shop-ready <seconds>]
 #
 # The bunkers' guns, the enemy soldiers, the two boats on the river, the two
 # brown tanks and the boss's four heavy tanks at the top of the stage fight back
@@ -126,13 +127,16 @@
 # of the shop's upgrades (Level3DShopCatalog's ids: twin, armor, zip, nitro,
 # radar, mines, loopholes, airstrike), their parts on the jeep. --shop opens
 # the shop between rounds at once (Level3DShop), as if a round were won.
+# --shop-ready puts every player's cursor on READY in it and presses it that
+# many seconds in.
 # --log-rounds prints what each player earned in a round and what the shop
 # left him with, for setting the prices.
 # --summary shows the mission's summary that many seconds in, as if the boss
 # were beaten. --strip takes that many
 # frames instead of one, that many seconds apart from the first, and lays the
-# middle <px> square of each (512 unless given) out four to a row in the one
-# file: a blast from start to finish, which one frame never catches. --die
+# middle <px> square of each (512 unless given; or round <x>,<y>, fractions
+# of the frame) out four to a row in the one file: a blast from start to
+# finish, which one frame never catches. --die
 # blows the BTR up that many seconds in, for its wreck (level3d_wreck.gd).
 # --game-over opens the game over screen (Level3DGameOverScreen) at once,
 # the cemetery and its choice: each player's rescued, and after a colon the
@@ -334,7 +338,7 @@ var _hold_fire := false # --fire: the gun's trigger held throughout
 # How much longer a right click waits to be a rocket (Crew.rocket_wanted); see
 # _physics_process.
 const ROCKET_WAIT := 0.8
-var _strip := []        # --strip: frames, seconds apart, px square
+var _strip := []        # --strip: frames, seconds apart, px square, its middle
 var _kinds := {}        # body RID -> ground kind, see _add_collision
 var _trunks := 0
 var _markers: Array[MeshInstance3D] = []
@@ -4398,6 +4402,14 @@ func _screenshot_mode() -> void:
 	if shop >= 0:
 		_open_shop(true)
 		args.remove_at(shop)
+	var shop_ready := args.find("--shop-ready")
+	if shop_ready >= 0:
+		# The cursor on READY first, as a player's is when he presses it.
+		get_tree().create_timer(0.1).timeout.connect(func():
+			for player in crews.size():
+				_shop._move(player, Vector2i(0, Level3DShop.READY_ROW)))
+		get_tree().create_timer(float(args[shop_ready + 1])).timeout.connect(_shop._leave)
+		args = args.slice(0, shop_ready) + args.slice(shop_ready + 2)
 	var game_over := args.find("--game-over")
 	if game_over >= 0:
 		_test_game_over(args[game_over + 1])
@@ -4418,7 +4430,8 @@ func _screenshot_mode() -> void:
 	var strip := args.find("--strip")
 	if strip >= 0:
 		var spec := args[strip + 1].split(",")
-		_strip = [int(spec[0]), float(spec[1]), int(spec[2]) if spec.size() > 2 else 512]
+		_strip = [int(spec[0]), float(spec[1]), int(spec[2]) if spec.size() > 2 else 512,
+				Vector2(float(spec[3]), float(spec[4])) if spec.size() > 4 else Vector2(0.5, 0.5)]
 		args = args.slice(0, strip) + args.slice(strip + 2)
 	if args.size() >= 2 and args[0] == "--obstacle-map":
 		# Mapped once the ruins have settled, when anything was blown up.
@@ -4486,6 +4499,8 @@ func _strip_sheet(first: Image) -> Image:
 			await RenderingServer.frame_post_draw
 			frame = get_viewport().get_texture().get_image()
 		frame.convert(Image.FORMAT_RGBA8)
-		var middle := Rect2i((frame.get_width() - side) / 2, (frame.get_height() - side) / 2, side, side)
+		var at: Vector2 = _strip[3]
+		var middle := Rect2i(clampi(int(frame.get_width() * at.x) - side / 2, 0, maxi(frame.get_width() - side, 0)),
+				clampi(int(frame.get_height() * at.y) - side / 2, 0, maxi(frame.get_height() - side, 0)), side, side)
 		sheet.blit_rect(frame, middle, Vector2i(k % columns * side, k / columns * side))
 	return sheet

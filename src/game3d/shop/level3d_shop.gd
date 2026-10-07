@@ -467,7 +467,7 @@ func _dress(player: int) -> void:
 	var id: String = it.get("id", "ready")
 	var show: Dictionary = SHOWS.get(id, {})
 	_bay.dress(player, _run.kits[player], id, show.get("spot", Vector3(0.5, 0.5, 0.5)))
-	_bay.turn(player, show.get("view", VIEW))
+	_bay.turn(player, _bay.ready_view(player) if id == "ready" else show.get("view", VIEW))
 	if _shown[player] != id:
 		_shown[player] = id
 		_since[player] = _time
@@ -1049,6 +1049,32 @@ class Bay:
 			["Seat_BenchR2", "AmmoBox", 2, -0.04],
 			["Seat_BenchR3", "AmmoBox", 1, 0.1]]
 	const STACK_YAW := 0.12          # each box on another turned that much more
+	# Between the helicopter and the jeep, its pilot, in his orange, and one
+	# of the jeep's men, in the prisoners' green, going over what it brought:
+	# each by turns talks, a hand making his points (low_poly_soldier.glb's
+	# Talk), while the other listens and nods (Listen). As large as the
+	# pilot in his seat; each at [along the arrow from the circle's middle
+	# to the jeep, across it], shop metres, the two face to face and TALK_TURN round to the
+	# camera. With one player only: with two the helicopter is behind the
+	# jeep, and they would stand under it.
+	const TALKER_AT := Vector2(1.2, 0.35)
+	const PILOT_AT := Vector2(0.8, 0.55)
+	const TALK_TURN := deg_to_rad(35.0)
+	const TALK_BLEND := 0.4
+	# READY: the jeep's man runs to it (Run_Unarmed), BOARD_SPEED m a second
+	# at his own size, to the cabin's rear door on its left (ready_view has
+	# that side away from the camera), DOOR of the way from its tail to its
+	# nose, where the hull and the gun over it hide him, and is gone into it
+	# there -- before it pulls away, DRIVE_DELAY after; the
+	# pilot turns to it (PILOT_TURN, a rate) and waves it off (Wave).
+	# BOARD_CLEAR off the jeep's box, his way round it.
+	const BOARD_SPEED := 3.2
+	const BOARD_CLEAR := 0.08
+	const DOOR := 0.2
+	const DOOR_IN := 0.06            # and in from the box's side, against the hull
+	const BOARD_TURN := 14.0
+	const PILOT_TURN := 5.0
+	const PILOT_WAVE_AFTER := 0.25
 	# The Littlebird as Level3DBtr.paint_model takes a vehicle: its olive
 	# body's hues, and the turn of BLUE that puts it on the blue jeep's.
 	const LITTLEBIRD := {"path": "res://resources/3d/jackal_littlebird_mh6.glb", "blue": Vector3(60.0, 100.0, 128.0)}
@@ -1071,6 +1097,76 @@ class Bay:
 	var _ghosts: Array = []         # per player, the meshes on trial
 	var _spots: Array = []          # per player, the line's end on his jeep, its frame; null for none
 	var _driving := -1.0             # seconds since drive_off, -1 before
+	var _boarder: Node3D             # the jeep's man by the helicopter, or null
+	var _ready_views: Array[float] = []   # per player, READY's view (ready_view), NAN for none
+	var _waver: Node3D               # its pilot beside him
+	var _figure_size := 1.0
+	var _board_way: Array[Vector3] = []   # his way to the door, in the jeep's space
+	var _bodies: Array = []           # per jeep, its Body from drive_off
+
+	# A jeep pulling away and its hull on its springs, from drive_off: the
+	# shop moves it (Level3DBtr.carry) and tilts the hull over its wheels,
+	# which stay on the ground -- the jeep's own springs (_update_pitch) go
+	# with its driving, which the shop does not do.
+	#   * away from a standstill at Level3DShop.DRIVE_ACCEL, which comes up
+	#     over DRIVE_RAMP rather than at once: started at full, the nose's
+	#     squat came at once too, a jump in the frame;
+	#   * the squat, nose up DRIVE_SQUAT, with the pull, which eases off as it
+	#     gets going (SQUAT_FADE), the hull following it on PITCH_SPRING;
+	#   * its man climbing in (board): the hull kicked down on his side and
+	#     settling there, BOARD_SAG lower, on ROLL_SPRING, and down a little
+	#     all over, on HEAVE_SPRING.
+	# A spring: [its frequency, Hz; its damping ratio].
+	class Body:
+		const DRIVE_RAMP := 0.35
+		const SQUAT_FADE := 0.8
+		const PITCH_SPRING := Vector2(1.8, 0.45)
+		const ROLL_SPRING := Vector2(1.6, 0.22)
+		const HEAVE_SPRING := Vector2(2.2, 0.3)
+		const BOARD_KICK := 0.3           # rad/s, the roll's, on his side
+		const BOARD_SAG := 0.006          # rad, after
+		const HEAVE_KICK := 0.15          # m/s, his size's metres, down
+		var speed := 0.0
+		var gone := 0.0
+		var pitch := Vector2.ZERO   # angle, rate
+		var roll := Vector2.ZERO
+		var heave := Vector2.ZERO
+		var sag := 0.0
+
+		# `t` seconds since it set off, negative before; a frame of `delta`.
+		func drive(t: float, delta: float) -> void:
+			var pull := smoothstep(0.0, DRIVE_RAMP, t) if t > 0.0 else 0.0
+			speed += Level3DShop.DRIVE_ACCEL * pull * delta
+			gone += speed * delta
+			var squat := Level3DShop.DRIVE_SQUAT * pull * clampf(1.0 - t / SQUAT_FADE, 0.0, 1.0)
+			pitch = _spring(pitch, squat, PITCH_SPRING, delta)
+			roll = _spring(roll, sag, ROLL_SPRING, delta)
+			heave = _spring(heave, 0.0, HEAVE_SPRING, delta)
+
+		# A man in at the side `way` (+1 the jeep's right, its +Z), of `size`.
+		func board(way: float, size: float) -> void:
+			roll.y += BOARD_KICK * way
+			sag = BOARD_SAG * way
+			heave.y -= HEAVE_KICK * size
+
+		static func _spring(state: Vector2, target: float, spring: Vector2, delta: float) -> Vector2:
+			var omega := TAU * spring.x
+			var rate := state.y + (-omega * omega * (state.x - target) - 2.0 * spring.y * omega * state.y) * delta
+			return Vector2(state.x + rate * delta, rate)
+
+		# On `jeep`'s hull, after its carry has posed it: nose up `pitch`,
+		# its right side down `roll`, about the hull's own origin, and down.
+		func pose(jeep: Level3DBtr) -> void:
+			var hull := jeep.find_child("*_Hull", true, false) as Node3D
+			if hull == null or not hull.get_parent() is Node3D:
+				return
+			var to_parent := (hull.get_parent() as Node3D).global_transform.basis.inverse()
+			var axes := jeep.global_transform.basis
+			var ahead := (to_parent * axes.x).normalized()
+			var across := (to_parent * axes.z).normalized()
+			var tilt := Basis(ahead, roll.x) * Basis(across, pitch.x)
+			hull.transform = Transform3D(tilt * hull.transform.basis,
+					hull.transform.origin + to_parent * (axes.y.normalized() * heave.x))
 	var _helis: Array = []          # per player, the helicopter by his jeep, in its paint
 	var _camera: Camera3D
 	var _time := 0.0
@@ -1176,6 +1272,8 @@ class Bay:
 				if i == 0:
 					_lay(ground.material_override, pad, players > 1)
 					_wear(ground.material_override, table.position, heli.position)
+			else:
+				_ready_views.append(NAN)
 			_helis.append(heli)
 			var jeep := Level3DBtr.new()
 			jeep.player = i
@@ -1196,8 +1294,12 @@ class Bay:
 	# Every jeep turned forward and driving off its spot (Level3DShop.DRIVE_*).
 	func drive_off() -> void:
 		_driving = 0.0
+		_bodies.clear()
+		for k in _jeeps.size():
+			_bodies.append(Body.new())
+		_board()
 		for i in _want.size():
-			_want[i] = Level3DShop.DRIVE_VIEW
+			_want[i] = ready_view(i) if _has_lane(i) else Level3DShop.DRIVE_VIEW
 
 	func clear() -> void:
 		_driving = -1.0
@@ -1210,6 +1312,11 @@ class Bay:
 		_ghosts.clear()
 		_spots.clear()
 		_helis.clear()
+		_boarder = null
+		_waver = null
+		_ready_views.clear()
+		_bodies.clear()
+		_board_way.clear()
 		_camera = null
 		zoom = 1.0
 		staged = false
@@ -1265,6 +1372,7 @@ class Bay:
 		var off := CIRCLE_AT if zoom != 1.0 else DUO_CIRCLE_AT
 		var target := at + Vector3(off.x * side, off.y, off.z)
 		var way := Vector3(at.x - target.x, 0.0, at.z - target.z).normalized()
+		_ready_views.append(_lane_view(way, at, side))
 		pad.rotation.y = atan2(-way.z, way.x)
 		pad.scale = Vector3.ONE * PAD_SCALE
 		var circle := _box_of(pad, "Helipad_Disc")
@@ -1287,6 +1395,8 @@ class Bay:
 		if pilot != null:
 			_soften(pilot)
 		_cargo(root, heli)
+		if zoom != 1.0:
+			_talk(root, middle, way, side, heli.scale.x)
 		return heli
 
 	# The concrete's slabs, SLAB m, laid along `pad`, the first landing
@@ -1410,6 +1520,163 @@ class Bay:
 				copy.transform = at * Transform3D(Basis(Vector3.UP, float(c[3]) + k * STACK_YAW)
 						.scaled(Vector3.ONE * CARGO_SCALE), Vector3(0.0, k * high, CARGO_OUT))
 		props.free()
+
+	# The two talking (TALKER_AT, PILOT_AT) off `middle`, `way` the arrow's
+	# way to the jeep, `side` -1 mirroring them, `size` theirs; none with a
+	# model that cannot talk (--old-soldiers).
+	func _talk(root: Node3D, middle: Vector3, way: Vector3, side: float, size: float) -> void:
+		var across := Vector3(-way.z, 0.0, way.x) * side
+		var places: Array[Vector3] = []
+		for at in [TALKER_AT, PILOT_AT]:
+			places.append(middle + way * at.x + across * at.y)
+		var men: Array[Node3D] = []
+		for i in 2:
+			var man := _talker(Color() if i == 0 else Level3DRescueCrew.SUIT,
+					Color() if i == 0 else Level3DRescueCrew.SUIT_DARK)
+			if man == null:
+				for m in men:
+					m.free()
+				return
+			men.append(man)
+		for i in 2:
+			var man := men[i]
+			root.add_child(man)
+			man.position = places[i]
+			man.scale = Vector3.ONE * size
+			# Facing the other (the figure faces +Z), turned to the camera.
+			var to := places[1 - i] - places[i]
+			man.rotation.y = atan2(to.x, to.z) + TALK_TURN * (1.0 if i == 0 else -1.0) * side
+			_soften(man)
+			var player := man.find_child("AnimationPlayer", true, false) as AnimationPlayer
+			# By turns: the one Talk, the other Listen, swapped at each end.
+			player.animation_finished.connect(func(clip: StringName):
+				if clip == &"Talk" or clip == &"Listen":
+					player.play("Listen" if clip == &"Talk" else "Talk", TALK_BLEND))
+			player.play("Talk" if i == 0 else "Listen")
+		_boarder = men[0]
+		_waver = men[1]
+		_figure_size = size
+
+	# READY, the jeep turning to go: its man off to it, the pilot to wave.
+	func _board() -> void:
+		if _boarder == null or _jeeps.is_empty() or _camera == null:
+			return
+		var jeep := _jeeps[0]
+		var box := _local_box(jeep)
+		if box.size == Vector3.ZERO:
+			return
+		# To the cabin's rear door, on its left -- the jeep's +X its nose, +Z
+		# its right -- DOOR of the way from its tail to its nose, round its
+		# nose or its tail, whichever is nearer him, if he is not on that
+		# side yet; and in.
+		var here := jeep.to_local(_boarder.global_position)
+		var left := box.position.z - BOARD_CLEAR
+		var door := Vector3(lerpf(box.position.x, box.end.x, DOOR), 0.0, box.position.z + DOOR_IN)
+		_board_way.clear()
+		if here.z > left:
+			var end := box.end.x + BOARD_CLEAR if here.x > door.x else box.position.x - BOARD_CLEAR
+			var near := box.end.z + BOARD_CLEAR if here.z > box.get_center().z else left
+			if here.z > box.position.z and here.z < box.end.z:
+				_board_way.append(Vector3(end, 0.0, here.z))
+			else:
+				_board_way.append(Vector3(end, 0.0, near))
+			_board_way.append(Vector3(end, 0.0, left))
+		_board_way.append(door)
+		var run := Level3DFriends.chosen().run as String
+		var player := _boarder.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		if run != "" and player.has_animation(run):
+			player.get_animation(run).loop_mode = Animation.LOOP_LINEAR
+			player.play(run, TALK_BLEND * 0.5)
+			var stride: float = Level3DFriends.chosen().run_stride
+			if stride > 0.0:
+				player.speed_scale = BOARD_SPEED * player.get_animation(run).length / stride
+		var waving := _waver.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		var wave := Level3DFriends.chosen().wave as String
+		if waving.has_animation(wave):
+			waving.get_animation(wave).loop_mode = Animation.LOOP_LINEAR
+			get_tree().create_timer(PILOT_WAVE_AFTER).timeout.connect(func():
+				if is_instance_valid(waving):
+					waving.play(wave, TALK_BLEND))
+
+	# A tick of it: the man on along his way, gone at its end; the pilot
+	# turned to the jeep as it goes.
+	func _step_board(delta: float) -> void:
+		if _boarder == null or _jeeps.is_empty():
+			return
+		var jeep := _jeeps[0]
+		if _boarder.visible and not _board_way.is_empty():
+			var to := jeep.to_global(_board_way[0])
+			var d := Vector2(to.x - _boarder.position.x, to.z - _boarder.position.z)
+			var step := BOARD_SPEED * _figure_size * delta
+			if d.length() <= step:
+				_boarder.position = Vector3(to.x, _boarder.position.y, to.z)
+				_board_way.pop_front()
+				if _board_way.is_empty():
+					_boarder.visible = false
+					if not _bodies.is_empty():
+						var at := jeep.to_local(_boarder.global_position)
+						(_bodies[0] as Body).board(signf(at.z - _local_box(jeep).get_center().z), _figure_size)
+			else:
+				var along := d.normalized() * step
+				_boarder.position += Vector3(along.x, 0.0, along.y)
+				_boarder.rotation.y = lerp_angle(_boarder.rotation.y, atan2(d.x, d.y),
+						1.0 - exp(-BOARD_TURN * delta))
+		if _waver != null:
+			var at := jeep.global_position - _waver.position
+			_waver.rotation.y = lerp_angle(_waver.rotation.y, atan2(at.x, at.z), 1.0 - exp(-PILOT_TURN * delta))
+
+	# `node`'s meshes' box in its own space.
+	static func _local_box(node: Node3D) -> AABB:
+		var box := AABB()
+		var first := true
+		var to_node := node.global_transform.affine_inverse()
+		for found in node.find_children("*", "MeshInstance3D", true, false):
+			var mesh := found as MeshInstance3D
+			if mesh.mesh == null or not mesh.is_visible_in_tree():
+				continue
+			var b := to_node * mesh.global_transform * mesh.get_aabb()
+			box = b if first else box.merge(b)
+			first = false
+		return box
+
+	# A standing figure in `colour` and `dark` (Color() for the model's
+	# green), or null if it has no Talk.
+	static func _talker(colour: Color, dark: Color) -> Node3D:
+		var figure: Dictionary = Level3DFriends.chosen()
+		var scene: PackedScene = load(figure.path)
+		if scene == null:
+			return null
+		var root := scene.instantiate() as Node3D
+		var player := root.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		if player == null or not player.has_animation("Talk") or not player.has_animation("Listen"):
+			root.free()
+			return null
+		_line(root)
+		Level3DFriends.dress(root, figure, colour, dark)
+		return root
+
+	# A figure's line: not its glb's shell, which the bay draws for the
+	# models (BAKED) -- the soldier's is a vertex per face, so it parts at
+	# every edge, and at this size shows as broken grey threads -- but the
+	# engine's hull (Level3DHull), grown along smoothed normals, LINE_PIXELS
+	# wide, as thick as the jeep's and the helicopter's look here, and drawn
+	# behind him (FIGURE_HULL), so that it shows past his silhouette only.
+	const LINE_PIXELS := 3.5
+	const FIGURE_HULL := preload("res://src/game3d/shaders/level3d_hull_figure.gdshader")
+	static var _line_material: ShaderMaterial
+
+	static func _line(figure: Node3D) -> void:
+		if _line_material == null:
+			_line_material = ShaderMaterial.new()
+			_line_material.resource_name = Level3DHull.HULL_NAME
+			_line_material.shader = FIGURE_HULL
+			_line_material.set_shader_parameter("pixels", LINE_PIXELS)
+		for node in figure.find_children("*", "MeshInstance3D", true, false):
+			var instance := node as MeshInstance3D
+			Level3DHull.apply(instance)
+			for surface in instance.mesh.get_surface_count():
+				if Level3DHull.is_hull(instance.mesh.surface_get_material(surface)):
+					instance.set_surface_override_material(surface, _line_material)
 
 	static func _box_of(pad: Node3D, name: String) -> AABB:
 		var mesh := pad.find_child(name, true, false) as MeshInstance3D
@@ -1559,6 +1826,27 @@ class Bay:
 			_soften(_jeeps[i])
 		_paint_heli(i, id)
 
+	# With one player, READY's view: the jeep square in its landing spot's
+	# lane, which runs across the arrow and up through the STOP written
+	# along it, its nose towards the camera; as it drives off, then
+	# (drive_off), its man to its left rear door (_board). With two, VIEW.
+	func ready_view(i: int) -> float:
+		return _ready_views[i] if _has_lane(i) else Level3DShop.VIEW
+
+	func _has_lane(i: int) -> bool:
+		return zoom != 1.0 and i < _ready_views.size() and not is_nan(_ready_views[i])
+
+	# The view (as `turn` takes it) putting the jeep at `at`, of `side`,
+	# nose first along the lane across `way`, the end of it nearer the camera.
+	func _lane_view(way: Vector3, at: Vector3, side: float) -> float:
+		var lane := Vector3(-way.z, 0.0, way.x)
+		var eye := _camera.global_position - at if _camera != null else Vector3.BACK
+		if lane.dot(Vector3(eye.x, 0.0, eye.z)) < 0.0:
+			lane = -lane
+		# The table's turn is -90 degrees + the view, the first's; its +X the nose.
+		var turned := atan2(-lane.z, lane.x)
+		return wrapf(rad_to_deg(turned + PI / 2.0) * side, -180.0, 180.0)
+
 	# Player `i`'s jeep to turn `degrees` off facing the camera, towards the
 	# frame's middle.
 	func turn(i: int, degrees: float) -> void:
@@ -1578,13 +1866,16 @@ class Bay:
 			_driving += delta
 			rate = Level3DShop.DRIVE_TURN_RATE
 			# Away from a standstill once its engine has started, each as
-			# its own does (Level3DShop.ENGINE_*), nose up while it pulls.
+			# its own does (Level3DShop.ENGINE_*), its hull on its springs.
 			for k in _jeeps.size():
 				var jeep := _jeeps[k]
-				var t := maxf(_driving - Level3DShop.DRIVE_DELAY - Level3DShop.ENGINE_STAGGER * k, 0.0)
-				var gone := 0.5 * Level3DShop.DRIVE_ACCEL * t * t
-				var squat := Level3DShop.DRIVE_SQUAT * clampf(1.0 - t / 0.6, 0.0, 1.0) if t > 0.0 else 0.0
-				jeep.carry(Vector3(gone, jeep.position.y, 0.0), 0.0, squat)
+				var t := _driving - Level3DShop.DRIVE_DELAY - Level3DShop.ENGINE_STAGGER * k
+				var body: Body = _bodies[k]
+				body.drive(t, delta)
+				jeep.carry(Vector3(body.gone, jeep.position.y, 0.0), 0.0, 0.0)
+			_step_board(delta)
+			for k in _jeeps.size():
+				(_bodies[k] as Body).pose(_jeeps[k])
 		for i in _tables.size():
 			_yaw[i] = lerpf(_yaw[i], _want[i], 1.0 - exp(-rate * delta))
 			# Nose to the camera is the jeep's +X turned to +Z; the first's
