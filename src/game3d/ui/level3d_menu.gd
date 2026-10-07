@@ -114,6 +114,7 @@ var from_editor := false
 # from the level editor, which has no title.
 var main_menu: Callable
 var _paused_before := false   # the tree's pause when open() was called
+var _pointer_before := Vector2.ZERO   # and the pointer, the viewport's
 # Where the settings' Back goes when they were opened over the title
 # (open_settings) rather than from the first page.
 var _back: Callable
@@ -219,7 +220,11 @@ func _ready() -> void:
 	centre.add_child(_main_page)
 	_settings_page = _make_settings_page()
 	centre.add_child(_settings_page)
+	# The hidden pointer carried with the keys, as the title's is: else the
+	# mouse, moved, threw the reticle from the focused control to wherever
+	# the pointer had been left.
 	_reticle = Level3DReticle.new()
+	_reticle.carries_mouse = true
 	add_child(_reticle)
 	get_viewport().gui_focus_changed.connect(_focus_changed)
 	for node in find_children("*", "Control", true, false):
@@ -342,6 +347,7 @@ func _park_reticle() -> void:
 func open() -> void:
 	visible = true
 	_paused_before = get_tree().paused
+	_pointer_before = get_viewport().get_mouse_position()
 	get_tree().paused = true
 	Level3DAudio.play("pause")
 	_show_main()
@@ -371,6 +377,10 @@ func close() -> void:
 	Level3DAudio.end_music_audition()
 	get_tree().paused = _paused_before
 	_paused_before = false
+	# Only the keys used: the pointer the reticle carried back to where it was,
+	# so that the mouse's aim on the stage is not left on a button.
+	if not _reticle.by_mouse and get_window().has_focus():
+		get_viewport().warp_mouse(_pointer_before)
 	Level3DAudio.play("pause")
 	if resumed.is_valid():
 		resumed.call()

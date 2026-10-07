@@ -199,6 +199,13 @@ func _passives() -> void:
 	var settings: Level3DSettings = scene.get("settings")
 	settings.bullet_hack = true
 	settings.infinite_lives = true
+	# The game's driving, firing and reach, whatever the saved style: a long
+	# reach keeps the rounds in flight, the gun's limit of them reached, and
+	# the twin gun's count is no longer twice the single's.
+	settings.driving = Level3DSettings.Driving.CLASSIC
+	settings.firing = Level3DSettings.Firing.CLASSIC
+	settings.reach = Level3DSettings.Reach.CLASSIC
+	scene.call("_apply_settings")
 	for i in 30:
 		await process_frame
 	var chinook = scene.get("chinook")

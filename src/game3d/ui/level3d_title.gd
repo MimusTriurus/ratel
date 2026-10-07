@@ -224,7 +224,7 @@ func game_ready() -> void:
 
 
 func _entries() -> Array[String]:
-	return ["1 player", "2 players", "mode: " + MODE_NAMES[settings.preset()],
+	return ["1 player", "2 players", "style: " + MODE_NAMES[settings.preset()],
 			"difficulty: " + ("hard" if settings.hard else "normal"), "settings", "quit"]
 
 
@@ -243,6 +243,9 @@ func _process(delta: float) -> void:
 	if not visible:
 		return
 	_reticle.shown = pointer_hidden()
+	# Under the settings, out of the tree's processing too: theirs carries the
+	# hidden pointer as this one does, and the two would pull it each its way.
+	_reticle.visible = pointer_hidden()
 	# Until the HUD's crosshair, which owns the mouse mode, is made under the
 	# title (Level3DPreview._ready), nobody else hides the pointer; and the
 	# settings over it hide it themselves.

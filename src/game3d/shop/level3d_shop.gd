@@ -477,6 +477,9 @@ func _process(delta: float) -> void:
 	if _state == State.CLOSED:
 		return
 	_time += delta
+	# Out of the tree's processing under the menu, not only unseen: both carry
+	# the hidden pointer, and the two would pull it each its own way.
+	_reticle.visible = not _menu_up()
 	_reticle.shown = _state == State.OPEN and _veil.color.a < 0.5 and not _menu_up()
 	if _state == State.OPEN and not _menu_up():
 		for i in _players:
