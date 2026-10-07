@@ -507,6 +507,9 @@ func _ready() -> void:
 		move_child(_menu, -1)
 		_title.game_ready()
 	else:
+		# The title is not up, but the Escape menu's Main menu opens it, and a
+		# game picked there waits for this; without it --intro's never began.
+		_title.game_ready()
 		_round = _first_round()
 		Level3DMap.hard = settings.hard or _round > 1
 		for c in crews:
