@@ -68,6 +68,9 @@ extends Node3D
 
 const TROOPER_POW_PATH := "res://resources/3d/jackal_trooper_pow.glb"
 const PX := Level3DMap.PX
+# A prisoner let off at the rescue helicopter walks this many ticks, a px
+# each, out from the vehicle's door before he turns to it (deliver): 0.45 m.
+const DOOR_STEP := 30
 
 # As Level3DSoldiers.MODEL: scale to the first, sprite-made figure's metre;
 # `colour` the material the weapon carrier's sheets recolour and `dark` the
@@ -251,8 +254,11 @@ class Friend:
 	var colour_changing := false
 	var colour_index := 0
 	var brother: Friend
-	# Walking to the helicopter: the x he stops at, and what he tells it.
+	# Walking to the helicopter: the x he stops at, and what he tells it; the
+	# way out of the vehicle's door and the ticks left walking it (deliver).
 	var helicopter_x := 0.0
+	var out := Vector2.ZERO
+	var stepping := 0
 	var arrived: Callable
 	var root: Node3D
 	var player: AnimationPlayer
@@ -583,11 +589,19 @@ func _spawn(x: float, y: float, type: int, house_count: int = -1, helicopter_x :
 
 # FriendlySoldier.to_helicopter: one let off at x, y, walking straight across
 # to the helicopter's x, flashing if he is the last aboard; `arrived` is
-# called when he gets there.
-func deliver(x: float, y: float, helicopter_x: float, flashing: bool, arrived: Callable) -> void:
+# called when he gets there. Given `out`, the way out of the vehicle's door,
+# he first walks DOOR_STEP px that way, clear of it, and only then turns to
+# the helicopter (Level3DRescue's note).
+func deliver(x: float, y: float, helicopter_x: float, flashing: bool, arrived: Callable,
+		out := Vector2.ZERO) -> void:
 	var f := _spawn(x, y, FriendlySoldierType.WALKING_TO_HELICOPTER, -1, helicopter_x)
 	f.colour_changing = flashing
 	f.arrived = arrived
+	if out != Vector2.ZERO:
+		f.out = out
+		f.stepping = DOOR_STEP
+		f.direction_x = out.x
+		f.direction_y = out.y
 
 
 func _own_materials(f: Friend) -> void:
@@ -678,6 +692,17 @@ func _update(f: Friend) -> void:
 		FriendlySoldier.STATE_WANDERING:
 			_wander(f)
 		FriendlySoldier.STATE_WALKING_TO_HELICOPTER:
+			# Out of the door first (deliver), then turned to the helicopter.
+			if f.stepping > 0:
+				f.stepping -= 1
+				f.x += f.out.x * FriendlySoldier.WALK_SPEED
+				f.y += f.out.y * FriendlySoldier.WALK_SPEED
+				_legs(f, FriendlySoldier.WALK_SPEED)
+				if f.stepping == 0:
+					f.direction_x = -1.0 if f.x > f.helicopter_x else 1.0
+					f.direction_y = 0.0
+					f.vx = f.direction_x * FriendlySoldier.WALK_SPEED
+				return
 			# FriendlySoldier._walk_to_helicopter.
 			f.x += f.vx
 			_legs(f, absf(f.vx))

@@ -382,6 +382,7 @@ var _turret_pivot: Node3D
 var _bore: Node3D
 var _hull_rest: Transform3D
 var _turret_rest: Transform3D
+var _door_along := 0.0         # level metres ahead of the origin: the cab's doors (doors)
 var _wheels: Array[Node3D] = []
 var _wheel_rest: Array[Transform3D] = []
 var _front_wheels: Array[bool] = []
@@ -514,6 +515,7 @@ func _ready() -> void:
 			fit.visible = false
 	_hull_rest = _hull.transform
 	_turret_rest = _turret_pivot.transform
+	_door_along = _cab_along()
 	for side in ["L", "R"]:
 		for axle in vehicle.axles:
 			var wheel := _model.find_child("%sWheel_%s%d" % [prefix, side, axle + 1], true, false) as Node3D
@@ -937,6 +939,57 @@ func push_out(p: Vector3, margin := 0.0, sideways := false) -> Vector3:
 		if (way as Vector3).length() < best.length():
 			best = way
 	return best
+
+
+# Where a prisoner let off at the rescue helicopter gets out (Level3DRescue):
+# beside the cab's doors, one either side, `margin` level metres clear of the
+# body (push_out's), on the ground -- [right, left] -- and not out of its
+# middle, through the hull, as the game's y + 28 px has him. The models have
+# no doors of their own but the BTR's side doors: the jeep's and the armoured
+# pickups' cab is where their glass is, the doors under it (_door_along).
+func doors(margin := 0.0) -> Array[Vector3]:
+	var ahead := forward()
+	var side := Vector3(sin(heading), 0.0, cos(heading))
+	var half: float = vehicle.body[2] * model_scale + margin
+	var at := global_position + ahead * _door_along
+	at.y = 0.0
+	return [at + side * half, at - side * half]
+
+
+# The middle of the cab along the heading, level metres from the origin: of
+# the BTR's side doors, or of the glass on the hull and its Glass part (not
+# the turret's sight's), in the model at rest.
+func _cab_along() -> float:
+	var prefix: String = vehicle.prefix
+	var door := _model.find_child(prefix + "SideDoor1", true, false) as Node3D
+	if door != null:
+		return _in_vehicle(door).origin.x
+	var box := AABB()
+	var first := true
+	for part in [_hull, _model.find_child(prefix + "Glass", true, false)]:
+		var mesh := part as MeshInstance3D
+		if mesh == null:
+			continue
+		var t := _in_vehicle(mesh)
+		for surface in mesh.mesh.get_surface_count():
+			var paint := mesh.mesh.surface_get_material(surface)
+			if paint == null or String(paint.resource_name) != prefix + "Glass":
+				continue
+			for v in mesh.mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]:
+				var p := t * (v as Vector3)
+				box = AABB(p, Vector3.ZERO) if first else box.expand(p)
+				first = false
+	return box.get_center().x if not first else 0.0
+
+
+# A part's transform in this node's space, its +X the way it drives.
+func _in_vehicle(node: Node3D) -> Transform3D:
+	var t := Transform3D.IDENTITY
+	var n: Node = node
+	while n != self and n is Node3D:
+		t = (n as Node3D).transform * t
+		n = n.get_parent()
+	return t
 
 
 # How far its front is ahead of its origin, level metres.

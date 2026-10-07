@@ -84,6 +84,14 @@
 #     sways a little while it hovers, and stirs on its skids as it lifts off
 #     and sets down. Drawn between its ticks (_process): at 100 ticks a
 #     second drawn at 60 frames it went 9 cm one frame and 18 the next.
+#   * Where a prisoner gets out. The original lets him off at the jeep's
+#     x, y + 28, on the sprite; in a model that is its middle, and he walked
+#     out of it through its side. He gets out beside the cab's door on the
+#     helicopter's side (_door, Level3DBtr.doors), takes a step or two away
+#     from it (Level3DFriends.deliver) and only then turns to walk across,
+#     so that with the jeep nose to the helicopter he does not walk through
+#     its bonnet. He gets there a little later or sooner for it, by how far
+#     the door is from the old spot.
 class_name Level3DRescue
 extends Node3D
 
@@ -96,6 +104,9 @@ const PICKUP_SOUND := "rescue_pickup"
 const UPGRADE_SOUND := "upgrade"
 const MODEL_SCALE: float = Level3DFriends.MODEL.scale
 const PX := Level3DMap.PX
+# A prisoner let off gets out beside the cab's door on the helicopter's side
+# (_door), this many level metres off the body: about his own half width.
+const DOOR_CLEAR := 0.15
 
 const ALTITUDE := 3.0
 const TOP := 2.0                # metres over its skids to over its rotor
@@ -145,7 +156,7 @@ var frame: Callable
 # `ground.call(x, z)` -> {"height", ...}.
 var ground: Callable
 # `players.call()`: the players still in the game, each as [level x, z,
-# Level3DFriends.Carrier].
+# Level3DFriends.Carrier, Level3DBtr] -- the vehicle for its doors.
 var players: Callable
 # `scored.call(points, carrier)`: to the player with that carrier.
 var scored: Callable
@@ -522,8 +533,9 @@ func _update_pick_up() -> void:
 					c.drop_off_delay -= 1
 				else:
 					c.drop_off_delay = FriendlyHelicopter.DROP_OFF_DELAY
-					friends.deliver(player.x, player.y + 28, x, c.pows == 1,
-							_friendly_soldier_picked_up.bind(c))
+					var door := _door(p[2], player)
+					friends.deliver(door.x, door.y, x, c.pows == 1,
+							_friendly_soldier_picked_up.bind(c), (door - player).normalized())
 					c.drop_off_pow()
 					walking_soldiers += 1
 		leaving = leaving and player.y < y + 80 \
@@ -537,6 +549,23 @@ func _update_pick_up() -> void:
 				print("rescue helicopter taking off, %d rescued" % rescued)
 	else:
 		preparing_to_take_off = FriendlyHelicopter.TAKE_OFF_DELAY
+
+
+# Where a prisoner gets out of `btr`, at map `player`, in map px: beside the
+# door on the helicopter's side (Level3DBtr.doors), DOOR_CLEAR off the body,
+# rather than the game's player.y + 28, which in a model is its middle.
+func _door(btr: Level3DBtr, player: Vector2) -> Vector2:
+	if btr == null:
+		return Vector2(player.x, player.y + 28)
+	var best := Vector2.ZERO
+	var nearest := INF
+	for at in btr.doors(DOOR_CLEAR):
+		var door := Level3DMap.to_map(Vector2(at.x, at.z))
+		var off := absf(door.x - x)
+		if off < nearest:
+			nearest = off
+			best = door
+	return best
 
 
 # FriendlyHelicopter.friendly_soldier_picked_up and Main's, for the player

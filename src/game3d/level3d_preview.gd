@@ -2350,7 +2350,7 @@ func _add_guns(level: Node) -> void:
 		var out := []
 		for c in crews:
 			if not c.out:
-				out.append([Vector2(c.btr.position.x, c.btr.position.z), c.carrier])
+				out.append([Vector2(c.btr.position.x, c.btr.position.z), c.carrier, c.btr])
 		return out
 	rescue.scored = func(points: int, carrier: Level3DFriends.Carrier):
 		for c in crews:
