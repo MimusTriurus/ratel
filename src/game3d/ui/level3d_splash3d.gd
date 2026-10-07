@@ -245,7 +245,8 @@ void light() {
 # The title's menu drives the jeeps (show_menu): on "1 player" the left
 # jeep's lamps come on and its engine is gunned, on "2 players" both jeeps',
 # on anything else they go dark; on hard the turrets swing round on the
-# camera, on normal they look out to either side.
+# camera, on normal they look out to either side; driving off (launch), they
+# swing round ahead.
 #
 # The lamps are the hull's LAMP_PAINTS surface, the pair of headlights at its
 # nose, one either side (_lamps_at): their paint glows (TOON_SHADER's `glow`) and over each a flare and a
@@ -267,6 +268,19 @@ const SPOT_DIP := 7.0          # degrees below level
 # burnt the paint out white, which is not one of the splash's colours -- the
 # dark and the sun's.
 const GROUND_LAYER := 2
+# The cab's light, through the windows: a jeep the menu lights has its glass
+# (CABIN_PAINT, on the hull and its Glass part, not the turret's sight) glow
+# a warm bulb's colour, coming up slower than the lamps and going down
+# slower, as a bulb's filament does, and dipped to CABIN_CRANK while the
+# starter turns the engine over -- the starter pulling the battery down --
+# and back up as it catches (_drive_engine's `caught`).
+const CABIN_PAINT := "Glass"
+const CABIN_PARTS := ["Hull", "Glass"]
+const CABIN_COLOUR := Color(1.0, 0.68, 0.32)
+const CABIN_GLOW := 1.3
+const CABIN_ON := 0.5          # seconds to come up
+const CABIN_OFF := 0.35        # seconds to go down
+const CABIN_CRANK := 0.45
 # The engine: the hull shakes on its wheels, ENGINE_IDLE metres at a tick-
 # over and ENGINE_RUN when the jeep's lamps are on, and not at all with the
 # engine off; gunned, its nose kicks up ENGINE_KICK rad/s on a spring
@@ -1760,7 +1774,7 @@ func _rig(jeep: Node3D, side: float) -> Dictionary:
 		"hull": hull, "rest": hull.transform, "turret": turret, "turret_rest": turret.transform,
 		"side": side, "yaw": 0.0, "on": false, "level": 0.0, "flicker": 1.0,
 		"pitch": 0.0, "pitch_speed": 0.0, "push": 0.0, "phase": side * 1.7,
-		"lamp": null, "flares": [], "spots": [],
+		"lamp": null, "flares": [], "spots": [], "cabin": [], "cabin_level": 0.0,
 		"wheels": [], "wheel_rests": [], "rear": [],
 		"going": false, "run": 0.0, "dust_run": 0.0, "speed": 0.0,
 		# Its engine (ENGINE_*): "off", "starting", "running" or "stopping",
@@ -1785,6 +1799,19 @@ func _rig(jeep: Node3D, side: float) -> Dictionary:
 			var lamp := (hull.get_surface_override_material(surface) as ShaderMaterial).duplicate() as ShaderMaterial
 			hull.set_surface_override_material(surface, lamp)
 			rig.lamp = lamp
+	# The windows: copies of their own too, since _rimmed shares one paint
+	# between both jeeps.
+	for part in CABIN_PARTS:
+		var mesh := jeep.find_child(prefix + part, true, false) as MeshInstance3D
+		if mesh == null:
+			continue
+		for surface in mesh.mesh.get_surface_count():
+			var paint := mesh.mesh.surface_get_material(surface)
+			var dressed := mesh.get_surface_override_material(surface) as ShaderMaterial
+			if paint != null and String(paint.resource_name) == prefix + CABIN_PAINT and dressed != null:
+				var glass := dressed.duplicate() as ShaderMaterial
+				mesh.set_surface_override_material(surface, glass)
+				rig.cabin.append(glass)
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE
 	var shader := Shader.new()
@@ -1850,6 +1877,13 @@ func _drive_rigs(delta: float) -> void:
 			((flare as MeshInstance3D).material_override as ShaderMaterial).set_shader_parameter("level", shown)
 		for spot in rig.spots:
 			(spot as SpotLight3D).light_energy = SPOT_ENERGY * shown
+		# The cab: up with the lamps, slower, and dipped while the starter turns.
+		var cabin: float = move_toward(rig.cabin_level, target, delta / (CABIN_ON if rig.on else CABIN_OFF))
+		rig.cabin_level = cabin
+		if rig.engine == "starting" and not rig.caught:
+			cabin *= CABIN_CRANK
+		for glass in rig.cabin:
+			(glass as ShaderMaterial).set_shader_parameter("glow", CABIN_COLOUR * CABIN_GLOW * cabin)
 		# The engine: the nose's spring, and the shake.
 		var pitch: float = rig.pitch
 		var speed: float = rig.pitch_speed
@@ -1870,9 +1904,12 @@ func _drive_rigs(delta: float) -> void:
 		(rig.hull as Node3D).transform = Transform3D(Basis(Vector3.RIGHT, pitch) * rest.basis,
 				rest.origin + Vector3.UP * shake)
 		# The turret: at the camera on hard, out to its side on normal -- the
-		# jeep's own toe taken off, so that "at the camera" is at it.
+		# jeep's own toe taken off, so that "at the camera" is at it -- and
+		# once it drives off, ahead, down its own nose, whatever way it turns.
 		var toe := deg_to_rad(JEEP_TOE) * float(rig.side)
 		var want := toe if _hard else toe + deg_to_rad(TURRET_OUT) * float(rig.side)
+		if rig.going:
+			want = 0.0
 		rig.yaw = move_toward(rig.yaw, want, deg_to_rad(TURRET_RATE) * delta)
 		var turret_rest: Transform3D = rig.turret_rest
 		(rig.turret as Node3D).transform = Transform3D(Basis(Vector3.UP, rig.yaw) * turret_rest.basis,
