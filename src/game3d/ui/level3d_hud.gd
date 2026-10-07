@@ -110,11 +110,11 @@ var pows := 0
 var modes := ""             # "" for none
 var cheats := ""            # the cheats on, "" for none or not shown
 var parts := {"score": true, "lives": true, "pows": true, "device": true}
-# The device in the shop's slot, as the line writes it ("" none), and whether
-# it can go off now: dimmed while it reloads, or while the airstrike cannot
-# be paid for or is not to be had.
-var device := ""
-var device_ready := true
+# The devices bought, in the shop's order, each [as the line writes it,
+# whether it can go off now]: dimmed while it reloads, or while the
+# airstrike cannot be paid for or is not to be had. Only those bought: with
+# none, nothing.
+var devices: Array = []
 # The Arena, "APS" when it is fitted, "" when not; dimmed while it reloads.
 var arena := ""
 var arena_ready := true
@@ -320,10 +320,12 @@ func _line(x: float, top: float, g: float, row: float, which := ALL) -> float:
 		x = _icon(icons.get("pow"), POW_SPRITE, x, top - hop, row, dim) + g * 0.25
 		x = _times(x, y - hop, g, WHITE if pows > 0 else GRAY, _flash(_pows_time))
 		x = _text(str(pows), x, y - hop, g, WHITE if pows > 0 else GRAY, 1.0, _flash(_pows_time))
-	if show.get("device", false) and device != "":
-		x = _gap(x, g, groups)
-		groups += 1
-		x = _text(device, x, y, g, WHITE if device_ready else GRAY, 1.0 if device_ready else DIM)
+	if show.get("device", false):
+		for d in devices:
+			var ready: bool = d[1]
+			x = _gap(x, g, groups)
+			groups += 1
+			x = _text(d[0], x, y, g, WHITE if ready else GRAY, 1.0 if ready else DIM)
 	if show.get("device", false) and arena != "":
 		x = _gap(x, g, groups)
 		groups += 1

@@ -10,7 +10,8 @@
 # Four kinds:
 #   UPGRADE  bought once and kept for the run; most show on the jeep
 #            (Level3DBtr.UPGRADE_PARTS)
-#   DEVICE   an upgrade that goes off on the device key, one in the slot
+#   DEVICE   an upgrade that goes off on a key of its own
+#            (Level3DSettings.DEVICES)
 #   STEP     the launcher's next step, as a prisoner's (Carrier.upgrade_weapon):
 #            bought again until the missile's last, each dearer
 #   SUPPLY   a life: bought again and again, each 5 000 dearer than the last
@@ -118,8 +119,7 @@ static func state(id: String, kit: Level3DRun.Kit) -> State:
 	return State.BUY if kit.score >= p else State.POOR
 
 
-# `id` bought into `kit`, its price off the score; whether it was. A device
-# bought with the slot empty goes in it.
+# `id` bought into `kit`, its price off the score; whether it was.
 static func buy(id: String, kit: Level3DRun.Kit) -> bool:
 	var p := price(id, kit)
 	if p < 0 or kit.score < p:
@@ -131,11 +131,7 @@ static func buy(id: String, kit: Level3DRun.Kit) -> bool:
 		Kind.SUPPLY:
 			kit.lives += 1
 			kit.lives_bought += 1
-		Kind.DEVICE:
-			kit.upgrades.append(id)
-			if kit.device == "":
-				kit.device = id
-		Kind.UPGRADE:
+		Kind.DEVICE, Kind.UPGRADE:
 			kit.upgrades.append(id)
 	return true
 
@@ -154,18 +150,3 @@ static func refund(id: String, kit: Level3DRun.Kit) -> void:
 		_:
 			kit.upgrades.erase(id)
 			kit.score += int(item(id).price)
-			if kit.device == id:
-				kit.device = ""
-				for other in kit.upgrades:
-					if item(other).get("kind", -1) == Kind.DEVICE:
-						kit.device = other
-						break
-
-
-# The devices `kit` has, in the matrix's order: the slot's choices.
-static func devices(kit: Level3DRun.Kit) -> Array[String]:
-	var out: Array[String] = []
-	for i in ITEMS:
-		if i.kind == Kind.DEVICE and kit.upgrades.has(i.id):
-			out.append(i.id)
-	return out

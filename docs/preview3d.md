@@ -201,8 +201,9 @@ enemy -- anything the radar marks -- within a cone about the stick's bearing
 distance on to itself, all the way in the cone's middle and less towards its
 edge (`Level3DPad.ASSISTS`); the one it had is kept over another while still
 in the cone, and with the stick let go and the gun held it is followed as it
-moves (`_follow_assisted`). L1, R1 and Square / X are the gun, the
-launcher and the device, in either driving, rebound in the menu (a button
+moves (`_follow_assisted`). L1 and R1 are the gun and the launcher, the
+face buttons the devices -- X nitro, A mines, Y the airstrike, B free -- in
+either driving, rebound in the menu (a button
 or a trigger, never the d-pad; a trigger driving free is the throttle's as
 well). A config saved with the first layout, the weapons on the triggers,
 comes up with these (`PAD_LAYOUT`). Start is Escape, Back skips the
@@ -251,10 +252,10 @@ of `Level3DShopCatalog` (`level3d_shop_catalog.gd`) -- weapons, protection,
 devices, three of each, and a life across the bottom. Both players shop at
 once, each with a frame of his own colour for a cursor, the first's outside
 the second's on one tile. A tile says on each player's side what it is to him:
-its price, red when he is short of it, OWNED, IN SLOT, MAX.
+its price, red when he is short of it, OWNED, MAX.
 
 - Buy (Enter or Space, right Shift for the second player, a pad's A) buys
-  the tile; on a device already owned it puts it in the slot. Back
+  the tile. Back
   (Backspace, right Ctrl, a pad's B) takes back the last of that tile bought
   in this visit. Fire -- either weapon: L or P, right Alt, a pad's L1 or R1
   -- is a player's word that he is done, from wherever his cursor is, as
@@ -300,10 +301,20 @@ gun's does, a soldier dead, the rest chipped, the points the player's. The
 radar (`Level3DRadar`): a small arrow at the frame's edge for each gun and
 tank off it within 26 m, in the buyer's colour.
 
-**The device** in the slot goes off on its key -- the settings' Device, K to
-start with, rebound in the menu's keys; right Shift for the second player,
-whose other keys are the 2D game's mapping, which has no such button -- and
-the HUD's line names it after the prisoners, dimmed while it cannot go off.
+**The devices** each go off on a key of their own, once bought: there is no
+slot to pick one into, nothing to switch to under fire
+(`Level3DSettings.DEVICES`). The first player's are the settings' -- K
+nitro, J mines, I the airstrike to start with, by the gun's and the
+rocket's under the right hand, rebound in the menu's keys; a device's
+default another action already has is left unbound, a dash. The second
+player's are fixed, round the arrows: right Shift nitro, Enter mines,
+Delete the airstrike (`DEVICE_KEYS_2`), his other keys being the 2D game's
+mapping, which has no such buttons. A config saved with the one Device key
+of before gives it to nitro. The shop says which on the device's words --
+PRESS K, PRESS X -- by the player's keys or his pad, whichever he touched
+last; there is no hint over the jeep for them, as there is for the
+weapons, there being no telling when one is wanted. The HUD's line names
+each one bought after the prisoners, dimmed while it cannot go off.
 Nitro dashes the jeep ahead for 0.6 s at twice its speed, the way it faces
 with no key held (`Level3DBtr.dash`; classic, the game's move twice a tick,
 each through its sensors), then reloads for 5 s. Mines: one down behind the

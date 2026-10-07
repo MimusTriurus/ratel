@@ -24,9 +24,9 @@ class Kit:
 	# missile_power.
 	var has_missiles := false
 	var missile_power := 0
-	# Level3DShopCatalog ids, and the device in the slot ("" none).
+	# Level3DShopCatalog ids, the devices among them: each has a key of its
+	# own (Level3DSettings.DEVICES), and there is no slot to pick one into.
 	var upgrades: Array[String] = []
-	var device := ""
 
 	func copy() -> Kit:
 		var k := Kit.new()
@@ -36,7 +36,6 @@ class Kit:
 		k.has_missiles = has_missiles
 		k.missile_power = missile_power
 		k.upgrades = upgrades.duplicate()
-		k.device = device
 		return k
 
 	# The launcher's step: 0 the grenade, 1 to 3 the missile and its two

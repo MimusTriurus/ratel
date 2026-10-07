@@ -223,7 +223,7 @@ instead of fading in, because the Java original passes its fade value into
 - `docs/audio3d.md` — the 3D preview's effects and music, the three sound
   modes, the adaptive boss music, the mix, debugging silence.
 - `docs/shop-plan.md` — the planned shop between rounds: points as currency,
-  bought lives, upgrades, the device key; its steps and their Definition of
+  bought lives, upgrades, the devices' keys; its steps and their Definition of
   Done: `docs/shop-implementation.md`.
 - `docs/level-editor-plan.md`, `docs/level3d-pipeline.md`,
   `docs/cel-shading.md`, `docs/soldier-pipeline.md`, `docs/boat-pipeline.md`.

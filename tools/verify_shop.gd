@@ -77,11 +77,11 @@ func _rounds() -> void:
 	# Snapshot and back.
 	var saved: Level3DRun = scene.call("_capture")
 	a.score = 1234; a.lives = 9; a.carrier.has_missiles = true; a.carrier.missile_power = 2
-	a.upgrades.append("zip"); b.score = 77; b.device = "nitro"
+	a.upgrades.append("zip"); b.score = 77; b.upgrades.append("nitro")
 	scene.call("_restore", saved)
 	check("restore: first player as captured", a.score == 0 and a.lives == 4 and not a.carrier.has_missiles
 			and a.upgrades.is_empty())
-	check("restore: second player as captured", b.score == 0 and b.device == "")
+	check("restore: second player as captured", b.score == 0 and b.upgrades.is_empty())
 
 	# Points earn no lives.
 	scene.call("_add_points", a, 25000)
@@ -165,7 +165,18 @@ func _shop() -> void:
 	shop._fire(0)
 	check("bought once", kit.score == 10000)
 	_at(shop, 0, "nitro"); shop._fire(0)
-	check("nitro bought goes in the slot", kit.device == "nitro" and kit.score == 0)
+	check("nitro bought", kit.upgrades.has("nitro") and kit.score == 0)
+	# A device's words say what to press for it, as the player is now.
+	shop._set_pad(0, false)
+	shop._set_pad(1, false)
+	check("nitro's words, 1P on the keys: %s" % shop._press_words(0, "nitro"),
+			shop._press_words(0, "nitro") == " PRESS %s." % Level3DSettings.key_name(shop.settings.key("nitro")))
+	check("mines' words, 2P on the keys: %s" % shop._press_words(1, "mines"),
+			shop._press_words(1, "mines") == " PRESS ENTER.")
+	shop._set_pad(0, true)
+	check("airstrike's words, 1P on his pad: %s" % shop._press_words(0, "airstrike"),
+			shop._press_words(0, "airstrike") == " PRESS %s." % Level3DPad.name_of(shop.settings.pad_button("airstrike")))
+	shop._set_pad(0, false)
 	# The second player's own money.
 	var kit2: Level3DRun.Kit = shop._run.kits[1]
 	_at(shop, 1, "radar"); shop._fire(1)
@@ -185,7 +196,7 @@ func _shop() -> void:
 	await create_timer(Level3DShop.DRIVE_TIME + Level3DShop.LEAVE * 2.0 + 0.5).timeout
 	check("both ready: the shop gone, round 2", not shop.is_open() and scene.get("_round") == 2 and not paused)
 	var a = crews[0]
-	check("1P carries what he bought", a.score == 0 and a.upgrades.has("twin") and a.device == "nitro"
+	check("1P carries what he bought", a.score == 0 and a.upgrades.has("twin") and a.upgrades.has("nitro")
 			and a.carrier.has_missiles and a.carrier.missile_power == 0)
 	check("1P's jeep has the twin gun", a.btr.has_twin())
 	check("2P carries the radar", crews[1].upgrades.has("radar") and crews[1].score == 1000)
@@ -315,37 +326,44 @@ func _devices() -> void:
 	for i in 60:
 		await physics_frame
 	var c = scene.get("crews")[0]
-	check("the device key is in the settings", Level3DSettings.ACTIONS.has("device")
-			and settings.key("device") == KEY_K)
+	check("each device has its key in the settings", Level3DSettings.DEVICES.all(
+			func(id): return Level3DSettings.ACTIONS.has(id) and Level3DSettings.PAD_ACTIONS.has(id))
+			and settings.key("nitro") == KEY_K and settings.key("mines") == KEY_J
+			and settings.key("airstrike") == KEY_I)
 
 	# No device: the key does nothing.
-	await _press(c)
-	check("no device, nothing", c.device_wait == 0 and c.btr.dash == 0)
+	await _press(c, "nitro")
+	check("no device, nothing", c.device_wait.is_empty() and c.btr.dash == 0)
 
 	# Nitro: a dash, then the reload.
-	_give(c, "nitro")
+	_give(c, ["nitro"])
 	var from: Vector3 = c.btr.position
-	await _press(c)
-	check("nitro: dashing", c.btr.dash > 0 and c.device_wait > 0)
+	await _press(c, "nitro")
+	check("nitro: dashing", c.btr.dash > 0 and c.device_wait.get("nitro", 0) > 0)
 	for i in 70:
 		await physics_frame
 	var dashed: float = c.btr.position.distance_to(from)
 	check("nitro: moved %.2f m with no key held" % dashed, dashed > 1.0)
-	var wait: int = c.device_wait
-	await _press(c)
-	check("nitro: not again while it reloads", c.btr.dash == 0 and c.device_wait < wait)
+	var wait: int = c.device_wait.nitro
+	await _press(c, "nitro")
+	check("nitro: not again while it reloads", c.btr.dash == 0 and c.device_wait.nitro < wait)
+	await _press(c, "mines")
+	check("nitro's owner: the mines' key does nothing", c.mines.is_empty())
 
-	# Mines: down behind, MAX_MINES at most.
-	_give(c, "mines")
+	# Mines: down behind, MAX_MINES at most, each on its own reload: the
+	# nitro's going on under it.
+	_give(c, ["nitro", "mines"])
+	c.device_wait.nitro = 400
 	for k in 4:
-		c.device_wait = 0
-		await _press(c)
+		c.device_wait.mines = 0
+		await _press(c, "mines")
+	check("mines: their own reload, not the nitro's", c.device_wait.nitro < 400 and c.device_wait.nitro > 0)
 	check("mines: %d down, 3 at most" % c.mines.size(), c.mines.size() == 3)
 	var mine: Node3D = c.mines[0]
 	check("mines: behind the jeep", mine.position.distance_to(c.btr.position) < 1.5)
 
 	# The airstrike: 2000, then 4000, then 8000 -- short of the third.
-	_give(c, "airstrike")
+	_give(c, ["airstrike"])
 	c.score = 10000
 	var soldiers: Level3DSoldiers = scene.get("soldiers")
 	var view: Rect2 = scene.call("_view_frame")
@@ -353,20 +371,20 @@ func _devices() -> void:
 	for at in soldiers.targets():
 		if view.has_point(at):
 			in_view += 1
-	await _press(c)
+	await _press(c, "airstrike")
 	check("airstrike: 2000 paid, nothing for the dead (%d)" % c.score, c.score == 8000)
 	var left := 0
 	for at in soldiers.targets():
 		if view.has_point(at):
 			left += 1
 	check("airstrike: the soldiers in the frame dead (%d of %d left)" % [left, in_view], left == 0 or in_view == 0)
-	c.device_wait = 0
-	await _press(c)
+	c.device_wait.clear()
+	await _press(c, "airstrike")
 	check("airstrike: 4000 the second", c.score == 4000)
-	await _press(c)
+	await _press(c, "airstrike")
 	check("airstrike: short of 8000, not called", c.score == 4000 and c.strikes == 2)
 	var hud: Level3DHud = c.hud
-	check("HUD: AIR 8000, dimmed (%s)" % hud.device, hud.device == "AIR 8000" and not hud.device_ready)
+	check("HUD: AIR 8000, dimmed (%s)" % [hud.devices], hud.devices == [["AIR 8000", false]])
 
 	# A mine under a boss tank, and no airstrike while the boss has the camera.
 	scene.call("_jump_to_boss")
@@ -383,7 +401,7 @@ func _devices() -> void:
 		failures += 1
 		return
 	check("airstrike: not while the boss has the camera", not scene.call("_airstrike_ready", c))
-	_give(c, "mines")
+	_give(c, ["mines"])
 	var target: Vector2 = boss.targets()[0]
 	c.mines.clear()
 	var m := Node3D.new()
@@ -439,15 +457,14 @@ func _died(upgrades: Array[String], weapon: int, pows: int) -> Array:
 	return [after.weapon(), friends.friends.size() - before]
 
 
-func _press(c, ticks := 3) -> void:
+func _press(c, device: String, ticks := 3) -> void:
 	var now: int = scene.get("_ticks")
-	(scene.get("_held") as Array).append(["device", now, now + ticks, c.index])
+	(scene.get("_held") as Array).append([device, now, now + ticks, c.index])
 	for i in ticks + 2:
 		await physics_frame
 
 
-func _give(c, device: String) -> void:
-	c.upgrades.assign([device])
-	c.device = device
-	c.device_wait = 0
+func _give(c, devices: Array) -> void:
+	c.upgrades.assign(devices)
+	c.device_wait.clear()
 	scene.call("_dress_crews")

@@ -88,7 +88,8 @@
 # free, the racing way, R2 the throttle, L2 the brake and reverse, the left
 # stick's x the wheel. The right stick aims where the firing aims at the
 # cursor, its reticle within the reach, swept there (_steer_reticle). L1 the gun, R1 the
-# launcher, Square / X the device (all three rebound in the menu), Start the
+# launcher, the face buttons the devices -- X nitro, A mines, Y the airstrike
+# (all of them rebound in the menu) -- Start the
 # Escape menu, Back skips the Chinook.
 # Whichever the player touched last, the pad or the keys and the mouse, has
 # the aim and the hints (Crew.pad). A --shot reads no pad.
@@ -122,7 +123,7 @@
 # the trigger down from the start, and --rocket aims at x,z and sends one
 # rocket as soon as the launcher has come round, or that many seconds in.
 # --at puts the BTR at x,z to begin with instead of at START. --free drives
-# the free way; --hold holds WASD, L or P down from one second to another, as
+# the free way; --hold holds WASD, L or P, or a device's K, J or I, down from one second to another, as
 # many spans as are given (wd@0-1.5,a@2-3), which is how the classic keys
 # are checked; a span after 2: is the second player's (2:s@0-3). --weapon starts with what the prisoners would have given: 0 the
 # grenade, 1 to 3 the missile and its two upgrades. --pows starts with that
@@ -532,7 +533,6 @@ func _ready() -> void:
 		Level3DMap.hard = settings.hard or _round > 1
 		for c in crews:
 			c.upgrades = _flag_upgrades()
-			c.device = _first_device(c.upgrades)
 		_dress_crews()
 		# intro_song, IntroMapMode's: the start jingle running on into stage 1.
 		# Not under --game-over, whose screen plays its own: it was heard for
@@ -633,20 +633,19 @@ class Crew:
 	# -1 before the first.
 	var weapon_shown := -1
 	# What the shop sold him (docs/shop-plan.md): the lives bought so far,
-	# which price the next; the upgrades, Level3DShopCatalog's ids; the device
-	# in the slot, "" for none. Level3DRun.Kit carries them between rounds.
+	# which price the next; the upgrades, Level3DShopCatalog's ids, the
+	# devices among them. Level3DRun.Kit carries them between rounds.
 	var lives_bought := 0
 	var upgrades: Array[String] = []
-	var device := ""
 	# The loopholes' ticks to their next shot (_loopholes).
 	var loophole_wait := 0
 	# The Arena's ticks till it can fire again (_arena).
 	var arena_wait := 0
-	# The device (_use_device): ticks till it can go off again, its key last
-	# tick, the airstrikes called this round (which price the next), the
-	# mines down.
-	var device_wait := 0
-	var device_held := false
+	# The devices (_use_device), by id: ticks till each can go off again,
+	# whether its key was down last tick; the airstrikes called this round
+	# (which price the next), the mines down.
+	var device_wait := {}
+	var device_held := {}
 	var strikes := 0
 	var mines: Array[Node3D] = []
 	# The pad (Level3DPad): whether it was the last thing the player touched,
@@ -676,21 +675,26 @@ class KeySides:
 	func _ready() -> void:
 		process_mode = Node.PROCESS_MODE_ALWAYS
 
-	# The second player's device key, right Shift: not one of the 2D game's
-	# buttons, so not in its mapping (ButtonMapping), which the 2D game reads.
-	static var device_2 := false
+	# The second player's device keys (Level3DSettings.DEVICE_KEYS_2), held by
+	# device id: not the 2D game's buttons, so not in its mapping
+	# (ButtonMapping), which the 2D game reads.
+	static var devices_2 := {}
 
 	func _input(event: InputEvent) -> void:
 		if event is InputEventKey:
 			HumanInput.key_event(event)
 			var key := event as InputEventKey
-			if key.keycode == KEY_SHIFT and key.location == KEY_LOCATION_RIGHT and not key.echo:
-				device_2 = key.pressed
+			if key.echo:
+				return
+			for id in Level3DSettings.DEVICE_KEYS_2:
+				var keys: Array = Level3DSettings.DEVICE_KEYS_2[id]
+				if key.keycode in keys[0] and (keys[1] == KEY_LOCATION_UNSPECIFIED or key.location == keys[1]):
+					devices_2[id] = key.pressed
 
 	func _notification(what: int) -> void:
 		if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 			HumanInput.release_all()
-			device_2 = false
+			devices_2.clear()
 
 
 # Main.button_mapping and button_mapping_2, as the game last saved them.
@@ -2679,8 +2683,11 @@ func _show_state() -> void:
 		line.lives = -1 if settings.infinite_lives else c.lives
 		line.pows = c.carrier.pows
 		line.parts["device"] = on and not c.out
-		line.device = _device_text(c)
-		line.device_ready = c.device_wait == 0 and (c.device != "airstrike" or _airstrike_ready(c))
+		line.devices = []
+		for id in Level3DSettings.DEVICES:
+			if c.upgrades.has(id):
+				line.devices.append([_device_text(c, id),
+						c.device_wait.get(id, 0) == 0 and (id != "airstrike" or _airstrike_ready(c))])
 		line.arena = "APS" if c.upgrades.has("arena") else ""
 		line.arena_ready = c.arena_wait == 0
 		var weapon := 1 + c.carrier.missile_power if c.carrier.has_missiles else 0
@@ -2699,10 +2706,10 @@ func _show_state() -> void:
 		line.show_state()
 
 
-# The device as the HUD's line writes it: its name, the airstrike's with the
-# next call's price.
-func _device_text(c: Crew) -> String:
-	match c.device:
+# A device as the HUD's line writes it: its name, the
+# airstrike's with the next call's price.
+func _device_text(c: Crew, id: String) -> String:
+	match id:
 		"nitro":
 			return "NITRO"
 		"mines":
@@ -2790,7 +2797,7 @@ var _saw_defeat := false
 # it is first wanted and until it is done: once a run of the preview, R or
 # not -- "<player>:<hint>" in `_hints_done`. `_hints_up` is each player's up,
 # {"name", "hint", "from" -- where the jeep was when it came up}.
-const HINTS := ["move", "fire", "rocket", "device"]
+const HINTS := ["move", "fire", "rocket"]
 # The fire hint comes with an enemy within HINT_REACH of the gun's reach; the
 # rocket's with a POW building or a gate within the launcher's, and the BTR
 # turned to it to within HINT_FACING -- or a round thudding on one.
@@ -2820,7 +2827,7 @@ func _update_hints() -> void:
 		for name in HINTS:
 			if _hints_done.has("%d:%s" % [c.index, name]) or not _hint_wanted(c, name):
 				continue
-			var words := {"move": "MOVE", "fire": "FIRE", "rocket": "ROCKET", "device": _device_text(c)}
+			var words := {"move": "MOVE", "fire": "FIRE", "rocket": "ROCKET"}
 			var btr_of := c.btr
 			_hints_up[c.index] = {"name": name, "from": c.btr.position, "rockets": c.rockets,
 					"hint": _hints.show_hint(_hint_keys(c, name), words[name],
@@ -2837,8 +2844,6 @@ func _hint_wanted(c: Crew, name: String) -> bool:
 	match name:
 		"move":
 			return true
-		"device":
-			return c.device != "" and _hints_done.has("%d:move" % c.index)
 		"fire":
 			if not _hints_done.has("%d:move" % c.index):
 				return false
@@ -2895,8 +2900,6 @@ func _hint_done(c: Crew, up: Dictionary) -> bool:
 			return c.gun.trigger
 		"rocket":
 			return c.rockets > up.rockets
-		"device":
-			return c.device_wait > 0 or c.strikes > 0
 	return true
 
 
@@ -2909,7 +2912,7 @@ func _hint_keys(c: Crew, name: String) -> Array:
 			"move":
 				return ["L-STICK"] if c.btr.classic \
 						else [Level3DPad.name_of(Level3DPad.TRIGGER_RIGHT), "L-STICK"]
-			"fire", "rocket", "device":
+			"fire", "rocket":
 				return [Level3DPad.name_of(settings.pad_button("gun" if name == "fire" else name))]
 	if c.input == null:
 		match name:
@@ -2920,10 +2923,6 @@ func _hint_keys(c: Crew, name: String) -> Array:
 				return [_key_name(settings.key("gun"))]
 			"rocket":
 				return [_key_name(settings.key("rocket"))]
-			"device":
-				return [_key_name(settings.key("device"))]
-	if name == "device":
-		return [_key_name(KEY_SHIFT, KEY_LOCATION_RIGHT)]
 	var m := _mapping_2
 	match name:
 		"move":
@@ -2937,11 +2936,9 @@ func _hint_keys(c: Crew, name: String) -> Array:
 	return []
 
 
-# A key as the font can write it: its name in capitals, R- for the right one
-# of a pair.
+# A key as the font can write it (Level3DSettings.key_name).
 static func _key_name(key: Key, location := KEY_LOCATION_UNSPECIFIED) -> String:
-	var name := OS.get_keycode_string(key).to_upper()
-	return ("R-" + name) if location == KEY_LOCATION_RIGHT else name
+	return Level3DSettings.key_name(key, location)
 
 
 # The mission's summary (Level3DSummary) in place of the game's lines: who
@@ -3999,7 +3996,6 @@ func _restart(jingle := false) -> void:
 		c.score = 0
 		c.lives_bought = 0
 		c.upgrades = _flag_upgrades()
-		c.device = _first_device(c.upgrades)
 		c.carrier.reset()
 	_start_round(jingle)
 	_saved = _capture()
@@ -4036,15 +4032,6 @@ static func _flag_upgrades() -> Array[String]:
 	return out
 
 
-# The device that goes in the slot of a player with `upgrades`: the first of
-# them in the shop's order, "" for none.
-static func _first_device(upgrades: Array[String]) -> String:
-	var kit := Level3DRun.Kit.new()
-	kit.upgrades = upgrades
-	var devices := Level3DShopCatalog.devices(kit)
-	return devices[0] if not devices.is_empty() else ""
-
-
 # Each player's jeep with what he has bought on it (Level3DBtr.set_upgrades),
 # and what it does: the twin gun's rate, the spares and the armour that
 # change what a death costs (Level3DFriends.player_died).
@@ -4062,8 +4049,12 @@ func _gun_rate(c: Crew) -> float:
 	return settings.gun_rate * (2.0 if c.upgrades.has("twin") else 1.0)
 
 
-# The device in the slot (docs/shop-plan.md), on its key's press -- the
-# settings' "device" for the first player, right Shift for the second:
+# The devices (docs/shop-plan.md), each on its own key's press
+# (Level3DSettings.DEVICES) -- the settings' for the first player, as bound
+# in the menu, Level3DSettings.DEVICE_KEYS_2 for the second -- and only once
+# bought: there is no slot to pick one into, nothing to switch to under fire.
+# The shop says which, on the device's words (Level3DShop); no hint over the
+# jeep, as the weapons have, there being no telling when one is wanted.
 #   nitro      the jeep dashes ahead (Level3DBtr.dash), NITRO_RELOAD to the next,
 #              flames out of its exhausts all the while (_nitro_flames)
 #   mines      a mine down behind the jeep, MINE_RELOAD to the next, MAX_MINES
@@ -4084,23 +4075,35 @@ const AIRSTRIKE_BLASTS := 0.12    # seconds between the strike's blasts
 var _no_points := false           # an airstrike's kills: worth nothing
 
 func _use_device(c: Crew, gone: bool) -> void:
-	if c.device_wait > 0:
-		c.device_wait -= 1
-	var held := (_key("device") if c.input == null else KeySides.device_2) or _held_key("device", c.index) \
-			or Level3DPad.held(_pads(c), settings.pad_button("device"))
-	var pressed := held and not c.device_held
-	c.device_held = held
-	if not pressed or gone or c.device == "" or c.device_wait > 0:
-		return
-	match c.device:
+	for id in Level3DSettings.DEVICES:
+		var wait: int = c.device_wait.get(id, 0)
+		if wait > 0:
+			c.device_wait[id] = wait - 1
+		var held := _device_key(c, id)
+		var pressed: bool = held and not c.device_held.get(id, false)
+		c.device_held[id] = held
+		if pressed and not gone and c.upgrades.has(id) and c.device_wait.get(id, 0) == 0:
+			_fire_device(c, id)
+
+
+# Whether player `c`'s key for device `id` is down: the keyboard's, --hold's,
+# the pad's.
+func _device_key(c: Crew, id: String) -> bool:
+	var key: bool = _key(id) if c.input == null else KeySides.devices_2.get(id, false)
+	var button := settings.pad_button(id)
+	return key or _held_key(id, c.index) or button >= 0 and Level3DPad.held(_pads(c), button)
+
+
+func _fire_device(c: Crew, id: String) -> void:
+	match id:
 		"nitro":
 			c.btr.dash = Level3DBtr.DASH_TICKS
-			c.device_wait = NITRO_RELOAD
+			c.device_wait[id] = NITRO_RELOAD
 			Level3DAudio.play("rocket_launch", c.btr.position)
 			puffs.cloud(c.btr.position, Vector3.RIGHT, -c.btr.forward(), 0.3, 6)
 		"mines":
 			_drop_mine(c)
-			c.device_wait = MINE_RELOAD
+			c.device_wait[id] = MINE_RELOAD
 		"airstrike":
 			if not _airstrike_ready(c):
 				Level3DAudio.play("hit_dull", c.btr.position)
@@ -4368,7 +4371,6 @@ func _capture() -> Level3DRun:
 		k.has_missiles = c.carrier.has_missiles
 		k.missile_power = c.carrier.missile_power
 		k.upgrades = c.upgrades.duplicate()
-		k.device = c.device
 		run.kits.append(k)
 	return run
 
@@ -4385,7 +4387,6 @@ func _restore(run: Level3DRun) -> void:
 		c.carrier.has_missiles = k.has_missiles
 		c.carrier.missile_power = k.missile_power
 		c.upgrades = k.upgrades.duplicate()
-		c.device = k.device
 	_show_state()
 
 
@@ -4408,8 +4409,8 @@ func _log_round(what: String) -> void:
 			print("round %d %dP: earned %d, score %d, lives %d" % [_round, c.index + 1, c.score - before.score,
 					c.score, c.lives])
 		else:
-			print("round %d %dP: shop left %d, lives %d, launcher %d, upgrades %s, slot %s" % [_round,
-					c.index + 1, c.score, c.lives, before.weapon(), ",".join(c.upgrades), c.device])
+			print("round %d %dP: shop left %d, lives %d, launcher %d, upgrades %s" % [_round,
+					c.index + 1, c.score, c.lives, before.weapon(), ",".join(c.upgrades)])
 
 
 var _shop: Level3DShop
@@ -4419,6 +4420,7 @@ var _shop: Level3DShop
 func _open_shop(at_once := false) -> void:
 	_shop.settings = settings
 	_shop.inputs.assign(crews.map(func(c: Crew): return c.input))
+	_shop.on_pad.assign(crews.map(func(c: Crew): return c.pad))
 	_shop.colours.assign(crews.map(func(c: Crew): return c.hud.colour))
 	_shop.paints.assign(crews.map(func(c: Crew): return _paint(c.index)))
 	get_tree().paused = true
@@ -4491,7 +4493,7 @@ func _start_round(jingle := false) -> void:
 		c.btr.visible = true
 		c.btr.blink(true)
 		c.btr.dash = 0
-		c.device_wait = 0
+		c.device_wait.clear()
 		c.arena_wait = 0
 		c.strikes = 0
 		for mine in c.mines:
@@ -4671,7 +4673,7 @@ func _screenshot_mode() -> void:
 	var hold := args.find("--hold")
 	if hold >= 0:
 		const KEYS := {"w": "up", "a": "left", "s": "down", "d": "right", "l": "gun", "p": "rocket",
-				"k": "device"}
+				"k": "nitro", "j": "mines", "i": "airstrike"}
 		for span in args[hold + 1].split(","):
 			# 2:wd@0-1 is the second player's.
 			var index := 1 if span.begins_with("2:") else 0

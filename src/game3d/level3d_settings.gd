@@ -49,12 +49,27 @@ const MODERN_CONTROLS := false
 # are in DEFAULT_KEYS but not here: the mouse aims it now, and Q and E stay
 # as fixed keys for turning it by hand (level3d_preview.gd, _turret_key), not
 # bound, not saved.
-# "device" sets off what the shop's slot holds (docs/shop-plan.md): nitro,
-# mines, the airstrike.
-const ACTIONS: Array[String] = ["up", "down", "left", "right", "gun", "rocket", "device"]
+# The shop's devices (docs/shop-plan.md) each have a key of their own, by
+# their ids, DEVICES: no slot to pick one into, nothing to switch to under
+# fire. By the gun's and the rocket's, under the right hand, the left one
+# staying on WASD. They were one "device" key on the slot's device once,
+# which a saved config's still has: it is nitro's now (load_saved).
+const DEVICES: Array[String] = ["nitro", "mines", "airstrike"]
+# The second player's: [keycodes, the side of the board or unspecified for
+# either], around the arrows his right hand is on -- right Shift, as his one
+# device key was; Enter, either; Delete, over the arrows, for the one
+# called least. Not Backspace, Home or End, which are the preview's own.
+# Fixed, not bound in the menu, as his weapons are bound only in the 2D game's.
+const DEVICE_KEYS_2 := {
+	"nitro": [[KEY_SHIFT], KEY_LOCATION_RIGHT],
+	"mines": [[KEY_ENTER, KEY_KP_ENTER], KEY_LOCATION_UNSPECIFIED],
+	"airstrike": [[KEY_DELETE], KEY_LOCATION_UNSPECIFIED],
+}
+const ACTIONS: Array[String] = ["up", "down", "left", "right", "gun", "rocket", "nitro", "mines", "airstrike"]
 const DEFAULT_KEYS := {
 	"up": KEY_W, "down": KEY_S, "left": KEY_A, "right": KEY_D,
-	"gun": KEY_L, "rocket": KEY_P, "device": KEY_K, "turret_left": KEY_Q, "turret_right": KEY_E,
+	"gun": KEY_L, "rocket": KEY_P, "nitro": KEY_K, "mines": KEY_J, "airstrike": KEY_I,
+	"turret_left": KEY_Q, "turret_right": KEY_E,
 }
 
 # The gamepads (Level3DPad): whether they drive at all; with two players and
@@ -63,13 +78,16 @@ const DEFAULT_KEYS := {
 # pad's -- under Steam Input a DualSense may call itself an Xbox pad. The
 # sticks and the d-pad are fixed: the left drives, the right aims, Start is
 # the menu, and driving free R2 and L2 are the throttle and the brake. The
-# weapons and the device are bound, PAD_ACTIONS, as the keys are: a
+# weapons and the devices are bound, PAD_ACTIONS, as the keys are: a
 # JoyButton, or a trigger (Level3DPad.TRIGGER_*) -- which driving free is the
 # throttle's as well. L1 the gun and R1 the launcher either way, the
-# triggers being the throttle's.
-const PAD_ACTIONS: Array[String] = ["gun", "rocket", "device"]
+# triggers being the throttle's; the devices on the face buttons by the
+# right stick -- X nitro, as the one device key was, A the mines, Y the
+# airstrike, B left free.
+const PAD_ACTIONS: Array[String] = ["gun", "rocket", "nitro", "mines", "airstrike"]
 const DEFAULT_PAD := {
-	"gun": JOY_BUTTON_LEFT_SHOULDER, "rocket": JOY_BUTTON_RIGHT_SHOULDER, "device": JOY_BUTTON_X,
+	"gun": JOY_BUTTON_LEFT_SHOULDER, "rocket": JOY_BUTTON_RIGHT_SHOULDER,
+	"nitro": JOY_BUTTON_X, "mines": JOY_BUTTON_A, "airstrike": JOY_BUTTON_Y,
 }
 # The bindings' layout: saved ones of an older layout -- the weapons on the
 # triggers -- are let go of for DEFAULT_PAD's.
@@ -236,6 +254,25 @@ func key(action: String) -> Key:
 	return keys.get(action, DEFAULT_KEYS[action])
 
 
+# A key as the font can write it: its name in capitals, R- for the right one
+# of a pair.
+static func key_name(code: Key, location := KEY_LOCATION_UNSPECIFIED) -> String:
+	var name := OS.get_keycode_string(code).to_upper()
+	return ("R-" + name) if location == KEY_LOCATION_RIGHT else name
+
+
+# What player `player` (0 or 1) presses for device `id`, as the font writes
+# it: his pad's button `on_pad`, else his key -- the first player's as bound,
+# the second's DEVICE_KEYS_2. "" for one left unbound.
+func device_press(id: String, player: int, on_pad: bool) -> String:
+	if on_pad:
+		return Level3DPad.name_of(pad_button(id)) if pad_button(id) >= 0 else ""
+	if player > 0:
+		var fixed: Array = DEVICE_KEYS_2[id]
+		return key_name(fixed[0][0], fixed[1])
+	return key_name(key(id)) if key(id) != KEY_NONE else ""
+
+
 # The action a key is bound to, or "".
 func action_of(keycode: Key) -> String:
 	for action in ACTIONS:
@@ -353,9 +390,10 @@ func load_saved() -> void:
 			if Level3DAudio.SOUNDS.has(name) and (saved is int or saved is float):
 				sound_gains[name] = clampf(float(saved), 0.0, Level3DAudio.MAX_GAIN)
 	for action in ACTIONS:
-		var saved = config.get_value("keys", action, DEFAULT_KEYS[action])
+		var saved = config.get_value("keys", action, _old_device(config, "keys", action, DEFAULT_KEYS[action]))
 		if saved is int and saved != KEY_NONE:
 			keys[action] = saved
+	_unshare(ACTIONS, keys, KEY_NONE)
 	pad = config.get_value("pad", "enabled", pad)
 	pad_single = clampi(config.get_value("pad", "single", pad_single), 0, 1)
 	pad_vibration = config.get_value("pad", "vibration", pad_vibration)
@@ -363,9 +401,31 @@ func load_saved() -> void:
 	pad_assist = clampi(config.get_value("pad", "assist", pad_assist), 0, Level3DPad.Assist.size() - 1)
 	if config.get_value("pad", "layout", 1) == PAD_LAYOUT:
 		for action in PAD_ACTIONS:
-			var saved = config.get_value("pad", action, DEFAULT_PAD[action])
+			var saved = config.get_value("pad", action, _old_device(config, "pad", action, DEFAULT_PAD[action]))
 			if saved is int and saved >= 0:
 				pad_buttons[action] = saved
+		_unshare(PAD_ACTIONS, pad_buttons, -1)
+
+
+# A saved config from before the devices had keys of their own: its one
+# "device" binding, nitro's now, which its button was.
+static func _old_device(config: ConfigFile, section: String, action: String, otherwise):
+	return config.get_value(section, "device", otherwise) if action == "nitro" else otherwise
+
+
+# No two of `actions` on one binding: the later one of a pair left with
+# `none`, unbound until it is given one -- a device's default the player had
+# already put something else on.
+static func _unshare(actions: Array[String], bound: Dictionary, none: int) -> void:
+	var taken := {}
+	for action in actions:
+		var binding: int = bound.get(action, none)
+		if binding == none:
+			continue
+		if taken.has(binding):
+			bound[action] = none
+		else:
+			taken[binding] = true
 
 
 static func _volume(saved) -> float:

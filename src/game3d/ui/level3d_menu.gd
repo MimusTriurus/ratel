@@ -105,7 +105,7 @@ const MIX_STEP_DB := 0.5
 const REACH_ORDER := [Level3DSettings.Reach.CLASSIC, Level3DSettings.Reach.LONG, Level3DSettings.Reach.UNLIMITED]
 const ACTION_NAMES := {
 	"up": "Forward / up", "down": "Back / down", "left": "Left", "right": "Right",
-	"gun": "Machine gun", "rocket": "Rocket", "device": "Device",
+	"gun": "Machine gun", "rocket": "Rocket", "nitro": "Nitro", "mines": "Mines", "airstrike": "Airstrike",
 }
 const PAD_NAME_CHOICES := ["Auto", "PlayStation", "Xbox"]
 const PAD_ASSIST_CHOICES := ["Off", "Light", "Normal", "Strong"]
@@ -468,7 +468,7 @@ func refresh() -> void:
 		widget.disabled = not settings.hud
 	for action in _key_buttons:
 		var button: Button = _key_buttons[action]
-		button.text = "..." if action == _waiting else OS.get_keycode_string(settings.key(action))
+		button.text = "..." if action == _waiting else _key_text(settings.key(action))
 	_pad.set_pressed_no_signal(settings.pad)
 	_pad_single.select(settings.pad_single)
 	_pad_names.select(settings.pad_names)
@@ -478,7 +478,9 @@ func refresh() -> void:
 		widget.disabled = not settings.pad
 	for action in _pad_buttons:
 		var button: Button = _pad_buttons[action]
-		button.text = "..." if action == _waiting_pad else Level3DPad.name_of(settings.pad_button(action))
+		var binding := settings.pad_button(action)
+		button.text = "..." if action == _waiting_pad \
+				else "—" if binding < 0 else Level3DPad.name_of(binding)
 		button.disabled = not settings.pad
 	var pads := Level3DPad.connected()
 	_pad_status.text = "No gamepad connected." if pads.is_empty() else "Connected: " \
@@ -925,7 +927,8 @@ func _make_controls_tab() -> Control:
 	tab.add_child(defaults)
 	_note(tab, "Second player: the 2D game's second-player keys, by default the arrows, "
 			+ "right Alt (machine gun) and right Ctrl (rockets). Rebound in the game: "
-			+ "Options → 2p input.")
+			+ "Options → 2p input. His devices are fixed: right Shift nitro, Enter mines, "
+			+ "Delete airstrike.")
 	tab.add_child(HSeparator.new())
 	_heading(tab, "Gamepad")
 	_pad = _check(tab, "Use a gamepad", func(on: bool): settings.pad = on)
@@ -997,6 +1000,12 @@ func _make_cheats_tab() -> Control:
 
 # ----------------------------------------------------------------------------
 # Key prompts
+
+# A key as its button writes it: a dash for none, a device whose default
+# the player had already given another action (Level3DSettings._unshare).
+static func _key_text(key: Key) -> String:
+	return "—" if key == KEY_NONE else OS.get_keycode_string(key)
+
 
 func _prompt(action: String) -> void:
 	_waiting_pad = ""

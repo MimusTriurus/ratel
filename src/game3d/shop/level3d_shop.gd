@@ -18,22 +18,21 @@
 #     PRESS FIRE WHEN READY                        PRESS FIRE WHEN READY
 #
 # The side says no more than the money: the lives are on LIFE's tile, the
-# launcher's step on the jeep and LAUNCHER's tile, and the device's slot is
-# to go.
+# launcher's step on the jeep and LAUNCHER's tile. There is no device slot:
+# each device has a key of its own (Level3DSettings.DEVICES).
 #
 # Both players shop at once, each with a cursor of his own: a frame round a
 # tile in his colour, the first's outside the second's when both are on one.
 # A tile says, on each player's side of it -- the first's left, the
 # second's right, as their jeeps stand -- what it is to him: its price, red
-# when he is short of it, OWNED, IN SLOT for the device in his slot, MAX for
+# when he is short of it, OWNED, MAX for
 # the launcher at its last step and a life past MAX_LIVES. With one player,
 # one status across the tile. A CLASSIFIED tile (Level3DShopCatalog) says
 # nothing but ??? under its stamp: not for sale, for the player to unlock
 # later.
 #
 #   * Buy (Enter or Space for the first player, right Shift for the second,
-#     a pad's A) buys the tile; a device already owned goes in the slot
-#     instead. Back (Backspace, right Ctrl, a pad's B) takes back the last of
+#     a pad's A) buys the tile. Back (Backspace, right Ctrl, a pad's B) takes back the last of
 #     that tile bought in this visit, its price back on the score. Fire --
 #     either weapon: L or P, right Alt for the second, a pad's L1 or R1 --
 #     is the player's word that he is done, from wherever his cursor is
@@ -221,6 +220,10 @@ var settings: Level3DSettings
 # second's HumanInput; and their colours, and their jeeps' paints
 # (Level3DBtr.PAINTS), which the shop changes and the preview keeps.
 var inputs: Array = []
+# Per player: whether he is on his pad, rather than the keys -- what he
+# touched last on the stage, and then in here -- for the device's words,
+# which say what to press for it (_press_words).
+var on_pad: Array[bool] = []
 var colours: Array[Color] = []
 var paints: Array[String] = []
 # The bay's layer, as the game over's cemetery's (Level3DGameOverScreen): the
@@ -292,7 +295,6 @@ func _ready() -> void:
 		k.lives_bought = [1, 0][i]
 		k.set_weapon([1, 0][i])
 		k.upgrades.assign([["radar", "zip", "nitro"], ["radar"]][i])
-		k.device = ["nitro", ""][i]
 		run.kits.append(k)
 	colours.assign([Color("5ca83e"), Color("3e8fa8")])
 	paints.assign(["olive", "blue"])
@@ -519,10 +521,6 @@ func _fire(player: int) -> void:
 		_set[player] = false
 		Level3DAudio.play("extra_life" if it.kind == Level3DShopCatalog.Kind.SUPPLY else "upgrade")
 		_dress(player)
-	elif state == Level3DShopCatalog.State.OWNED and it.kind == Level3DShopCatalog.Kind.DEVICE \
-			and kit.device != it.id:
-		kit.device = it.id
-		Level3DAudio.play("menu_pick")
 	else:
 		Level3DAudio.play("hit_dull")
 
@@ -668,6 +666,7 @@ func _input(event: InputEvent) -> void:
 		if not key.pressed or _state != State.OPEN:
 			return
 		var code := key.keycode
+		_set_pad(1 if _players > 1 and _second_players_key(key) else 0, false)
 		# The second player's buy.
 		if _players > 1 and code == KEY_SHIFT and key.location == KEY_LOCATION_RIGHT and not key.echo:
 			_fire(1)
@@ -709,6 +708,7 @@ func _input(event: InputEvent) -> void:
 		var player := Level3DPad.player_of(event.device, _players)
 		if player < 0:
 			return
+		_set_pad(player, true)
 		if move != Vector2i.ZERO:
 			_move(player, move)
 		elif pad.button_index == JOY_BUTTON_A:
@@ -728,6 +728,30 @@ func _input(event: InputEvent) -> void:
 			if player >= 0:
 				_give_ready(player)
 		_pulled[pull.device * 16 + pull.axis] = binding >= Level3DPad.TRIGGER
+
+
+# The second player's keys, with two: the arrows and the right Shift, Ctrl
+# and Alt.
+static func _second_players_key(key: InputEventKey) -> bool:
+	return key.keycode in [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT] \
+			or key.location == KEY_LOCATION_RIGHT and key.keycode in [KEY_SHIFT, KEY_CTRL, KEY_ALT]
+
+
+func _set_pad(player: int, pad: bool) -> void:
+	while on_pad.size() <= player:
+		on_pad.append(false)
+	if on_pad[player] != pad:
+		on_pad[player] = pad
+		_text.queue_redraw()
+
+
+# A device's words end with what player `i` presses for it, on his pad or
+# his keys as he is now (Level3DSettings.device_press); the shop is where he
+# learns it, there being no telling on the stage when to show him.
+func _press_words(i: int, id: String) -> String:
+	var bound := settings if settings != null else Level3DSettings.new()
+	var press := bound.device_press(id, i, on_pad[i] if i < on_pad.size() else false)
+	return " PRESS %s." % press if press != "" else " NO KEY: BIND ONE IN THE OPTIONS."
 
 
 func _menu_up() -> bool:
@@ -926,7 +950,7 @@ func _status(i: int, it: Dictionary) -> Array:
 			return ["$%d" % Level3DShopCatalog.price(it.id, kit), POOR]
 		Level3DShopCatalog.State.OWNED:
 			var colour: Color = colours[i] if i < colours.size() else Color.WHITE
-			return ["IN SLOT" if kit.device == it.id else "OWNED", colour]
+			return ["OWNED", colour]
 	return ["MAX", DIM]
 
 
@@ -1026,6 +1050,8 @@ func _draw_words(i: int, column: Rect2, s: float, g: float, sg: float) -> void:
 	# The name in full where the tile's is short for it (the catalog's title).
 	var name: String = it.get("title", it.get("name", "READY"))
 	var text: String = it.get("text", "EVERY PLAYER READY, AND THE ROUND STARTS.")
+	if it.get("kind", -1) == Level3DShopCatalog.Kind.DEVICE:
+		text += _press_words(i, it.id)
 	var pad := roundf(WORDS_PAD * s)
 	var heads := _wrap(name, g, column.size.x - pad * 2.0)
 	var lines := _wrap(text, sg, column.size.x - pad * 2.0)
