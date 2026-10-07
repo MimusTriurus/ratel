@@ -28,7 +28,8 @@
 # gun and the BTR's driving: a missile goes off over the first solid or shield
 # tile it comes to, PlayerMissile's is_missile_target, and a grenade asks no
 # tile at all -- Grenade goes over every wall, and off only on an enemy or at
-# the end of its throw. The scene is asked only how high it strikes. It flies
+# the end of its throw; here also on a building's roof it comes down on (_fly),
+# which it went through to go off inside, out of sight. The scene is asked only how high it strikes. It flies
 # at the ground under the cursor, no further than its reach: the game's, or
 # RANGE with the long reach (Level3DSettings.Reach).
 #
@@ -595,7 +596,19 @@ func _fly(rocket: Dictionary, delta: float) -> void:
 		return
 	var node: Node3D = rocket.node
 	var direction: Vector3 = rocket.direction
-	if not rocket.lob:
+	if rocket.lob:
+		# A bomb coming down on a building goes off on its roof. It flew at the
+		# ground under the end of its throw, and came down through the roof to
+		# go off inside, out of sight; the building went down all the same,
+		# lit from within. Buildings only: over a wall, a trunk or a rock it
+		# goes on as the game's Grenade does.
+		var tip: Vector3 = node.global_position + _arc_tangent(rocket, rocket.gone) * rocket.nose * _size(rocket)
+		var roof: Dictionary = surface.call(tip.x, tip.z)
+		if roof.hit and roof.kind == "building" and tip.y <= roof.height \
+				and _arc_tangent(rocket, rocket.gone).y < 0.0:
+			_explode(rocket, Vector3(tip.x, roof.height, tip.z), Vector3.UP)
+			return
+	else:
 		# PlayerMissile.update: off on the tick it is over a solid or shield
 		# tile.
 		var over := Level3DMap.to_map(Vector2(node.global_position.x, node.global_position.z))
