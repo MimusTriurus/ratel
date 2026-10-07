@@ -76,7 +76,7 @@
 #   * How it flies (_pose). The original slides a sprite along its path,
 #     turned to it; a model doing that flew as if on a rail. Where it is and
 #     which way it goes are still the original's, tick for tick; how it sits
-#     in the air is taken from that path: nose down for its speed and its
+#     in the air is taken from that path (Level3DFlight): nose down for its speed and its
 #     acceleration and up as it brakes, banked into its turns by how hard it
 #     turns, each on a spring, its heading after the path's on a stiffer one.
 #     It lifts off into a hover HOVER_HEIGHT up and climbs the rest of the
@@ -105,31 +105,11 @@ const TOP := 2.0                # metres over its skids to over its rotor
 # APPROACH metres in, most of them braking (BRAKE_DISTANCE).
 const HOVER_HEIGHT := 1.2
 const APPROACH := 16.0
-# Its tilts, as a helicopter's: its rotor tilted to give it the acceleration
-# it has, atan(a / G) along and across, and its nose down a little more for
-# its speed, PITCH_PER_SPEED a m/s; each at most its MAX.
-const PITCH_PER_SPEED := deg_to_rad(0.6)
-const PITCH_MAX := deg_to_rad(25.0)
-const BANK_MAX := deg_to_rad(30.0)
-# More than this, m/s^2, is the path jumping, not the helicopter speeding up:
-# the way in and out ask 3, 0.3 g.
-const ACCEL_MAX := 6.0
-# The tilts' springs and the heading's: rad/s, and the tilts' damping. The
-# pitch's is the quickest: its flare as it brakes has under half a second.
-const PITCH_OMEGA := 14.0
-const TILT_OMEGA := 9.0
-const TILT_ZETA := 0.75
-const YAW_OMEGA := 12.0
-# It tilts about this far over its skids, about where its weight is.
+# It tilts (Level3DFlight, at its defaults) about this far over its skids,
+# about where its weight is.
 const PIVOT := 0.9
-# Hovering: how far it bobs, sways, swings round and drifts, below SWAY_SPEED.
-const SWAY_HEIGHT := 0.03
-const SWAY_TILT := deg_to_rad(1.5)
-const SWAY_YAW := deg_to_rad(2.5)
-const SWAY_DRIFT := 0.05
-const SWAY_SPEED := 2.0
-# Light on its skids: the rock as it revs up to lift off and as it sets down.
-const SKID_SHAKE := deg_to_rad(0.6)
+# Light on its skids: it rocks as it revs up to lift off and as it sets down,
+# till they are this far off the pad.
 const SKIDS_CLEAR := 0.2
 # Fly turns the rotor twice a second, 12 degrees a frame at 60 fps: the speed
 # that turns it rotor_speed degrees a frame is rotor_speed / 12.
@@ -146,8 +126,7 @@ const IDLE_PITCH := 0.8
 # nose down or up 17 degrees -- to and from FriendlyHelicopter.FLIGHT_SPEED,
 # over 3 s and BRAKE_DISTANCE, 13 m. Before it speeds off it turns round in
 # its hover to face south, over HOVER_TURN_TICKS.
-const G := 9.8
-const FLIGHT_ACCEL := 0.3 * G / (PX * 100.0 * 100.0)
+const FLIGHT_ACCEL := 0.3 * Level3DFlight.G / (PX * 100.0 * 100.0)
 const BRAKE_DISTANCE := FriendlyHelicopter.FLIGHT_SPEED * FriendlyHelicopter.FLIGHT_SPEED / (2.0 * FLIGHT_ACCEL)
 const HOVER_TURN_TICKS := 250
 const LIFT_TIME := 114
@@ -210,20 +189,10 @@ var _shadow: Node3D
 var _players: Array[AnimationPlayer] = []
 var _sound: AudioStreamPlayer
 var _fading: Tween   # the rotor dying away once it has flown off (fade_out)
-# How it flies (_pose): its ticks, where it was and how fast it went the last
-# one, level x, z; its tilts and its heading drawn, with their rates; and the
-# model's and the shadow's last two poses, drawn between (_process). `_snap`
-# puts it straight where it is, as it appears and as it lands.
-var _ticks := 0
-var _was_at := Vector2.ZERO
-var _was_heading := 0.0
-var _velocity := Vector2.ZERO
-var _pitch := 0.0
-var _pitch_rate := 0.0
-var _roll := 0.0
-var _roll_rate := 0.0
-var _yaw := 0.0
-var _yaw_rate := 0.0
+# How it flies (_pose): its tilts (Level3DFlight), and the model's and the
+# shadow's last two poses, drawn between (_process). `_snap` puts it straight
+# where it is, as it appears and as it lands.
+var _flight := Level3DFlight.new()
 var _snap := true
 var _model_from := Transform3D()
 var _model_to := Transform3D()
@@ -633,72 +602,18 @@ func _play_sound() -> void:
 # A tick of how it sits in the air (the header's How it flies): the pose for
 # this tick, which _process draws it on its way to from the last.
 func _pose() -> void:
-	_ticks += 1
-	var dt := 1.0 / Engine.physics_ticks_per_second
 	var at := Level3DMap.to_level(Vector2(x, y))
 	var height := _flight_height()
-	var airborne := clampf(height / HOVER_HEIGHT, 0.0, 1.0)
 	# The model's nose is its +Z; game angle 0 is north, -Z, and the angle
 	# turns clockwise seen from above.
 	var heading := PI - deg_to_rad(angle)
+	var snapped := _snap
 	if _snap:
-		_was_at = at
-		_was_heading = heading
-		_velocity = Vector2.ZERO
-		_yaw = heading
-		_yaw_rate = 0.0
-		_pitch = 0.0
-		_pitch_rate = 0.0
-		_roll = 0.0
-		_roll_rate = 0.0
-	var velocity := (at - _was_at) / dt
-	var accel := ((velocity - _velocity) / dt).limit_length(ACCEL_MAX)
-	_was_at = at
-	_velocity = velocity
-
-	# The heading after the path's, which turns right and then at once left:
-	# its rate fed forward, so that the spring takes the corners off that
-	# rate and does not trail a steady turn -- a spring alone kept it 30
-	# degrees behind the path, flying sideways.
-	var heading_rate := wrapf(heading - _was_heading, -PI, PI) / dt
-	_was_heading = heading
-	_yaw_rate += (YAW_OMEGA * YAW_OMEGA * wrapf(heading - _yaw, -PI, PI)
-			+ 2.0 * YAW_OMEGA * (heading_rate - _yaw_rate)) * dt
-	_yaw = wrapf(_yaw + _yaw_rate * dt, -PI, PI)
-	var facing := Basis(Vector3.UP, _yaw)
-	var nose3 := facing * Vector3.BACK
-	var right3 := facing * Vector3.LEFT
-	var nose := Vector2(nose3.x, nose3.z)
-	var right := Vector2(right3.x, right3.z)
-	# Nose down is a positive turn about the model's +X, a bank to its right
-	# one about its +Z.
-	var pitch_goal := clampf(atan(accel.dot(nose) / G) + PITCH_PER_SPEED * velocity.dot(nose),
-			-PITCH_MAX, PITCH_MAX) * airborne
-	var roll_goal := clampf(atan(accel.dot(right) / G), -BANK_MAX, BANK_MAX) * airborne
-	_pitch_rate += (PITCH_OMEGA * PITCH_OMEGA * (pitch_goal - _pitch) - 2.0 * TILT_ZETA * PITCH_OMEGA * _pitch_rate) * dt
-	_pitch += _pitch_rate * dt
-	_roll_rate += (TILT_OMEGA * TILT_OMEGA * (roll_goal - _roll) - 2.0 * TILT_ZETA * TILT_OMEGA * _roll_rate) * dt
-	_roll += _roll_rate * dt
-	if airborne <= 0.0:
-		_yaw = heading
-		_yaw_rate = 0.0
-		_pitch = 0.0
-		_pitch_rate = 0.0
-		_roll = 0.0
-		_roll_rate = 0.0
-
-	# The hover's sway, and the rock on the skids, on top.
-	var t := _ticks * dt
-	var sway := airborne * clampf(1.0 - velocity.length() / SWAY_SPEED, 0.0, 1.0)
-	var shake := _skid_shake(height)
-	var pitch := _pitch + SWAY_TILT * sway * _wave(t, 0.37, 0.71) + SKID_SHAKE * shake * sin(t * 19.0)
-	var roll := _roll + SWAY_TILT * sway * _wave(t, 0.29, 0.83) + SKID_SHAKE * shake * sin(t * 23.0 + 1.0)
-	var yaw := _yaw + SWAY_YAW * sway * _wave(t, 0.19, 0.53)
-	var drift := Vector2(_wave(t, 0.23, 0.61), _wave(t, 0.31, 0.67)) * SWAY_DRIFT * sway
-	var lift := SWAY_HEIGHT * sway * _wave(t, 0.45, 1.1)
-
-	var attitude := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, pitch) * Basis(Vector3.BACK, roll)
-	var standing := Vector3(at.x + drift.x, _pad_height + height + lift, at.y + drift.y)
+		_flight.snap()
+		_snap = false
+	var pose := _flight.step(at, heading, clampf(height / HOVER_HEIGHT, 0.0, 1.0), _skid_shake(height))
+	var attitude: Basis = pose.basis
+	var standing := Vector3(at.x, _pad_height + height, at.y) + (pose.offset as Vector3)
 	# Tilted about PIVOT over its skids, not about them.
 	var origin := standing + Vector3.UP * PIVOT - attitude * (Vector3.UP * PIVOT)
 	# FriendlyHelicopter.render's scale, as a factor on the one it stands at.
@@ -708,11 +623,9 @@ func _pose() -> void:
 	_shadow_from = _shadow_to
 	_model_to = Transform3D(attitude.scaled(Vector3.ONE * MODEL_SCALE * scale_now), origin)
 	_shadow_to = Transform3D(attitude.scaled(Vector3.ONE * MODEL_SCALE), origin)
-	if _snap:
+	if snapped:
 		_model_from = _model_to
 		_shadow_from = _shadow_to
-		_snap = false
-	_model.transform = _model_to
 	_shadow.transform = _shadow_to
 	for p in _players:
 		p.speed_scale = rotor_speed / ROTOR_DEGREES_PER_CLIP_SPEED
@@ -759,8 +672,3 @@ func _skid_shake(height: float) -> float:
 		REVVING_DOWN:
 			return 1.0 - smoothstep(0.0, REV_TIME * 0.5, count)
 	return 0.0
-
-
-# A slow wobble, -1 to 1, of two waves that do not keep step.
-static func _wave(t: float, f1: float, f2: float) -> float:
-	return 0.5 * (sin(TAU * f1 * t) + sin(TAU * f2 * t + 1.3))

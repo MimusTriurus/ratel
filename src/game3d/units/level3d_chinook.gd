@@ -100,6 +100,20 @@ const Z_AWAY := -(AWAY_ANGLE + 90.0) / Chinook.TO_DEGREES * Chinook.IPI2
 const SOUND_VOLUME := 0.5
 # Between the two vehicles in the cabin, level metres, bumper to bumper.
 const CARGO_GAP := 0.25
+# How it sits in the air (_pose, Level3DFlight): it tilts about PIVOT level
+# metres over its wheels, the middle of its cabin; its tilts come in over the
+# first SETTLE_HEIGHT of its climb and go over the last of its descent, so
+# that it stands level when the ramp comes down with the BTR on it; it rocks
+# on its wheels below WHEELS_CLEAR. Its paths ask up to 1.1 g of it, coming in
+# round its arc at 12.9 m/s.
+const PIVOT := 2.5 * MODEL_SCALE
+const SETTLE_HEIGHT := 1.5
+const WHEELS_CLEAR := 0.2
+const FLIGHT_ACCEL_MAX := 15.0
+# A tandem's hull flies flatter than a single rotor's, its rotors tilting it
+# less: its pitch is held to this. Speeding off on west, as the original's
+# does at 0.36 g till it is out of the frame, it was nose down 25 the while.
+const PITCH_MAX := deg_to_rad(12.0)
 
 enum { FORWARDS, OPENING, OUT, AWAY, DONE }
 # A vehicle's own way out, from OUT on: down the ramp, the diagonal, the second
@@ -165,6 +179,17 @@ var _sound: AudioStreamPlayer
 var _landed_height := 0.0
 var _shift := 0.0
 var _ramp_landed := false   # the ramp has come down and raised its dust
+# How it sits in the air (_pose): its tilts; where it is, level and untilted,
+# which the cargo rides and the ramp's dust comes off (_surface, _ramp_dust),
+# only ever on the ground; and the model's and the shadow's last two poses,
+# drawn between (_process).
+var _flight := Level3DFlight.new()
+var _frame := Transform3D()
+var _posed := false
+var _model_from := Transform3D()
+var _model_to := Transform3D()
+var _shadow_from := Transform3D()
+var _shadow_to := Transform3D()
 
 
 # How far the Chinook sets down north of the original's spot, in px: the
@@ -194,6 +219,8 @@ static func _ramp_down() -> float:
 
 
 func _ready() -> void:
+	_flight.accel_max = FLIGHT_ACCEL_MAX
+	_flight.pitch_max = PITCH_MAX
 	var scene: PackedScene = load(MODEL_PATH)
 	if scene == null:
 		push_error("Cannot load %s -- run export() in jackal_chinook_lowpoly.blend" % MODEL_PATH)
@@ -631,7 +658,7 @@ func _advance_ramp() -> bool:
 func _ramp_dust() -> void:
 	if not dust.is_valid():
 		return
-	var frame := _shadow.global_transform
+	var frame := global_transform * _frame
 	var lip := frame * Vector3(0.0, 0.0, -(HINGE_BACK + RAMP_LEN * cos(_ramp_down())))
 	var across := frame.basis * Vector3(CABIN_HALF_WIDTH, 0.0, 0.0)
 	var out := (frame.basis * Vector3(0.0, 0.0, -1.0)).normalized()
@@ -660,16 +687,48 @@ func _play_sound(volume: float) -> void:
 # ----------------------------------------------------------------------------
 # Where things are
 
+# Where it is this tick, tilted as a helicopter flying its path is
+# (Level3DFlight): nose up braking round its arc in and down speeding off,
+# banked into the arcs. The paths are the original's, and near enough a
+# helicopter's -- 0.36 g each way -- but for the bank coming in, 48 degrees,
+# which is held to the flight's 30. Drawn between ticks by _process.
 func _pose() -> void:
 	var at := Level3DMap.to_level(Vector2(x, y))
-	var position_3d := Vector3(at.x, _landed_height + z * ALTITUDE, at.y)
+	var height := z * ALTITUDE
+	var position_3d := Vector3(at.x, _landed_height + height, at.y)
 	# The model's nose is its +Z; a game angle a points (cos a, sin a) in x, z.
-	var facing := Basis(Vector3.UP, PI / 2.0 - deg_to_rad(angle))
+	var heading := PI / 2.0 - deg_to_rad(angle)
+	var flying := state == FORWARDS or state == AWAY
+	var airborne := clampf(height / SETTLE_HEIGHT, 0.0, 1.0) if flying else 0.0
+	var shake := clampf(1.0 - height / WHEELS_CLEAR, 0.0, 1.0) if flying else 0.0
+	var pose := _flight.step(at, heading, airborne, shake)
+	var attitude: Basis = pose.basis
+	var origin := position_3d + (pose.offset as Vector3) + Vector3.UP * PIVOT - attitude * (Vector3.UP * PIVOT)
 	# Held at its size at AWAY_ANGLE past it: the original's scale goes on to
 	# ten times at the top of the climb, which the original never drew.
 	var scale_now := Chinook.Z0 / (Chinook.Z0 - minf(z, Z_AWAY)) if enlarge else 1.0
-	_model.transform = Transform3D(facing.scaled(Vector3.ONE * MODEL_SCALE * scale_now), position_3d)
-	_shadow.transform = Transform3D(facing.scaled(Vector3.ONE * MODEL_SCALE), position_3d)
+	_frame = Transform3D(Basis(Vector3.UP, heading).scaled(Vector3.ONE * MODEL_SCALE), position_3d)
+	_model_from = _model_to
+	_shadow_from = _shadow_to
+	_model_to = Transform3D(attitude.scaled(Vector3.ONE * MODEL_SCALE * scale_now), origin)
+	_shadow_to = Transform3D(attitude.scaled(Vector3.ONE * MODEL_SCALE), origin)
+	if not _posed:
+		_posed = true
+		_model_from = _model_to
+		_shadow_from = _shadow_to
+	_model.transform = _model_to
+	_shadow.transform = _shadow_to
+
+
+# Between its last two ticks' poses, for the frames drawn between them: at
+# 100 ticks a second drawn at 60 frames it went one tick's way one frame and
+# two the next, 13 cm and 26 coming in.
+func _process(_delta: float) -> void:
+	if _model == null or not _posed or state == DONE:
+		return
+	var f := Engine.get_physics_interpolation_fraction()
+	_model.transform = _model_from.interpolate_with(_model_to, f)
+	_shadow.transform = _shadow_from.interpolate_with(_shadow_to, f)
 
 
 # The BTR where IntroPlayer is, riding on whatever is under its axles: the
@@ -695,7 +754,8 @@ func _surface(p: Vector3) -> float:
 	var outside: float = ground.call(p.x, p.z).height
 	if state == AWAY:
 		return outside
-	var into := _shadow.global_transform.affine_inverse() * p   # model metres
+	# Off where it stands, untilted: it is level by the time the BTR is on it.
+	var into := (global_transform * _frame).affine_inverse() * p   # model metres
 	if absf(into.x) > CABIN_HALF_WIDTH:
 		return outside
 	var back := -into.z
@@ -707,7 +767,7 @@ func _surface(p: Vector3) -> float:
 		deck = FLOOR + (back - HINGE_BACK) * tan(slope)
 	if deck == -INF:
 		return outside
-	return maxf(outside, _shadow.position.y + deck * MODEL_SCALE)
+	return maxf(outside, _frame.origin.y + deck * MODEL_SCALE)
 
 
 # The ramp's angle up from level now, off the ramp bone's pose: the clip is
