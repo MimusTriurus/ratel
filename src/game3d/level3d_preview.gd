@@ -2778,7 +2778,8 @@ func _update_pad_arrow() -> void:
 
 
 # The three moments (Level3DBanners), each on the edge of what it marks: the
-# Chinook coming and going, the boss's pan starting and ending, the fourth
+# Chinook coming and going, the boss's pan starting and its first tank
+# coming into the frame (Level3DBoss.is_warning), the fourth
 # boss tank going. R forgets all three (_restart), so a new run shows them
 # again.
 var _banners: Level3DBanners
@@ -2960,9 +2961,9 @@ func _update_banners() -> void:
 		_banners.stage_over()
 		_mission_from = _ticks
 	_saw_chinook = flying
-	var panning := boss != null and boss.is_panning()
+	var panning := boss != null and boss.is_warning()
 	if panning and not _saw_pan and on and settings.banner_warning:
-		_banners.warning()
+		_banners.warning(Level3DBoss.NAME)
 	elif not panning and _saw_pan:
 		_banners.warning_over()
 	_saw_pan = panning

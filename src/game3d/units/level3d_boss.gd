@@ -180,6 +180,7 @@ var _trigger_row := -1
 var _armed := false               # the trigger has fired: the pan, then the fight
 var _pan_top := -1.0              # the frame's top, map px, while armed
 var _fighting := false            # BossBlueTanksManager.ready: the pan is over
+var _arrived := false             # a tank has come into the frame (is_warning)
 var _spawn_delay := 91
 var _spawned := 0
 var _destroyed := 0
@@ -378,6 +379,7 @@ func reset() -> void:
 	_armed = false
 	_pan_top = -1.0
 	_fighting = false
+	_arrived = false
 	_spawn_delay = 91
 	_spawned = 0
 	_destroyed = 0
@@ -396,9 +398,19 @@ func camera_top() -> float:
 	return _pan_top if _armed else -1.0
 
 
-# The pan to the arena is under way (the HUD's WARNING).
+# The pan to the arena is under way.
 func is_panning() -> bool:
 	return _armed and not _fighting
+
+
+# The HUD's WARNING, with NAME under it: from the pan's start until the first
+# tank has come into the frame, there to be fought -- not only through the
+# pan, which left the player 91 ticks and a drive in looking at an empty
+# arena with nothing said.
+const NAME := "TANK AMBUSH!"
+
+func is_warning() -> bool:
+	return _armed and not _arrived
 
 
 # All four destroyed: BossBlueTanksManager's mark_stage_completed.
@@ -456,6 +468,14 @@ func tick() -> void:
 			_spawn(sx, -SPAWN_OUTSIDE if from_top else bottom + SPAWN_OUTSIDE, from_top)
 	for t in tanks:
 		_update(t, _player_near(t.x, t.y))
+	if not _arrived:
+		var seen := Rect2(Level3DMap.to_map(view.position), Level3DMap.to_map(view.end) - Level3DMap.to_map(view.position)).abs()
+		for t in tanks:
+			if seen.has_point(Vector2(t.x, t.y)):
+				_arrived = true
+				if verbose:
+					print("boss: the first tank is in, tick %d" % Engine.get_physics_frames())
+				break
 
 
 func _spawn(x: float, y: float, from_top: bool) -> void:

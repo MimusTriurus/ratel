@@ -3,10 +3,11 @@
 #
 #   * STAGE 1, while the Chinook flies the BTR in. The game shows the stage on
 #     the map screen before it (MapMode); the preview has no map screen.
-#   * WARNING, blinking through the boss's pan to its arena. Not the game's,
-#     whose pan is the only warning; the tilted view sees further up the stage
-#     than the game's frame, so the pan starts from where the arena is
-#     already half in sight and says less.
+#   * WARNING, blinking from the boss's pan to its arena until the first of
+#     it comes into the frame, the boss's name under it (Level3DBoss.NAME),
+#     steady. Not the game's, whose pan is the only warning; the tilted view
+#     sees further up the stage than the game's frame, so the pan starts from
+#     where the arena is already half in sight and says less.
 #   * GAME OVER, for GAME_OVER_TIME when every player is out and the stage
 #     starts again. A STAGE that comes while it is up waits for it.
 #
@@ -30,6 +31,8 @@ const GAME_OVER_TIME := 3.0
 const FADE_TIME := 0.5
 const WARNING_BLINK := 0.3      # on and off, each
 const WARNING_COLOUR := Color(1.0, 0.32, 0.26)
+const SUBTITLE := 0.5           # the name under WARNING, of GLYPH
+const SUBTITLE_GAP := 0.4       # between the two lines, of the name's glyph
 
 enum { NONE, STAGE, WARNING, GAME_OVER }
 
@@ -37,6 +40,7 @@ var scale_factor := 1.0
 
 var _kind := NONE
 var _text := ""
+var _subtitle := ""             # under the text, "" none
 var _time := 0.0                # since the banner came up
 var _ending := -1.0             # when it starts to fade, -1 while it holds
 var _stage_waiting := ""        # a STAGE's text that came under GAME OVER, "" none
@@ -70,8 +74,9 @@ func stage_over() -> void:
 		_ending = _time
 
 
-func warning() -> void:
+func warning(name := "") -> void:
 	_start(WARNING, "WARNING")
+	_subtitle = name
 	Level3DAudio.play("warning")
 
 
@@ -87,6 +92,7 @@ func game_over() -> void:
 func _start(kind: int, text: String) -> void:
 	_kind = kind
 	_text = text
+	_subtitle = ""
 	_time = 0.0
 	_ending = -1.0
 	queue_redraw()
@@ -114,15 +120,23 @@ func _draw() -> void:
 	var s := scale_factor
 	var g := maxf(roundf(GLYPH * s / 8.0), 1.0) * 8.0
 	var width := Level3DFont.width(_text, g)
-	var plate := Rect2((size - Vector2(width, g)) * 0.5 - Level3DSummary.PADDING * s,
-			Vector2(width, g) + Level3DSummary.PADDING * s * 2.0)
+	# The name under it, smaller: the plate round both, the pair in the middle.
+	var sub_g := maxf(roundf(GLYPH * SUBTITLE * s / 8.0), 1.0) * 8.0
+	var sub_width := Level3DFont.width(_subtitle, sub_g) if _subtitle != "" else 0.0
+	var gap := roundf(sub_g * SUBTITLE_GAP) if _subtitle != "" else 0.0
+	var block := Vector2(maxf(width, sub_width), g + (gap + sub_g if _subtitle != "" else 0.0))
+	var plate := Rect2((size - block) * 0.5 - Level3DSummary.PADDING * s,
+			block + Level3DSummary.PADDING * s * 2.0)
 	plate.position = plate.position.round()
 	var alpha := 1.0 if _ending < 0.0 else clampf(1.0 - (_time - _ending) / FADE_TIME, 0.0, 1.0)
 	modulate.a = alpha
 	Level3DSummary.draw_plate(self, plate, s)
+	var top := roundf(size.y * 0.5 - block.y * 0.5)
+	if _subtitle != "":
+		Level3DFont.draw(self, _subtitle, roundf(size.x * 0.5 - sub_width * 0.5), top + g + gap, sub_g,
+				Level3DFont.WHITE, Color.WHITE)
 	if _kind == WARNING and int(_time / WARNING_BLINK) % 2 == 1:
 		return
 	var tint := WARNING_COLOUR if _kind == WARNING else Color.WHITE
 	var x := roundf(size.x * 0.5 - width * 0.5)
-	var y := roundf(size.y * 0.5 - g * 0.5)
-	Level3DFont.draw(self, _text, x, y, g, Level3DFont.WHITE, tint)
+	Level3DFont.draw(self, _text, x, top, g, Level3DFont.WHITE, tint)
