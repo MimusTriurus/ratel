@@ -135,9 +135,48 @@ they are pressed, and its hull follows over 8 ticks, so it slid sideways
 through every turn and its tyre marks came out as corners with a hook where
 the rear wheels swung out. Smooth, the keys, the speed and the sensors are
 still the game's, but the jeep only ever goes the way it faces: the heading
-swings round at 450 degrees a second (an arc of 0.45 m), about the rear axle
-as a car's does, so the rear wheels never slide; a key straight back is a
-U-turn, and against a wall it turns on the spot. Off, it drives as the game's.
+swings round at the game's hull's rate, 562.5 degrees a second (an arc of
+0.37 m), about the rear axle as a car's does, so the rear wheels never slide.
+Not faster: at 720 the arc was inside the rear wheels' half track, and the
+inner wheel backed up through every turn, a hook in its mark. The marks lay
+a quad sooner on a bend (`Level3DTracks.BEND`), so that the inner wheel's
+tight curl is drawn round rather than as a polygon. It keeps to the game's
+lines: a press draws the line the game's jeep would take, through the rear
+axle and the way the keys point, and the rear axle steers back onto it,
+aimed half a metre along it. A right angle is a short round corner at the
+press; against a wall it turns on the spot. A key straight back backs it
+up (Controls -> Back up on reverse, `Level3DSettings.smooth_reverse`, on by
+default): the rear axle rolls back along the hull the tick it is pressed,
+as the game's jeep goes, and held past `REVERSE_HOLD` (0.12 s) the nose
+swings round over it, the rear wheels running on along the line -- a
+J-turn, whose two rear marks cross, as any turn round in its own lane's
+must -- so a tap back is a dodge that leaves it facing as it was. Not a
+diagonal back: backing along that, the rear wheels went off at 45 degrees to
+the way they roll, and their marks crossed where no rolling wheel could put
+them; that is a turn forward, as any other. Off, a key straight
+back is a teardrop 0.4 m wide that comes back through where it was pressed.
+Smooth turns off, it drives as the game's.
+
+The frame is the game's camera window (Graphics -> Camera window,
+`Level3DSettings.camera_window`, on by default; `Level3DPreview._window_target`,
+`GameMode._camera_track_player`); off, it keeps the jeep in its middle. It stays where it is while the jeep is
+in it and is pushed along when the jeep comes within the game's margins of
+an edge -- the middle of the frame going north, a sixth of it from the
+bottom, an eighth from either side -- so driving up the jeep holds the
+middle, and backing down or dodging it drives about a still frame. Not the
+game's ratchet: the frame comes back down after a jeep driving south. With
+two jeeps it keeps to the middle of them instead, for `_hold_crews`.
+
+It goes there on a spring rather than at once
+(`Level3DPreview._follow`): a critically damped one (SmoothDamp,
+`CAMERA_SMOOTH` 0.15 s, about half a metre behind at speed), after the rear
+axle while the jeep turns about it (`Level3DBtr.camera_anchor`), whose
+middle swings out on every turn. It jumps to a target further than
+`CAMERA_SNAP` off. Looking ahead (`Level3DSettings.camera_lead`) puts it
+`CAMERA_LEAD` (1.5 m) ahead of a single jeep the way it faces, on a slower
+spring of its own (`CAMERA_LEAD_SMOOTH`); it is off and hidden -- not in the
+menu, not saved -- since the gun fires up the screen whichever way the jeep
+faces, and a frame swinging with every dodge showed little more of anything.
 
 ## Gamepads
 

@@ -134,6 +134,7 @@ var _font_sizes: Array = []
 var _font_style := -1        # the Level3DFont.Style the menu is drawn in
 var _game_mode: OptionButton
 var _camera: OptionButton
+var _camera_window: CheckBox
 var _look: OptionButton
 var _light: OptionButton
 var _crt: CheckBox
@@ -148,6 +149,7 @@ var _firing: OptionButton
 var _reach: OptionButton
 var _infinite_lives: CheckBox
 var _smooth_turns: CheckBox
+var _smooth_reverse: CheckBox
 var _wall_hack: CheckBox
 var _bullet_hack: CheckBox
 var _gun_rate: OptionButton
@@ -397,6 +399,7 @@ func refresh() -> void:
 	_apply_font()
 	_game_mode.select(int(settings.preset()))
 	_camera.select(settings.camera)
+	_camera_window.set_pressed_no_signal(settings.camera_window)
 	_look.select(settings.look)
 	_light.select(settings.light)
 	_crt.set_pressed_no_signal(settings.crt)
@@ -411,6 +414,8 @@ func refresh() -> void:
 	_firing.select(settings.firing)
 	_reach.select(REACH_ORDER.find(settings.reach))
 	_smooth_turns.set_pressed_no_signal(settings.smooth_turns)
+	_smooth_reverse.set_pressed_no_signal(settings.smooth_reverse)
+	_smooth_reverse.disabled = not settings.smooth_turns   # greyed out, as the CRT's curve is
 	_infinite_lives.set_pressed_no_signal(settings.infinite_lives)
 	_wall_hack.set_pressed_no_signal(settings.wall_hack)
 	_bullet_hack.set_pressed_no_signal(settings.bullet_hack)
@@ -566,6 +571,9 @@ func _make_graphics_tab() -> Control:
 			func(i: int): settings.outline_vehicles = Level3DSettings.OUTLINES[i])
 	_outline_people = _choice(grid, "Outline: people", widths,
 			func(i: int): settings.outline_people = Level3DSettings.OUTLINES[i])
+	_camera_window = _check(tab, "Camera window", func(on: bool): settings.camera_window = on)
+	_note(tab, "As in the game: the camera stays still while the jeep drives about in the frame, "
+			+ "and moves when it nears an edge. Off: the jeep is always in the middle.")
 	_crt = _check(tab, "CRT monitor", func(on: bool): settings.crt = on)
 	_crt_curve = _choice(_grid(tab), "Screen curvature", ["Flat", "Slight", "Normal", "Strong", "Very strong"],
 			func(i: int): settings.crt_curve = Level3DSettings.CRT_CURVES[i])
@@ -891,6 +899,9 @@ func _make_controls_tab() -> Control:
 	_smooth_turns = _check(tab, "Smooth turns", func(on: bool): settings.smooth_turns = on)
 	_note(tab, "The jeep swings round into the direction pressed on a tight arc, and its tyres "
 			+ "leave curves. Off: it goes the new way at once and turns after, as in the game.")
+	_smooth_reverse = _check(tab, "Back up on reverse", func(on: bool): settings.smooth_reverse = on)
+	_note(tab, "With smooth turns: the direction straight behind the jeep backs it up at once, as in the game, "
+			+ "and held on, it swings round. Off: it turns round on a tight loop.")
 	tab.add_child(HSeparator.new())
 	_heading(tab, "Keys")
 	var keys := _grid(tab)

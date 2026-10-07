@@ -88,6 +88,14 @@ var hard := false
 # Each player's paint (Level3DBtr.PAINTS), as the shop last left it.
 var paints: Array[String] = ["olive", "blue"]
 var camera := Camera.TILTED
+# The game's camera window (Level3DPreview._window_target): the frame still
+# while the jeep drives about in it. Off, the frame keeps the jeep in its
+# middle.
+var camera_window := true
+# The frame a little ahead of the jeep the way it faces, rather than on it as
+# the game's is (Level3DPreview.CAMERA_LEAD). Off, as the game, and hidden:
+# not in the menu, not saved nor read, the code kept for trying it again.
+var camera_lead := false
 var look := Look.MODERN
 # The CRT monitor, over either look.
 var crt := false
@@ -117,6 +125,10 @@ var reach := Reach.CLASSIC
 # jeep going the new way at once (Level3DBtr.smooth). Not under
 # MODERN_CONTROLS: it is the classic driving's, the keys being the game's.
 var smooth_turns := true
+# With smooth turns, a key behind the jeep backs it up along the game's line
+# at once, and turns it round after (Level3DBtr.smooth_reverse), rather than
+# taking it round a teardrop.
+var smooth_reverse := true
 var infinite_lives := false
 var wall_hack := false
 var bullet_hack := false
@@ -278,6 +290,7 @@ func load_saved() -> void:
 		if Level3DBtr.PAINTS.any(func(p: Dictionary): return p.id == paint):
 			paints[i] = paint
 	camera = clampi(config.get_value("graphics", "camera", camera), 0, Camera.size() - 1)
+	camera_window = config.get_value("graphics", "camera_window", camera_window)
 	resolution = clampi(config.get_value("graphics", "resolution", resolution), 0, Resolution.size() - 1)
 	antialias = clampi(config.get_value("graphics", "antialias", antialias), 0, Antialias.size() - 1)
 	light = clampi(config.get_value("graphics", "light", light), 0, Level3DLighting.NAMES.size() - 1)
@@ -299,6 +312,7 @@ func load_saved() -> void:
 		firing = clampi(config.get_value("controls", "firing", firing), 0, Firing.size() - 1)
 		reach = clampi(config.get_value("controls", "reach", reach), 0, Reach.size() - 1)
 	smooth_turns = config.get_value("controls", "smooth_turns", smooth_turns)
+	smooth_reverse = config.get_value("controls", "smooth_reverse", smooth_reverse)
 	infinite_lives = config.get_value("cheats", "infinite_lives", infinite_lives)
 	wall_hack = config.get_value("cheats", "wall_hack", wall_hack)
 	bullet_hack = config.get_value("cheats", "bullet_hack", bullet_hack)
@@ -372,6 +386,7 @@ func save() -> void:
 	for i in paints.size():
 		config.set_value("game", "paint_%d" % (i + 1), paints[i])
 	config.set_value("graphics", "camera", camera)
+	config.set_value("graphics", "camera_window", camera_window)
 	config.set_value("graphics", "render", look)
 	config.set_value("graphics", "resolution", resolution)
 	config.set_value("graphics", "antialias", antialias)
@@ -385,6 +400,7 @@ func save() -> void:
 	config.set_value("controls", "firing", firing)
 	config.set_value("controls", "reach", reach)
 	config.set_value("controls", "smooth_turns", smooth_turns)
+	config.set_value("controls", "smooth_reverse", smooth_reverse)
 	config.set_value("cheats", "infinite_lives", infinite_lives)
 	config.set_value("cheats", "wall_hack", wall_hack)
 	config.set_value("cheats", "bullet_hack", bullet_hack)

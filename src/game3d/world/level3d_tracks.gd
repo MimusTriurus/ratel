@@ -32,6 +32,12 @@ extends Node3D
 
 const SHADER := preload("res://src/game3d/shaders/level3d_tracks.gdshader")
 const STEP := 0.08
+# On a bend a quad is laid sooner, once the way has turned BEND from the last
+# one's and it is at least MIN_STEP long: a jeep's inner rear wheel goes round
+# a turn on a curl of 0.1 m or so, which quads of STEP drew as a polygon of
+# two or three sides.
+const MIN_STEP := 0.015
+const BEND := deg_to_rad(8.0)
 const BREAK := 0.6
 const LIFT := 0.012
 # A contact this far over what it stands on is off it. Not less: the hull
@@ -144,7 +150,11 @@ func _follow(contact: Dictionary) -> void:
 	var run := Vector3(at.x - trail.at.x, 0.0, at.z - trail.at.z)
 	var length := run.length()
 	if length < STEP:
-		return
+		if not trail.has_back or length < MIN_STEP:
+			return
+		var last_way := Vector3(trail.at.x - trail.back.x, 0.0, trail.at.z - trail.back.z).normalized()
+		if last_way.dot(run / length) > cos(BEND):
+			return
 	var half: float = contact.width * 0.5
 	var way_out := run / length
 	if not trail.has_back:
@@ -171,6 +181,17 @@ func _follow(contact: Dictionary) -> void:
 			across = Vector3.UP.cross(bisector) * (half / cosine)
 	var left := _on_ground(trail.at + across)
 	var right := _on_ground(trail.at - across)
+	# On a bend tighter than half the mark's width -- a jeep's inner rear
+	# wheel all but turning on the spot -- the inner edge runs backwards, and
+	# its quads turned over each other into a fan of dark slivers. That edge
+	# stays where it was instead: the mark turns about it, as a tyre turned on
+	# the spot leaves it.
+	var way := way_in + way_out
+	if way.length_squared() > 1e-4:
+		if Vector3(left.x - trail.left.x, 0.0, left.z - trail.left.z).dot(way) < 0.0:
+			left = trail.left
+		if Vector3(right.x - trail.right.x, 0.0, right.z - trail.right.z).dot(way) < 0.0:
+			right = trail.right
 	var pitch: float = contact.pitch
 	_add_quad(trail.left, trail.right, right, left,
 			trail.along / pitch, (trail.along + into) / pitch, contact.tread)

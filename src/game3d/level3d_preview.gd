@@ -320,6 +320,23 @@ var following := true
 # (_process), and the time it takes to close most of it.
 const CATCH_UP := 0.25
 var _catch_up := Vector2.ZERO
+# The frame on the players (_follow): a critically damped spring after
+# _camera_target, CAMERA_SMOOTH its time -- a lag of about that many seconds'
+# driving, 0.55 m, half COOP_EDGE -- which takes the edge off the starts,
+# stops and turns, and the 100 ticks a second the BTR moves in drawn at 60
+# frames. A target further than CAMERA_SNAP off is jumped to: a jeep put back.
+# Looking ahead (Level3DSettings.camera_lead), one player, the target is
+# CAMERA_LEAD before the jeep the way it faces, on a slower spring of its own,
+# CAMERA_LEAD_SMOOTH: on the frame's alone a turn swung it across at 12 m/s.
+const CAMERA_SMOOTH := 0.15
+const CAMERA_SNAP := 4.0
+const CAMERA_LEAD := 1.5
+const CAMERA_LEAD_SMOOTH := 0.5
+var _camera_at := Vector2.ZERO
+var _camera_velocity := Vector2.ZERO
+var _lead := Vector2.ZERO
+var _lead_velocity := Vector2.ZERO
+var _window := Vector2.ZERO     # the camera window's frame middle (_window_target)
 var zoom := 1.0
 var tilted := true      # Tab; the top view is the game's
 # The Escape menu's (level3d_menu.gd): the camera, the look, the driving, the
@@ -495,7 +512,8 @@ func _ready() -> void:
 	# One player unless asked for two: the menu's game for two lasts the run.
 	_set_players(int(args[players + 1]) if players >= 0 else 1)
 	_place_crews()
-	focus = _follow_point()
+	_snap_camera()
+	focus = _camera_at
 	_update_camera()
 	_live = true
 	_slicing = false
@@ -563,7 +581,8 @@ func _start_intro() -> void:
 	chinook.enlarge = not tilted
 	chinook.finished = func():
 		chinook = null
-		_catch_up = focus - _follow_point()
+		_snap_camera()
+		_catch_up = focus - _camera_at
 		following = true
 		# Player.make_invincible.
 		for c in crews:
@@ -893,12 +912,92 @@ func _follow_point() -> Vector2:
 	var count := 0
 	for c in crews:
 		if not c.out:
-			total += Vector2(c.btr.position.x, c.btr.position.z)
+			var anchor := c.btr.camera_anchor()
+			total += Vector2(anchor.x, anchor.z)
 			count += 1
 	if count == 0:
 		return Vector2(btr.position.x, btr.position.z)
 	var shift := Vector2(0.0, _hud_inset_metres() * 0.5) if count > 1 else Vector2.ZERO
 	return total / count + shift
+
+
+# Where the lead's spring pulls: with one jeep in and looking ahead,
+# CAMERA_LEAD on the way it faces. Not with two: the frame has to hold both
+# (_hold_crews).
+func _lead_target() -> Vector2:
+	if settings.camera_lead:
+		var in_game := crews.filter(func(c: Crew): return not c.out)
+		if in_game.size() == 1:
+			var ahead: Vector3 = in_game[0].btr.forward()
+			return Vector2(ahead.x, ahead.z) * CAMERA_LEAD
+	return Vector2.ZERO
+
+
+# Where the frame's spring pulls (CAMERA_SMOOTH): the window's middle and the
+# lead.
+func _camera_target() -> Vector2:
+	return _window_target() + _lead
+
+
+# GameMode._camera_track_player's window: the frame stays where it is while
+# the jeep is in it, and is pushed along when it comes within the game's
+# margins of an edge -- CAMERA_MARGIN_NORTH of the top, which is the middle
+# of the frame, CAMERA_MARGIN_SOUTH of the bottom, CAMERA_MARGIN_SIDES of
+# either side -- in game pixels of the frame, whatever the zoom. Driving up,
+# the jeep holds the middle as before; backing down or dodging, it drives
+# about a still frame, as the game's does. Not the game's ratchet: the
+# preview's frame comes back down after a jeep driving south. With two, the
+# frame keeps to the middle of them (_follow_point), for _hold_crews. Off
+# (Level3DSettings.camera_window), the jeep is kept in the middle.
+func _window_target() -> Vector2:
+	var p := _follow_point()
+	if not settings.camera_window or crews.filter(func(c: Crew): return not c.out).size() != 1:
+		_window = p
+		return p
+	var size := _view_frame().size
+	var half := size * 0.5
+	var north := GameMode.CAMERA_MARGIN_NORTH * size.y / Main.SCREEN_HEIGHT
+	var south := GameMode.CAMERA_MARGIN_SOUTH * size.y / Main.SCREEN_HEIGHT
+	var sides := GameMode.CAMERA_MARGIN_SIDES * size.x / Main.SCREEN_WIDTH
+	_window.x = clampf(_window.x, p.x + sides - half.x, p.x - sides + half.x)
+	_window.y = clampf(_window.y, p.y + south - half.y, p.y - north + half.y)
+	_window = _clamp_focus(_window)
+	return _window
+
+
+func _snap_camera() -> void:
+	_window = _clamp_focus(_follow_point())
+	_lead = _lead_target()
+	_lead_velocity = Vector2.ZERO
+	_camera_at = _camera_target()
+	_camera_velocity = Vector2.ZERO
+
+
+# One frame of the springs.
+func _follow(delta: float) -> Vector2:
+	var lead := _smooth_damp(_lead, _lead_target(), _lead_velocity, CAMERA_LEAD_SMOOTH, delta)
+	_lead = lead[0]
+	_lead_velocity = lead[1]
+	var target := _camera_target()
+	if _camera_at.distance_to(target) > CAMERA_SNAP:
+		_snap_camera()
+		return _camera_at
+	var frame := _smooth_damp(_camera_at, target, _camera_velocity, CAMERA_SMOOTH, delta)
+	_camera_at = frame[0]
+	_camera_velocity = frame[1]
+	return _camera_at
+
+
+# Unity's SmoothDamp, critically damped, exact for any frame length (Game
+# Programming Gems 4, 1.10): [where it is now, its velocity].
+static func _smooth_damp(at: Vector2, target: Vector2, velocity: Vector2, time: float,
+		delta: float) -> Array:
+	var omega := 2.0 / time
+	var x := omega * delta
+	var decay := 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x)
+	var change := at - target
+	var temp := (velocity + omega * change) * delta
+	return [target + (change + temp) * decay, (velocity - omega * temp) * decay]
 
 
 # Two players: each held where the frame can still have the other, COOP_EDGE
@@ -3063,6 +3162,7 @@ func _apply_settings() -> void:
 	for c in crews:
 		c.btr.classic = settings.driving == Level3DSettings.Driving.CLASSIC
 		c.btr.smooth = settings.smooth_turns
+		c.btr.smooth_reverse = settings.smooth_reverse
 		c.btr.ghost = settings.wall_hack
 		c.gun.unlimited = settings.reach == Level3DSettings.Reach.UNLIMITED
 		c.launcher.unlimited = c.gun.unlimited
@@ -3151,19 +3251,23 @@ func _mesh_aabb(root: Node, leave_out: Array[String] = []) -> AABB:
 	return result
 
 
+# The frame stays on the level: at zoom 1 it is exactly the level's width,
+# so x is pinned to the middle, as the game's camera_x is.
+func _clamp_focus(at: Vector2) -> Vector2:
+	var half_width := level_aabb.size.x / zoom * 0.5
+	var half_height := level_aabb.size.x / zoom * 9.0 / 32.0
+	return Vector2(clampf(at.x, level_aabb.position.x + half_width, level_aabb.end.x - half_width),
+			clampf(at.y, level_aabb.position.z + half_height, level_aabb.end.z - half_height))
+
+
 func _update_camera() -> void:
 	var width := level_aabb.size.x / zoom
-	var half_width := width * 0.5
-	var half_height := width * 9.0 / 32.0
 	# Over the Chinook while it comes in: it is drawn at the original's scale
 	# for its height, which takes it well above the usual 20 m.
 	var height := TOP_CAMERA_HEIGHT
 	if helicopter != null:
 		height = maxf(height, helicopter.top() + 1.0)
-	# The frame stays on the level: at zoom 1 it is exactly the level's width,
-	# so x is pinned to the middle, as the game's camera_x is.
-	focus.x = clampf(focus.x, level_aabb.position.x + half_width, level_aabb.end.x - half_width)
-	focus.y = clampf(focus.y, level_aabb.position.z + half_height, level_aabb.end.z - half_height)
+	focus = _clamp_focus(focus)
 	if tilted:
 		camera.projection = Camera3D.PROJECTION_PERSPECTIVE
 		camera.fov = 40.0
@@ -3744,7 +3848,7 @@ func _process(delta: float) -> void:
 			focus = chinook.frame_centre(level_aabb.size.x / zoom * 9.0 / 32.0)
 		else:
 			_catch_up *= exp(-delta / CATCH_UP)
-			focus = _follow_point() + _catch_up
+			focus = _follow(delta) + _catch_up
 	else:
 		_catch_up = Vector2.ZERO
 	# The boss's pan and the arena after it: the frame's top where the boss
@@ -4456,7 +4560,8 @@ func _jump_to_boss() -> void:
 		c.btr.place(Vector3(at.x + COOP_SPREAD * c.index, 0.0, at.y), START_HEADING)
 	following = true
 	_catch_up = Vector2.ZERO
-	focus = _follow_point()
+	_snap_camera()
+	focus = _camera_at
 	_update_camera()
 	var top := Level3DMap.to_map(_view_frame().position).y
 	soldiers.skip_to(top)

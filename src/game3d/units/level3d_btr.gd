@@ -266,9 +266,22 @@ const TURRET_RATE := deg_to_rad(175.0)
 # The classic mode's, for the turret and the launcher: half a turn in five
 # ticks, 45 degrees in one or two.
 const CLASSIC_TURRET_RATE := deg_to_rad(3600.0)
-# The smooth turns' (`smooth`) yaw rate: 45 degrees in 10 ticks, nearly the
-# game's 8, and an arc of 0.45 m at the classic speed -- half that in swamp.
-const SMOOTH_TURN_RATE := deg_to_rad(450.0)
+# The smooth turns' (`smooth`) yaw rate: the game's hull's, 45 degrees in
+# Player.ANGLE_STEPS (8) ticks, 562.5 degrees a second -- an arc of 0.37 m
+# at the classic speed, half that in swamp. 450, 10 ticks, lost the game's
+# snap; 720, an arc of 0.29 m, was inside the rear wheels' half track
+# (0.31 m on the armoured pickup), and the inner one backed up through every
+# turn, a sharp hook in its mark.
+const SMOOTH_TURN_RATE := deg_to_rad(Player.ANGLE_VELOCITY * 100.0)
+# How far along the game's line (_drive_smooth) the rear axle aims, level
+# metres: less turns back onto it harder.
+const SMOOTH_LOOK := 0.5
+# Further than this off the line, the line is given up and a new one drawn
+# through where it is.
+const SMOOTH_LINE_LOST := 2.0
+# Backing up (`smooth_reverse`): the ticks it backs straight before the nose
+# swings round, so that a tap back is a dodge that leaves it facing as it was.
+const REVERSE_HOLD := 12
 # Above this much heading error the order slows to the crawl to swing round.
 const SWING_THRESHOLD := deg_to_rad(25.0)
 const ARRIVE_RADIUS := 0.3
@@ -332,6 +345,17 @@ var _classic_synced := false
 var smooth := true
 # Which way a turn straight back goes, the way the last turn went: 1 left.
 var _turn_sign := 1.0
+# The line the game's jeep would drive along (_drive_smooth): through where
+# the rear axle was when the keys asked for `_line_want`, its way, map axes.
+var _line_want := -1
+var _line_from := Vector2.ZERO
+var _line_dir := Vector2.ZERO
+# Smooth turns, a key behind it backs it up the game's way rather than taking
+# it round a teardrop (Level3DSettings.smooth_reverse, _drive_smooth): while
+# `_backing`, for `_backing_ticks`.
+var smooth_reverse := true
+var _backing := false
+var _backing_ticks := 0
 # Two players (the preview's co-op): how far north and south, level z, it may
 # go, for the frame to hold the other jeep as well -- Player.update's clamp to
 # the camera. It stops there as at a wall, both modes; one already past it is
@@ -929,6 +953,17 @@ func rear_axle() -> float:
 	return vehicle.ramp_axles[1] * model_scale
 
 
+# What the preview's frame follows (Level3DPreview._follow_point): the middle
+# of the rear axle wherever it turns about that -- smooth turns and the free
+# mode -- and the middle where the game's turn has it go the new way at once.
+# Turning about its rear axle, its middle swings out and back on every turn,
+# 30% faster than it drives, and a frame on it swung the whole stage with it.
+func camera_anchor() -> Vector3:
+	if classic and not smooth:
+		return position
+	return position + forward() * rear_axle()
+
+
 func _wheel_radius() -> float:
 	return vehicle.wheel_radius * model_scale
 
@@ -996,6 +1031,8 @@ func place(at: Vector3, facing: float) -> void:
 		aerial.angle = Vector2.ZERO
 		aerial.rate = Vector2.ZERO
 	_classic_synced = false
+	_line_want = -1
+	_backing = false
 	_settle(0.0, true)
 	_pose()
 
@@ -1012,6 +1049,8 @@ func carry(at: Vector3, facing: float, nose_up: float) -> void:
 	waypoints.clear()
 	backing = false
 	_classic_synced = false
+	_line_want = -1
+	_backing = false
 	_velocity = Vector3.ZERO
 	_tilt = Basis(Vector3(0, 0, 1), nose_up)
 	_pose()
@@ -1052,6 +1091,8 @@ func step(delta: float) -> void:
 		key_right = held[3]
 	else:
 		_classic_synced = false
+		_line_want = -1
+		_backing = false
 		var was_throttle := throttle
 		if dashing and throttle <= 0.0:
 			throttle = 1.0
@@ -1260,6 +1301,13 @@ func _classic_straight(p: Vector2, a: int, keep_a: int, keep_b: int, v: float) -
 # as a car does, about its rear axle -- that rolls along the heading and the
 # nose swings -- so the rear wheels, which leave the marks, never slide. Up
 # against what stops it, it turns on the spot, as the game's does.
+#
+# An arc alone left it off the game's line: a U-turn came back a loop's width
+# to the side, a right angle a turn's radius past the corner. So a press draws
+# the line the game's jeep would go along, through the rear axle and the way
+# the keys point, and the rear axle steers back onto it, aimed SMOOTH_LOOK
+# along it: a U-turn is a teardrop that ends where it began, a corner a short
+# round one at the press.
 func _drive_smooth(delta: float) -> void:
 	# The plain classic driving takes the hull from wherever this leaves it.
 	_classic_synced = false
@@ -1268,24 +1316,63 @@ func _drive_smooth(delta: float) -> void:
 	var want := _smooth_target()
 	var at := Level3DMap.to_map(Vector2(position.x, position.z))
 	var v := (0.5 * Player.SPEED if map.is_swamp(at.x, at.y) else Player.SPEED) * Level3DMap.PX
+	var rear := position + forward() * rear_axle()
+	var on := Vector2(rear.x, rear.z)
+	if want != _line_want or (want != -1 and absf((on - _line_from).cross(_line_dir)) > SMOOTH_LINE_LOST):
+		_line_want = want
+		_line_from = on
+		_line_dir = Level3DMap.unit_vector(want) if want != -1 else Vector2.ZERO
+		# A key straight back -- within half an eighth of a turn of it -- backs
+		# it up, with smooth_reverse: the rear axle rolls back along the hull.
+		# Not a diagonal back as well, as it once did: the rear axle went off at
+		# 45 degrees to the hull, the rear wheels sliding sideways, and their
+		# marks crossed where no wheel that rolls could have put them.
+		_backing = smooth_reverse and want != -1 \
+				and absf(wrapf(-deg_to_rad(want) - heading, -PI, PI)) > PI * 7.0 / 8.0
+		_backing_ticks = 0
 	var turn := 0.0
-	if want != -1:
-		var diff := wrapf(-deg_to_rad(want) - heading, -PI, PI)
+	var moved := 0.0
+	if _backing and want != -1:
+		# Backing up (smooth_reverse): the rear axle the way the keys point at
+		# once, as the game's jeep goes, and after REVERSE_HOLD the nose swung
+		# round over it, the rear wheels running on along the line.
+		_backing_ticks += 1
+		var goal := -deg_to_rad(want)
+		if _backing_ticks > REVERSE_HOLD:
+			var diff := wrapf(goal - heading, -PI, PI)
+			if absf(diff) > PI - 1e-3:
+				diff = PI * _turn_sign
+			turn = clampf(diff, -SMOOTH_TURN_RATE * delta, SMOOTH_TURN_RATE * delta)
+			if turn != 0.0:
+				_turn_sign = signf(turn)
+		heading = wrapf(heading + turn, -PI, PI)
+		if absf(wrapf(goal - heading, -PI, PI)) < 1e-3:
+			_backing = false
+		if not _blocked_way(position, _line_dir):
+			var next_rear := rear + Vector3(_line_dir.x, 0.0, _line_dir.y) * v
+			var next := next_rear - forward() * rear_axle()
+			var p := Level3DMap.to_map(Vector2(next.x, next.z))
+			if _driveable(p.x, p.y):
+				position.x = next.x
+				position.z = next.z
+				var f := forward()
+				moved = v * signf(Vector2(f.x, f.z).dot(_line_dir) + 1e-6)
+	elif want != -1:
+		var aim := _line_from + _line_dir * ((on - _line_from).dot(_line_dir) + SMOOTH_LOOK) - on
+		var diff := wrapf(atan2(-aim.y, aim.x) - heading, -PI, PI)
 		if absf(diff) > PI - 1e-3:
 			diff = PI * _turn_sign
 		turn = clampf(diff, -SMOOTH_TURN_RATE * delta, SMOOTH_TURN_RATE * delta)
 		if turn != 0.0:
 			_turn_sign = signf(turn)
-	var rear := position + forward() * rear_axle()
-	heading = wrapf(heading + turn, -PI, PI)
-	var moved := 0.0
-	if want != -1 and not _blocked(position, 1.0):
-		var next := rear + forward() * (v - rear_axle())
-		var p := Level3DMap.to_map(Vector2(next.x, next.z))
-		if _driveable(p.x, p.y):
-			position.x = next.x
-			position.z = next.z
-			moved = v
+		heading = wrapf(heading + turn, -PI, PI)
+		if not _blocked(position, 1.0):
+			var next := rear + forward() * (v - rear_axle())
+			var p := Level3DMap.to_map(Vector2(next.x, next.z))
+			if _driveable(p.x, p.y):
+				position.x = next.x
+				position.z = next.z
+				moved = v
 	speed = moved / delta if delta > 0.0 else 0.0
 	yaw_rate = 0.0
 	display_angle = -rad_to_deg(heading)
@@ -1294,7 +1381,7 @@ func _drive_smooth(delta: float) -> void:
 	_wheel_spin -= moved / _wheel_radius()
 	# The front wheels at the angle that drives the arc, as _set_yaw's.
 	var wheels := clampf(atan(vehicle.wheelbase * model_scale * turn / moved), -0.6, 0.6) \
-			if moved > 0.0 else 0.0
+			if moved != 0.0 else 0.0
 	_steer_angle = move_toward(_steer_angle, wheels, 8.0 * delta)
 
 
@@ -1462,8 +1549,13 @@ func _set_yaw(wanted: float) -> void:
 # them they are the game's own -- and behind it when it is reversing, on the
 # map's grid.
 func _blocked(at: Vector3, direction: float) -> bool:
+	return _blocked_way(at, Vector2(cos(heading), -sin(heading)) * direction)
+
+
+# The same three sensors the way `f` points, a unit vector in the map's axes:
+# backing up (_drive_smooth), the way the keys point rather than the hull.
+func _blocked_way(at: Vector3, f: Vector2) -> bool:
 	var p := Level3DMap.to_map(Vector2(at.x, at.z))
-	var f := Vector2(cos(heading), -sin(heading)) * direction
 	var side := Vector2(-f.y, f.x) * Player.SENSOR_Y
 	var ahead := p + f * (Player.SENSOR_X + Player.SPEED)
 	return not (_driveable(ahead.x, ahead.y)
