@@ -4517,6 +4517,18 @@ func _start_round(jingle := false) -> void:
 	# stage_song0, the Chinook's after a continue: no start jingle again.
 	Level3DAudio.play_music("intro" if jingle else "stage")
 	_start_intro()
+	# The frame on the new start now, as the Chinook has it: focus is only
+	# moved in _process, and the enemies tick on it before that. After the
+	# shop it was still on the boss's arena, whose trigger row is in it: the
+	# boss armed again, held the frame there and sent its tanks, the BTR far
+	# off at the start. Before _start_flags, so that --no-chinook's hand-over
+	# catches up from here, as on the first start.
+	if chinook != null:
+		focus = chinook.frame_centre(level_aabb.size.x / zoom * 9.0 / 32.0)
+	else:
+		_snap_camera()
+		focus = _camera_at
+	_update_camera()
 	_start_flags()
 
 
