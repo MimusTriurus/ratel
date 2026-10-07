@@ -122,12 +122,11 @@ const LEAVE_RANK := 0.35
 const LEAVE_JITTER := 0.25
 const LAST_STAYS := 2.0
 # And at CONTINUE, help coming (reinforce): the hands down, and a Chinook
-# heard coming in from behind the camera, over the guard and the graves --
-# low, its rotors' wash taking the wind in the grass and the oaks up to
-# HELP_WIND times its strength as it passes over -- and away across the
-# slope to the side, HELP_HEADING off straight ahead, smaller, until it sinks
-# behind the ground's crest on that line. From HELP_FLY's start to its end
-# along a curve over those (_help_path), at the stage's size for it beside
+# coming in over the frame's top -- its rotors' wash taking the wind in the
+# grass and the oaks up to HELP_WIND times its strength as it passes over --
+# and away across the slope to the side, HELP_HEADING off straight ahead,
+# level, smaller, until it sinks behind the ground's crest on that line as it
+# goes off. From HELP_FLY's start to its end along a line (_help_path), at the stage's size for it beside
 # the guard (HELP_SIZE), its rotors turning (Level3DChinook.split_clips),
 # nose first; heard as near as it is
 # (HELP_HEARD metres at full, less as it goes, in over HELP_SOUND_IN at the
@@ -142,19 +141,21 @@ const HELP_SOUND := "chinook"
 # real one's sixteen -- the size the player knows it by. Here the soldiers are
 # at GUARD_SCALE, and it at the same share of that.
 const HELP_SIZE := 0.31 / 0.55
-const HELP_FLY := Vector2(0.6, 10.5)
-# Its curve's points, along HELP_HEADING (degrees from straight ahead, to the
-# right) from the middle of the cemetery: behind and over the camera, a
-# little to the other side (HELP_START); HELP_OVER along, above the frame's
-# top -- the sky over the hill in the frame is a narrow band, which a
-# Chinook fills only well off -- then HELP_PAST past the crest on its line
-# and HELP_CLEAR over it; its end HELP_BEHIND past the crest and under it.
+const HELP_FLY := Vector2(0.1, 10.0)
+# Its line, along HELP_HEADING (degrees from straight ahead, to the right)
+# from the middle of the cemetery: from HELP_START along, just over the
+# frame's top, to HELP_BEHIND past the crest on it. Its height is one, the
+# lowest at which its box's floor is HELP_GROUND_CLEAR metres over the ground
+# anywhere under it all the way (_help_height): the crest's, about 10 m. It
+# was a curve once, in from behind the camera and down over the slope and up
+# over the crest, which took its belly and wheels through the slope and,
+# lifted clear of it, rode the hill's shape; and at that height a Chinook
+# coming from over the camera is only in the frame 22 m out, so it starts
+# there, in by about half a second, not a wait of four.
 const HELP_HEADING := 20.0
-const HELP_START := Vector3(-3.0, 9.0, 16.0)
-const HELP_OVER := Vector2(10.0, 10.0)        # along, height
-const HELP_CLEAR := 7.0
-const HELP_PAST := 10.0
-const HELP_BEHIND := Vector2(40.0, 5.0)
+const HELP_START := 6.5
+const HELP_BEHIND := 40.0
+const HELP_GROUND_CLEAR := 1.0
 const HELP_HEARD := 10.0
 const HELP_SOUND_IN := 1.5
 const HELP_WIND := 4.0
@@ -248,7 +249,8 @@ var _rain_sound: AudioStreamPlayer
 var _rain_fade: Tween
 var _help_from := INF         # _time CONTINUE was picked at, INF until it is
 var _help: Node3D             # the Chinook
-var _help_path: Array[Vector3] = []   # its curve's four points
+var _help_hull: ShaderMaterial  # its contour, out of the haze (_fogless_hull)
+var _help_path: Array[Vector3] = []   # its line's two ends
 var _help_leave := 0.6        # the screen's black's, which the sound goes with
 var _help_sound: AudioStreamPlayer
 var _help_fade: Tween
@@ -706,9 +708,14 @@ func reinforce(leave: float) -> float:
 		_soften(_help)
 		# Against the light, a dark shape: the haze would have it a pale
 		# ghost of the hill's colour at the distance it is seen at.
+		# Its contour too: hazed, the black line came out a pale one, a white
+		# rim round a dark shape.
 		for node in _help.find_children("*", "MeshInstance3D", true, false):
 			var instance := node as MeshInstance3D
 			for surface in instance.get_surface_override_material_count():
+				if Level3DHull.is_hull(instance.mesh.surface_get_material(surface)):
+					instance.set_surface_override_material(surface, _fogless_hull())
+					continue
 				var material := instance.get_surface_override_material(surface) as BaseMaterial3D
 				if material != null:
 					material.disable_fog = true
@@ -730,6 +737,18 @@ func reinforce(leave: float) -> float:
 	return HELP_FOR
 
 
+# The stage's contour (Level3DHull) out of the haze, as wide as the stage's.
+func _fogless_hull() -> ShaderMaterial:
+	if _help_hull == null:
+		var shader := Shader.new()
+		shader.code = Level3DHull.SHADER.code.replace("shadows_disabled;", "shadows_disabled, fog_disabled;")
+		_help_hull = ShaderMaterial.new()
+		_help_hull.resource_name = Level3DHull.HULL_NAME
+		_help_hull.shader = shader
+		Level3DHull.track(_help_hull)
+	return _help_hull
+
+
 # A node's meshes' box, in its own space.
 static func _aabb(root: Node3D) -> AABB:
 	var box := AABB()
@@ -742,8 +761,8 @@ static func _aabb(root: Node3D) -> AABB:
 	return box
 
 
-# The Chinook's curve (the constants' note): its crest the highest ground on
-# its line.
+# The Chinook's line (the constants' note): from HELP_START along to
+# HELP_BEHIND past the crest, the highest ground on it, at _help_height.
 func _help_course() -> Array[Vector3]:
 	var a := deg_to_rad(HELP_HEADING)
 	var way := Vector3(sin(a), 0.0, -cos(a))
@@ -755,37 +774,46 @@ func _help_course() -> Array[Vector3]:
 		if h > crest.y:
 			crest = Vector2(along, h)
 		along += 1.0
-	var over := way * HELP_OVER.x + Vector3.UP * HELP_OVER.y
-	var over_crest := way * (crest.x + HELP_PAST) + Vector3.UP * (crest.y + HELP_CLEAR)
-	var behind := way * (crest.x + HELP_BEHIND.x) + Vector3.UP * (crest.y - HELP_BEHIND.y)
-	return [HELP_START, over, over_crest, behind]
+	var line: Array[Vector3] = [way * HELP_START, way * (crest.x + HELP_BEHIND)]
+	var up := Vector3.UP * _help_height(line[0], line[1])
+	return [line[0] + up, line[1] + up]
 
 
-# The Chinook where it is on its curve now, nose along it, its wash and its
+# The one height the Chinook flies from `from` to `to` at: its box, nose
+# along the line, its floor sampled across, HELP_GROUND_CLEAR over the ground
+# under it at its highest.
+func _help_height(from: Vector3, to: Vector3) -> float:
+	var box := _aabb(_help)
+	var basis := Basis.looking_at((to - from).normalized(), Vector3.UP, true).scaled(_help.scale)
+	var most := -INF
+	var steps := ceili(from.distance_to(to) * 2.0)
+	for i in steps + 1:
+		var t := Transform3D(basis, from.lerp(to, float(i) / steps))
+		for fx in 5:
+			for fz in 5:
+				var p := t * (box.position + Vector3(box.size.x * fx / 4.0, 0.0, box.size.z * fz / 4.0))
+				most = maxf(most, _ground_at(p.x, -p.z) + HELP_GROUND_CLEAR - p.y)
+	return most
+
+
+# The Chinook where it is on its line now, nose along it, its wash and its
 # sound as near as it is.
 func _place_help() -> void:
 	var e := _time - _help_from
 	var u := clampf((e - HELP_FLY.x) / (HELP_FLY.y - HELP_FLY.x), 0.0, 1.0)
-	# Quick over the camera, slowing as it goes away.
+	# Quick at the start, slowing as it goes away.
 	u = 1.0 - pow(1.0 - u, 1.3)
-	var at := _bezier(u)
-	var ahead := _bezier(minf(u + 0.01, 1.0)) - at
+	var at := _help_path[0].lerp(_help_path[1], u)
 	_help.position = at
-	if ahead.length_squared() > 1e-8 and u < 1.0:
-		# The model's nose is its +z.
-		_help.basis = Basis.looking_at(ahead.normalized(), Vector3.UP, true).scaled(_help.scale)
+	# The model's nose is its +z.
+	_help.basis = Basis.looking_at((_help_path[1] - _help_path[0]).normalized(), Vector3.UP, true) \
+			.scaled(_help.scale)
 	var near := (at - Vector3(0.0, 1.0, 3.0)).length()
 	_oaks.set_strength(1.0 + (HELP_WIND - 1.0) * clampf(1.0 - near / HELP_WASH, 0.0, 1.0))
 	if _help_sound.playing:
 		var gain := clampf(HELP_HEARD / maxf(near, 0.1), 0.0, 1.0) * clampf(e / HELP_SOUND_IN, 0.0, 1.0)
 		gain *= clampf(1.0 - (e - HELP_FOR) / _help_leave, 0.0, 1.0)
 		_help_sound.volume_db = Level3DAudio.volume_db(HELP_SOUND) + linear_to_db(maxf(gain, 0.0001))
-
-
-func _bezier(u: float) -> Vector3:
-	var p := _help_path
-	var v := 1.0 - u
-	return p[0] * v * v * v + p[1] * 3.0 * v * v * u + p[2] * 3.0 * v * u * u + p[3] * u * u * u
 
 
 func clear() -> void:
