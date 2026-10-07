@@ -1,0 +1,21 @@
+jackal_littlebird_mh6_lowpoly.blend, jackal_littlebird_mh6.glb
+
+"Little Bird MH-6 (low poly)" by A.I.R (https://sketchfab.com/air3ddd),
+https://sketchfab.com/3d-models/little-bird-mh-6-low-poly-ef76ba2bdb3d428a8dfb1bc0adc5aee8
+Licensed under CC BY 4.0: http://creativecommons.org/licenses/by/4.0/
+
+The download, unchanged, is resources/3d/ref/littlebird_mh6/little_bird_mh-6_low_poly.glb.
+
+Changed from the original glb (the text block jackal_littlebird_mh6.py in the
+blend does all of it, from the download):
+- the Sketchfab/FBX empties removed and every part's transform applied; the
+  whole scaled to 8.08 m nose to fin, the skids on the ground, the mast on
+  the origin;
+- the textures replaced by a flat colour for each part, olive drab, the
+  canopy opaque dark glass where it was see-through, the main blades' tips
+  khaki and the tail rotor's orange; shaded smooth with the edges over 40
+  degrees sharp;
+- the parts joined into one mesh on a rig of three bones, Root and the two
+  rotors, with a Fly clip turning them;
+- a contour shell (a Solidify in an M6_Contour material) on the silhouette
+  and the big parts.

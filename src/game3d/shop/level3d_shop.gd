@@ -1036,7 +1036,7 @@ class Bay:
 			["AmmoBox", Vector3(0.42, 0.0, -1.3), 0.3]]
 	# The Littlebird as Level3DBtr.paint_model takes a vehicle: its olive
 	# body's hues, and the turn of BLUE that puts it on the blue jeep's.
-	const LITTLEBIRD := {"path": "res://resources/3d/jackal_littlebird.glb", "blue": Vector3(60.0, 100.0, 128.0)}
+	const LITTLEBIRD := {"path": "res://resources/3d/jackal_littlebird_mh6.glb", "blue": Vector3(60.0, 100.0, 128.0)}
 	# With one player: his jeep SOLO_ZOOM times as large, the camera that
 	# much nearer along the same line to it -- so it is seen as with two, the
 	# views and knees as they are -- and the lens shifted for the table's

@@ -1,6 +1,8 @@
 # The rescue helicopter on the 3D stage 1 preview: jackal.FriendlyHelicopter,
 # waiting at jackal.LandingPort for the prisoners the player has picked up,
-# on jackal_littlebird.glb (jackal_littlebird_lowpoly.blend).
+# on jackal_littlebird_mh6.glb (jackal_littlebird_mh6_lowpoly.blend: A.I.R's
+# MH-6, CC BY 4.0, resources/3d/jackal_littlebird_mh6.txt). The one built
+# here, jackal_littlebird.glb, is kept beside it.
 #
 # Nothing here is part of the game. The rules are the original's, tick for
 # tick, in the game's pixels on the game's map (level3d_map.gd):
@@ -62,7 +64,7 @@
 class_name Level3DRescue
 extends Node3D
 
-const MODEL_PATH := "res://resources/3d/jackal_littlebird.glb"
+const MODEL_PATH := "res://resources/3d/jackal_littlebird_mh6.glb"
 # Level3DAudio's: helicopter2.ogg, helicopter_pickup.ogg and
 # weapon_upgrade.ogg, the original's, in the original mode. The rotor is a
 # player of its own, kept playing while it flies; the other two are one-shots.
@@ -164,7 +166,7 @@ var _blue_index := 91
 func _ready() -> void:
 	var scene: PackedScene = load(MODEL_PATH)
 	if scene == null:
-		push_error("Cannot load %s -- run export() in jackal_littlebird_lowpoly.blend" % MODEL_PATH)
+		push_error("Cannot load %s -- run export() in jackal_littlebird_mh6_lowpoly.blend" % MODEL_PATH)
 		return
 	_model = _instance(scene, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 	_shadow = _instance(scene, GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY)
