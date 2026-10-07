@@ -20,7 +20,10 @@
 # Escape goes back a step: out of a key prompt, out of the settings, and from
 # the first page back to the stage. A pad (Level3DPad) goes about it as the
 # keys do: the d-pad or the left stick move the focus, A picks, B and Start
-# are Escape, and L1 and R1 turn the settings' tabs.
+# are Escape, L1 and R1 turn the settings' tabs, and the right stick scrolls
+# the tab (SCROLL_SPEED). The left stick is a move a tip, not Godot's every
+# motion past its dead zone; the d-pad or the stick held moves again and
+# again (Level3DPad.Repeat), as a held key does.
 #
 # It points with the title screen's reticle (Level3DReticle) rather than the
 # system's pointer: the mouse moves it, and the keys, which move Godot's
@@ -57,6 +60,8 @@ const ACCENT := Color(1.0, 0.8, 0.3)
 const ICON_SIZE := 26
 const ICON_OVERSAMPLE := 2
 const BESIDE := 34
+# The right stick's scroll of a settings tab at full tilt, pixels a second.
+const SCROLL_SPEED := 1400.0
 # The Sound tab's sliders, one for each of the modern mode's sounds
 # (Level3DAudio.SOUNDS), under a heading for each kind. enemy_hit is left out:
 # it is only the original's layer under explode, which the modern mode's
@@ -202,6 +207,8 @@ var _list_reticle: Level3DReticle  # in a dropped list's window (_list_reticle_f
 var _last_beside := Vector2.ZERO
 var _hushed := -1            # the frame a pick or a page took the focus in
 var _hovered: Control        # the control the reticle was last over
+var _scroll_rest := 0.0      # the right stick's scroll short of a whole pixel
+var _repeat := Level3DPad.Repeat.new()
 
 
 func _ready() -> void:
@@ -310,9 +317,13 @@ func _list_reticle_follow() -> void:
 		list.add_child(_list_reticle)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not visible:
 		return
+	_scroll_by_stick(delta)
+	var again := _repeat.tick(Level3DPad.held_dir(Level3DPad.connected()), delta)
+	if again != Vector2i.ZERO and _waiting_pad == "" and _open_list() == null:
+		_move(again)
 	_reticle.shown = pointer_hidden()
 	_list_reticle_follow()
 	var mode := Input.MOUSE_MODE_HIDDEN if pointer_hidden() else Input.MOUSE_MODE_VISIBLE
@@ -335,6 +346,36 @@ func _process(_delta: float) -> void:
 
 # The keys moved the focus: the reticle goes beside the control, following
 # it as a scroll moves it.
+# A move of the focus, as the arrows make it: the ui action, pressed and let
+# go, which the controls take as they take the keys.
+func _move(dir: Vector2i) -> void:
+	var action := "ui_up" if dir.y < 0 else "ui_down" if dir.y > 0 \
+			else "ui_left" if dir.x < 0 else "ui_right"
+	_reticle.keys()
+	for down in [true, false]:
+		var event := InputEventAction.new()
+		event.action = action
+		event.pressed = down
+		Input.parse_input_event(event)
+
+
+# The settings' tab scrolled by any pad's right stick, the focus left where
+# it is; not over a dropped list, which has the pad.
+func _scroll_by_stick(delta: float) -> void:
+	var scroll := _tabs.get_current_tab_control() as ScrollContainer
+	if not _settings_page.visible or scroll == null or _open_list() != null:
+		_scroll_rest = 0.0
+		return
+	var tilt := Level3DPad.right(Level3DPad.connected()).y
+	if tilt == 0.0:
+		_scroll_rest = 0.0
+		return
+	_scroll_rest += signf(tilt) * pow(absf(tilt), 1.5) * SCROLL_SPEED * delta
+	var whole := int(_scroll_rest)
+	_scroll_rest -= whole
+	scroll.scroll_vertical += whole
+
+
 func _focus_changed(control: Control) -> void:
 	if visible and is_ancestor_of(control):
 		_reticle.aim(_beside.bind(control))
@@ -1027,6 +1068,14 @@ func _input(event: InputEvent) -> void:
 	if _waiting_pad != "":
 		_pad_prompt_input(event)
 		return
+	# The left stick: one move a tip (Level3DPad.nav), not one each motion.
+	var motion := event as InputEventJoypadMotion
+	if motion != null and motion.axis in [JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y]:
+		get_viewport().set_input_as_handled()
+		var move := Level3DPad.nav(event)
+		if move != Vector2i.ZERO:
+			_move(move)
+		return
 	if _waiting == "":
 		return
 	var key := event as InputEventKey
@@ -1293,7 +1342,13 @@ func _frame_styles(theme: Theme) -> void:
 	# keys' frame round it.
 	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
 		theme.set_stylebox(state, "CheckBox", StyleBoxEmpty.new())
-	theme.set_stylebox("focus", "CheckBox", _box(Color.TRANSPARENT, ACCENT, 2, 2))
+	# Out round it, not over it: the box's style is empty, so the frame drawn
+	# on the check box's edges ran through its box.
+	var check_focus := _box(Color.TRANSPARENT, ACCENT, 2, 2)
+	check_focus.set_expand_margin_all(3)
+	check_focus.expand_margin_left = 8
+	check_focus.expand_margin_right = 8
+	theme.set_stylebox("focus", "CheckBox", check_focus)
 	theme.set_stylebox("tab_unselected", "TabContainer", _box(Color(0.1, 0.1, 0.1), FRAME_OFF, 2, 10, true))
 	theme.set_stylebox("tab_hovered", "TabContainer", _box(Color(0.2, 0.2, 0.2), FRAME_DIM, 2, 10, true))
 	theme.set_stylebox("tab_selected", "TabContainer", _box(Color(0.11, 0.11, 0.11), FRAME, 2, 10, true))

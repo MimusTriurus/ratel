@@ -211,6 +211,55 @@ static func nav(event: InputEvent) -> Vector2i:
 	return Vector2i(now, 0) if motion.axis == JOY_AXIS_LEFT_X else Vector2i(0, now)
 
 
+# The direction the d-pad or the left stick is held in, of `pads`, as a
+# menu's move: the stick past NAV_DOWN, along its stronger axis.
+static func held_dir(pads: Array[int]) -> Vector2i:
+	var v := Vector2.ZERO
+	for d in pads:
+		var dpad := Vector2(
+				float(Input.is_joy_button_pressed(d, JOY_BUTTON_DPAD_RIGHT)) - float(Input.is_joy_button_pressed(d, JOY_BUTTON_DPAD_LEFT)),
+				float(Input.is_joy_button_pressed(d, JOY_BUTTON_DPAD_DOWN)) - float(Input.is_joy_button_pressed(d, JOY_BUTTON_DPAD_UP)))
+		if dpad != Vector2.ZERO:
+			v = dpad
+			break
+		var stick := Vector2(Input.get_joy_axis(d, JOY_AXIS_LEFT_X), Input.get_joy_axis(d, JOY_AXIS_LEFT_Y))
+		if stick.length() > NAV_DOWN and stick.length() > v.length():
+			v = stick
+	if v == Vector2.ZERO:
+		return Vector2i.ZERO
+	if absf(v.y) >= absf(v.x):
+		return Vector2i(0, int(signf(v.y)))
+	return Vector2i(int(signf(v.x)), 0)
+
+
+# A direction held moves again and again, as a held key's echo does: after
+# DELAY, every EVERY. The first move is the press's own (nav), so tick only
+# says when to move again. One for each cursor.
+class Repeat:
+	const DELAY := 0.35
+	const EVERY := 0.08
+
+	var _dir := Vector2i.ZERO
+	var _held := 0.0
+	var _next := DELAY
+
+	# `dir` the direction held this frame (held_dir); the move to make again
+	# now, or ZERO.
+	func tick(dir: Vector2i, delta: float) -> Vector2i:
+		if dir != _dir:
+			_dir = dir
+			_held = 0.0
+			_next = DELAY
+			return Vector2i.ZERO
+		if dir == Vector2i.ZERO:
+			return Vector2i.ZERO
+		_held += delta
+		if _held < _next:
+			return Vector2i.ZERO
+		_next += EVERY
+		return dir
+
+
 static func pressed(event: InputEvent, button: JoyButton) -> bool:
 	var pad := event as InputEventJoypadButton
 	return pad != null and pad.pressed and pad.button_index == button

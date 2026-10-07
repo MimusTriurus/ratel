@@ -18,6 +18,7 @@
 # bound to the BTR's), Enter, Space or the gun to pick, and left and right to
 # change the mode or the difficulty; the mouse picks an entry by aiming the reticle at it.
 # A pad (Level3DPad) as the keys: the d-pad or the left stick, A or Start.
+# Up or down held, a key or the pad, goes on down the entries.
 # Each with the menus' clicks: menu_move onto another entry, menu_pick as one
 # is picked or changed (Level3DAudio).
 class_name Level3DTitle
@@ -27,6 +28,7 @@ enum Entry { ONE_PLAYER, TWO_PLAYERS, MODE, DIFFICULTY, SETTINGS, QUIT }
 # The mode's names, by Level3DSettings.Preset; custom is a mode changed on the
 # settings' own tabs, which picking the mode here leaves.
 const MODE_NAMES := ["8-bit", "modern", "custom"]
+var _repeat := Level3DPad.Repeat.new()   # up or down held on a pad
 
 # Where IntroMode draws them in its 1024x960 frame (title at 128,192, 25x8
 # tiles of 32 px, Menu at
@@ -243,6 +245,11 @@ func _process(delta: float) -> void:
 			_fade_out(count, after)
 	if not visible:
 		return
+	if not _launching and not (settings_open.is_valid() and settings_open.call()):
+		var again := _repeat.tick(Level3DPad.held_dir(Level3DPad.connected()), delta)
+		if again.y != 0:
+			_reticle.keys()
+			_select(_selected + again.y)
 	_reticle.shown = pointer_hidden()
 	# Under the settings, out of the tree's processing too: theirs carries the
 	# hidden pointer as this one does, and the two would pull it each its way.
@@ -407,7 +414,8 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	var key := event as InputEventKey
-	if key != null and key.pressed and not key.echo:
+	if key != null and key.pressed and (not key.echo
+			or key.keycode in [KEY_UP, KEY_DOWN, settings.key("up"), settings.key("down")]):
 		var code := key.keycode
 		if code in [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_ENTER, KEY_KP_ENTER, KEY_SPACE] \
 				or code in ["up", "down", "left", "right", "gun"].map(settings.key):

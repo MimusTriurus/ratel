@@ -53,6 +53,9 @@
 #     then, a click on one the mouse's way; another player's paint is not to
 #     be had, two jeeps alike on the stage not telling whose is whose. The
 #     preview keeps them in its settings, for the next game too.
+#   * A pad's right stick turns its player's jeep on its table by hand, to
+#     look it over (SPIN_RATE); another tile, or READY, and it turns back to
+#     show that one's part from wherever it was turned to.
 #   * With one player there is no second column: the matrix stands at the
 #     frame's right edge, the title over it, and the jeep, larger, has the
 #     rest (SOLO_MATRIX_X, Bay.SOLO_ZOOM).
@@ -172,6 +175,7 @@ const SHOWS := {
 }
 const VIEW := 30.0
 const TURN_RATE := 3.0          # of the way to the view, per second
+const SPIN_RATE := 220.0        # the right stick's turn at full tilt, degrees a second
 const GHOST := Vector2(0.25, 0.7)   # a part on trial: its transparency, pulsing between
 const GHOST_PULSE := 4.0
 # The tile's words: a box in the player's column, over the jeep, its top in
@@ -220,6 +224,7 @@ var _cursor: Array[Vector2i] = []   # (column, row)
 var _set: Array[bool] = []          # each player's READY
 var _bought: Array = []             # each player's ids bought this visit, in order
 var _was: Array = []                # the second player's buttons last frame, for presses
+var _repeats: Array = []            # per player, his held direction's (Level3DPad.Repeat)
 var _bay: Bay
 var _bay_layer: CanvasLayer
 var _text: Control
@@ -297,6 +302,7 @@ func open(run: Level3DRun, at_once := false) -> void:
 	_set.clear()
 	_bought.clear()
 	_was.clear()
+	_repeats.clear()
 	_shown.clear()
 	_since.clear()
 	for i in _players:
@@ -304,6 +310,7 @@ func open(run: Level3DRun, at_once := false) -> void:
 		_set.append(false)
 		_bought.append([])
 		_was.append({})
+		_repeats.append(Level3DPad.Repeat.new())
 		_shown.append("")
 		_since.append(0.0)
 	visible = true
@@ -485,6 +492,25 @@ func _process(delta: float) -> void:
 		for i in _players:
 			if inputs.size() > i and inputs[i] is HumanInput:
 				_poll(i, inputs[i])
+			# The stick to the right turns the near side of the jeep right.
+			var pads := Level3DPad.devices(i, _players)
+			var spin := Level3DPad.right(pads).x
+			if spin != 0.0:
+				_bay.spin(i, spin * SPIN_RATE * delta)
+			# A direction held, on the pad or the second player's keys, moves
+			# on and on; the first player's keys by their echo (_input).
+			var held := Level3DPad.held_dir(pads)
+			if held == Vector2i.ZERO and i < _was.size():
+				var was: Dictionary = _was[i]
+				held = Vector2i(int(was.get("right", false)) - int(was.get("left", false)),
+						int(was.get("down", false)) - int(was.get("up", false)))
+				if held.x != 0 and held.y != 0:
+					held.x = 0
+			var again: Vector2i = _repeats[i].tick(held, delta)
+			if again != Vector2i.ZERO:
+				if i == 0:
+					_reticle.keys()
+				_move(i, again)
 	_text.texture_filter = Level3DFont.filter()
 	_text.queue_redraw()
 	_run_engines()
@@ -569,11 +595,15 @@ func _input(event: InputEvent) -> void:
 		# (level3d_preview.gd) would have sent them, had this not stopped them.
 		HumanInput.key_event(key)
 		get_viewport().set_input_as_handled()
-		if not key.pressed or key.echo or _state != State.OPEN:
+		if not key.pressed or _state != State.OPEN:
 			return
 		var code := key.keycode
 		# The arrows are the second player's with two, as on the stage.
 		var arrows := _players == 1
+		# A direction held goes on moving, by the key's echo; nothing else.
+		if key.echo and not (code in [_key("up"), _key("down"), _key("left"), _key("right")]
+				or arrows and code in [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]):
+			return
 		if code == _key("up") or arrows and code == KEY_UP:
 			_reticle.keys()
 			_move(0, Vector2i(0, -1))
@@ -1105,6 +1135,7 @@ class Bay:
 	var _jeeps: Array[Level3DBtr] = []
 	var _yaw: Array[float] = []
 	var _want: Array[float] = []
+	var _spun: Array[float] = []    # per player, the right stick's turn on top of _yaw (spin)
 	var _ghosts: Array = []         # per player, the meshes on trial
 	var _spots: Array = []          # per player, the line's end on his jeep, its frame; null for none
 	var _driving := -1.0             # seconds since drive_off, -1 before
@@ -1296,6 +1327,7 @@ class Bay:
 			_jeeps.append(jeep)
 			_yaw.append(Level3DShop.VIEW)
 			_want.append(Level3DShop.VIEW)
+			_spun.append(0.0)
 			_ghosts.append([])
 			_spots.append(null)
 		_soften(root)
@@ -1311,6 +1343,7 @@ class Bay:
 		_board()
 		for i in _want.size():
 			_want[i] = ready_view(i) if _has_lane(i) else Level3DShop.DRIVE_VIEW
+			_unspin(i)
 
 	func clear() -> void:
 		_driving = -1.0
@@ -1320,6 +1353,7 @@ class Bay:
 		_jeeps.clear()
 		_yaw.clear()
 		_want.clear()
+		_spun.clear()
 		_ghosts.clear()
 		_spots.clear()
 		_helis.clear()
@@ -1863,6 +1897,23 @@ class Bay:
 	func turn(i: int, degrees: float) -> void:
 		if i < _want.size():
 			_want[i] = degrees
+			_unspin(i)
+
+	# Player `i`'s jeep turned by hand `degrees` more, until the next turn;
+	# not while they drive off.
+	func spin(i: int, degrees: float) -> void:
+		if i < _spun.size() and _driving < 0.0:
+			_spun[i] += degrees
+
+	# The hand's turn handed over to the table's, which takes it the short way
+	# round from where it stands to the view wanted.
+	func _unspin(i: int) -> void:
+		if i >= _spun.size() or _spun[i] == 0.0:
+			return
+		# In the table's degrees, which the second's turns the other way.
+		var side := 1.0 if i == 0 else -1.0
+		_yaw[i] = _want[i] + wrapf(_yaw[i] + _spun[i] * side - _want[i], -180.0, 180.0)
+		_spun[i] = 0.0
 
 	func _process(delta: float) -> void:
 		if not staged:
@@ -1892,7 +1943,7 @@ class Bay:
 			# Nose to the camera is the jeep's +X turned to +Z; the first's
 			# turns right to show his side to the middle, the second's left.
 			var side := 1.0 if i == 0 else -1.0
-			_tables[i].rotation.y = -PI / 2.0 + deg_to_rad(_yaw[i]) * side
+			_tables[i].rotation.y = -PI / 2.0 + deg_to_rad(_yaw[i] + _spun[i] * side) * side
 			for mesh in _ghosts[i]:
 				if is_instance_valid(mesh):
 					(mesh as GeometryInstance3D).transparency = pulse

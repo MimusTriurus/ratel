@@ -148,9 +148,13 @@ a pad fires as the settings say, not only the classic way. The 2D game's own
 pad for the second player (`ButtonMapping.controller`) is turned off here, or
 one pad would drive both jeeps.
 
-The title, the shop (each pad its player's cursor, A buys, B takes back), the
-game over and the Escape menu (A picks, B and Start go back, L1/R1 turn the
-tabs) go by the d-pad or the left stick. The menu is Godot's controls, whose
+The title, the shop (each pad its player's cursor, A buys, B takes back, the
+right stick turns his jeep on its table, `Level3DShop.SPIN_RATE`, until he
+picks another tile), the game over and the Escape menu (A picks, B and Start
+go back, L1/R1 turn the tabs, the right stick scrolls the tab,
+`Level3DMenu.SCROLL_SPEED`) go by the d-pad or the left stick; held, either
+moves on and on, after 0.35 s every 0.08 s (`Level3DPad.Repeat`), as the
+keys held do by their echo there too. The menu is Godot's controls, whose
 `ui_accept` and `ui_cancel` have no pad buttons in 4.7: `Level3DPad.install`
 adds A and B. The buttons are named after the pad (`Button names`): a
 DualSense as Cross, L2, R2..., anything else as an Xbox pad; under Steam
