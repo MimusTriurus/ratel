@@ -50,6 +50,10 @@
 #     jeep fires the way it is asked to the tick it is asked, and a gun that
 #     lagged would put its rounds somewhere the player did not aim.
 #
+# By default the classic mode turns smoothly (`smooth`, _drive_smooth), a
+# deliberate departure from the game: the keys, the speed and the sensors as
+# above, but it goes only the way it faces, the hull swung round on an arc.
+#
 # It is written per tick: the preview's physics runs at the game's 100 Hz. The
 # bottom of the frame does not hold it back, as the game's camera does; the
 # preview's camera follows the BTR wherever it goes. Orders from the middle
@@ -262,6 +266,9 @@ const TURRET_RATE := deg_to_rad(175.0)
 # The classic mode's, for the turret and the launcher: half a turn in five
 # ticks, 45 degrees in one or two.
 const CLASSIC_TURRET_RATE := deg_to_rad(3600.0)
+# The smooth turns' (`smooth`) yaw rate: 45 degrees in 10 ticks, nearly the
+# game's 8, and an arc of 0.45 m at the classic speed -- half that in swamp.
+const SMOOTH_TURN_RATE := deg_to_rad(450.0)
 # Above this much heading error the order slows to the crawl to swing round.
 const SWING_THRESHOLD := deg_to_rad(25.0)
 const ARRIVE_RADIUS := 0.3
@@ -320,6 +327,11 @@ var target_angle := -1
 var last_target_angle := 270
 var fire_angle := 270.0
 var _classic_synced := false
+# Classic with smooth turns (Level3DSettings.smooth_turns, _drive_smooth): the
+# keys and the speed the game's, the way it goes swung round on an arc.
+var smooth := true
+# Which way a turn straight back goes, the way the last turn went: 1 left.
+var _turn_sign := 1.0
 # Two players (the preview's co-op): how far north and south, level z, it may
 # go, for the frame to hold the other jeep as well -- Player.update's clamp to
 # the camera. It stops there as at a wall, both modes; one already past it is
@@ -1109,6 +1121,9 @@ func _step_free(delta: float) -> void:
 # for the tick, in game pixels; the heading is the display angle's, which is
 # what the game draws the jeep at.
 func _drive_classic(delta: float) -> void:
+	if smooth:
+		_drive_smooth(delta)
+		return
 	if not _classic_synced:
 		_sync_classic()
 	var from := Level3DMap.to_map(Vector2(position.x, position.z))
@@ -1233,6 +1248,98 @@ func _classic_straight(p: Vector2, a: int, keep_a: int, keep_b: int, v: float) -
 			and _driveable(ahead.x + side.x, ahead.y + side.y):
 		p += d * v
 	return p
+
+
+# Classic with smooth turns, a deliberate departure: the game's jeep goes the
+# way the keys point the tick they are pressed and its hull follows over
+# ANGLE_STEPS, so on every turn it slid sideways, and the tyres' marks
+# (level3d_tracks.gd) came out as corners with a hook at each, where the rear
+# wheels swung out. Here the keys, the speed and the sensors are the game's,
+# and the way it goes is the hull's: the heading swings round to the keys' at
+# SMOOTH_TURN_RATE while it drives on, a key straight back a U-turn. It turns
+# as a car does, about its rear axle -- that rolls along the heading and the
+# nose swings -- so the rear wheels, which leave the marks, never slide. Up
+# against what stops it, it turns on the spot, as the game's does.
+func _drive_smooth(delta: float) -> void:
+	# The plain classic driving takes the hull from wherever this leaves it.
+	_classic_synced = false
+	angle_steps = 0
+	target_angle = -1
+	var want := _smooth_target()
+	var at := Level3DMap.to_map(Vector2(position.x, position.z))
+	var v := (0.5 * Player.SPEED if map.is_swamp(at.x, at.y) else Player.SPEED) * Level3DMap.PX
+	var turn := 0.0
+	if want != -1:
+		var diff := wrapf(-deg_to_rad(want) - heading, -PI, PI)
+		if absf(diff) > PI - 1e-3:
+			diff = PI * _turn_sign
+		turn = clampf(diff, -SMOOTH_TURN_RATE * delta, SMOOTH_TURN_RATE * delta)
+		if turn != 0.0:
+			_turn_sign = signf(turn)
+	var rear := position + forward() * rear_axle()
+	heading = wrapf(heading + turn, -PI, PI)
+	var moved := 0.0
+	if want != -1 and not _blocked(position, 1.0):
+		var next := rear + forward() * (v - rear_axle())
+		var p := Level3DMap.to_map(Vector2(next.x, next.z))
+		if _driveable(p.x, p.y):
+			position.x = next.x
+			position.z = next.z
+			moved = v
+	speed = moved / delta if delta > 0.0 else 0.0
+	yaw_rate = 0.0
+	display_angle = -rad_to_deg(heading)
+	angle = posmod(45 * roundi(display_angle / 45.0), 360)
+	next_angle = angle
+	_wheel_spin -= moved / _wheel_radius()
+	# The front wheels at the angle that drives the arc, as _set_yaw's.
+	var wheels := clampf(atan(vehicle.wheelbase * model_scale * turn / moved), -0.6, 0.6) \
+			if moved > 0.0 else 0.0
+	_steer_angle = move_toward(_steer_angle, wheels, 8.0 * delta)
+
+
+# The way the keys ask for, in the game's degrees, or -1: Player.update's
+# branches, with its fire_angle and its diagonal's delay -- except that a
+# diagonal one of whose keys is let go of is driven on for the delay rather
+# than stopped on, which would be a jolt where there is none to show.
+func _smooth_target() -> int:
+	if key_down and key_right:
+		return _smooth_diagonal(45)
+	if key_down and key_left:
+		return _smooth_diagonal(135)
+	if key_up and key_left:
+		return _smooth_diagonal(225)
+	if key_up and key_right:
+		return _smooth_diagonal(315)
+	if key_right:
+		return _smooth_straight(0, 45, 315)
+	if key_down:
+		return _smooth_straight(90, 45, 135)
+	if key_left:
+		return _smooth_straight(180, 135, 225)
+	if key_up:
+		return _smooth_straight(270, 225, 315)
+	diagonal_delay = 0
+	return -1
+
+
+func _smooth_diagonal(a: int) -> int:
+	fire_angle = a
+	target_angle = a
+	last_target_angle = a
+	diagonal_delay = Player.DIAGONAL_DELAY
+	return a
+
+
+func _smooth_straight(a: int, keep_a: int, keep_b: int) -> int:
+	fire_angle = a
+	if (last_target_angle == keep_a or last_target_angle == keep_b) and diagonal_delay > 0:
+		diagonal_delay -= 1
+		return last_target_angle
+	target_angle = a
+	last_target_angle = a
+	diagonal_delay = 0
+	return a
 
 
 # Into the game's eight directions from wherever the free mode, an order or a

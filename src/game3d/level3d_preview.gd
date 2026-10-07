@@ -3062,6 +3062,7 @@ func _apply_settings() -> void:
 	tilted = settings.camera == Level3DSettings.Camera.TILTED
 	for c in crews:
 		c.btr.classic = settings.driving == Level3DSettings.Driving.CLASSIC
+		c.btr.smooth = settings.smooth_turns
 		c.btr.ghost = settings.wall_hack
 		c.gun.unlimited = settings.reach == Level3DSettings.Reach.UNLIMITED
 		c.launcher.unlimited = c.gun.unlimited

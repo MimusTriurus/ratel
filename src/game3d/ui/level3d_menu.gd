@@ -147,6 +147,7 @@ var _driving: OptionButton
 var _firing: OptionButton
 var _reach: OptionButton
 var _infinite_lives: CheckBox
+var _smooth_turns: CheckBox
 var _wall_hack: CheckBox
 var _bullet_hack: CheckBox
 var _gun_rate: OptionButton
@@ -409,6 +410,7 @@ func refresh() -> void:
 	_driving.select(settings.driving)
 	_firing.select(settings.firing)
 	_reach.select(REACH_ORDER.find(settings.reach))
+	_smooth_turns.set_pressed_no_signal(settings.smooth_turns)
 	_infinite_lives.set_pressed_no_signal(settings.infinite_lives)
 	_wall_hack.set_pressed_no_signal(settings.wall_hack)
 	_bullet_hack.set_pressed_no_signal(settings.bullet_hack)
@@ -886,6 +888,10 @@ func _make_controls_tab() -> Control:
 	if not Level3DSettings.MODERN_CONTROLS:
 		for i in range(first_key, tab.get_child_count()):
 			(tab.get_child(i) as Control).visible = false
+	_smooth_turns = _check(tab, "Smooth turns", func(on: bool): settings.smooth_turns = on)
+	_note(tab, "The jeep swings round into the direction pressed on a tight arc, and its tyres "
+			+ "leave curves. Off: it goes the new way at once and turns after, as in the game.")
+	tab.add_child(HSeparator.new())
 	_heading(tab, "Keys")
 	var keys := _grid(tab)
 	for action in Level3DSettings.ACTIONS:

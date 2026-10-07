@@ -113,6 +113,10 @@ var outline_people: float = Level3DHull.DEFAULT_PIXELS[Level3DHull.Kind.PEOPLE]
 var driving := Driving.CLASSIC
 var firing := Firing.CLASSIC
 var reach := Reach.CLASSIC
+# Driving classic, the hull swinging round on an arc rather than the game's
+# jeep going the new way at once (Level3DBtr.smooth). Not under
+# MODERN_CONTROLS: it is the classic driving's, the keys being the game's.
+var smooth_turns := true
 var infinite_lives := false
 var wall_hack := false
 var bullet_hack := false
@@ -294,6 +298,7 @@ func load_saved() -> void:
 		driving = clampi(config.get_value("controls", "driving", driving), 0, Driving.size() - 1)
 		firing = clampi(config.get_value("controls", "firing", firing), 0, Firing.size() - 1)
 		reach = clampi(config.get_value("controls", "reach", reach), 0, Reach.size() - 1)
+	smooth_turns = config.get_value("controls", "smooth_turns", smooth_turns)
 	infinite_lives = config.get_value("cheats", "infinite_lives", infinite_lives)
 	wall_hack = config.get_value("cheats", "wall_hack", wall_hack)
 	bullet_hack = config.get_value("cheats", "bullet_hack", bullet_hack)
@@ -379,6 +384,7 @@ func save() -> void:
 	config.set_value("controls", "driving", driving)
 	config.set_value("controls", "firing", firing)
 	config.set_value("controls", "reach", reach)
+	config.set_value("controls", "smooth_turns", smooth_turns)
 	config.set_value("cheats", "infinite_lives", infinite_lives)
 	config.set_value("cheats", "wall_hack", wall_hack)
 	config.set_value("cheats", "bullet_hack", bullet_hack)

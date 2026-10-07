@@ -128,6 +128,17 @@ below of them holds for when the flag is back on; `--free` still drives free
 for a --shot. The splash's dust blown about by the cursor, under
 `--splash-dust` and `--splash-picture`, still follows the hidden pointer.
 
+Classic driving turns smoothly by default (Controls -> Smooth turns,
+`Level3DSettings.smooth_turns`, `Level3DBtr._drive_smooth`), a deliberate
+departure from the game. The game's jeep goes the way the keys point the tick
+they are pressed, and its hull follows over 8 ticks, so it slid sideways
+through every turn and its tyre marks came out as corners with a hook where
+the rear wheels swung out. Smooth, the keys, the speed and the sensors are
+still the game's, but the jeep only ever goes the way it faces: the heading
+swings round at 450 degrees a second (an arc of 0.45 m), about the rear axle
+as a car's does, so the rear wheels never slide; a key straight back is a
+U-turn, and against a wall it turns on the spot. Off, it drives as the game's.
+
 ## Gamepads
 
 `Level3DPad` (`level3d_pad.gd`), set under Settings -> Controls -> Gamepad
