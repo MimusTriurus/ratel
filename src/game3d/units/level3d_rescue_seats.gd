@@ -34,9 +34,9 @@ extends Node3D
 
 const PX := Level3DMap.PX
 # Level metres off the helicopter's middle, across, at which a prisoner
-# walking to it is taken over: the benches' outer edge, 1.24 m of the model,
+# walking to it is taken over: the benches' outer edge, 1.0 m of the model,
 # and a man's legs beyond.
-const BOARD_REACH: float = (1.24 + 0.45) * Level3DRescue.MODEL_SCALE
+const BOARD_REACH: float = (1.0 + 0.45) * Level3DRescue.MODEL_SCALE
 # Model metres: where a man stands to sit on a seat, out from its mark; the
 # way round the nose to the other side; where one who finds no seat goes in.
 const STAND_OFF := 0.55
