@@ -6,7 +6,7 @@
 не генерируются: их накладывает игра.
 
 - Blend: `resources/3d/jackal_story_frames.blend`, по сцене на кадр
-  (`Intro_01` … `Intro_06`, `Intro_08`), текстовый блок
+  (`Intro_01` … `Intro_08`), текстовый блок
   `jackal_story_frames.py`:
   `build_frame(n)`, `render_frame(n, path)`.
 - Рендеры: `docs/renders/story/intro_NN.png`, 2048×1152.
@@ -131,6 +131,25 @@
 > lays thin stripes of light and shadow across her and the desk. No text
 > anywhere except the number 41 on the folder's label. Caption space: the
 > blinds across the top.
+
+### 7 — *"Callahan." — "I have a contract for you."*
+
+> Night inside a corrugated-steel aircraft hangar, almost dark. On the
+> back wall hangs the team's emblem exactly as in the second attached
+> image (a snarling honey badger over a sunset disc, "R.A.T.E.L." on a
+> banner below), lit by a spotlight from the roof beams. Under a single
+> hanging industrial lamp stands Roy "Badger" Callahan, a weathered
+> veteran in his fifties with a grey crew cut, olive T-shirt and combat
+> trousers, the receiver of a black wall telephone at his ear, its cord
+> running to the phone on the wall beside him; the lamp throws a hard cone
+> of warm light over him and onto the floor. Either side, in the dark,
+> two armoured pickup trucks (one olive, one blue) and the crews waiting
+> by them, sitting on crates or standing, only their outlines caught by
+> cold blue light from an open hangar door on the right. Caption space:
+> the dark wall at the upper left.
+
+Ко второму референсу приложить саму эмблему (`ratel_emblem.blend` или
+логотип), чтобы GPT не перерисовал её по-своему.
 
 ### 8 — *Rapid Assault Team for Extraction & Liberation. They don't do peace talks.*
 
