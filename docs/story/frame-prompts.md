@@ -6,7 +6,7 @@
 не генерируются: их накладывает игра.
 
 - Blend: `resources/3d/jackal_story_frames.blend`, по сцене на кадр
-  (`Intro_01` … `Intro_04`, `Intro_08`), текстовый блок
+  (`Intro_01` … `Intro_05`, `Intro_08`), текстовый блок
   `jackal_story_frames.py`:
   `build_frame(n)`, `render_frame(n, path)`.
 - Рендеры: `docs/renders/story/intro_NN.png`, 2048×1152.
@@ -98,6 +98,22 @@
 > column of black smoke rises from the hills. Short, hard shadows. Only
 > the escort wears helmets and gear; the detainees wear none. Caption
 > space: the sky at the upper left.
+
+### 5 — *Governments expressed concern. No one came.*
+
+> A formal international conference hall in cold grey daylight, seen
+> straight down the length of a very long table covered in green baize,
+> one-point perspective. Sixteen chairs along it, nearly all empty, some
+> pulled out and left askew. At every place a blank white name card, a
+> microphone on a gooseneck with its little light off, a glass of water.
+> Only at the far end sit three diplomats in dark suits, small, papers in
+> front of them, not speaking. On the right, tall windows between stone
+> piers throw cold stripes of light across the table and the carpet; the
+> left wall pale, with wood panelling below; on the end wall, dark wood
+> panelling and a large plain round emblem (no real country's or
+> organisation's symbol). Quiet, empty, indifferent. No flags of real
+> countries, no lettering anywhere. Caption space: the ceiling across the
+> top.
 
 ### 8 — *Rapid Assault Team for Extraction & Liberation. They don't do peace talks.*
 
