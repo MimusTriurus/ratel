@@ -1,11 +1,14 @@
 # The title's and the game over's mark on the entry picked (Level3DTitle,
-# Level3DGameOverScreen): a bar behind the entry's words, in the sun's colour
-# over the splash's dark, and a ▶ at its left before them -- the entry itself
-# marked, as console menus mark it, rather than a pointer beside it. It took
-# the place of the game's crosshair (Level3DReticle, gone with the mouse),
-# and moves as that did: its owner aims it at an entry's words (aim) and it
-# glides there over GLIDE seconds, eased; it breathes, the bar's fill and the
-# ▶ a little, every BREATH seconds; and a pick flashes it (fire), over FIRE.
+# Level3DGameOverScreen): a ▶ in the sun's colour before the entry's words,
+# which their owner draws brighter -- the two marks a console menu has. It
+# took the place of the game's crosshair (Level3DReticle, gone with the
+# mouse), and moves as that did: its owner aims it at an entry's words (aim)
+# and it glides there over GLIDE seconds, eased; it breathes, nudged in and
+# out every BREATH seconds; and a pick flashes it (fire), paler and larger,
+# over FIRE.
+#
+# There was a bar behind the words as well, its frame and fill breathing; a
+# third mark of the same entry, it went.
 #
 # Under the words: its owner adds it before the Control the words are drawn
 # on. Whole pixels, as the font's are.
@@ -14,21 +17,15 @@ extends Control
 
 const COLOUR := Color(0.965, 0.627, 0.118)
 const FLASH := Color(1.0, 0.93, 0.62)
-const FILL := 0.2              # the bar's fill, breathing BREATH_FILL either way
-const BREATH_FILL := 0.05
-const EDGE := 0.55             # its frame's
 const BREATH := 1.4
 const GLIDE := 0.12
 const FIRE := 0.3
-# The bar round the words, of their height: PAD_X either side, PAD_Y above and
-# below, and before them the ▶'s room, MARK_ROOM; the ▶ MARK tall, its point
-# MARK_GAP before the words, nudged BREATH_NUDGE in and out.
-const PAD_X := 0.45
-const PAD_Y := 0.3
-const MARK_ROOM := 1.2
+# Of the words' height: the ▶ MARK tall, its point MARK_GAP before the words,
+# nudged BREATH_NUDGE in and out; a pick makes it FIRE_GROW larger at first.
 const MARK := 0.75
 const MARK_GAP := 0.5
 const BREATH_NUDGE := 0.06
+const FIRE_GROW := 0.3
 
 var shown := true
 
@@ -90,17 +87,8 @@ func _draw() -> void:
 	var breath := sin(_time * TAU / BREATH)
 	var flash := 1.0 - _fired
 	var colour := COLOUR.lerp(FLASH, flash)
-	var bar := Rect2(_rect.position.x - h * (PAD_X + MARK_ROOM), _rect.position.y - h * PAD_Y,
-			_rect.size.x + h * (2.0 * PAD_X + MARK_ROOM), h * (1.0 + 2.0 * PAD_Y))
-	bar = Rect2(bar.position.round(), bar.size.round())
-	var fill := colour
-	fill.a = FILL + BREATH_FILL * breath + 0.3 * flash
-	draw_rect(bar, fill, true)
-	var edge := colour
-	edge.a = EDGE + 0.4 * flash
-	draw_rect(bar, edge, false, maxf(roundf(h / 16.0), 1.0))
 	# The ▶: its point MARK_GAP before the words, at their middle.
-	var tall := roundf(h * MARK)
+	var tall := roundf(h * MARK * (1.0 + FIRE_GROW * flash))
 	var tip := Vector2(roundf(_rect.position.x - h * (MARK_GAP - BREATH_NUDGE * breath)),
 			roundf(_rect.get_center().y))
 	var mark := PackedVector2Array([tip, tip + Vector2(-tall * 0.8, -tall * 0.5), tip + Vector2(-tall * 0.8, tall * 0.5)])
