@@ -92,6 +92,8 @@ var _started := false
 
 
 func _ready() -> void:
+	# Level3DPreview.WINDOW_TITLE, from the first frame on.
+	get_window().title = "R.A.T.E.L."
 	# The preview pauses the tree under its title; this fades out over that.
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_layer = CanvasLayer.new()

@@ -368,8 +368,14 @@ var _markers: Array[MeshInstance3D] = []
 var _marker_mesh: Mesh
 var _marker_material: StandardMaterial3D
 
+# The window's name. project.godot's config/name stays Jackal: it also names
+# the folder the settings are saved in (user://, app_userdata/Jackal), which
+# a new name would leave behind -- and a folder's name cannot end in a dot.
+const WINDOW_TITLE := "R.A.T.E.L."
+
 
 func _ready() -> void:
+	get_window().title = WINDOW_TITLE
 	# Before anything is added: every mesh from here on, the level's and every
 	# unit's, spawned now or later, is lit in two tones (_toon) and gets its
 	# contour from the engine (_engine_contour).
