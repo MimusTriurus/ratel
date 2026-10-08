@@ -212,6 +212,8 @@ instead of fading in, because the Java original passes its fade value into
 
 ## Further reading
 
+- `docs/gdd.md` — the game design document for RATEL SQUAD (the 3D preview):
+  what is built, what is decided, what is open, and the backlog.
 - `docs/game-2d.md` — modes, entities, rendering and clipping, sprite atlases,
   the two frames, controls, two players, audio and input, the in-game menu.
 - `docs/maps.md` — the map checks and map editor, the stage JSON, binary
