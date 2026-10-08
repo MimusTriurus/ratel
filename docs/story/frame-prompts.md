@@ -6,7 +6,7 @@
 не генерируются: их накладывает игра.
 
 - Blend: `resources/3d/jackal_story_frames.blend`, по сцене на кадр
-  (`Intro_01`, `Intro_02`, `Intro_03`, `Intro_08`), текстовый блок
+  (`Intro_01` … `Intro_04`, `Intro_08`), текстовый блок
   `jackal_story_frames.py`:
   `build_frame(n)`, `render_frame(n, path)`.
 - Рендеры: `docs/renders/story/intro_NN.png`, 2048×1152.
@@ -84,6 +84,24 @@
 > coiled snake emblem. Behind him, far off, two flagpoles with black flags
 > on the left and a huge black banner with a red coiled snake on the right.
 > Menacing, faceless. Caption space: the dark rail across the bottom.
+
+### 4 — *Aid workers. Reporters. A downed helicopter crew. Forty-one names.*
+
+> Harsh midday sun on a dusty road at the edge of a desert town of
+> flat-roofed sand-coloured houses behind a low wall. A file of civilian
+> captives, bareheaded and unarmed, is marched from left to right towards
+> an army truck with a canvas back and its tailgate down at the right.
+> The three nearest tell who they are: in front, a woman aid worker in a
+> white vest still holding up her mission's white flag with a blue band
+> on its pole; behind her a reporter with a TV camera on his shoulder;
+> behind him a helicopter pilot in a torn sage-green flight suit, his
+> white flight helmet in his hand. More captives follow further back.
+> Junta soldiers in helmets guard them: one in the left foreground aiming
+> his rifle at the file, one by the truck. Far off over the rooftops a
+> column of black smoke rises from the hills where the helicopter came
+> down. Short, hard shadows. The figures are not soldiers except the
+> guards: no helmets, no armour on the captives. Caption space: the sky
+> at the upper left.
 
 ### 8 — *Rapid Assault Team for Extraction & Liberation. They don't do peace talks.*
 
