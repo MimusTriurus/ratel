@@ -6,7 +6,7 @@
 не генерируются: их накладывает игра.
 
 - Blend: `resources/3d/jackal_story_frames.blend`, по сцене на кадр
-  (`Intro_01`, `Intro_03`, `Intro_08`), текстовый блок
+  (`Intro_01`, `Intro_02`, `Intro_03`, `Intro_08`), текстовый блок
   `jackal_story_frames.py`:
   `build_frame(n)`, `render_frame(n, path)`.
 - Рендеры: `docs/renders/story/intro_NN.png`, 2048×1152.
@@ -51,6 +51,24 @@
 > glass on the desert at the right, a pencil at the bottom right. The desk
 > around the map falls off into darkness. Caption space: the dark desk
 > along the top edge.
+
+### 2 — *In one night, the army took the capital. They called themselves the National Order Council.*
+
+> Night, a military coup. A wide low-angle view across a paved government
+> square towards a neoclassical palace: a long pale stone front with two
+> rows of dark windows, a portico of eight tall columns under a triangular
+> pediment, a green-grey dome behind, wide steps down to the square. Two
+> drab desert-coloured main battle tanks stand on the square, the near one
+> large on the left, side-on, its gun over the square, the other further
+> in on the right. Soldiers in helmets with rifles at the order on the
+> steps and by the tanks, small. Down the front of the portico, over the
+> columns, two soldiers on the portico's ledge are letting down a huge
+> black banner on ropes, still half rolled at its foot, with a red coiled
+> snake emblem on it. Floodlights at the foot of the steps throw a hard
+> white light up the columns and the banner. Two searchlight beams cross
+> in the dark blue sky behind the palace, a full moon at the upper left,
+> street lamps making warm pools on the paving. Cold blue night shadows
+> everywhere else. Caption space: the night sky at the upper left.
 
 ### 3 — *The people called them the Mamba.*
 
