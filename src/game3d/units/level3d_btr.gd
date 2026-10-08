@@ -312,12 +312,14 @@ const TYRE_PITCH := 0.08
 const EXHAUST_SIZE := 0.06
 const DUST_SIZE := 0.14
 # The lamps (VEHICLES' lamps): their glow's strength, lit; how long they take
-# to light or go out, and how long the blink as it stops lasts, seconds; and
-# the speed backwards, m/s, from which it is reversing.
+# to light or go out, and how long the blink as it stops lasts, seconds; the
+# speed backwards, m/s, from which it is reversing, and either way, from
+# which it is moving.
 const LAMP_LIT := 2.0
 const LAMP_FADE := 0.06
 const STOP_BLINK := 0.35
 const REVERSING := 0.05
+const MOVING := 0.05
 
 # Asked of the scene: `ground.call(x, z)` returns
 # {"height": float, "kind": String, "hit": bool} for the top surface there.
@@ -422,11 +424,11 @@ var _aerials := []
 var _exhausts: Array[Node3D] = []
 var _exhaust_sources: Array[Node3D] = []
 # The lamps: the hull's own copies of their materials; how lit, 0..1; the
-# stop's blink, seconds left of it; and whether it was driving last tick.
+# stop's blink, seconds left of it; and whether it was moving last tick.
 var _lamps: Array[StandardMaterial3D] = []
 var _lamp := 0.0
 var _blink := 0.0
-var _was_driving := false
+var _was_moving := false
 # The shop's upgrades on the model (UPGRADE_PARTS): id -> part, and what the
 # twin gun swaps -- the single gun, the bores in the pivot's frame, the one
 # that fires next -- and the radar's dish.
@@ -1131,7 +1133,7 @@ func place(at: Vector3, facing: float) -> void:
 	_classic_synced = false
 	_line_want = -1
 	_backing = false
-	_was_driving = false
+	_was_moving = false
 	_blink = 0.0
 	_update_lamps(false, 0.0)
 	_settle(0.0, true)
@@ -1702,20 +1704,22 @@ func _update_engine(driving: bool, delta: float) -> void:
 	_rumble_level = move_toward(_rumble_level, 1.0 if driving else 0.0, delta / RUMBLE_FADE)
 	if _rumble_level > 0.0:
 		_rumble = fmod(_rumble + RUMBLE_RATE * delta, TAU)
-	_update_lamps(driving, delta)
+	_update_lamps(absf(speed) > MOVING, delta)
 
 
 # The lamps: lit while it reverses -- the free mode's, and the classic
 # smooth turns' backing up (smooth_reverse) until the nose has swung round
 # over the rear axle; the plain classic driving never reverses -- and blinked
-# once as it comes to a stop, out otherwise. A whole step at once with no
-# `delta`.
-func _update_lamps(driving: bool, delta: float) -> void:
+# once as it comes to a stop, out otherwise. The stop is the hull's, `moving`
+# no more, not the keys': up against a wall with a key still held, it has
+# stopped, and the engine's rumble, which goes on while a key is held, is not
+# what says so. A whole step at once with no `delta`.
+func _update_lamps(moving: bool, delta: float) -> void:
 	if _lamps.is_empty():
 		return
-	if _was_driving and not driving:
+	if _was_moving and not moving:
 		_blink = STOP_BLINK
-	_was_driving = driving
+	_was_moving = moving
 	_blink = maxf(_blink - delta, 0.0)
 	var to := 1.0 if speed < -REVERSING or _blink > 0.0 else 0.0
 	_lamp = to if delta <= 0.0 else move_toward(_lamp, to, delta / LAMP_FADE)
