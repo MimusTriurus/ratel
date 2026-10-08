@@ -25,10 +25,10 @@ const MODERN_FONT := "res://assets/fonts/BlackOpsOne-Regular.ttf"
 const NAME := "R.A.T.E.L."
 
 # Its size in px and the space between its letters -- modern, then 8-bit,
-# whose sizes are whole numbers of its 8 px grid. Larger since SQUAD left the
-# line under it.
-const MODERN := {"size": 190, "spacing": 5.0}
-const PIXEL := {"size": 128, "spacing": 8.0}
+# whose sizes are whole numbers of its 8 px grid (152, a font pixel 19 px).
+# Larger since SQUAD left the line under it, and again with the title's scene.
+const MODERN := {"size": 228, "spacing": 6.0}
+const PIXEL := {"size": 152, "spacing": 10.0}
 # Press Start 2P's period is a full 8x8 cell with its dot at columns 2-3,
 # which spread R . A . T . E . L . apart: here it is drawn DOT_SHIFT font
 # pixels to the left and takes DOT_CELL of them, as wide as it needs.

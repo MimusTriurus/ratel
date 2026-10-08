@@ -32,16 +32,19 @@ enum Entry { ONE_PLAYER, TWO_PLAYERS, SETTINGS, QUIT }
 var _repeat := Level3DPad.Repeat.new()   # up or down held on a pad
 
 # In the 2048x1152 layout: the scene SCENE_WIDTH wide at the middle of the
-# screen (as wide as the 2D game's title art, 25 tiles of 32 px), the name's
+# screen (1.2 times the 2D game's title art, 25 tiles of 32 px: at its size
+# the screen was half empty over and under it all), the name's
 # feet NAME_GAP over its top, and the menu's first entry MENU_GAP under its
-# bottom, the entries ROW apart and centred on it, GLYPH px tall. The gaps are
-# what they were when it all stood higher.
+# bottom, the entries ROW apart and centred on it, GLYPH px tall -- 40, the
+# 8-bit font's 8 px glyphs at 5 screen px each, whole as they must be. The frame's
+# last ~70 px are the ground in the dark, black on the black around it: the
+# menu goes up into them, ~50 px under the last of the scene to be seen.
 const SCENE_CENTRE := Vector2(1024, 576)
-const SCENE_WIDTH := 800.0
-const NAME_GAP := 19.0
-const MENU_GAP := 43.0
-const ROW := 64
-const GLYPH := 32.0
+const SCENE_WIDTH := 960.0
+const NAME_GAP := 23.0
+const MENU_GAP := -19.0
+const ROW := 80
+const GLYPH := 40.0
 # The ▶ (Level3DSelection) is in place of the 2D game's jeep icon, which
 # was the one sprite left on a screen drawn otherwise in the splash's dark and
 # the sun's colours; it glides to the entry the keys pick.
