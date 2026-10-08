@@ -6,7 +6,7 @@
 не генерируются: их накладывает игра.
 
 - Blend: `resources/3d/jackal_story_frames.blend`, по сцене на кадр
-  (`Intro_01` … `Intro_05`, `Intro_08`), текстовый блок
+  (`Intro_01` … `Intro_06`, `Intro_08`), текстовый блок
   `jackal_story_frames.py`:
   `build_frame(n)`, `render_frame(n, path)`.
 - Рендеры: `docs/renders/story/intro_NN.png`, 2048×1152.
@@ -114,6 +114,23 @@
 > organisation's symbol). Quiet, empty, indifferent. No flags of real
 > countries, no lettering anywhere. Caption space: the ceiling across the
 > top.
+
+### 6 — *Someone had insured those forty-one lives. And someone had to pay.*
+
+> A high corner office of a 1980s insurance syndicate at sunset, film
+> noir mood. In the foreground a dark wooden desk with a green leather
+> blotter: on it a manila folder with a white label bearing only the
+> number "41" in black, a red pencil beside it, a green banker's lamp lit
+> on the left, a black rotary telephone on the right whose coiled cord
+> runs up to the receiver. Behind the desk, at a wide window with venetian
+> blinds lowered past her shoulders, stands Ms. Everly, an elegant cold
+> woman in her forties in a grey skirt suit and white blouse, auburn hair
+> pinned up, seen three-quarters from behind, the telephone receiver at
+> her ear, looking out over the city. Through the blinds the orange
+> sunset sky and dark office towers with a few lit windows; the low sun
+> lays thin stripes of light and shadow across her and the desk. No text
+> anywhere except the number 41 on the folder's label. Caption space: the
+> blinds across the top.
 
 ### 8 — *Rapid Assault Team for Extraction & Liberation. They don't do peace talks.*
 
