@@ -44,11 +44,13 @@
 > ringed twice in red, under a black pin flag with a red coiled-snake
 > emblem. On the X stands a small die-cast model of an olive armoured
 > pickup truck, a staff map's game piece, facing up the route. No place
-> names, no numbers, no lettering on the map or on the flags. The paper is worn, its corners
-> curling a little, with faint fold lines and a pale margin. On the desk:
-> a coffee cup at the top left, a brass magnifying glass on the desert at
-> the right, a pencil at the bottom right. The desk around the map falls
-> off into darkness. Caption space: the dark desk along the top edge.
+> names, no numbers, no lettering on the map or on the flags. The paper
+> is worn, with faint fold lines and a pale margin; a white coffee cup
+> stands on its left edge, holding it down, and its top right corner
+> curls up off the desk. On the desk and the map: a brass magnifying
+> glass on the desert at the right, a pencil at the bottom right. The desk
+> around the map falls off into darkness. Caption space: the dark desk
+> along the top edge.
 
 ### 3 — *The people called them the Mamba.*
 
