@@ -146,6 +146,13 @@ const MODEL_SCALE := 0.31
 #                  pipes' tips, the armoured pickup's empties in its pipes'
 #                  mouths, which puff only while shown -- or a point in the
 #                  model, for the jeep, which has no pipe to show
+#   exhaust_out    how far behind that point the puffs are let out, level
+#                  metres: the pickup's pipe, and the jeep's point, end under
+#                  the tail, and a puff made there came out half inside it
+#   lamps          the hull's materials, without the prefix, that are its
+#                  marker lamps -- the tail lamps' red, the front's amber;
+#                  not the headlamps -- and each one's glow: lit while it
+#                  reverses and blinked as it stops (_update_lamps)
 #   stock          the model's own parts an upgrade stands in the place of:
 #                  id -> names without the prefix, hidden while it shows
 #   blue           the second player's colours (tint): the hues, degrees,
@@ -174,7 +181,8 @@ const VEHICLES := {
 			"rumble": 1.6 * Level3DMap.PX, "aerials": ["AerialL", "AerialR"],
 			"spare_fits": ["GradBase", "TubeLauncherBase"],
 			# Under the tail, on the right, where a jeep's pipe ends.
-			"exhausts": [Vector3(-0.6, 0.4, -2.0)], "blue": Vector3(80.0, 130.0, 100.0)},
+			"exhausts": [Vector3(-0.6, 0.4, -2.0)], "exhaust_out": 0.12,
+			"blue": Vector3(80.0, 130.0, 100.0)},
 	# The jeep's springs, wheel for wheel; its scale puts its 3.8 m body at the
 	# jeep's sprite's 1.35 m length, a little narrower than the jeep.
 	"armored": {"path": "res://resources/3d/jackal_armored.glb", "prefix": "Armored_", "scale": 0.36,
@@ -183,7 +191,8 @@ const VEHICLES := {
 			"pitch": [0.045, 256.0, 14.4], "roll": [0.07, 256.0, 14.4], "kick": 0.25,
 			"rumble": 1.6 * Level3DMap.PX, "aerials": ["AerialL"],
 			"spare_fits": ["GradBase", "TubeLauncherBase"],
-			"exhausts": ["ExhaustTip", "UpNitroTipL", "UpNitroTipR"],
+			"exhausts": ["ExhaustTip", "UpNitroTipL", "UpNitroTipR"], "exhaust_out": 0.12,
+			"lamps": {"Red": Color(1.0, 0.16, 0.08), "Amber": Color(1.0, 0.3, 0.0)},
 			"stock": {"twin": ["GunBore"], "nitro": ["Exhaust"], "radar": ["TurretSight"],
 					"armor": ["Glass"], "arena": ["RoofLamps"]},
 			# Its olive is at 55 degrees, the canvas, lamps and amber below 50
@@ -302,6 +311,13 @@ const TYRE_PITCH := 0.08
 # and off the rear wheels.
 const EXHAUST_SIZE := 0.06
 const DUST_SIZE := 0.14
+# The lamps (VEHICLES' lamps): their glow's strength, lit; how long they take
+# to light or go out, and how long the blink as it stops lasts, seconds; and
+# the speed backwards, m/s, from which it is reversing.
+const LAMP_LIT := 2.0
+const LAMP_FADE := 0.06
+const STOP_BLINK := 0.35
+const REVERSING := 0.05
 
 # Asked of the scene: `ground.call(x, z)` returns
 # {"height": float, "kind": String, "hit": bool} for the top surface there.
@@ -405,6 +421,12 @@ var _aerials := []
 # the part each is in, which puffs only while shown (null: always).
 var _exhausts: Array[Node3D] = []
 var _exhaust_sources: Array[Node3D] = []
+# The lamps: the hull's own copies of their materials; how lit, 0..1; the
+# stop's blink, seconds left of it; and whether it was driving last tick.
+var _lamps: Array[StandardMaterial3D] = []
+var _lamp := 0.0
+var _blink := 0.0
+var _was_driving := false
 # The shop's upgrades on the model (UPGRADE_PARTS): id -> part, and what the
 # twin gun swaps -- the single gun, the bores in the pivot's frame, the one
 # that fires next -- and the radar's dish.
@@ -553,6 +575,28 @@ func _ready() -> void:
 		mouth.global_position = at
 		_exhausts.append(mouth)
 		_exhaust_sources.append(source)
+	_bind_lamps(prefix)
+
+
+# The hull's lamps (VEHICLES' lamps), each on a copy of its material, the
+# hull's alone: the imported ones are shared -- the red with the mines and the
+# nitro, the amber with the roof's lamps -- and with the other player's
+# vehicle. Out as it starts.
+func _bind_lamps(prefix: String) -> void:
+	var hull_mesh := _hull as MeshInstance3D
+	var lamps: Dictionary = vehicle.get("lamps", {})
+	if hull_mesh == null or lamps.is_empty():
+		return
+	for surface in hull_mesh.get_surface_override_material_count():
+		var material := hull_mesh.get_active_material(surface) as StandardMaterial3D
+		if material == null or not lamps.has(material.resource_name.trim_prefix(prefix)):
+			continue
+		var lamp := material.duplicate() as StandardMaterial3D
+		lamp.emission_enabled = true
+		lamp.emission = lamps[material.resource_name.trim_prefix(prefix)]
+		hull_mesh.set_surface_override_material(surface, lamp)
+		_lamps.append(lamp)
+	_update_lamps(false, 0.0)
 
 
 # The blink while it cannot be hit (the preview's): the model goes and its
@@ -1044,10 +1088,11 @@ func puffs() -> Array:
 	var out := []
 	if not visible:
 		return out
+	var out_of_pipe: Vector3 = -forward() * float(vehicle.get("exhaust_out", 0.0))
 	for i in _exhausts.size():
 		if _exhaust_sources[i] != null and not _exhaust_sources[i].is_visible_in_tree():
 			continue
-		out.append({"key": "exhaust%d" % i, "kind": "exhaust", "at": _exhausts[i].global_position,
+		out.append({"key": "exhaust%d" % i, "kind": "exhaust", "at": _exhausts[i].global_position + out_of_pipe,
 				"back": -forward(), "size": EXHAUST_SIZE, "working": 1.0 if dash > 0 else _rumble_level})
 	for contact in wheel_tracks():
 		out.append({"key": contact.key, "kind": "dust", "at": contact.at, "size": DUST_SIZE})
@@ -1086,6 +1131,9 @@ func place(at: Vector3, facing: float) -> void:
 	_classic_synced = false
 	_line_want = -1
 	_backing = false
+	_was_driving = false
+	_blink = 0.0
+	_update_lamps(false, 0.0)
 	_settle(0.0, true)
 	_pose()
 
@@ -1654,6 +1702,23 @@ func _update_engine(driving: bool, delta: float) -> void:
 	_rumble_level = move_toward(_rumble_level, 1.0 if driving else 0.0, delta / RUMBLE_FADE)
 	if _rumble_level > 0.0:
 		_rumble = fmod(_rumble + RUMBLE_RATE * delta, TAU)
+	_update_lamps(driving, delta)
+
+
+# The lamps: lit while it reverses -- the free mode's; the classic mode's
+# never does -- and blinked once as it comes to a stop, out otherwise. A whole
+# step at once with no `delta`.
+func _update_lamps(driving: bool, delta: float) -> void:
+	if _lamps.is_empty():
+		return
+	if _was_driving and not driving:
+		_blink = STOP_BLINK
+	_was_driving = driving
+	_blink = maxf(_blink - delta, 0.0)
+	var to := 1.0 if speed < -REVERSING or _blink > 0.0 else 0.0
+	_lamp = to if delta <= 0.0 else move_toward(_lamp, to, delta / LAMP_FADE)
+	for lamp in _lamps:
+		lamp.emission_energy_multiplier = LAMP_LIT * _lamp
 
 
 # The hull's height off its rest: the rumble.

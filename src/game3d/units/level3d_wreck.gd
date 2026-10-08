@@ -236,6 +236,8 @@ func _char(root: Node) -> void:
 			if paint == null:
 				continue
 			var own := paint.duplicate() as StandardMaterial3D
+			# Nothing on it is lit any more: the lamps (Level3DBtr) go out.
+			own.emission_energy_multiplier = 0.0
 			mesh_instance.set_surface_override_material(surface, own)
 			_charred.append([own, paint.albedo_color])
 
