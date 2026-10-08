@@ -24,14 +24,11 @@ const PIXEL_FONT := "res://assets/fonts/PressStart2P-Regular.ttf"
 const MODERN_FONT := "res://assets/fonts/BlackOpsOne-Regular.ttf"
 const NAME := "R.A.T.E.L."
 
-# In the title's 2048x1152 layout: the name centred on the splash (x), its
-# baseline, its size in px and the space between its letters -- modern, then
-# 8-bit, whose sizes are whole numbers of its 8 px grid.
-const CENTRE_X := 1040.0
-# Larger and lower since SQUAD left the line under it: the name takes its
-# place, its feet still over where SQUAD's were.
-const MODERN := {"size": 190, "baseline": 200.0, "spacing": 5.0}
-const PIXEL := {"size": 128, "baseline": 196.0, "spacing": 8.0}
+# Its size in px and the space between its letters -- modern, then 8-bit,
+# whose sizes are whole numbers of its 8 px grid. Larger since SQUAD left the
+# line under it.
+const MODERN := {"size": 190, "spacing": 5.0}
+const PIXEL := {"size": 128, "spacing": 8.0}
 # Press Start 2P's period is a full 8x8 cell with its dot at columns 2-3,
 # which spread R . A . T . E . L . apart: here it is drawn DOT_SHIFT font
 # pixels to the left and takes DOT_CELL of them, as wide as it needs.
@@ -73,9 +70,10 @@ void fragment() {
 }
 """
 
-# How far down the title has moved the name, and the splash under it, from
-# where these put it (Level3DTitle.SCENE_DROP).
-var drop := 0.0
+# Where its owner puts it, in the 2048x1152 layout: centred on centre_x, its
+# letters' feet (the baseline) at feet -- Level3DTitle, over its scene.
+var centre_x := 1024.0
+var feet := 200.0
 var _fonts := {}             # Level3DFont.Style -> FontFile
 
 
@@ -101,12 +99,12 @@ func _draw() -> void:
 	var font := _font(Level3DFont.style)
 	var look: Dictionary = MODERN if modern else PIXEL
 	var size: int = look.size
-	var baseline: float = look.baseline + drop
+	var baseline := feet
 	var top := baseline - font.get_ascent(size) * (0.72 if modern else 1.0)
 	(material as ShaderMaterial).set_shader_parameter("top", top)
 	(material as ShaderMaterial).set_shader_parameter("bottom", baseline)
 	(material as ShaderMaterial).set_shader_parameter("bands", 0.0 if modern else float(LOGO_BANDS))
-	var x := CENTRE_X - _width(font, NAME, size, look.spacing, not modern) * 0.5
+	var x := centre_x - _width(font, NAME, size, look.spacing, not modern) * 0.5
 	if not modern:
 		var pixel := size / 8.0
 		_line(font, NAME, Vector2(x + pixel, baseline + pixel), size, look.spacing, SHADOW_COLOUR, true)

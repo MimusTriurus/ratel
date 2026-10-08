@@ -3063,7 +3063,6 @@ func _make_menu() -> void:
 	# The settings over it, back to it: open again, in the font they leave.
 	_title.open_settings = func(): _menu.open_settings(_title.open)
 	_title.settings_open = _menu.is_open
-	_title.changed = _settings_changed
 	add_child(_title)
 	add_child(_menu)
 

@@ -1,13 +1,16 @@
 # The 3D preview's title screen, the 2D game's (IntroMode's title and its
-# Menu) over the stage: the splash where the title art was, the same layout
-# in the 1024x960 frame centred in the 2048x1152 one, the entry picked marked by a
-# bar behind it with a ▶ before it (Level3DSelection) where Menu's jeep icon
-# stood. Its entries are the preview's own: a
-# game for one player or two (the 2D game's "1 player" / "2 players"), the
-# mode -- 8-bit or modern, the Escape menu's Game tab (Level3DSettings.Preset),
-# here too since it is what a game is played as --, the difficulty the 2D
-# game picks under options, the Escape menu's settings, and quit. Written in the HUD's font (Level3DFont), so that it follows the
-# settings as the HUD does.
+# Menu) over the stage: the splash, the scene with the sun and the jeeps, in
+# the middle of the screen, the game's name over it (Level3DLogo) and the
+# menu under it, the entry picked marked by a ▶ before it (Level3DSelection)
+# where Menu's jeep icon stood. Its entries are the preview's own: a game for
+# one player or two (the 2D game's "1 player" / "2 players"), the Escape
+# menu's settings, and quit. Written in the HUD's font (Level3DFont), so that
+# it follows the settings as the HUD does.
+#
+# The style (8-bit or modern) and the difficulty were entries here too, and
+# are on the settings' Game tab (Level3DMenu) now: the scene took the room.
+# It had stood where the 2D game's title art did, in the original's 1024x960
+# frame, high on the screen over a menu six entries long.
 #
 # The preview shows it at the start, and from the Escape menu's "Main menu",
 # with the tree paused under it and the stage hidden by its black; a game
@@ -16,37 +19,30 @@
 # started the preview, which is there to try the level out.
 #
 # Keys as on the 2D game's menus: up and down (the arrows, and the keys
-# bound to the BTR's), Enter, Space or the gun to pick, and left and right to
-# change the mode or the difficulty. No mouse: the preview is played on the keys
-# and the pads.
+# bound to the BTR's), Enter, Space or the gun to pick. No mouse: the preview
+# is played on the keys and the pads.
 # A pad (Level3DPad) as the keys: the d-pad or the left stick, A or Start.
 # Up or down held, a key or the pad, goes on down the entries.
 # Each with the menus' clicks: menu_move onto another entry, menu_pick as one
-# is picked or changed (Level3DAudio).
+# is picked (Level3DAudio).
 class_name Level3DTitle
 extends CanvasLayer
 
-enum Entry { ONE_PLAYER, TWO_PLAYERS, MODE, DIFFICULTY, SETTINGS, QUIT }
-# The mode's names, by Level3DSettings.Preset; custom is a mode changed on the
-# settings' own tabs, which picking the mode here leaves.
-const MODE_NAMES := ["8-bit", "modern", "custom"]
+enum Entry { ONE_PLAYER, TWO_PLAYERS, SETTINGS, QUIT }
 var _repeat := Level3DPad.Repeat.new()   # up or down held on a pad
 
-# Where IntroMode draws them in its 1024x960 frame (title at 128,192, 25x8
-# tiles of 32 px, Menu at
-# 416,608, an entry each 64 px), and where that frame is in the 2048x1152
-# one.
-const FRAME := Vector2(512, 96)
-const TITLE_AT := Vector2(128, 192)
-const TITLE_SIZE := Vector2(800, 256)
-# The splash and the name over it (Level3DLogo) SCENE_DROP px lower than the
-# title art stood: with the name above it, the two were crowded up to the
-# top of the screen and left a wide gap over the menu.
-const SCENE_DROP := 48.0
-const MENU_AT := Vector2(416, 608)
+# In the 2048x1152 layout: the scene SCENE_WIDTH wide at the middle of the
+# screen (as wide as the 2D game's title art, 25 tiles of 32 px), the name's
+# feet NAME_GAP over its top, and the menu's first entry MENU_GAP under its
+# bottom, the entries ROW apart and centred on it, GLYPH px tall. The gaps are
+# what they were when it all stood higher.
+const SCENE_CENTRE := Vector2(1024, 576)
+const SCENE_WIDTH := 800.0
+const NAME_GAP := 19.0
+const MENU_GAP := 43.0
 const ROW := 64
 const GLYPH := 32.0
-# The bar (Level3DSelection) is in place of the 2D game's jeep icon, which
+# The ▶ (Level3DSelection) is in place of the 2D game's jeep icon, which
 # was the one sprite left on a screen drawn otherwise in the splash's dark and
 # the sun's colours; it glides to the entry the keys pick.
 # The entries: the one picked in the sun's yellow, the others a dim copper.
@@ -90,8 +86,6 @@ var start: Callable
 # says whether they are, and have the keys.
 var open_settings: Callable
 var settings_open: Callable
-# `changed.call()`: settings.hard changed, to be saved.
-var changed: Callable
 
 var _selected := 0
 var _splash: Control         # Level3DSplashLanding, Level3DSplash3D or Level3DSplash
@@ -131,11 +125,12 @@ func _ready() -> void:
 		splash = Level3DSplash3D.new()
 	else:
 		splash = Level3DSplashLanding.new()
-	splash.place(FRAME + TITLE_AT + TITLE_SIZE * 0.5 + Vector2(0.0, SCENE_DROP), TITLE_SIZE.x)
+	splash.place(SCENE_CENTRE, SCENE_WIDTH)
 	add_child(splash)
 	_splash = splash
 	_logo = Level3DLogo.new()
-	_logo.drop = SCENE_DROP
+	_logo.centre_x = SCENE_CENTRE.x
+	_logo.feet = splash.position.y - NAME_GAP
 	add_child(_logo)
 	# Under the words.
 	_selection = Level3DSelection.new()
@@ -225,8 +220,16 @@ func game_ready() -> void:
 
 
 func _entries() -> Array[String]:
-	return ["1 player", "2 players", "style: " + MODE_NAMES[settings.preset()],
-			"difficulty: " + ("hard" if settings.hard else "normal"), "settings", "quit"]
+	return ["1 player", "2 players", "settings", "quit"]
+
+
+# The menu's top left: under the scene, MENU_GAP clear of it, the widest
+# entry centred on it.
+func _menu_at() -> Vector2:
+	var widest := 0.0
+	for entry in _entries():
+		widest = maxf(widest, Level3DFont.width(entry, GLYPH))
+	return Vector2(roundf(SCENE_CENTRE.x - widest * 0.5), _splash.position.y + _splash.size.y + MENU_GAP)
 
 
 func _process(delta: float) -> void:
@@ -254,14 +257,10 @@ func _process(delta: float) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 
 
-# Before the entry picked, where Menu's icon stood.
-# The entry picked's words, as wide as the widest entry, so that the bar
-# keeps its width from one to the next.
+# Before the entry picked, where Menu's icon stood: the entry picked's words.
 func _slot() -> Rect2:
-	var widest := 0.0
-	for entry in _entries():
-		widest = maxf(widest, Level3DFont.width(entry, GLYPH))
-	return Rect2(FRAME + MENU_AT + Vector2(0.0, _selected * ROW), Vector2(widest, GLYPH))
+	var entry: String = _entries()[_selected]
+	return Rect2(_menu_at() + Vector2(0.0, _selected * ROW), Vector2(Level3DFont.width(entry, GLYPH), GLYPH))
 
 
 # Onto another entry, with its click unless `quiet` -- a click on it, whose
@@ -291,10 +290,6 @@ func _pick() -> void:
 			else:
 				_launching = true
 				_begin(count)
-		Entry.MODE:
-			_toggle_mode()
-		Entry.DIFFICULTY:
-			_toggle_difficulty()
 		Entry.SETTINGS:
 			open_settings.call()
 		Entry.QUIT:
@@ -360,25 +355,6 @@ func _begin(count: int) -> void:
 	start.call(count)
 
 
-# 8-bit and modern by turns, custom going to modern; the settings saved and
-# applied, the sound, the font and the look with them.
-func _toggle_mode() -> void:
-	var to := Level3DSettings.Preset.EIGHT_BIT if settings.preset() == Level3DSettings.Preset.MODERN \
-			else Level3DSettings.Preset.MODERN
-	settings.apply_preset(to)
-	if changed.is_valid():
-		changed.call()
-	_redraw()
-
-
-func _toggle_difficulty() -> void:
-	settings.hard = not settings.hard
-	if changed.is_valid():
-		changed.call()
-	_redraw()
-	_tell_splash()
-
-
 func _redraw() -> void:
 	_text.queue_redraw()
 	_text.texture_filter = Level3DFont.filter()
@@ -402,10 +378,7 @@ func _input(event: InputEvent) -> void:
 	if move != Vector2i.ZERO or Level3DPad.is_accept(event):
 		if move.y != 0:
 			_select(_selected + move.y)
-		elif move.x != 0:
-			if _selected in [Entry.MODE, Entry.DIFFICULTY]:
-				_pick()
-		else:
+		elif move.x == 0:
 			_pick()
 		get_viewport().set_input_as_handled()
 		return
@@ -417,9 +390,6 @@ func _input(event: InputEvent) -> void:
 			_select(_selected - 1)
 		elif code in [KEY_DOWN, settings.key("down")]:
 			_select(_selected + 1)
-		elif code in [KEY_LEFT, KEY_RIGHT, settings.key("left"), settings.key("right")]:
-			if _selected in [Entry.MODE, Entry.DIFFICULTY]:
-				_pick()
 		elif code in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE, settings.key("gun")]:
 			_pick()
 		else:
@@ -429,6 +399,7 @@ func _input(event: InputEvent) -> void:
 
 func _draw_text() -> void:
 	var entries := _entries()
+	var at := _menu_at()
 	for i in entries.size():
-		Level3DFont.draw(_text, entries[i], FRAME.x + MENU_AT.x, FRAME.y + MENU_AT.y + i * ROW, GLYPH,
+		Level3DFont.draw(_text, entries[i], at.x, at.y + i * ROW, GLYPH,
 				Level3DFont.WHITE, PICKED_TINT if i == _selected else OTHER_TINT)

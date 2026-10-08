@@ -133,6 +133,7 @@ var _theme: Theme
 var _font_sizes: Array = []
 var _font_style := -1        # the Level3DFont.Style the menu is drawn in
 var _game_mode: OptionButton
+var _difficulty: OptionButton
 var _camera: OptionButton
 var _camera_window: CheckBox
 var _look: OptionButton
@@ -398,6 +399,7 @@ func _show_settings() -> void:
 func refresh() -> void:
 	_apply_font()
 	_game_mode.select(int(settings.preset()))
+	_difficulty.select(1 if settings.hard else 0)
 	_camera.select(settings.camera)
 	_camera_window.set_pressed_no_signal(settings.camera_window)
 	_look.select(settings.look)
@@ -536,13 +538,15 @@ func _make_settings_page() -> Control:
 
 # The mode: a preset of the settings on the other tabs (Level3DSettings.PRESETS),
 # and "own settings" once one of them has been changed from it, which cannot be
-# picked.
+# picked. And the difficulty, which is no part of a preset. Both were on the
+# title's menu as well (Level3DTitle), and are only here now.
 func _make_game_tab() -> Control:
 	var tab := _tab("Game")
 	var grid := _grid(tab)
 	_game_mode = _choice(grid, "Style", ["8-bit", "Modern", "Custom"],
 			func(i: int): settings.apply_preset(i as Level3DSettings.Preset))
 	_game_mode.set_item_disabled(Level3DSettings.Preset.CUSTOM, true)
+	_difficulty = _choice(grid, "Difficulty", ["Normal", "Hard"], func(i: int): settings.hard = i == 1)
 	_note(tab, "8-bit: the sounds and music as an NES plays them (classic sound), classic driving, "
 			+ "firing and reach, the Press Start 2P pixel font, the pixel look and the CRT monitor.")
 	_note(tab, "Modern: the new positional sound and its own music, modern driving (throttle and steering), "
@@ -550,6 +554,8 @@ func _make_game_tab() -> Control:
 	_note(tab, "A style is a set of the settings on the other tabs. Change one of them there and the style is "
 			+ "custom; the camera, resolution, interface, volumes, keys and cheats do not depend on it. "
 			+ "Launched with --style 8bit or --style modern, the game starts in that style.")
+	_note(tab, "Hard: the stage's harder enemies from the first round, as the game has them from the second "
+			+ "round on either way. Changed during a game, it counts from the next round.")
 	return tab.get_parent().get_parent()
 
 
