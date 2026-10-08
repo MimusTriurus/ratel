@@ -1705,9 +1705,11 @@ func _update_engine(driving: bool, delta: float) -> void:
 	_update_lamps(driving, delta)
 
 
-# The lamps: lit while it reverses -- the free mode's; the classic mode's
-# never does -- and blinked once as it comes to a stop, out otherwise. A whole
-# step at once with no `delta`.
+# The lamps: lit while it reverses -- the free mode's, and the classic
+# smooth turns' backing up (smooth_reverse) until the nose has swung round
+# over the rear axle; the plain classic driving never reverses -- and blinked
+# once as it comes to a stop, out otherwise. A whole step at once with no
+# `delta`.
 func _update_lamps(driving: bool, delta: float) -> void:
 	if _lamps.is_empty():
 		return
