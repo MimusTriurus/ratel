@@ -85,6 +85,11 @@ const TITLE := "SUPPLY"
 const TITLE_GLYPH := 48.0
 const GLYPH := 24.0             # the tiles' names, the players' lines
 const SMALL := 16.0             # the tiles' prices, the descriptions
+# A device's line under its words, what to press for it: on a line of its
+# own, a step larger than the words -- the font's next whole size, never the
+# same as theirs -- and amber, for the player to see it among them.
+const PRESS_GLYPH := 24.0
+const PRESS_COLOUR := Color(1.0, 0.78, 0.2)
 const PLAYER_GLYPH := 48.0     # the players' money, as large as the title
 const READY_GLYPH := 32.0
 const READY_PAD := Vector2(32.0, 16.0)
@@ -745,13 +750,13 @@ func _set_pad(player: int, pad: bool) -> void:
 		_text.queue_redraw()
 
 
-# A device's words end with what player `i` presses for it, on his pad or
-# his keys as he is now (Level3DSettings.device_press); the shop is where he
-# learns it, there being no telling on the stage when to show him.
+# A device's line under its words, what player `i` presses for it, on his
+# pad or his keys as he is now (Level3DSettings.device_press), in the
+# catalog's words (its press); the shop is where he learns it, there being
+# no telling on the stage when to show him.
 func _press_words(i: int, id: String) -> String:
 	var bound := settings if settings != null else Level3DSettings.new()
-	var press := bound.device_press(id, i, on_pad[i] if i < on_pad.size() else false)
-	return " PRESS %s." % press if press != "" else " NO KEY: BIND ONE IN THE OPTIONS."
+	return Level3DShopCatalog.press(id, bound.device_press(id, i, on_pad[i] if i < on_pad.size() else false))
 
 
 func _menu_up() -> bool:
@@ -840,7 +845,7 @@ func _draw_text() -> void:
 	var columns := float(Level3DShopCatalog.COLUMNS)
 	var rows := float(LIFE_ROW)
 	var tile := Vector2((m.size.x - gap * (columns - 1.0)) / columns, (m.size.y - LIFE_HEIGHT * s - gap * rows) / rows)
-	for it in Level3DShopCatalog.ITEMS:
+	for it in Level3DShopCatalog.items():
 		var rect: Rect2
 		if it.kind == Level3DShopCatalog.Kind.SUPPLY:
 			rect = Rect2(m.position.x, m.position.y + (tile.y + gap) * rows, m.size.x, LIFE_HEIGHT * s)
@@ -1050,13 +1055,16 @@ func _draw_words(i: int, column: Rect2, s: float, g: float, sg: float) -> void:
 	# The name in full where the tile's is short for it (the catalog's title).
 	var name: String = it.get("title", it.get("name", "READY"))
 	var text: String = it.get("text", "EVERY PLAYER READY, AND THE ROUND STARTS.")
-	if it.get("kind", -1) == Level3DShopCatalog.Kind.DEVICE:
-		text += _press_words(i, it.id)
+	var press := _press_words(i, it.id) if it.get("kind", -1) == Level3DShopCatalog.Kind.DEVICE else ""
+	var pg := maxf(_whole(PRESS_GLYPH * s), sg + 8.0)
 	var pad := roundf(WORDS_PAD * s)
 	var heads := _wrap(name, g, column.size.x - pad * 2.0)
 	var lines := _wrap(text, sg, column.size.x - pad * 2.0)
+	var presses := _wrap(press, pg, column.size.x - pad * 2.0)
 	var height := pad * 2.0 + heads.size() * (g + roundf(4.0 * s)) - roundf(4.0 * s) + roundf(10.0 * s) \
 			+ lines.size() * (sg + roundf(8.0 * s)) - roundf(8.0 * s)
+	if not presses.is_empty():
+		height += roundf(14.0 * s) + presses.size() * (pg + roundf(8.0 * s)) - roundf(8.0 * s)
 	var box := Rect2(column.position.x, roundf(WORDS_TOP * s), column.size.x, height)
 	var a := clampf((_time - _since[i]) / WORDS_FADE, 0.0, 1.0)
 	var spot: Variant = _bay.spot(i)
@@ -1093,6 +1101,10 @@ func _draw_words(i: int, column: Rect2, s: float, g: float, sg: float) -> void:
 	for line in lines:
 		Level3DFont.draw(_text, line, roundf(box.position.x + pad), y, sg, Level3DFont.GRAY, Color(1, 1, 1, a))
 		y += sg + roundf(8.0 * s)
+	y += roundf(6.0 * s)
+	for line in presses:
+		Level3DFont.draw(_text, line, roundf(box.position.x + pad), y, pg, Level3DFont.WHITE, Color(PRESS_COLOUR, a))
+		y += pg + roundf(8.0 * s)
 
 
 static func _wrap(text: String, g: float, width: float) -> Array[String]:

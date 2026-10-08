@@ -248,7 +248,8 @@ plan behind it is `docs/shop-plan.md`; its steps and their state are in
 the rounds: the summary closed, the stage goes to black and pauses, and the
 shop comes up out of it. The players' jeeps stand on turntables at the frame's
 edges with what they have bought on them; between them the goods, a matrix out
-of `Level3DShopCatalog` (`level3d_shop_catalog.gd`) -- weapons, protection,
+of `Level3DShopCatalog` (`level3d_shop_catalog.gd`), which reads it from the
+table `assets/shop/items.json` -- weapons, protection,
 devices, three of each, and a life across the bottom. Both players shop at
 once, each with a frame of his own colour for a cursor, the first's outside
 the second's on one tile. A tile says on each player's side what it is to him:
@@ -310,8 +311,9 @@ default another action already has is left unbound, a dash. The second
 player's are fixed, round the arrows: right Shift nitro, Enter mines,
 Delete the airstrike (`DEVICE_KEYS_2`), his other keys being the 2D game's
 mapping, which has no such buttons. A config saved with the one Device key
-of before gives it to nitro. The shop says which on the device's words --
-PRESS K, PRESS X -- by the player's keys or his pad, whichever he touched
+of before gives it to nitro. The shop says which under the device's words,
+on a line of its own, larger and in amber -- PRESS K, PRESS X, the row's
+`press` in the table -- by the player's keys or his pad, whichever he touched
 last; there is no hint over the jeep for them, as there is for the
 weapons, there being no telling when one is wanted. The HUD's line names
 each one bought after the prisoners, dimmed while it cannot go off.

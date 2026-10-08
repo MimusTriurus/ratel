@@ -1,6 +1,6 @@
 # Checks the 3D preview's shop between rounds (docs/shop-plan.md,
 # docs/shop-implementation.md) on the preview itself, a fresh one for each
-# part: the rounds and the run kept between them, the shop, the passive
+# part: the catalog's table, the rounds and the run kept between them, the shop, the passive
 # upgrades and the devices. No window needed:
 #
 #     godot --path . --headless --script tools/verify_shop.gd
@@ -37,6 +37,8 @@ func _fresh() -> void:
 
 
 func _all() -> void:
+	print("-- The catalog: assets/shop/items.json, and what its check finds in a broken one.")
+	_catalog()
 	print("-- Rounds: the run kept between them, the summary to the shop to round 2, CONTINUE, R.")
 	await _fresh()
 	await _rounds()
@@ -170,12 +172,12 @@ func _shop() -> void:
 	shop._set_pad(0, false)
 	shop._set_pad(1, false)
 	check("nitro's words, 1P on the keys: %s" % shop._press_words(0, "nitro"),
-			shop._press_words(0, "nitro") == " PRESS %s." % Level3DSettings.key_name(shop.settings.key("nitro")))
+			shop._press_words(0, "nitro") == "PRESS %s." % Level3DSettings.key_name(shop.settings.key("nitro")))
 	check("mines' words, 2P on the keys: %s" % shop._press_words(1, "mines"),
-			shop._press_words(1, "mines") == " PRESS ENTER.")
+			shop._press_words(1, "mines") == "PRESS ENTER.")
 	shop._set_pad(0, true)
 	check("airstrike's words, 1P on his pad: %s" % shop._press_words(0, "airstrike"),
-			shop._press_words(0, "airstrike") == " PRESS %s." % Level3DPad.name_of(shop.settings.pad_button("airstrike")))
+			shop._press_words(0, "airstrike") == "PRESS %s." % Level3DPad.name_of(shop.settings.pad_button("airstrike")))
 	shop._set_pad(0, false)
 	# The second player's own money.
 	var kit2: Level3DRun.Kit = shop._run.kits[1]
@@ -431,6 +433,45 @@ func _shots(upgrades: Array[String]) -> int:
 			shots += now - last
 		last = now
 	return shots
+
+
+func _catalog() -> void:
+	var doc := Level3DShopCatalog.read()
+	var problems := Level3DShopCatalog.check(doc)
+	check("the table is sound%s" % ("" if problems.is_empty() else ": " + "; ".join(problems)),
+			problems.is_empty())
+	var items := Level3DShopCatalog.items()
+	check("every row read: %d" % items.size(), items.size() == (doc.items as Array).size())
+	var twin := Level3DShopCatalog.item("twin")
+	check("a row typed: twin an upgrade at 20000",
+			twin.kind == Level3DShopCatalog.Kind.UPGRADE and typeof(twin.price) == TYPE_INT and twin.price == 20000)
+	check("the launcher's steps ints", Level3DShopCatalog.item("launcher").steps == [10000, 15000, 20000])
+	for device in Level3DSettings.DEVICES:
+		check("%s a device with a press line" % device,
+				Level3DShopCatalog.item(device).kind == Level3DShopCatalog.Kind.DEVICE
+				and Level3DShopCatalog.press(device, "K") == "PRESS K.")
+	check("no key: the table's unbound", Level3DShopCatalog.press("nitro", "") == doc.unbound)
+	check("the life priced from its row", Level3DShopCatalog.at(5, 2).id == "life")
+	# Each break on a copy of the table, and the check has to say it.
+	var breaks := {
+		"an unknown field": func(rows: Array) -> void: rows[0]["prise"] = 1,
+		"a lower-case name": func(rows: Array) -> void: rows[0]["name"] = "Twin",
+		"a device without its press": func(rows: Array) -> void: rows[6].erase("press"),
+		"press on an upgrade": func(rows: Array) -> void: rows[0]["press"] = "PRESS {key}.",
+		"a press with no {key}": func(rows: Array) -> void: rows[6]["press"] = "PRESS IT.",
+		"two rows in one cell": func(rows: Array) -> void: rows[1]["col"] = 0,
+		"a tile in the life's row": func(rows: Array) -> void: rows[0]["row"] = 5,
+		"a second id": func(rows: Array) -> void: rows[1]["id"] = "twin",
+		"an unknown kind": func(rows: Array) -> void: rows[0]["kind"] = "weapon",
+		"a price not whole": func(rows: Array) -> void: rows[0]["price"] = 199.5,
+		"two steps of three": func(rows: Array) -> void: rows[1]["steps"] = [1, 2],
+		"a device with no action": func(rows: Array) -> void: rows[6]["id"] = "laser",
+	}
+	for what in breaks:
+		var broken: Dictionary = doc.duplicate(true)
+		breaks[what].call(broken.items)
+		var said := Level3DShopCatalog.check(broken)
+		check("check says %s: %s" % [what, "; ".join(said)], not said.is_empty())
 
 
 func _at(shop: Level3DShop, player: int, id: String) -> void:

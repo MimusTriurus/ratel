@@ -27,7 +27,7 @@ WindowsApps). Blender — Store-сборка, запускается через
 | `verify_level3d.gd` | 3D-файлы уровней `assets/level3d/stage-N.json`: round trip, сетка, группы, триггеры, каталог, растры | `godot --path . --headless --script tools/verify_level3d.gd` |
 | `verify_level_editor.gd` | редактор 3D-уровней без человека: кисти, отмена, сохранение; с окном ещё и снимки, с `-- --build` сборка | `godot --path . --windowed --resolution 1600x900 --script tools/verify_level_editor.gd` |
 | `verify_level3d_audio.gd` | звук 3D-превью: папки обоих режимов, микс, музыка, цепочки частей, адаптивная музыка босса | `godot --path . --headless --script tools/verify_level3d_audio.gd` |
-| `verify_shop.gd` | магазин между кругами на самом превью: круги и забег, покупки и возврат вдвоём, пассивные апгрейды, устройства; несколько минут | `godot --path . --headless --script tools/verify_shop.gd` |
+| `verify_shop.gd` | магазин между кругами на самом превью: таблица товаров `assets/shop/items.json` и её проверка, круги и забег, покупки и возврат вдвоём, пассивные апгрейды, устройства; несколько минут | `godot --path . --headless --script tools/verify_shop.gd` |
 
 ## Карты и поле направлений (2D-игра)
 
