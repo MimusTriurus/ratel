@@ -12,9 +12,10 @@
 # black too (project.godot's boot splash, with no image).
 #
 # The preview's _ready then builds the title before it hands a frame back
-# (Level3DTitle and its splash, ~1.5 s), with all this still on top and the
-# corner's emblem stopped; it fades out once the title is up, and the stage
-# goes on being built under the title as before (Level3DPreview._breathe).
+# (Level3DTitle and its splash, ~0.4 s warm, more cold), every frame stopped
+# meanwhile; so the sign goes out first and that is done on black (SIGN_OUT).
+# The black lifts once the title's frames run smoothly, and the stage goes on
+# being built under the title as before (Level3DPreview._breathe).
 #
 # HELD is loaded on the same threads and kept for the whole run (held): the
 # preview and its units load() their models where they need them -- the
@@ -31,6 +32,16 @@ extends Node
 
 const MAIN := "res://src/game3d/level3d_preview.tscn"
 const FADE := 0.4      # seconds, once the title is up
+# The loading sign goes out over SIGN_OUT before the title is built, which
+# stops every frame for ~0.4 s: on black, with nothing moving, that reads as
+# a cut, where the sign stopping mid-breath read as the game hanging. The
+# black then waits for the title's first frames, slow too (its stage being
+# built under it, shaders compiling), to come in under SETTLED for SETTLED_RUN
+# frames running, or for SETTLE_MAX at most, before it lifts.
+const SIGN_OUT := 0.25
+const SETTLED := 0.025     # seconds, a frame
+const SETTLED_RUN := 3
+const SETTLE_MAX := 1.0    # seconds
 # Over the preview's own layers (Level3DPreview.CRT_LAYER is the top one).
 const LAYER := 100
 
@@ -76,6 +87,7 @@ var held: Array[Resource] = []
 var _paths: Array[String] = []
 var _layer: CanvasLayer
 var _screen: Control
+var _sign: Level3DLoading
 var _started := false
 
 
@@ -94,7 +106,8 @@ func _ready() -> void:
 	black.color = Color.BLACK
 	black.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_screen.add_child(black)
-	_screen.add_child(Level3DLoading.new())
+	_sign = Level3DLoading.new()
+	_screen.add_child(_sign)
 
 	_paths.append(MAIN)
 	_paths.append_array(HELD)
@@ -138,11 +151,22 @@ func _start() -> void:
 	if main == null:
 		push_error("Level3DBoot: cannot load %s" % MAIN)
 		return
+	var sign_out := create_tween()
+	sign_out.tween_property(_sign, "modulate:a", 0.0, SIGN_OUT)
+	await sign_out.finished
 	await get_tree().process_frame
 	# Its _ready runs to its first await here: the title, built and up.
 	var game := main.instantiate()
 	get_tree().root.add_child(game)
 	get_tree().current_scene = game
+	var waited := 0.0
+	var run := 0
+	while run < SETTLED_RUN and waited < SETTLE_MAX:
+		var from := Time.get_ticks_usec()
+		await get_tree().process_frame
+		var frame := (Time.get_ticks_usec() - from) / 1e6
+		waited += frame
+		run = run + 1 if frame < SETTLED else 0
 	var fade := create_tween()
 	fade.tween_property(_screen, "modulate:a", 0.0, FADE)
 	# Gone but for held, which this node keeps for the run.
