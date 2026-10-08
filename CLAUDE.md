@@ -31,9 +31,11 @@ environment; substitute the actual editor path.
 godot --path . src/game2d/main.tscn
 ```
 
-The project's main scene is the 3D preview (`src/game3d/level3d_preview.tscn`),
-so a bare run, F5 and an export open that; the 2D game is run by naming
-`src/game2d/main.tscn`, as above.
+The project's main scene is `src/game3d/level3d_boot.tscn`, the R.A.T.E.L.
+emblem on a loading screen while the 3D preview (`src/game3d/level3d_preview.tscn`) loads
+on a thread, which then opens it; so a bare run, F5 and an export open the
+preview through it, and naming the preview's scene skips it. The 2D game is
+run by naming `src/game2d/main.tscn`, as above.
 
 ```bash
 godot --path . --headless --check-only --script src/game2d/core/main.gd

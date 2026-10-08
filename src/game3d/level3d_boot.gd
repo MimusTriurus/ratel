@@ -1,0 +1,170 @@
+# The project's main scene: the R.A.T.E.L. emblem, still, in the middle of
+# the screen, and the small one breathing in the corner (Level3DLoading),
+# while the 3D preview (level3d_preview.tscn) loads; and then the preview.
+#
+# What takes the time before the preview's first frame is not its files --
+# the stage's 18 MB glb reads in under 0.1 s -- but its scripts: loading the
+# scene compiles level3d_preview.gd and every class it names, and the shaders
+# they preload, 1.5 s on a warm start and many more on a cold one. That is
+# done here on a loader thread (load_threaded_request), the corner's emblem
+# breathing meanwhile. The engine's own start, before any scene can draw,
+# shows the big one: project.godot's boot splash,
+# assets/images/ratel_emblem.png at its own size on black, which this one
+# goes on showing in the same place.
+#
+# The preview's _ready then builds the title before it hands a frame back
+# (Level3DTitle and its splash, ~1.5 s), with all this still on top and the
+# corner's emblem stopped; it fades out once the title is up, and the stage goes on being
+# built under the title as before (Level3DPreview._breathe).
+#
+# HELD is loaded on the same threads and kept for the whole run (held): the
+# preview and its units load() their models where they need them -- the
+# stage for the title's palms, for the level and for the shop's helipad, the
+# Chinook at every round -- and a model nothing holds is read and built again
+# each time; held, every load() after the first finds it in the cache, and
+# Level3DHull's rebuilt meshes, kept per Mesh, are found again too. The music
+# likewise, every song of every sound mode, being small.
+#
+# Run on its own, the preview skips all this, as the level editor's Play and
+# the --shot runs do:
+#     godot --path . src/game3d/level3d_preview.tscn
+extends Node
+
+const MAIN := "res://src/game3d/level3d_preview.tscn"
+const EMBLEM := preload("res://assets/images/ratel_emblem.png")
+# The emblem's size on screen, in screen pixels: the boot splash shows the
+# image at its own size, and this one stays where that leaves off.
+const EMBLEM_PIXELS := 512.0
+const FADE := 0.4      # seconds, once the title is up
+# Over the preview's own layers (Level3DPreview.CRT_LAYER is the top one).
+const LAYER := 100
+
+const HELD := [
+	"res://resources/3d/jackal_stage1.glb",
+	"res://resources/3d/jackal_chinook.glb",
+	# Level3DBtr.VEHICLES, whichever the settings pick.
+	"res://resources/3d/jackal_armored.glb",
+	"res://resources/3d/jackal_armored_b.glb",
+	"res://resources/3d/jackal_jeep.glb",
+	"res://resources/3d/ratel_btr.glb",
+	"res://resources/3d/jackal_littlebird_mh6.glb",
+	"res://resources/3d/low_poly_soldier.glb",
+	"res://resources/3d/jackal_trooper.glb",
+	"res://resources/3d/jackal_trooper_pow.glb",
+	"res://resources/3d/jackal_tank.glb",
+	"res://resources/3d/jackal_heavy_tank.glb",
+	"res://resources/3d/jackal_boat.glb",
+	"res://resources/3d/jackal_missile_bunker.glb",
+	"res://resources/3d/jackal_fx_blast.glb",
+	"res://resources/3d/jackal_supply.glb",
+	"res://resources/3d/jackal_game_over.glb",
+	"res://resources/3d/oaks/oak_001.glb",
+	"res://resources/3d/oaks/oak_003.glb",
+	"res://resources/3d/oaks/oak_006.glb",
+	# Level3DPreview._add_destructibles: stage 1's, as the catalog lists them.
+	"res://resources/3d/jackal_dest_Gate.glb",
+	"res://resources/3d/jackal_dest_Barracks.glb",
+	"res://resources/3d/jackal_dest_BarracksN.glb",
+	"res://resources/3d/jackal_dest_BarracksN2.glb",
+	"res://resources/3d/jackal_dest_BarracksN3.glb",
+	"res://resources/3d/jackal_dest_Hangar_E.glb",
+	"res://resources/3d/jackal_dest_Hangar_N.glb",
+	"res://resources/3d/jackal_dest_Hangar_W.glb",
+	"res://resources/3d/jackal_dest_BunkerGun.glb",
+]
+# Level3DAudio.MUSIC_DIRS.
+const MUSIC := ["res://assets/music3d/modern/", "res://assets/music3d/classic/",
+		"res://assets/music3d/original/"]
+
+var held: Array[Resource] = []
+
+var _paths: Array[String] = []
+var _layer: CanvasLayer
+var _screen: Control
+var _emblem: Sprite2D
+var _started := false
+
+
+func _ready() -> void:
+	# The preview pauses the tree under its title; this fades out over that.
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	_layer = CanvasLayer.new()
+	_layer.layer = LAYER
+	add_child(_layer)
+	# All of it under one Control, to fade together.
+	_screen = Control.new()
+	_screen.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_screen.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_layer.add_child(_screen)
+	var black := ColorRect.new()
+	black.color = Color.BLACK
+	black.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_screen.add_child(black)
+	_emblem = Sprite2D.new()
+	_emblem.texture = EMBLEM
+	_screen.add_child(_emblem)
+	_screen.add_child(Level3DLoading.new())
+	_place()
+	get_viewport().size_changed.connect(_place)
+
+	_paths.append(MAIN)
+	_paths.append_array(HELD)
+	for dir in MUSIC:
+		for file in ResourceLoader.list_directory(dir):
+			if file.ends_with(".ogg"):
+				_paths.append(dir + file)
+	for path in _paths:
+		if ResourceLoader.exists(path):
+			ResourceLoader.load_threaded_request(path)
+		else:
+			push_warning("Level3DBoot: no %s to hold" % path)
+
+
+# In the middle of the frame and EMBLEM_PIXELS across on screen, whatever the
+# window's size: the viewport is 2048x1152 stretched to it (project.godot).
+func _place() -> void:
+	var visible_size := get_viewport().get_visible_rect().size
+	var window := Vector2(get_window().size)
+	var shrink := minf(window.x / visible_size.x, window.y / visible_size.y)
+	_emblem.position = visible_size * 0.5
+	_emblem.scale = Vector2.ONE * (EMBLEM_PIXELS / EMBLEM.get_width() / shrink)
+
+
+func _process(_delta: float) -> void:
+	if not _started and _loaded():
+		_started = true
+		_start()
+
+
+func _loaded() -> bool:
+	for path in _paths:
+		if ResourceLoader.exists(path) \
+				and ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			return false
+	return true
+
+
+func _start() -> void:
+	var main: PackedScene = null
+	for path in _paths:
+		if not ResourceLoader.exists(path):
+			continue
+		var resource := ResourceLoader.load_threaded_get(path)
+		if resource == null:
+			push_warning("Level3DBoot: %s did not load" % path)
+		elif path == MAIN:
+			main = resource
+		else:
+			held.append(resource)
+	if main == null:
+		push_error("Level3DBoot: cannot load %s" % MAIN)
+		return
+	await get_tree().process_frame
+	# Its _ready runs to its first await here: the title, built and up.
+	var game := main.instantiate()
+	get_tree().root.add_child(game)
+	get_tree().current_scene = game
+	var fade := create_tween()
+	fade.tween_property(_screen, "modulate:a", 0.0, FADE)
+	# Gone but for held, which this node keeps for the run.
+	fade.tween_callback(_layer.queue_free)

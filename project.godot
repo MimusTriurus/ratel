@@ -12,10 +12,12 @@ config_version=5
 
 config/name="Jackal"
 config/description="Port of meatfighter.com's Java remake of Konami's Jackal (LGPL v3)."
-run/main_scene="res://src/game3d/level3d_preview.tscn"
+run/main_scene="res://src/game3d/level3d_boot.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 run/max_fps=60
-boot_splash/show_image=false
+boot_splash/bg_color=Color(0, 0, 0, 1)
+boot_splash/image="res://assets/images/ratel_emblem.png"
+boot_splash/stretch_mode=0
 config/icon="res://icon.png"
 config/windows_native_icon="res://icon.ico"
 
