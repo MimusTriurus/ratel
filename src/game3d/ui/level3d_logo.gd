@@ -1,5 +1,7 @@
-# The title screen's name, RATEL and under it SQUAD, over the splash's sun
-# where the 2D game's title art had its own (Level3DTitle).
+# The title screen's name, R.A.T.E.L., over the splash's sun where the 2D
+# game's title art had its own (Level3DTitle). It was RATEL with SQUAD under
+# it; the dots are the emblem's, and what they stand for -- Rapid Assault
+# Team for Extraction & Liberation -- is left for the story to tell.
 #
 # Written in the font the settings pick (Level3DFont.style), from the .ttf
 # files the HUD's sheets were baked from, since the sheets are 32 px glyphs
@@ -14,26 +16,28 @@
 # BREATH seconds a little brighter), by the same clock.
 #
 # LOGO_SHADER fills what is drawn in white with the colours and leaves what
-# is drawn in any other colour as it is -- the shadow and SQUAD.
+# is drawn in any other colour as it is -- the shadow.
 class_name Level3DLogo
 extends Control
 
 const PIXEL_FONT := "res://assets/fonts/PressStart2P-Regular.ttf"
 const MODERN_FONT := "res://assets/fonts/BlackOpsOne-Regular.ttf"
-const NAME := "RATEL"
-const UNDER := "SQUAD"
+const NAME := "R.A.T.E.L."
 
 # In the title's 2048x1152 layout: the name centred on the splash (x), its
-# baseline and its size in px, SQUAD's baseline under it, its size and the
-# space between its letters -- modern, then 8-bit, whose sizes are whole
-# numbers of its 8 px grid.
+# baseline, its size in px and the space between its letters -- modern, then
+# 8-bit, whose sizes are whole numbers of its 8 px grid.
 const CENTRE_X := 1040.0
-const MODERN := {"size": 150, "baseline": 162.0, "spacing": 4.0,
-		"under_size": 40, "under_baseline": 212.0, "under_spacing": 22.0}
-const PIXEL := {"size": 96, "baseline": 150.0, "spacing": 8.0,
-		"under_size": 32, "under_baseline": 206.0, "under_spacing": 16.0}
+# Larger and lower since SQUAD left the line under it: the name takes its
+# place, its feet still over where SQUAD's were.
+const MODERN := {"size": 190, "baseline": 200.0, "spacing": 5.0}
+const PIXEL := {"size": 128, "baseline": 196.0, "spacing": 8.0}
+# Press Start 2P's period is a full 8x8 cell with its dot at columns 2-3,
+# which spread R . A . T . E . L . apart: here it is drawn DOT_SHIFT font
+# pixels to the left and takes DOT_CELL of them, as wide as it needs.
+const DOT_SHIFT := 2
+const DOT_CELL := 4
 const SHADOW_COLOUR := Color(0.35, 0.03, 0.0)
-const UNDER_TINT := Color(0.82, 0.52, 0.33)
 const LOGO_BANDS := 4
 const BREATH := 7.0
 const BRIGHTEN := 0.08
@@ -102,29 +106,35 @@ func _draw() -> void:
 	(material as ShaderMaterial).set_shader_parameter("top", top)
 	(material as ShaderMaterial).set_shader_parameter("bottom", baseline)
 	(material as ShaderMaterial).set_shader_parameter("bands", 0.0 if modern else float(LOGO_BANDS))
-	var x := CENTRE_X - _width(font, NAME, size, look.spacing) * 0.5
+	var x := CENTRE_X - _width(font, NAME, size, look.spacing, not modern) * 0.5
 	if not modern:
 		var pixel := size / 8.0
-		_line(font, NAME, Vector2(x + pixel, baseline + pixel), size, look.spacing, SHADOW_COLOUR)
-	_line(font, NAME, Vector2(x, baseline), size, look.spacing, Color.WHITE)
-	var under_size: int = look.under_size
-	var under_x := CENTRE_X - _width(font, UNDER, under_size, look.under_spacing) * 0.5
-	_line(font, UNDER, Vector2(under_x, look.under_baseline + drop), under_size, look.under_spacing, UNDER_TINT)
+		_line(font, NAME, Vector2(x + pixel, baseline + pixel), size, look.spacing, SHADOW_COLOUR, true)
+	_line(font, NAME, Vector2(x, baseline), size, look.spacing, Color.WHITE, not modern)
 
 
-# `text` from `at`, its baseline, `spacing` px between its letters.
-func _line(font: Font, text: String, at: Vector2, size: int, spacing: float, colour: Color) -> void:
+# `text` from `at`, its baseline, `spacing` px between its letters; `pixel`,
+# for the 8-bit font, its periods narrowed (DOT_SHIFT, DOT_CELL).
+func _line(font: Font, text: String, at: Vector2, size: int, spacing: float, colour: Color,
+		pixel := false) -> void:
 	for i in text.length():
 		var c := text.unicode_at(i)
-		draw_char(font, at, String.chr(c), size, colour)
-		at.x += font.get_char_size(c, size).x + spacing
+		var shift := DOT_SHIFT * size / 8.0 if pixel and c == 46 else 0.0
+		draw_char(font, at - Vector2(shift, 0.0), String.chr(c), size, colour)
+		at.x += _advance(font, c, size, pixel) + spacing
 
 
-func _width(font: Font, text: String, size: int, spacing: float) -> float:
+func _width(font: Font, text: String, size: int, spacing: float, pixel := false) -> float:
 	var w := spacing * (text.length() - 1)
 	for i in text.length():
-		w += font.get_char_size(text.unicode_at(i), size).x
+		w += _advance(font, text.unicode_at(i), size, pixel)
 	return w
+
+
+func _advance(font: Font, c: int, size: int, pixel: bool) -> float:
+	if pixel and c == 46:     # "."
+		return DOT_CELL * size / 8.0
+	return font.get_char_size(c, size).x
 
 
 func _font(style: Level3DFont.Style) -> FontFile:
