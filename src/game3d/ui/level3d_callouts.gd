@@ -16,8 +16,8 @@ class_name Level3DCallouts
 extends Control
 
 const TEXT := "HELP!"             # a mark's words unless it has its own "text"
-const GLYPH := 32.0             # a building's call at 100%; a prisoner's SMALL of it
-const SMALL := 0.75
+const GLYPH := Level3DFont.BODY         # a building's call at 100%
+const SMALL := Level3DFont.SMALL        # a prisoner's
 const TEXT_COLOUR := Color(0.9, 0.12, 0.08)
 const LINE := 8.0               # the black line round the burst, layout px at 100%
 const SPIKES := 16
@@ -57,13 +57,12 @@ func _draw() -> void:
 		var tip := camera.unproject_position(at)
 		if not frame.grow(GLYPH * 4.0).has_point(tip):
 			continue
-		_burst(tip, GLYPH * scale_factor * (SMALL if mark.small else 1.0), mark.age, mark.seed,
+		_burst(tip, Level3DFont.size(SMALL if mark.small else GLYPH, scale_factor), mark.age, mark.seed,
 				mark.get("text", TEXT), mark.get("colour", TEXT_COLOUR))
 
 
 # One call, its tail's tip at `tip`, its glyphs `g` px, `text` in `colour`.
 func _burst(tip: Vector2, g: float, age: int, seed: int, text: String, colour: Color) -> void:
-	g = maxf(roundf(g / 8.0), 1.0) * 8.0     # whole font pixels
 	var text_w := Level3DFont.width(text, g)
 	var radius := Vector2(text_w * 0.5 + g * PADDING, g * 0.5 + g * PADDING)
 	var centre := tip - Vector2(0.0, radius.y + g * TAIL)

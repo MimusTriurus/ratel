@@ -110,6 +110,25 @@ gamut, so no light moves it: a grade over the stage and under the HUD
 light -- with its lightness, its black contour and its saturated colours'
 chroma left as they were.
 
+## Text sizes
+
+Every text an overlay draws is one of six sizes, by its role, all in
+`Level3DFont` (`src/game3d/ui/level3d_font.gd`): DISPLAY 64 (KILLED IN
+ACTION), TITLE 48 (the banners, MISSION ACCOMPLISHED!, the shop's SUPPLY and
+money), MENU 40 (a menu's entries, the title's and the game over's), BODY 32
+(the HUD's line, HELP!, the summary, READY), SMALL 24 (the pops, the hints'
+words, the prompts, the shop's names, the HUD's modes) and CAPTION 16 (the
+shop's prices and words, the hints' keys). Each is a whole number of the 8-bit
+font's 8 px glyph, layout px at an interface scale of 1; `Level3DFont.size`
+multiplies it by Interface -> size (`Level3DSettings.hud_scale`) and keeps it
+whole, and the title and the shop follow that scale as the HUD does. A line
+that must keep to its box shrinks a grid step at a time (`Level3DFont.fit`):
+the shop's tile names and lines, one size for the whole grid, and the money.
+The title's menu, larger, lifts the scene and the name when it would run off
+the foot of the frame. The Escape menu's controls are in SMALL (Press Start 2P
+two thirds of it, on its grid) and its notes the same size in grey; the logo
+is a size of its own.
+
 ## Two players
 
 The 3D preview has the same co-op, from the title's "2 players" (a new game

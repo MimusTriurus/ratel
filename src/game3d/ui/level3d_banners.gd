@@ -25,13 +25,13 @@
 class_name Level3DBanners
 extends Control
 
-const GLYPH := 48.0             # at 100%, as the summary's title
+const GLYPH := Level3DFont.TITLE        # at 100%, as the summary's title
 const STAGE_TIME := 3.0         # at most: it goes when the BTR is handed over
 const GAME_OVER_TIME := 3.0
 const FADE_TIME := 0.5
 const WARNING_BLINK := 0.3      # on and off, each
 const WARNING_COLOUR := Color(1.0, 0.32, 0.26)
-const SUBTITLE := 0.5           # the name under WARNING, of GLYPH
+const SUBTITLE := Level3DFont.SMALL     # the name under WARNING
 const SUBTITLE_GAP := 0.4       # between the two lines, of the name's glyph
 
 enum { NONE, STAGE, WARNING, GAME_OVER }
@@ -118,10 +118,10 @@ func _draw() -> void:
 		return
 	texture_filter = Level3DFont.filter()
 	var s := scale_factor
-	var g := maxf(roundf(GLYPH * s / 8.0), 1.0) * 8.0
+	var g := Level3DFont.size(GLYPH, s)
 	var width := Level3DFont.width(_text, g)
 	# The name under it, smaller: the plate round both, the pair in the middle.
-	var sub_g := maxf(roundf(GLYPH * SUBTITLE * s / 8.0), 1.0) * 8.0
+	var sub_g := Level3DFont.size(SUBTITLE, s)
 	var sub_width := Level3DFont.width(_subtitle, sub_g) if _subtitle != "" else 0.0
 	var gap := roundf(sub_g * SUBTITLE_GAP) if _subtitle != "" else 0.0
 	var block := Vector2(maxf(width, sub_width), g + (gap + sub_g if _subtitle != "" else 0.0))

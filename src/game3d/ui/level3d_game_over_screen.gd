@@ -45,8 +45,9 @@ extends CanvasLayer
 
 const TITLE := "KILLED IN ACTION"
 const ENTRIES: Array[String] = ["CONTINUE", "END"]
-const TITLE_GLYPH := 64.0
-const GLYPH := 32.0             # the entries'
+const TITLE_GLYPH := Level3DFont.DISPLAY
+# The entries': a menu's, as the title screen's are (they were 32 here).
+const GLYPH := Level3DFont.MENU
 const TOP := 72.0               # the title's top from the frame's
 const BOTTOM := 64.0            # the entries' foot from the frame's
 const ENTRY_GAP := 160.0        # between CONTINUE and END
@@ -362,7 +363,7 @@ func _draw_text() -> void:
 	var size := _text.size
 	var shown := clampf((_time - TITLE_AFTER) / TITLE_IN, 0.0, 1.0)
 	if shown > 0.0:
-		var tg := _whole(TITLE_GLYPH * s)
+		var tg := Level3DFont.size(TITLE_GLYPH, s)
 		Level3DFont.draw(_text, TITLE, roundf(size.x * 0.5 - Level3DFont.width(TITLE, tg) * 0.5),
 				roundf(TOP * s), tg, Level3DFont.WHITE, Color(1.0, 1.0, 1.0, shown * _words))
 	_entry_rects.clear()
@@ -370,7 +371,7 @@ func _draw_text() -> void:
 		return
 	# CONTINUE and END side by side, small, at the foot of the frame.
 	var menu := clampf((_time - _menu_from) / MENU_IN, 0.0, 1.0)
-	var g := _whole(GLYPH * s)
+	var g := Level3DFont.size(GLYPH, s)
 	var entry_gap := roundf(ENTRY_GAP * s)
 	var row := Level3DFont.width(ENTRIES[0], g) + entry_gap + Level3DFont.width(ENTRIES[1], g)
 	var x := roundf(size.x * 0.5 - row * 0.5)
@@ -382,7 +383,3 @@ func _draw_text() -> void:
 		tint.a *= menu * _words
 		Level3DFont.draw(_text, ENTRIES[i], x, y, g, Level3DFont.WHITE, tint)
 		x += w + entry_gap
-
-
-static func _whole(g: float) -> float:
-	return maxf(roundf(g / 8.0), 1.0) * 8.0

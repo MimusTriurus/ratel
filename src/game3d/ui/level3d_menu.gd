@@ -38,7 +38,9 @@
 class_name Level3DMenu
 extends CanvasLayer
 
-const FONT_SIZE := 24
+# The type scale's SMALL (Level3DFont), the title BODY.
+const FONT_SIZE := int(Level3DFont.SMALL)
+const TITLE_SIZE := int(Level3DFont.BODY)
 # Press Start 2P at FONT_SIZE is a letter as wide as it is tall, half as wide
 # again as Godot's font: its sizes are scaled by this, so the panels hold it,
 # and then to a whole number of its 8 px grid (PIXEL_GRID), since at 12 px the
@@ -47,11 +49,10 @@ const PIXEL_FONT := "res://assets/fonts/PressStart2P-Regular.ttf"
 const PIXEL_FONT_SCALE := 2.0 / 3.0
 const PIXEL_GRID := 8
 const MODERN_FONT := "res://assets/fonts/BlackOpsOne-Regular.ttf"
-# Black Ops One is a stencil face: flat tops, cut corners and gaps in its
-# letters, which at the notes' FONT_SIZE - 6 were a pixel or two and read as
-# letters cut off. Nothing is drawn smaller than this in it.
-const MODERN_MIN_SIZE := 22
-# The headings' colour, and a ticked box's.
+# The notes were FONT_SIZE - 6: in Black Ops One, a stencil face, its cuts
+# came out a pixel or two and read as letters cut off, so it had a floor of
+# 22; and in Press Start 2P they came out FONT_SIZE's own 16 all the same.
+# They are the words' size now, set apart by their grey.# The headings' colour, and a ticked box's.
 const ACCENT := Color(1.0, 0.8, 0.3)
 # The boxes' size in pixels of the 2048x1152 layout; drawn at ICON_OVERSAMPLE
 # times that, so that they stay sharp scaled up to a bigger screen.
@@ -505,7 +506,7 @@ func _make_main_page() -> Control:
 	var title := Label.new()
 	title.text = "Paused"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_font_size(title, 8)
+	_font_size(title, TITLE_SIZE - FONT_SIZE)
 	box.add_child(title)
 	_continue = _button(box, "Continue", close)
 	_button(box, "Settings", _show_settings)
@@ -738,7 +739,6 @@ func _make_mixer_tab() -> Control:
 		Level3DAudio.end_music_audition()
 		_refresh_music_buttons())
 	_mix_status = Label.new()
-	_font_size(_mix_status, -6)
 	_mix_status.add_theme_color_override("font_color", ACCENT)
 	tab.add_child(_mix_status)
 	tab.add_child(HSeparator.new())
@@ -939,7 +939,6 @@ func _make_controls_tab() -> Control:
 	_heading(tab, "Gamepad")
 	_pad = _check(tab, "Use a gamepad", func(on: bool): settings.pad = on)
 	_pad_status = Label.new()
-	_font_size(_pad_status, -6)
 	_pad_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_pad_status.custom_minimum_size = Vector2(640, 0)
 	tab.add_child(_pad_status)
@@ -1164,7 +1163,6 @@ func _note(parent: Control, text: String) -> void:
 	label.text = text
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.custom_minimum_size = Vector2(640, 0)
-	_font_size(label, -6)
 	label.add_theme_color_override("font_color", Color(0.75, 0.75, 0.75))
 	parent.add_child(label)
 
@@ -1193,7 +1191,7 @@ func _font_size(control: Control, delta: int) -> void:
 
 func _scaled(size: int) -> int:
 	if _font_style == Level3DFont.Style.MODERN:
-		return maxi(size, MODERN_MIN_SIZE)
+		return size
 	return maxi(roundi(size * PIXEL_FONT_SCALE / PIXEL_GRID), 1) * PIXEL_GRID
 
 

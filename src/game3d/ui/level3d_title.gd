@@ -35,16 +35,19 @@ var _repeat := Level3DPad.Repeat.new()   # up or down held on a pad
 # screen (1.2 times the 2D game's title art, 25 tiles of 32 px: at its size
 # the screen was half empty over and under it all), the name's
 # feet NAME_GAP over its top, and the menu's first entry MENU_GAP under its
-# bottom, the entries ROW apart and centred on it, GLYPH px tall -- 40, the
-# 8-bit font's 8 px glyphs at 5 screen px each, whole as they must be. The frame's
-# last ~70 px are the ground in the dark, black on the black around it: the
-# menu goes up into them, ~50 px under the last of the scene to be seen.
+# bottom, centred on it: the entries a menu's size (Level3DFont.MENU) at the
+# settings' interface scale (scale_factor), ROW_GAP between one and the
+# next. The frame's last ~70 px are the ground in the dark, black on the
+# black around it: the menu goes up into them, ~50 px under the last of the
+# scene to be seen. A menu too tall at the larger scales to end EDGE over
+# the frame's foot lifts the scene, and the name with it, as far as it needs.
 const SCENE_CENTRE := Vector2(1024, 576)
 const SCENE_WIDTH := 960.0
 const NAME_GAP := 23.0
 const MENU_GAP := -19.0
-const ROW := 80
-const GLYPH := 40.0
+const ROW_GAP := 40.0
+const EDGE := 64.0
+const FRAME_HEIGHT := 1152.0
 # The ▶ (Level3DSelection) is in place of the 2D game's jeep icon, which
 # was the one sprite left on a screen drawn otherwise in the splash's dark and
 # the sun's colours; it glides to the entry the keys pick.
@@ -82,6 +85,14 @@ const LOGO_AFTER := 1.6
 const LOGO_IN := 1.2
 
 var settings: Level3DSettings
+# Level3DSettings.hud_scale, the preview's to set; laid out again with it.
+var scale_factor := 1.0:
+	set(value):
+		if value == scale_factor:
+			return
+		scale_factor = value
+		if is_node_ready():
+			_layout()
 # `start.call(players)`: a game for one player or two, at settings.hard.
 var start: Callable
 # `open_settings.call()`: the Escape menu's settings over the title, coming
@@ -128,12 +139,9 @@ func _ready() -> void:
 		splash = Level3DSplash3D.new()
 	else:
 		splash = Level3DSplashLanding.new()
-	splash.place(SCENE_CENTRE, SCENE_WIDTH)
 	add_child(splash)
 	_splash = splash
 	_logo = Level3DLogo.new()
-	_logo.centre_x = SCENE_CENTRE.x
-	_logo.feet = splash.position.y - NAME_GAP
 	add_child(_logo)
 	# Under the words.
 	_selection = Level3DSelection.new()
@@ -148,6 +156,22 @@ func _ready() -> void:
 	_veil.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_veil)
+	_layout()
+
+
+# The scene in the middle, lifted if the menu under it would run too low, the
+# name over it; and the menu and its ▶ where that leaves them.
+func _layout() -> void:
+	_splash.place(SCENE_CENTRE, SCENE_WIDTH)
+	var foot := _splash.position.y + _splash.size.y + MENU_GAP + _menu_height()
+	var over := foot - (FRAME_HEIGHT - EDGE)
+	if over > 0.0:
+		_splash.place(SCENE_CENTRE - Vector2(0.0, roundf(over)), SCENE_WIDTH)
+	_logo.centre_x = SCENE_CENTRE.x
+	_logo.feet = _splash.position.y - NAME_GAP
+	_logo.queue_redraw()
+	_selection.aim(_slot, false)
+	_text.queue_redraw()
 
 
 func is_open() -> bool:
@@ -231,8 +255,21 @@ func _entries() -> Array[String]:
 func _menu_at() -> Vector2:
 	var widest := 0.0
 	for entry in _entries():
-		widest = maxf(widest, Level3DFont.width(entry, GLYPH))
+		widest = maxf(widest, Level3DFont.width(entry, _glyph()))
 	return Vector2(roundf(SCENE_CENTRE.x - widest * 0.5), _splash.position.y + _splash.size.y + MENU_GAP)
+
+
+# The entries' size, and from one entry's top to the next's.
+func _glyph() -> float:
+	return Level3DFont.size(Level3DFont.MENU, scale_factor)
+
+
+func _row() -> float:
+	return _glyph() + ROW_GAP
+
+
+func _menu_height() -> float:
+	return (_entries().size() - 1) * _row() + _glyph()
 
 
 func _process(delta: float) -> void:
@@ -263,7 +300,8 @@ func _process(delta: float) -> void:
 # Before the entry picked, where Menu's icon stood: the entry picked's words.
 func _slot() -> Rect2:
 	var entry: String = _entries()[_selected]
-	return Rect2(_menu_at() + Vector2(0.0, _selected * ROW), Vector2(Level3DFont.width(entry, GLYPH), GLYPH))
+	var g := _glyph()
+	return Rect2(_menu_at() + Vector2(0.0, _selected * _row()), Vector2(Level3DFont.width(entry, g), g))
 
 
 # Onto another entry, with its click unless `quiet` -- a click on it, whose
@@ -403,6 +441,7 @@ func _input(event: InputEvent) -> void:
 func _draw_text() -> void:
 	var entries := _entries()
 	var at := _menu_at()
+	var g := _glyph()
 	for i in entries.size():
-		Level3DFont.draw(_text, entries[i], at.x, at.y + i * ROW, GLYPH,
+		Level3DFont.draw(_text, entries[i], at.x, at.y + i * _row(), g,
 				Level3DFont.WHITE, PICKED_TINT if i == _selected else OTHER_TINT)

@@ -82,16 +82,18 @@ class_name Level3DShop
 extends CanvasLayer
 
 const TITLE := "SUPPLY"
-const TITLE_GLYPH := 48.0
-const GLYPH := 24.0             # the tiles' names, the players' lines
-const SMALL := 16.0             # the tiles' prices, the descriptions
+# The type scale's (Level3DFont), at the settings' interface scale: the
+# names and the money as small as they must be to fit their tile and column
+# at the larger ones (Level3DFont.fit).
+const TITLE_GLYPH := Level3DFont.TITLE
+const GLYPH := Level3DFont.SMALL         # the tiles' names, the players' lines
+const SMALL := Level3DFont.CAPTION      # the tiles' prices, the descriptions
 # A device's line under its words, what to press for it: on a line of its
 # own, a step larger than the words -- the font's next whole size, never the
 # same as theirs -- and amber, for the player to see it among them.
-const PRESS_GLYPH := 24.0
 const PRESS_COLOUR := Color(1.0, 0.78, 0.2)
-const PLAYER_GLYPH := 48.0     # the players' money, as large as the title
-const READY_GLYPH := 32.0
+const PLAYER_GLYPH := Level3DFont.TITLE # the players' money, as large as the title
+const READY_GLYPH := Level3DFont.BODY
 const READY_PAD := Vector2(32.0, 16.0)
 # PRESS FIRE WHEN READY, breathing: from READY_DIM to full and back every
 # READY_PULSE seconds, eased -- an arcade's on and off was too harsh -- and
@@ -832,10 +834,12 @@ func _draw_text() -> void:
 		return
 	# The frame's own layout, 2048 wide, whatever the HUD's size.
 	var s := _text.size.x / 2048.0
-	var tg := _whole(TITLE_GLYPH * s)
-	var g := _whole(GLYPH * s)
-	var sg := _whole(SMALL * s)
-	var pg := _whole(PLAYER_GLYPH * s)
+	# The words at the interface's scale as well.
+	var k := s * scale_factor
+	var tg := Level3DFont.size(TITLE_GLYPH, k)
+	var g := Level3DFont.size(GLYPH, k)
+	var sg := Level3DFont.size(SMALL, k)
+	var pg := Level3DFont.size(PLAYER_GLYPH, k)
 	# The goods, and the title over them.
 	var m := Rect2(_matrix().position * s, MATRIX.size * s)
 	var title := TITLE
@@ -845,6 +849,16 @@ func _draw_text() -> void:
 	var columns := float(Level3DShopCatalog.COLUMNS)
 	var rows := float(LIFE_ROW)
 	var tile := Vector2((m.size.x - gap * (columns - 1.0)) / columns, (m.size.y - LIFE_HEIGHT * s - gap * rows) / rows)
+	# One size for every tile's name and one for their lines, as the longest
+	# needs it, so that the grid reads as one at any interface scale: fitted
+	# a tile at a time, RADAR stood larger than AIRSTRIKE beside it.
+	var pad := roundf(12.0 * s)
+	var ng := g
+	var lg := sg
+	for it in Level3DShopCatalog.items():
+		ng = minf(ng, Level3DFont.fit(it.name, g, tile.x - pad * 2.0))
+		if it.kind != Level3DShopCatalog.Kind.CLASSIFIED:
+			lg = minf(lg, _tile_glyph(tile, it, sg, pad))
 	for it in Level3DShopCatalog.items():
 		var rect: Rect2
 		if it.kind == Level3DShopCatalog.Kind.SUPPLY:
@@ -853,7 +867,7 @@ func _draw_text() -> void:
 			rect = Rect2(m.position + Vector2((tile.x + gap) * it.col, (tile.y + gap) * it.row), tile)
 		rect = Rect2(rect.position.round(), rect.size.round())
 		_rects[Vector3i(it.col, it.row, 0)] = rect
-		_draw_tile(rect, it, s, g, sg)
+		_draw_tile(rect, it, s, ng, lg)
 	# Each player's side: his money, the tile's words, READY.
 	for i in _players:
 		_draw_side(i, s, g, sg, pg)
@@ -907,12 +921,7 @@ func _draw_tile(rect: Rect2, it: Dictionary, s: float, g: float, sg: float) -> v
 	# The launcher's tile says which step it sells, the life's how many he has.
 	if it.id == "launcher" or it.id == "life":
 		for i in _players:
-			var kit: Level3DRun.Kit = _run.kits[i]
-			var line := ""
-			if it.id == "launcher":
-				line = LAUNCHER_NAMES[mini(kit.weapon() + 1, 3)] if kit.weapon() < 3 else LAUNCHER_NAMES[3]
-			else:
-				line = "x%d" % kit.lives
+			var line := _tile_line(i, it)
 			var w := Level3DFont.width(line, sg)
 			var x := rect.get_center().x - w * 0.5 if _players == 1 else \
 					(rect.position.x + pad if i == 0 else rect.end.x - pad - w)
@@ -922,6 +931,29 @@ func _draw_tile(rect: Rect2, it: Dictionary, s: float, g: float, sg: float) -> v
 				at += (sg * 0.5 + 4.0 * s) * (-1.0 if i == 0 else 1.0)
 			Level3DFont.draw(_text, line, roundf(x), roundf(at), sg,
 					Level3DFont.GRAY, colours[i] if i < colours.size() else Color.WHITE)
+
+
+# The launcher's step to buy, or the lives, for player `i` on tile `it`.
+func _tile_line(i: int, it: Dictionary) -> String:
+	var kit: Level3DRun.Kit = _run.kits[i]
+	if it.id == "launcher":
+		return LAUNCHER_NAMES[mini(kit.weapon() + 1, 3)] if kit.weapon() < 3 else LAUNCHER_NAMES[3]
+	return "x%d" % kit.lives
+
+
+# The size tile `it`'s small lines need to fit a tile `tile` big, `sg` at
+# most: the status lines a side each with two players, the launcher's and
+# the lives' across. At the larger interface scales "$20000" twice ran into
+# itself.
+func _tile_glyph(tile: Vector2, it: Dictionary, sg: float, pad: float) -> float:
+	var across := tile.x - pad * 2.0
+	var side := (tile.x - pad * 3.0) * 0.5 if _players > 1 else across
+	var g := sg
+	for i in _players:
+		g = minf(g, Level3DFont.fit(_status(i, it)[0], sg, side))
+		if it.id == "launcher" or it.id == "life":
+			g = minf(g, Level3DFont.fit(_tile_line(i, it), sg, across))
+	return g
 
 
 # A tile not for sale yet: dimmer, its name a question, and a CLASSIFIED
@@ -981,6 +1013,7 @@ func _draw_side(i: int, s: float, g: float, sg: float, pg: float) -> void:
 	var y := roundf(TITLE_Y * s)
 	var who := "%dP " % (i + 1)
 	var money := "$%d" % kit.score
+	pg = Level3DFont.fit(who + money, pg, width)
 	var x := x0 if i == 0 else x0 + width - Level3DFont.width(who + money, pg)
 	x = Level3DFont.draw(_text, who, roundf(x), y, pg, Level3DFont.WHITE, colour)
 	Level3DFont.draw(_text, money, roundf(x), y, pg)
@@ -989,11 +1022,11 @@ func _draw_side(i: int, s: float, g: float, sg: float, pg: float) -> void:
 	# Done, READY in white outlined in his colour, no cursor round it; not
 	# yet, PRESS FIRE WHEN READY breathing, as small as the column needs.
 	var ready := "READY" if _set[i] else READY_PROMPT
-	var rg := _whole(READY_GLYPH * s)
+	var rg := Level3DFont.size(READY_GLYPH, s * scale_factor)
 	var pad := (READY_PAD * s).round()
 	var fits := width - pad.x * 2.0
 	if Level3DFont.width(ready, rg) > fits:
-		rg = _whole(rg * fits / Level3DFont.width(ready, rg))
+		rg = Level3DFont.whole(rg * fits / Level3DFont.width(ready, rg))
 	var rw := Level3DFont.width(ready, rg)
 	var rect := Rect2(roundf(x0 + width * 0.5 - rw * 0.5 - pad.x), roundf(READY_Y * s - pad.y),
 			rw + pad.x * 2.0, rg + pad.y * 2.0)
@@ -1056,7 +1089,7 @@ func _draw_words(i: int, column: Rect2, s: float, g: float, sg: float) -> void:
 	var name: String = it.get("title", it.get("name", "READY"))
 	var text: String = it.get("text", "EVERY PLAYER READY, AND THE ROUND STARTS.")
 	var press := _press_words(i, it.id) if it.get("kind", -1) == Level3DShopCatalog.Kind.DEVICE else ""
-	var pg := maxf(_whole(PRESS_GLYPH * s), sg + 8.0)
+	var pg := sg + Level3DFont.GRID
 	var pad := roundf(WORDS_PAD * s)
 	var heads := _wrap(name, g, column.size.x - pad * 2.0)
 	var lines := _wrap(text, sg, column.size.x - pad * 2.0)
@@ -1120,10 +1153,6 @@ static func _wrap(text: String, g: float, width: float) -> Array[String]:
 	if line != "":
 		lines.append(line)
 	return lines
-
-
-static func _whole(g: float) -> float:
-	return maxf(roundf(g / 8.0), 1.0) * 8.0
 
 
 # ---------------------------------------------------------------------------

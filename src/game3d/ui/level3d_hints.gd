@@ -23,8 +23,8 @@
 class_name Level3DHints
 extends Control
 
-const KEY_GLYPH := 16.0         # a key's letters at 100%
-const WORD_GLYPH := 24.0        # the word's
+const KEY_GLYPH := Level3DFont.CAPTION  # a key's letters at 100%
+const WORD_GLYPH := Level3DFont.SMALL   # the word's
 const KEY_PAD := Vector2(8, 6)  # round a key's letters, frame px at 100%
 const KEY_GAP := 6.0
 const WORD_GAP := 12.0
@@ -81,8 +81,8 @@ func _draw() -> void:
 	if camera == null:
 		return
 	var s := scale_factor
-	var kg := _whole(KEY_GLYPH * s)
-	var wg := _whole(WORD_GLYPH * s)
+	var kg := Level3DFont.size(KEY_GLYPH, s)
+	var wg := Level3DFont.size(WORD_GLYPH, s)
 	var pad := (KEY_PAD * s).round()
 	var key_h := kg + pad.y * 2.0
 	var ring := maxf(roundf(RING * s), 1.0)
@@ -117,7 +117,3 @@ func _draw() -> void:
 
 func _text(text: String, x: float, y: float, g: float, alpha: float) -> void:
 	Level3DFont.draw(self, text, x, y, g, Level3DFont.WHITE, Color(1, 1, 1, alpha))
-
-
-static func _whole(g: float) -> float:
-	return maxf(roundf(g / 8.0), 1.0) * 8.0

@@ -26,7 +26,7 @@ extends Control
 # The glyphs at 100%, the points' and a jeep's alike: three quarters of the
 # HUD's, which over the jeep and the helicopter read out of all proportion
 # to them.
-const GLYPH := 24.0
+const GLYPH := Level3DFont.SMALL
 const FONT := 32.0              # a glyph's own pixels across, which RING and LINE are in
 const LIFE := 1.2               # seconds
 const RISE := 2.0               # glyphs it rises over LIFE, steadily: eased, one under would catch it up
@@ -152,7 +152,7 @@ func _rise(pop: Pop) -> float:
 
 # Its glyphs' size: whole font pixels.
 func _glyph(pop: Pop) -> float:
-	return maxf(roundf(GLYPH * scale_factor / 8.0), 1.0) * 8.0
+	return Level3DFont.size(GLYPH, scale_factor)
 
 
 # Where it starts from on the screen, its foot's middle.

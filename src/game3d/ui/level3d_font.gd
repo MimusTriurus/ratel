@@ -36,6 +36,23 @@ const CHARS := "ABCDEFGHIJKLMNOPQRSTUVWXYZ.,'-0123456789©!:()&`\" +/?%#$"
 const WHITE := "black"
 const GRAY := "gray"
 
+# The type scale: every text an overlay draws is one of these sizes, by what
+# it is, so that a title is a title's size on every screen and a menu's
+# entries a menu's. Each is a whole number of the 8-bit font's 8x8 glyph
+# (GRID), layout px at an interface scale of 1; size() multiplies it by the
+# settings' (Level3DSettings.hud_scale) and keeps it whole. The game's name
+# is a size of its own (Level3DLogo), and the Escape menu's controls are in
+# SMALL (Level3DMenu.FONT_SIZE). Each screen had its sizes of its own, 24 in
+# eight places and 32 in six, and two menus, the title's and the game
+# over's, at 40 and 32.
+const DISPLAY := 64.0    # KILLED IN ACTION
+const TITLE := 48.0      # the banners, MISSION ACCOMPLISHED!, the shop's SUPPLY and money
+const MENU := 40.0       # a menu's entries: the title's, the game over's
+const BODY := 32.0       # the HUD's line, HELP!, the summary's lines, the shop's READY
+const SMALL := 24.0      # the pops, the hints' words, the prompts, the shop's names, the HUD's modes
+const CAPTION := 16.0    # the shop's prices and its words, the hints' keys
+const GRID := 8.0
+
 # Level3DSettings.font.
 static var style := Style.CLASSIC_SMOOTH
 # A sheet each: {"glyphs": {colour: {code point -> Spr}}, "advances":
@@ -46,6 +63,25 @@ static var _sheets := {}
 static func filter() -> CanvasItem.TextureFilter:
 	return CanvasItem.TEXTURE_FILTER_NEAREST if style == Style.CLASSIC \
 			else CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+
+
+# A role's size (DISPLAY ... CAPTION) at interface scale `scale`, whole.
+static func size(role: float, scale := 1.0) -> float:
+	return whole(role * scale)
+
+
+# `g` to the nearest whole number of font pixels, GRID at least: the 8-bit
+# font's pixels all as wide, rather than one wider by turns.
+static func whole(g: float) -> float:
+	return maxf(roundf(g / GRID), 1.0) * GRID
+
+
+# `g`, or as many GRID steps smaller as `text` needs to be `room` wide, to
+# CAPTION at the smallest: a line that must not run out of its box.
+static func fit(text: String, g: float, room: float) -> float:
+	while g > CAPTION and width(text, g) > room:
+		g -= GRID
+	return g
 
 
 # How wide `text` is at `g` px tall.

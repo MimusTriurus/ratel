@@ -74,7 +74,7 @@
 class_name Level3DHud
 extends Control
 
-const GLYPH := 32.0                     # at 100%
+const GLYPH := Level3DFont.BODY         # at 100%
 const MARGIN := Vector2(16, 12)
 const GAP := 1.0                        # between groups, in glyphs
 const ICON_HEIGHT := 1.5                # glyphs: the line's height
@@ -187,14 +187,14 @@ func _init() -> void:
 # How much of the frame's edge the main line takes, margin and all: what the
 # pad's arrow and the co-op frame keep clear of when it is at the bottom.
 func line_height() -> float:
-	var g := GLYPH * scale_factor
+	var g := Level3DFont.size(GLYPH, scale_factor)
 	return MARGIN.y + g * ICON_HEIGHT + (roundf(g * ROW_GAP) + g if two_rows else 0.0)
 
 
 # The icons' height in their own pixels at the current size: ICON_HEIGHT
 # glyphs, ICON_PIXEL frame pixels to each.
 func icon_pixels() -> int:
-	return roundi(GLYPH * scale_factor * ICON_HEIGHT / ICON_PIXEL)
+	return roundi(Level3DFont.size(GLYPH, scale_factor) * ICON_HEIGHT / ICON_PIXEL)
 
 
 func show_state() -> void:
@@ -232,7 +232,7 @@ func _draw() -> void:
 	texture_filter = Level3DFont.filter()
 	_icon_draws.clear()
 	_rings = [[], []]
-	var g := GLYPH * scale_factor
+	var g := Level3DFont.size(GLYPH, scale_factor)
 	var row := g * ICON_HEIGHT
 	var top := size.y - MARGIN.y - row if bottom else MARGIN.y
 	# [top, height, which parts] a row: the line, or the score over the rest.
@@ -259,8 +259,9 @@ func _draw() -> void:
 		group.get_child(0).queue_redraw()
 	# The modes and the cheats on lines of their own, smaller, stacked away
 	# from the corner: they are several words each and would run the main line
-	# off the frame at the bigger sizes.
-	var small := roundf(g * 0.75 / 8.0) * 8.0 if g >= 32.0 else g
+	# off the frame at the bigger sizes. SMALL, as the pops and the hints:
+	# 16 at the smallest interface, which kept these at the line's 24 before.
+	var small := Level3DFont.size(Level3DFont.SMALL, scale_factor)
 	var gap := roundf(g * 0.25)
 	var at := top - gap - small if bottom else row_bottom + gap
 	for line in [modes, cheats]:

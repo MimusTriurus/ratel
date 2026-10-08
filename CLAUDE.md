@@ -187,6 +187,9 @@ and read `--report`, because its console output is not seen.
 - `.godot/` is ignored; it is regenerated on open.
 - `project.godot` comments use `;`, not `#` — a `#` comment silently stops the
   keys after it from being applied.
+- 3D overlay text comes in the type scale's sizes, `Level3DFont.DISPLAY` ...
+  `CAPTION` through `Level3DFont.size`, not sizes of a screen's own: see
+  `docs/preview3d.md`, Text sizes.
 - 3D models are cel-shaded, and a model without it is not finished: see
   `docs/cel-shading.md`. The water is deliberately left soft.
 

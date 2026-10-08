@@ -2625,6 +2625,8 @@ func _layout_hud() -> void:
 	_summary.scale_factor = settings.hud_scale
 	_game_over_screen.scale_factor = settings.hud_scale
 	_score_pops.scale_factor = settings.hud_scale
+	if _shop != null:
+		_shop.scale_factor = settings.hud_scale
 	for c in crews:
 		c.hud.bottom = settings.hud_corner == Level3DSettings.HudCorner.BOTTOM
 		c.hud.two_rows = settings.hud_two_rows
@@ -3057,6 +3059,7 @@ func _make_menu() -> void:
 	_menu.main_menu = _show_title
 	# Over the HUD, so that its black hides it, and under the CRT's glass.
 	_title = Level3DTitle.new()
+	_title.scale_factor = settings.hud_scale
 	_title.layer = HUD_LAYER
 	_title.settings = settings
 	_title.start = _start_game
@@ -3194,6 +3197,8 @@ func _apply_settings() -> void:
 		friends.calls = settings.hud and settings.hud_help
 		if rescue != null and rescue.crew != null:
 			rescue.crew.calls = friends.calls
+	if _title != null:
+		_title.scale_factor = settings.hud_scale
 	# Under the title, before the stage and its HUD are built (_ready), only
 	# the font, which the title is drawn in too.
 	if _hud != null:

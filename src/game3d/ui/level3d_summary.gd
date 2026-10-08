@@ -43,9 +43,9 @@ extends Control
 const SOUND_PATH := "res://assets/soundeffects/well_done.ogg"
 const TITLE := "MISSION ACCOMPLISHED!"
 const PROMPT := "PRESS ANY KEY"
-const TITLE_GLYPH := 48.0
-const GLYPH := 32.0
-const PROMPT_GLYPH := 24.0
+const TITLE_GLYPH := Level3DFont.TITLE
+const GLYPH := Level3DFont.BODY
+const PROMPT_GLYPH := Level3DFont.SMALL
 const ICON_HEIGHT := 64.0
 const ICONS_PER_ROW := 16
 const GAP := 20.0               # between the lines
@@ -216,9 +216,9 @@ func _draw() -> void:
 	if not shown:
 		return
 	var s := scale_factor
-	var tg := _whole(TITLE_GLYPH * s)
-	var g := _whole(GLYPH * s)
-	var pg := _whole(PROMPT_GLYPH * s)
+	var tg := Level3DFont.size(TITLE_GLYPH, s)
+	var g := Level3DFont.size(GLYPH, s)
+	var pg := Level3DFont.size(PROMPT_GLYPH, s)
 	var gap := roundf(GAP * s)
 	var icon := icons.get("pow") as Texture2D
 	var icon_h := roundf(ICON_HEIGHT * s)
@@ -316,7 +316,3 @@ func _segments(line: Array, x: float, y: float, g: float) -> void:
 
 func _text(text: String, x: float, y: float, g: float, font: int, tint: Color) -> float:
 	return Level3DFont.draw(self, text, x, y, g, Level3DFont.WHITE if font == 0 else Level3DFont.GRAY, tint)
-
-
-static func _whole(g: float) -> float:
-	return maxf(roundf(g / 8.0), 1.0) * 8.0
