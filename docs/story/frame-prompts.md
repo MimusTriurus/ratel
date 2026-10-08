@@ -89,19 +89,15 @@
 
 > Harsh midday sun on a dusty road at the edge of a desert town of
 > flat-roofed sand-coloured houses behind a low wall. A file of civilian
-> captives, bareheaded and unarmed, is marched from left to right towards
-> an army truck with a canvas back and its tailgate down at the right.
-> The three nearest tell who they are: in front, a woman aid worker in a
-> white vest still holding up her mission's white flag with a blue band
-> on its pole; behind her a reporter with a TV camera on his shoulder;
-> behind him a helicopter pilot in a torn sage-green flight suit, his
-> white flight helmet in his hand. More captives follow further back.
-> Junta soldiers in helmets guard them: one in the left foreground aiming
-> his rifle at the file, one by the truck. Far off over the rooftops a
-> column of black smoke rises from the hills where the helicopter came
-> down. Short, hard shadows. The figures are not soldiers except the
-> guards: no helmets, no armour on the captives. Caption space: the sky
-> at the upper left.
+> detainees, men and women in plain everyday clothes, bareheaded and
+> unarmed, is marched from left to right towards an army truck with a
+> canvas back and its tailgate down at the right. An armed escort of junta
+> soldiers in helmets walks with the file, rifles ready, on both sides of
+> it; in the left foreground one soldier has halted and aims his rifle at
+> the file; another stands at the truck. Far off over the rooftops a
+> column of black smoke rises from the hills. Short, hard shadows. Only
+> the escort wears helmets and gear; the detainees wear none. Caption
+> space: the sky at the upper left.
 
 ### 8 — *Rapid Assault Team for Extraction & Liberation. They don't do peace talks.*
 
