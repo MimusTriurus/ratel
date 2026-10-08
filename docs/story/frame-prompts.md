@@ -29,17 +29,23 @@
 
 ### 1 — *Sahrun. 1987.*
 
-> A large paper map of a fictional desert country, unrolled on a dark
-> wooden desk at night, under a single warm desk lamp out of frame on the
-> left. The map: ochre desert, a strip of blue sea down the left (west)
-> edge with a ragged coastline, brown hills in the top right corner, and
-> one blue river winding from those hills down through the desert to a
-> port on the coast. Halfway along the river the capital is circled in red
-> pencil with a red map pin in it. The paper is worn, its corners curling
-> a little, with faint fold lines and a pale margin. On the desk: a coffee
-> cup at the top left, a brass magnifying glass on the hills, a pencil at
-> the bottom right. The desk around the map falls off into darkness.
-> Caption space: the dark desk along the top edge.
+> A large paper military map of a fictional desert country, unrolled on a
+> dark wooden desk at night, under a single warm desk lamp out of frame on
+> the left. The map: ochre desert, the sea down the left (west) edge with
+> a ragged coastline, brown hills in the top right corner. One blue river
+> runs from those hills diagonally down across the desert into the sea at
+> the bottom left, with a thin green band along it. A railway line (black,
+> with sleeper ticks) runs from a port on the coast inland through a small
+> green swamp and between two ridges to the hills. A planned route is
+> pencilled on the map in dashed red: from an X at the bottom, across the
+> river, up to the port, then along the railway; each stop ringed in red
+> pencil. The last stop, the capital in the hills where the river begins,
+> is a black square ringed twice in red, with a red map pin in it. No
+> place names, no lettering on the map. The paper is worn, its corners
+> curling a little, with faint fold lines and a pale margin. On the desk:
+> a coffee cup at the top left, a brass magnifying glass on the desert at
+> the right, a pencil at the bottom right. The desk around the map falls
+> off into darkness. Caption space: the dark desk along the top edge.
 
 ### 3 — *The people called them the Mamba.*
 
