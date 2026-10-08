@@ -77,6 +77,12 @@ WindowsApps). Blender — Store-сборка, запускается через
 После любого нового или изменённого modern-звука — `sfx_chiptune.py --install`, чтобы
 классика его догнала, затем `godot --path . --headless --import` и `verify_level3d_audio.gd`.
 
+## Кадры комикса
+
+| файл | что делает | запуск |
+|---|---|---|
+| `story_paint_map.py` | переносит карту с нарисованного GPT кадра 1 (`docs/story/paint/intro_01.webp`) обратно на лист через камеру блокаута; пропсы (кружку, лупу, карандаш, пикап, флажки) стирает подходящими кусками бумаги, кольца этапов дорисовывает. Пишет `docs/story/paint/intro_01_map.jpg` и флаг хунты `intro_01_junta_flag.png` для сцены `Intro_01_3D` в `resources/3d/jackal_story_frames.blend`; около двух минут | `py tools/story_paint_map.py` |
+
 ## Не здесь
 
 Программы, а не скрипты, открываются как сцены: `src/editors/map_editor.tscn`
