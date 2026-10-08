@@ -39,9 +39,12 @@
 > green swamp and between two ridges to the hills. A planned route is
 > pencilled on the map in dashed red: from an X at the bottom, across the
 > river, up to the port, then along the railway; each stop ringed in red
-> pencil. The last stop, the capital in the hills where the river begins,
-> is a black square ringed twice in red, with a red map pin in it. No
-> place names, no lettering on the map. The paper is worn, its corners
+> pencil, with a small red flag on a map pin stuck in it. The last stop,
+> the capital in the hills where the river begins, is a black square
+> ringed twice in red, under a black pin flag with a red coiled-snake
+> emblem. On the X stands a small die-cast model of an olive armoured
+> pickup truck, a staff map's game piece, facing up the route. No place
+> names, no numbers, no lettering on the map or on the flags. The paper is worn, its corners
 > curling a little, with faint fold lines and a pale margin. On the desk:
 > a coffee cup at the top left, a brass magnifying glass on the desert at
 > the right, a pencil at the bottom right. The desk around the map falls
