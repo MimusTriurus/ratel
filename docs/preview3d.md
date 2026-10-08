@@ -6,17 +6,17 @@ command-line option is in `preview3d-options.md`; its sound is in `audio3d.md`.
 
 ## Loading
 
-The engine's start shows the R.A.T.E.L. emblem still on black, the boot
-splash (`project.godot`, `assets/images/ratel_emblem.png` at its own size).
-The main scene, `Level3DBoot` (`src/game3d/level3d_boot.gd`), goes on showing
-it in the same place, with the loading sign under it -- `Level3DLoading`
-(`src/game3d/ui/level3d_loading.gd`), the emblem small in the bottom
-right-hand corner, breathing in and out -- while `level3d_preview.tscn` loads
+The engine's start is black (`project.godot`'s boot splash, with no image).
+The main scene, `Level3DBoot` (`src/game3d/level3d_boot.gd`), stays black,
+with the loading sign on it -- `Level3DLoading`
+(`src/game3d/ui/level3d_loading.gd`), the R.A.T.E.L. emblem small in the
+bottom right-hand corner, breathing in and out -- while `level3d_preview.tscn` loads
 on a loader thread -- its scripts and their preloaded shaders, the time spent
 before the preview's first frame, not its files, which read in a fraction of a
 second. It then adds the preview, whose `_ready` builds the title (the sign
 stopped for that), and fades out over it. Anything else that keeps the screen
-waiting can add a `Level3DLoading` the same way.
+waiting can add a `Level3DLoading` the same way. The middle of the screen is
+left empty, for something to go there later.
 
 It also loads `HELD` -- the stage, the Chinook, every vehicle, unit, building
 and the shop's and game over's models -- and every song, and keeps them for
@@ -27,7 +27,7 @@ costs ~100 MB and saved ~160 ms of the build, measured. A model added to the
 preview wants its path in `HELD`.
 
 Naming the preview's scene, as the level editor's Play and the `--shot` runs
-do, skips the boot scene; the boot splash still shows.
+do, skips the boot scene.
 
 ## Title screen, settings and light
 

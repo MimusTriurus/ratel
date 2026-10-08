@@ -1,21 +1,20 @@
-# The project's main scene: the R.A.T.E.L. emblem, still, in the middle of
-# the screen, and the small one breathing in the corner (Level3DLoading),
-# while the 3D preview (level3d_preview.tscn) loads; and then the preview.
+# The project's main scene: a black screen with the loading sign, the
+# R.A.T.E.L. emblem breathing in the corner (Level3DLoading), while the 3D
+# preview (level3d_preview.tscn) loads; and then the preview. The middle of
+# the screen is left empty, for something to go there later.
 #
 # What takes the time before the preview's first frame is not its files --
 # the stage's 18 MB glb reads in under 0.1 s -- but its scripts: loading the
 # scene compiles level3d_preview.gd and every class it names, and the shaders
 # they preload, 1.5 s on a warm start and many more on a cold one. That is
 # done here on a loader thread (load_threaded_request), the corner's emblem
-# breathing meanwhile. The engine's own start, before any scene can draw,
-# shows the big one: project.godot's boot splash,
-# assets/images/ratel_emblem.png at its own size on black, which this one
-# goes on showing in the same place.
+# breathing meanwhile. The engine's own start, before any scene can draw, is
+# black too (project.godot's boot splash, with no image).
 #
 # The preview's _ready then builds the title before it hands a frame back
 # (Level3DTitle and its splash, ~1.5 s), with all this still on top and the
-# corner's emblem stopped; it fades out once the title is up, and the stage goes on being
-# built under the title as before (Level3DPreview._breathe).
+# corner's emblem stopped; it fades out once the title is up, and the stage
+# goes on being built under the title as before (Level3DPreview._breathe).
 #
 # HELD is loaded on the same threads and kept for the whole run (held): the
 # preview and its units load() their models where they need them -- the
@@ -31,10 +30,6 @@
 extends Node
 
 const MAIN := "res://src/game3d/level3d_preview.tscn"
-const EMBLEM := preload("res://assets/images/ratel_emblem.png")
-# The emblem's size on screen, in screen pixels: the boot splash shows the
-# image at its own size, and this one stays where that leaves off.
-const EMBLEM_PIXELS := 512.0
 const FADE := 0.4      # seconds, once the title is up
 # Over the preview's own layers (Level3DPreview.CRT_LAYER is the top one).
 const LAYER := 100
@@ -81,7 +76,6 @@ var held: Array[Resource] = []
 var _paths: Array[String] = []
 var _layer: CanvasLayer
 var _screen: Control
-var _emblem: Sprite2D
 var _started := false
 
 
@@ -100,12 +94,7 @@ func _ready() -> void:
 	black.color = Color.BLACK
 	black.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_screen.add_child(black)
-	_emblem = Sprite2D.new()
-	_emblem.texture = EMBLEM
-	_screen.add_child(_emblem)
 	_screen.add_child(Level3DLoading.new())
-	_place()
-	get_viewport().size_changed.connect(_place)
 
 	_paths.append(MAIN)
 	_paths.append_array(HELD)
@@ -118,16 +107,6 @@ func _ready() -> void:
 			ResourceLoader.load_threaded_request(path)
 		else:
 			push_warning("Level3DBoot: no %s to hold" % path)
-
-
-# In the middle of the frame and EMBLEM_PIXELS across on screen, whatever the
-# window's size: the viewport is 2048x1152 stretched to it (project.godot).
-func _place() -> void:
-	var visible_size := get_viewport().get_visible_rect().size
-	var window := Vector2(get_window().size)
-	var shrink := minf(window.x / visible_size.x, window.y / visible_size.y)
-	_emblem.position = visible_size * 0.5
-	_emblem.scale = Vector2.ONE * (EMBLEM_PIXELS / EMBLEM.get_width() / shrink)
 
 
 func _process(_delta: float) -> void:
