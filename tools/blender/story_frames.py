@@ -2524,8 +2524,10 @@ def build_intro_01_3d(dawn=0.0):
 # ringing at the start and the dawn at the end. Stand-ins: the photographs
 # painted so far (docs/story/paint/2, 3, 4) taken to grey, plain grey with
 # their number for the rest; the documents typeset roughly; every caption
-# in a stand-in marker font that pops up whole (its drawing is a step of its
-# own). Timings in seconds (FPS), the cards' starts in INTRO_CARDS.
+# in a stand-in marker font. The photographs come captioned out of the
+# folder; the marks on the sheet and the documents pop up whole (their
+# drawing is a step of its own). Timings in seconds (FPS), the cards' starts
+# in INTRO_CARDS.
 
 FPS = 24
 INTRO_END = 68.0
@@ -3133,11 +3135,9 @@ def build_intro_animatic(c, sc):
                             LAND[name.lower()][2]), t)
 
     out("Tanks", t + 2.8)
-    _pop(cards["Tanks"][1], t + 4.6)
     # 3. Vassar at the tribune, on the capital, over the tanks.
     t = starts["3"]
     out("Vassar", t + 0.5)
-    _pop(cards["Vassar"][1], t + 2.8)
     # 4. The passport photographs under their clip, fanned out; 41 on the tag.
     t = starts["4"]
     out("IDs", t + 0.5)
@@ -3150,7 +3150,6 @@ def build_intro_animatic(c, sc):
     # 5. The hostages led to the truck, by the checkpoint.
     t = starts["5"]
     out("Hostages", t + 0.5)
-    _pop(cards["Hostages"][1], t + 2.8)
     # 6. The clipping at the sheet's right edge; across it: No one's coming.
     t = starts["6"]
     out("Clipping", t + 0.5)
@@ -3164,7 +3163,6 @@ def build_intro_animatic(c, sc):
     # the table for the door and the dawn.
     t = starts["8"]
     out("Team", t + 0.5)
-    _pop(cards["Team"][1], t + 2.6)
     sc.render.fps = FPS
     sc.frame_start, sc.frame_end = 1, _f(INTRO_END)
     return _intro_camera(c, sc)
