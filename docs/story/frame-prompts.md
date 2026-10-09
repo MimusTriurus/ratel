@@ -1,33 +1,67 @@
-# Промпты к кадрам-комиксам
+# Промпты к снимкам стола брифинга
 
-Кадры из `docs/story/frames.md` сделаны в Blender как blockout (раскладка:
-камера, массы, свет, условные цвета). Каждый рендер даётся GPT image как
-референс вместе с общим блоком стиля и описанием кадра. Подписи в картинку
-не генерируются: их накладывает игра.
+Вступление и финал — 3D-сцена: стол с картой, на который ложатся снимки
+из досье (`docs/story/frames.md`). Генерируются только **снимки** и
+**сет**; документы с текстом (вырезка, контракт, газета) делаются в
+движке как текстуры с набранным текстом. Подписи маркером в картинку не
+генерируются: их накладывает игра.
+
+Каждый снимок сначала собирается в Blender как blockout (камера, массы,
+свет, условные цвета), рендер даётся GPT image как референс вместе с
+общим блоком стиля и описанием.
 
 - Blend: `resources/3d/jackal_story_frames.blend`, по сцене на кадр
-  (`Intro_01` … `Intro_08`), текстовый блок
-  `jackal_story_frames.py`:
-  `build_frame(n)`, `render_frame(n, path)`.
+  старого комикса (`Intro_01` … `Intro_08`), текстовый блок
+  `jackal_story_frames.py`: `build_frame(n)`, `render_frame(n, path)`.
+  Нумерация сцен в blend — старая; соответствие — в таблице ниже.
 - Рендеры: `docs/renders/story/intro_NN.png`, 2048×1152.
+- Отрисованное: `docs/story/paint/` (кадр 1, снимки 2–4 — пока в цвете,
+  комиксом; ч/б и растр — см. «Из цвета в ч/б»).
+
+## Что из старого комикса куда
+
+| Старый кадр | Теперь |
+|---|---|
+| 1 — карта | **сет**: карта на столе (уже в 3D, `jackal_intro_01_3d.blend`) |
+| 2 — танки и знамя | снимок 2 вступления |
+| 3 — Вассар на трибуне | снимок 3 вступления; он же снимок 2 финала |
+| 4 — заложников ведут к грузовику | снимок 5 вступления |
+| 5 — конференц-зал | снят: вместо него вырезка (в движке) |
+| 6 — Everly в офисе | снят: вместо него контракт (в движке) |
+| 7 — Badger в ангаре | **сет**: ангар, в котором стоит стол |
+| 8 — Chinook на рассвете | последний план вступления: вид из ворот ангара (в движке) |
 
 ## Общий блок стиля
 
-Добавляется к каждому кадру.
+Добавляется к каждому снимку.
 
 > Use the attached image as the layout reference: keep the camera angle,
 > the composition, the position and size of every object and the direction
 > of the light exactly; it is a rough 3D blockout, so replace its flat
-> placeholder shapes with fully drawn, detailed ones. Style: a panel from
-> a late-1980s action comic, clean black ink lines, cel-shaded flat colour
-> with one hard shadow tone, slight halftone texture in the shadows, muted
-> warm palette. 16:9. No text, no lettering, no speech balloons, no
-> captions, no logos, no signatures anywhere in the image. Leave the area
-> marked below calm and uncluttered for a caption box added later.
+> placeholder shapes with fully drawn, detailed ones. Style: a black and
+> white press photograph from the late 1980s as printed in a newspaper,
+> rendered as ink drawing: clean black ink lines, flat grey tones with one
+> hard shadow tone, coarse halftone dot screen in the greys, slight film
+> grain. Not photorealistic. 16:9. No text, no lettering, no logos, no
+> signatures anywhere in the image.
 
-## Вступление
+Для цветных эпилогов финала вместо «black and white press photograph»:
+«a colour snapshot from the late 1980s, slightly faded, as a printed
+photo», остальное то же.
 
-### 1 — *Sahrun. 1987.*
+## Из цвета в ч/б
+
+Снимки 2–4 уже отрисованы в цвете, в стиле комикса. Их не перегенерируем:
+в движке они переводятся в ч/б (обесцвечивание) и получают полутоновый
+растр шейдером. Если результат спорит с новыми снимками —
+перегенерировать с блоком стиля выше.
+
+## Сет
+
+### Карта на столе
+
+Бывший кадр 1. Уже собрана в 3D (`jackal_intro_01_3d.blend`). На стол
+добавляется телефон: чёрный дисковый, справа под лампой.
 
 > A large paper military map of a fictional desert country, unrolled on a
 > dark wooden desk at night, under a single warm desk lamp out of frame on
@@ -49,10 +83,33 @@
 > stands on its left edge, holding it down, and its top right corner
 > curls up off the desk. On the desk and the map: a brass magnifying
 > glass on the desert at the right, a pencil at the bottom right. The desk
-> around the map falls off into darkness. Caption space: the dark desk
-> along the top edge.
+> around the map falls off into darkness.
 
-### 2 — *In one night, the army took the capital. They called themselves the National Order Council.*
+### Ангар
+
+Бывший кадр 7. Промпт ниже — старый, для кадра с Badger'ом; для сета из
+него убираются Badger, телефон на стене и экипажи: в сцене со столом людей
+нет. Эмблема на стене остаётся.
+
+> Night inside a corrugated-steel aircraft hangar, almost dark. On the
+> back wall hangs the team's emblem exactly as in the second attached
+> image (a snarling honey badger over a sunset disc, "R.A.T.E.L." on a
+> banner below), lit by a spotlight from the roof beams. Under a single
+> hanging industrial lamp stands Roy "Badger" Callahan, a weathered
+> veteran in his fifties with a grey crew cut, olive T-shirt and combat
+> trousers, the receiver of a black wall telephone at his ear, its cord
+> running to the phone on the wall beside him; the lamp throws a hard cone
+> of warm light over him and onto the floor. Either side, in the dark,
+> two armoured pickup trucks (one olive, one blue) and the crews waiting
+> by them, sitting on crates or standing, only their outlines caught by
+> cold blue light from an open hangar door on the right.
+
+Ко второму референсу приложить саму эмблему (`ratel_emblem.blend` или
+логотип), чтобы GPT не перерисовал её по-своему.
+
+## Вступление
+
+### Снимок 2 — *Coup. One night.*
 
 > Night, a military coup. A wide low-angle view across a paved government
 > square towards a neoclassical palace: a long pale stone front with two
@@ -68,9 +125,9 @@
 > white light up the columns and the banner. Two searchlight beams cross
 > in the dark blue sky behind the palace, a full moon at the upper left,
 > street lamps making warm pools on the paving. Cold blue night shadows
-> everywhere else. Caption space: the night sky at the upper left.
+> everywhere else.
 
-### 3 — *The people called them the Mamba.*
+### Снимок 3 — *Gen. Tarek Vassar — "the Mamba"*
 
 > Low-angle close-up from just below a parade stand: a military dictator
 > in an olive dress uniform stands behind its stone rail, seen from below
@@ -83,9 +140,24 @@
 > goosenecks to his left. The rail is hung with black cloth bearing a red
 > coiled snake emblem. Behind him, far off, two flagpoles with black flags
 > on the left and a huge black banner with a red coiled snake on the right.
-> Menacing, faceless. Caption space: the dark rail across the bottom.
+> Menacing, faceless.
 
-### 4 — *Aid workers. Reporters. A downed helicopter crew. Forty-one names.*
+### Снимок 4 — *41* ⬜
+
+Новый. Пачка фото на документы под скрепкой; генерируется лист из
+нескольких портретов, в движке он режется на отдельные карточки.
+
+> A sheet of eight small passport-style identity photographs in two rows,
+> each a head-and-shoulders portrait against a plain pale backdrop, flat
+> frontal light: doctors and nurses of an aid mission, two press
+> reporters, a helicopter pilot in a flight suit; men and women of
+> different ages and origins, tired, plain everyday clothes. Each photo
+> has a thin white border. Late-1980s ID photos.
+
+### Снимок 5 — *Ashra checkpoint. 3 days ago.*
+
+Бывший кадр 4. Снят телеобъективом: зерно сильнее, глубина резкости
+меньше.
 
 > Harsh midday sun on a dusty road at the edge of a desert town of
 > flat-roofed sand-coloured houses behind a low wall. A file of civilian
@@ -96,71 +168,30 @@
 > it; in the left foreground one soldier has halted and aims his rifle at
 > the file; another stands at the truck. Far off over the rooftops a
 > column of black smoke rises from the hills. Short, hard shadows. Only
-> the escort wears helmets and gear; the detainees wear none. Caption
-> space: the sky at the upper left.
+> the escort wears helmets and gear; the detainees wear none.
 
-### 5 — *Governments expressed concern. No one came.*
+### Снимок 8 — *They don't do peace talks.* ⬜
 
-> A formal international conference hall in cold grey daylight, seen
-> straight down the length of a very long table covered in green baize,
-> one-point perspective. Sixteen chairs along it, nearly all empty, some
-> pulled out and left askew. At every place a blank white name card, a
-> microphone on a gooseneck with its little light off, a glass of water.
-> Only at the far end sit three diplomats in dark suits, small, papers in
-> front of them, not speaking. On the right, tall windows between stone
-> piers throw cold stripes of light across the table and the carpet; the
-> left wall pale, with wood panelling below; on the end wall, dark wood
-> panelling and a large plain round emblem (no real country's or
-> organisation's symbol). Quiet, empty, indifferent. No flags of real
-> countries, no lettering anywhere. Caption space: the ceiling across the
-> top.
+Новый. Групповое фото отряда.
 
-### 6 — *Someone had insured those forty-one lives. And someone had to pay.*
+> A team photo of four mercenaries posing in front of two armoured
+> military pickup trucks with roof-mounted weapons on a desert airstrip.
+> From the left: Roy "Badger" Callahan, a weathered veteran in his fifties
+> with a grey crew cut, arms folded; Niko "Wire" Revaz, young, grinning,
+> leaning on the bonnet; Hannah "Fuse" Weil, sleeves rolled up, a
+> demolition bag over her shoulder; Themba "Echo" Nkosi, a field radio
+> handset clipped to his vest. Olive T-shirts and combat trousers, the
+> same honey badger patch on every shoulder. Bright midday sun, short
+> shadows.
 
-> A high corner office of a 1980s insurance syndicate at sunset, film
-> noir mood. In the foreground a dark wooden desk with a green leather
-> blotter: on it a manila folder with a white label bearing only the
-> number "41" in black, a red pencil beside it, a green banker's lamp lit
-> on the left, a black rotary telephone on the right whose coiled cord
-> runs up to the receiver. Behind the desk, at a wide window with venetian
-> blinds lowered past her shoulders, stands Ms. Everly, an elegant cold
-> woman in her forties in a grey skirt suit and white blouse, auburn hair
-> pinned up, seen three-quarters from behind, the telephone receiver at
-> her ear, looking out over the city. Through the blinds the orange
-> sunset sky and dark office towers with a few lit windows; the low sun
-> lays thin stripes of light and shadow across her and the desk. No text
-> anywhere except the number 41 on the folder's label. Caption space: the
-> blinds across the top.
+## Финал ⬜
 
-### 7 — *"Callahan." — "I have a contract for you."*
+Промпты ещё не написаны. Снимки: горящий штаб с остовом супертанка (1);
+падает знамя с мамбой, поднимается флаг Сахруна (4); четыре цветных
+эпилога (7–10). Снимок 2 — снимок 3 вступления; на 3 — карточки снимка 4
+вступления.
 
-> Night inside a corrugated-steel aircraft hangar, almost dark. On the
-> back wall hangs the team's emblem exactly as in the second attached
-> image (a snarling honey badger over a sunset disc, "R.A.T.E.L." on a
-> banner below), lit by a spotlight from the roof beams. Under a single
-> hanging industrial lamp stands Roy "Badger" Callahan, a weathered
-> veteran in his fifties with a grey crew cut, olive T-shirt and combat
-> trousers, the receiver of a black wall telephone at his ear, its cord
-> running to the phone on the wall beside him; the lamp throws a hard cone
-> of warm light over him and onto the floor. Either side, in the dark,
-> two armoured pickup trucks (one olive, one blue) and the crews waiting
-> by them, sitting on crates or standing, only their outlines caught by
-> cold blue light from an open hangar door on the right. Caption space:
-> the dark wall at the upper left.
+## Intel ⬜
 
-Ко второму референсу приложить саму эмблему (`ratel_emblem.blend` или
-логотип), чтобы GPT не перерисовал её по-своему.
-
-### 8 — *Rapid Assault Team for Extraction & Liberation. They don't do peace talks.*
-
-> A dark olive twin-rotor CH-47 Chinook transport helicopter flying low
-> over endless sand dunes at sunrise, seen from directly behind, slightly
-> above the level of its cargo floor. Its rear loading ramp is lowered
-> level, like a platform, and the cargo hold is lit warmly from inside:
-> standing in it, nose first, two armoured military pickup trucks with
-> roof-mounted weapons, the nearer one olive green, the second one blue
-> just visible beyond it, both mostly dark silhouettes against the warm
-> light in the hold. The low sun on the right, just above a hazy horizon;
-> the sky from warm orange at the horizon to dusky violet at the top; the
-> helicopter in contre-jour, its rim catching the light. Long soft ridges
-> of dunes fading into haze. Caption space: the sky at the top left.
+Промпты ещё не написаны: по 2–3 разведфото на этап, одно — намёк на босса
+(`docs/story/frames.md`, «Тот же стол в остальном сюжете»).
