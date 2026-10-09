@@ -2541,7 +2541,7 @@ HIDE_Z = 4.0             # where a card waits before it falls, over the lamp, ou
 # for the caption; the picture 16:9.
 PHOTO_W, PHOTO_BORDER, PHOTO_STRIP = 0.40, 0.018, 0.075
 PAPER_T = 0.0006
-ID_STEP = 0.001          # the passport photographs' pitch in the pile: each is 0.9 mm with its face
+ID_STEP = 0.00075        # the passport photographs' pitch in the pile: the paper and its face over it
 # Where everything lands, x y on the desk (the sheet 2.6 x 1.73 round 0)
 # and the yaw: clear of the pins, the mug, the loupe, the pencil and the
 # pickup's token, and off the sheet's curled corners.
@@ -2550,7 +2550,8 @@ LAND = dict(folder=(0.92, -0.36, -6), tanks=(0.66, 0.40, -8), vassar=(0.57, 0.27
             team=(-0.04, -0.34, 8))
 # How high each card out of the folder lies (its middle), over what is
 # under it; the folder's own on the desk, and its cover's hinge open.
-LAND_Z = dict(tanks=0.0045, vassar=0.0057, hostages=0.0045, clipping=0.0035, contract=0.0085, team=0.0102)
+LAND_Z = dict(tanks=0.0045, vassar=0.0057, ids=0.0052, hostages=0.0045, clipping=0.0035, contract=0.0085,
+              team=0.0102)
 FOLDER_REST = 0.003
 FOLDER_DOWN = 0.0036
 # The camera's keys: (time, where, looking at, lens); a key held twice is a
@@ -2740,19 +2741,22 @@ def _pop(o, t):
     _key(o, f, scale=own, interp="CONSTANT")
 
 
-# The dossier: what Arden Mutual sends is in its folder from the first --
-# all but the passport photographs, whose pile under its clip is too thick
-# for the cover -- stacked on the folder's own sheets (FOLDER_FLOOR their
-# top) FOLDER_PITCH apart, bottom up FOLDER_CARDS, so that each comes off
-# the top in its turn; the photographs turned across to fit (FOLDER_TURNED),
-# each a little out of true (FOLDER_SKEW: x y, yaw). The cover over the
-# stack (FOLDER_COVER) comes down to the desk as it opens. Dropped in from
-# over the lamp one by one, eight cards fell the same way; the first
-# photograph, wider than the folder, was put on it from nowhere.
-FOLDER_CARDS = ("Team", "Contract", "Clipping", "Hostages", "Vassar", "Tanks")
+# The dossier: what Arden Mutual sends is in its folder from the first,
+# stacked on the folder's own sheets (FOLDER_FLOOR their top), bottom up
+# FOLDER_CARDS, so that each comes off the top in its turn: a card
+# FOLDER_PITCH thick, the passport photographs' pile under its clip
+# ID_PILE (its corner ID_IN_FOLDER in the folder's terms); the photographs
+# turned across to fit (FOLDER_TURNED), each a little out of true
+# (FOLDER_SKEW: x y, yaw). The cover over the stack (FOLDER_COVER) comes
+# down to the desk as it opens. Dropped in from over the lamp one by one,
+# eight cards fell the same way; the first photograph, wider than the
+# folder, was put on it from nowhere.
+FOLDER_CARDS = ("Team", "Contract", "Clipping", "Hostages", "IDs", "Vassar", "Tanks")
 FOLDER_FLOOR = 0.0029
 FOLDER_PITCH = 0.0012
-FOLDER_COVER = FOLDER_FLOOR + FOLDER_PITCH * len(FOLDER_CARDS) + 0.0003
+ID_PILE = 0.0082
+ID_IN_FOLDER = (-0.045, 0.06)
+FOLDER_COVER = FOLDER_FLOOR + FOLDER_PITCH * (len(FOLDER_CARDS) - 1) + ID_PILE + 0.0003
 FOLDER_TURNED = -90.0
 FOLDER_SKEW = (0.004, 1.5)
 # Out of the folder: over its far edge (+y in its terms, FOLDER_MOUTH past
@@ -2789,10 +2793,11 @@ def _folder(c, A):
 FOLDER_W, FOLDER_H = 0.32, 0.44
 
 
-def _in_folder(card, k, turned, rnd):
-    """`card` in the folder, k-th up the stack: its place and yaw there."""
+def _in_folder(card, at, turned, rnd):
+    """`card` in the folder at `at` (its terms), a little out of true: its
+    place and yaw there."""
     d, a = FOLDER_SKEW
-    at = Vector((rnd.uniform(-d, d), rnd.uniform(-d, d), FOLDER_FLOOR + 0.0004 + FOLDER_PITCH * k))
+    at = Vector(at) + Vector((rnd.uniform(-d, d), rnd.uniform(-d, d), 0.0))
     yaw = turned + rnd.uniform(-a, a)
     _key(card, 1, at, (0, 0, math.radians(yaw)), interp="CONSTANT")
     return at, yaw
@@ -2829,30 +2834,110 @@ def _from_folder(card, start, turned, reach, place, t):
     return end
 
 
+# A passport photograph (ID_W x ID_H): its picture, and in it the one
+# photographed as a silhouette, the head and neck (ID_HEAD: its middle up
+# the picture, its half width and half height, the neck's half width)
+# over the shoulders of the coat (ID_COAT, x y round the picture's
+# middle), flat on it. A disc over a
+# bar as wide as the picture, the face grey on grey, it read as a slot.
+ID_W, ID_H = 0.085, 0.11
+ID_HEAD = (0.019, 0.0135, 0.0165, 0.0065)
+ID_COAT = ((-0.032, -0.033), (0.032, -0.033), (0.031, -0.02), (0.027, -0.01), (0.018, -0.003), (0.008, 0.002),
+           (0.0, 0.003), (-0.008, 0.002), (-0.018, -0.003), (-0.027, -0.01), (-0.031, -0.02))
+# The clip: a paper clip, wire ID_WIRE thick, over the corner the pile
+# fans round -- the wire down past the corners at ID_LEG (metres from
+# the corner, its bearing to the pile's edge, degrees: clear of every
+# photograph as they fan), its loops (ID_CLIP, in the top photograph's
+# terms along its diagonal: along it, across) lying on the top one. The
+# count's tag (ID_TAG: its middle, bearing and yaw, degrees) under the
+# pile at that corner, ID_UNDER under the bottom photograph's middle, turned
+# so that 41 reads up the shot of it (ids). A black block for a clip and a
+# loose card beside it, it was a thing lying on the photographs.
+ID_WIRE = 0.0007
+ID_LEG = (0.0025, 135.0)
+ID_CLIP = ((0.009, -0.0045), (0.032, -0.0045), ("arc", (0.032, 0.0), 0.0045, -90, 90), (0.012, 0.0045),
+           ("arc", (0.012, 0.001), 0.0035, 90, 270), (0.027, -0.0025))
+ID_TAG = (0.032, 148.0, -32.0)
+ID_UNDER = 0.00095
+
+
+def _flat(c, name, mat, pts, at, parent):
+    """A flat shape, facing up, round `pts` (x y)."""
+    bm = bmesh.new()
+    bm.faces.new([bm.verts.new((x, y, 0)) for x, y in pts])
+    o = _obj(c, name, bm, [mat])
+    o.parent, o.location = parent, at
+    return o
+
+
+def _wire(c, name, mat, pts, r, sides=8):
+    """A wire through `pts`, `r` thick round."""
+    pts = [Vector(q) for q in pts]
+    bm = bmesh.new()
+    rings = []
+    for i, q in enumerate(pts):
+        t = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
+        a = t.cross(Vector((0, 0, 1)) if abs(t.z) < 0.9 else Vector((1, 0, 0))).normalized()
+        b = t.cross(a)
+        rings.append([bm.verts.new(q + (a * math.cos(2 * math.pi * j / sides) + b * math.sin(2 * math.pi * j / sides)) * r)
+                      for j in range(sides)])
+    for u, v in zip(rings, rings[1:]):
+        for j in range(sides):
+            bm.faces.new((u[j], u[(j + 1) % sides], v[(j + 1) % sides], v[j]))
+    for ring in (rings[0], rings[-1][::-1]):
+        bm.faces.new(ring[::-1])
+    return _obj(c, name, bm, [mat], smooth=True)
+
+
 def _id_photos(c, A, n=8):
-    """The passport photographs of the missing under a clip: each on its
-    pivot at the clipped corner, so that the pile fans out round it; the tag
-    on the clip for the count."""
-    w, h = 0.085, 0.11
+    """The passport photographs of the missing under a paper clip: each on
+    its pivot at the clipped corner, so that the pile fans out round it; the
+    tag under them for the count."""
+    w, h = ID_W, ID_H
     root = _empty(c, "SF1A_IDs")
     rnd = random.Random(41)
+    hy, hw, hh, nw = ID_HEAD
     for k in range(n):
         pivot = _empty(c, "SF1A_IDPivot%d" % k, root, (0, 0, ID_STEP * k))
         z = PAPER_T / 2
         box(c, "SF1A_ID%dPaper" % k, A["paper"], (w, h, PAPER_T), (w / 2, -h / 2, 0)).parent = pivot
         bg = A["id_bg"][k % len(A["id_bg"])]
         _plane(c, "SF1A_ID%dPicture" % k, bg, w - 0.012, h - 0.028, (w / 2, -h / 2 + 0.008, z + 0.00005), pivot)
-        hx = w / 2 + rnd.uniform(-0.004, 0.004)
-        cyl(c, "SF1A_ID%dHead" % k, A["id_face"], 0.015 + rnd.uniform(-0.002, 0.002), 0.0002,
-            (hx, -h / 2 + 0.018, z + 0.0002), seg=20).parent = pivot
-        box(c, "SF1A_ID%dShoulders" % k, A["id_coat"], (0.056, 0.022, 0.0002),
-            (hx, -h / 2 - 0.016, z + 0.0002)).parent = pivot
-    clip = _empty(c, "SF1A_IDClip", root, (0.012, -0.01, ID_STEP * n))
-    box(c, "SF1A_IDClipJaw", A["clip"], (0.034, 0.024, 0.005), (0, 0, 0.0025), rot=(0, 0, 45)).parent = clip
-    tag = _empty(c, "SF1A_IDTag", clip, (-0.04, 0.035, 0.005))
-    tag.rotation_euler = (0, 0, math.radians(30))
-    box(c, "SF1A_IDTagCard", A["manila"], (0.06, 0.036, 0.0006), (0, 0, 0)).parent = tag
-    count = _words(c, "SF1A_IDCount", A["marker"], "41", 0.03, A["marker_font"], (0, 0, 0.0004), tag)
+        mid = Vector((w / 2 + rnd.uniform(-0.003, 0.003), -h / 2))
+        s = 1.0 + rnd.uniform(-0.08, 0.08)
+        bend = math.degrees(math.acos(nw / hw))
+        head = [(math.cos(a) * hw * s, hy + math.sin(a) * hh * s)
+                for a in (math.radians(-bend + (360 - 2 * (90 - bend)) * i / 24) for i in range(25))]
+        head += [(-nw * s, 0.0), (nw * s, 0.0)]
+        _flat(c, "SF1A_ID%dHead" % k, A["id_face"], head, (mid.x, mid.y, z + 0.00012), pivot)
+        _flat(c, "SF1A_ID%dCoat" % k, A["id_coat"], [(x * s, y) for x, y in ID_COAT], (mid.x, mid.y, z + 0.0001),
+              pivot)
+    # The clip, on the top photograph.
+    top = bpy.data.objects["SF1A_IDPivot%d" % (n - 1)]
+    lift = PAPER_T / 2 + 0.0001 + ID_WIRE
+    d, bearing = ID_LEG
+    leg = Vector((math.cos(math.radians(bearing)), math.sin(math.radians(bearing)), 0)) * d
+    along = Vector((math.cos(math.radians(-45)), math.sin(math.radians(-45)), 0))
+    across = Vector((-along.y, along.x, 0))
+    loops = []
+    for part in ID_CLIP:
+        if part[0] == "arc":
+            _, (u0, v0), rr, a0, a1 = part
+            loops += [(u0 + rr * math.cos(math.radians(a0 + (a1 - a0) * i / 12)),
+                       v0 + rr * math.sin(math.radians(a0 + (a1 - a0) * i / 12))) for i in range(13)]
+        else:
+            loops.append(part)
+    bottom = -ID_STEP * (n - 1) - PAPER_T / 2
+    pts = [leg + Vector((0, 0, bottom)), leg + Vector((0, 0, lift))]
+    pts += [along * u + across * v + Vector((0, 0, lift)) for u, v in loops]
+    _wire(c, "SF1A_IDClip", A["clip"], pts, ID_WIRE).parent = top
+    # The tag, under the pile.
+    dist, bearing, yaw = ID_TAG
+    tag = _empty(c, "SF1A_IDTag", root, (dist * math.cos(math.radians(bearing)),
+                                          dist * math.sin(math.radians(bearing)), -ID_UNDER + PAPER_T / 2))
+    tag.rotation_euler = (0, 0, math.radians(yaw))
+    box(c, "SF1A_IDTagCard", A["manila"], (0.06, 0.036, PAPER_T), (0, 0, 0)).parent = tag
+    count = _words(c, "SF1A_IDCount", A["marker"], "41", 0.03, A["marker_font"], (0, 0, PAPER_T / 2 + 0.0001), tag)
     return root, count
 
 
@@ -2990,9 +3075,9 @@ def build_intro_animatic(c, sc):
         print_grey=_mat("SF1A_PrintGrey", _srgb(150, 146, 136)),
         news_grey=_mat("SF1A_NewsGrey", _srgb(176, 170, 152)),
         stamp=_mat("SF1A_Stamp", _srgb(190, 40, 34)),
-        clip=_mat("SF1A_Clip", _srgb(30, 30, 32)),
-        id_face=_mat("SF1A_IDFace", _srgb(150, 150, 146)),
-        id_coat=_mat("SF1A_IDCoat", _srgb(64, 64, 64)),
+        clip=_mat("SF1A_Clip", _srgb(196, 196, 190)),
+        id_face=_mat("SF1A_IDFace", _srgb(128, 126, 122)),
+        id_coat=_mat("SF1A_IDCoat", _srgb(48, 48, 50)),
         id_bg=[_mat("SF1A_IDBg%d" % k, _srgb(v, v, v - 4)) for k, v in enumerate((214, 196, 226, 186))],
         print=_font(PRINT_FONT),
         marker_font=_font(MARKER_FONT),
@@ -3024,14 +3109,23 @@ def build_intro_animatic(c, sc):
         Clipping=_clipping(c, A),
         Contract=_contract(c, A),
         Team=_photo(c, A, "Team", "They don't do peace talks.", 8, size=0.026),
+        IDs=_id_photos(c, A),
     )
     held = {}
-    for k, name in enumerate(FOLDER_CARDS):
+    z = FOLDER_FLOOR
+    for name in FOLDER_CARDS:
         card = cards[name][0]
         card.parent = folder
+        if name == "IDs":
+            # Its corner at ID_IN_FOLDER, the pile below and right of it: out
+            # over the far edge once its whole length is past it.
+            held[name] = _in_folder(card, (*ID_IN_FOLDER, z + ID_UNDER + 0.0001), 0.0, rnd) + (ID_H,)
+            z += ID_PILE
+            continue
         photo = name not in ("Clipping", "Contract")
         reach = PHOTO_W / 2 if photo else bpy.data.objects[card.name + "Paper"].dimensions.y / 2
-        held[name] = _in_folder(card, k, FOLDER_TURNED if photo else 0.0, rnd) + (reach,)
+        held[name] = _in_folder(card, (0.0, 0.0, z + 0.0004), FOLDER_TURNED if photo else 0.0, rnd) + (reach,)
+        z += FOLDER_PITCH
 
     def out(name, t):
         at, yaw, reach = held[name]
@@ -3046,9 +3140,8 @@ def build_intro_animatic(c, sc):
     _pop(cards["Vassar"][1], t + 2.8)
     # 4. The passport photographs under their clip, fanned out; 41 on the tag.
     t = starts["4"]
-    ids, count = _id_photos(c, A)
-    x, y, yaw = LAND["ids"]
-    _drop(ids, (x, y), 0.0045, yaw, t + 0.8, come=(0.5, 1.0), spin=-20)
+    out("IDs", t + 0.5)
+    count = cards["IDs"][1]
     for k in range(8):
         p = sc.objects["SF1A_IDPivot%d" % k]
         _key(p, t + 2.3, rot=(0, 0, 0))
@@ -3091,10 +3184,15 @@ def intro_overlaps(sc):
     units = {}
     for r in [o for o in sc.objects if o.name.startswith("SF1A_") and o.parent is None and o.type == "EMPTY"]:
         taken = set()
-        for sub in [o for o in r.children_recursive
-                    if o.name.startswith(("SF1A_IDPivot", "SF1A_FolderHinge"))
-                    or o.name in ["SF1A_" + n for n in FOLDER_CARDS]]:
-            ms = [o for o in tree(sub) if o.type == "MESH"]
+
+        def depth(o):
+            return 0 if o.parent is None else 1 + depth(o.parent)
+
+        subs = [o for o in r.children_recursive
+                if o.name.startswith(("SF1A_IDPivot", "SF1A_FolderHinge"))
+                or o.name in ["SF1A_" + n for n in FOLDER_CARDS]]
+        for sub in sorted(subs, key=depth, reverse=True):
+            ms = [o for o in tree(sub) if o.type == "MESH" and o.name not in taken]
             units[sub.name] = (r.name, ms)
             taken |= {o.name for o in ms}
         rest = [o for o in tree(r) if o.type == "MESH" and o.name not in taken]

@@ -228,8 +228,10 @@ const WARM_AT := 59.5
 # printed: the captions, the pictures, the map -- their least side thinner
 # than this, in metres -- nor round the glass, nor round what UNLINED
 # names: the telephone's dial, whose cream holes and card stand a
-# millimetre or so proud of its finger wheel, under the wheel's line.
-const UNLINED := ["SF1P_PhoneWheel", "SF1P_PhonePlate"]
+# millimetre or so proud of its finger wheel, under the wheel's line; and
+# the paper clip on the passport photographs, its wire thinner than the
+# line, which drew it black.
+const UNLINED := ["SF1P_PhoneWheel", "SF1P_PhonePlate", "SF1A_IDClip"]
 # And along their sharp edges as well (Level3DHull.apply's `edged`): the
 # desk, the edge between its top and its sides inside its outline; a
 # chamfer there instead caught the lamp and the fill in patches, and the
