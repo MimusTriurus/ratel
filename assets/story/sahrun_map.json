@@ -1,0 +1,38 @@
+{
+	"_about": "Sahrun's geography for the briefing table's map (docs/story/frames.md), in the sheet's u, v (0..1, v up), the painted reference's layout (docs/story/paint/intro_01_map.jpg). tools/blender/sahrun_map.py prints it; the game will read it too.",
+	"sheet": {"width_m": 1.2, "height_m": 0.8, "margin_u": 0.035, "margin_v": 0.0525},
+	"title": "SAHRUN",
+	"imprint": ["SHEET NJ 37-4", "SCALE 1:250 000", "SERIES R501", "EDITION 2"],
+	"coast": [[0.185, 0.97], [0.18, 0.85], [0.176, 0.72], [0.163, 0.61], [0.15, 0.545], [0.152, 0.5],
+		[0.168, 0.4], [0.176, 0.27], [0.17, 0.13], [0.176, 0.03]],
+	"river": {"name": "ASHRA", "label_at": [0.5, 0.425],
+		"points": [[0.85, 0.95], [0.8, 0.88], [0.71, 0.74], [0.63, 0.58], [0.52, 0.44], [0.42, 0.31],
+			[0.33, 0.21], [0.24, 0.15], [0.16, 0.135]]},
+	"rail": [[0.2, 0.53], [0.3, 0.6], [0.38, 0.66], [0.48, 0.75], [0.62, 0.83], [0.8, 0.88]],
+	"roads": [
+		[[0.205, 0.14], [0.2, 0.3], [0.204, 0.44], [0.207, 0.52]],
+		[[0.31, 0.075], [0.29, 0.13], [0.27, 0.17], [0.285, 0.27], [0.31, 0.355], [0.27, 0.45], [0.215, 0.525]],
+		[[0.325, 0.37], [0.45, 0.48], [0.56, 0.6], [0.66, 0.73], [0.75, 0.83], [0.795, 0.875]]
+	],
+	"bridges": [[0.27, 0.17, 0.25]],
+	"ridges": [
+		{"points": [[0.43, 0.75], [0.5, 0.82], [0.6, 0.89]], "height": 520},
+		{"points": [[0.47, 0.67], [0.56, 0.72], [0.65, 0.77]], "height": 480}
+	],
+	"highlands": {"axis": [1.0, 0.8], "from": 1.3, "to": 1.66, "height": 1500},
+	"basin": {"at": [0.8, 0.88], "radius": 0.05},
+	"marsh": {"at": [0.37, 0.655], "radii": [0.085, 0.05], "label_at": [0.37, 0.595]},
+	"spot_heights": [[0.9, 0.78, 1412], [0.71, 0.93, 1168], [0.53, 0.8, 547], [0.6, 0.735, 503]],
+	"stages": [
+		{"id": 0, "at": [0.31, 0.09], "symbol": "lz", "label": "LZ", "label_at": [0.335, 0.075]},
+		{"id": 1, "at": [0.27, 0.17], "symbol": "checkpoint", "label": "CHECKPOINT", "label_at": [0.305, 0.155]},
+		{"id": 2, "at": [0.31, 0.36], "symbol": "ruins", "label": "OLD CITY (RUINS)", "label_at": [0.32, 0.325],
+			"airfield": {"at": [0.375, 0.42], "angle": 35, "label": "AIRFIELD", "label_at": [0.405, 0.4]}},
+		{"id": 3, "at": [0.19, 0.53], "symbol": "port", "label": "KALMIR", "label_at": [0.235, 0.56]},
+		{"id": 4, "at": [0.37, 0.66], "symbol": "station", "label": "STATION", "label_at": [0.395, 0.69]},
+		{"id": 5, "at": [0.56, 0.79], "symbol": "minefield", "label": "MINES", "label_at": [0.535, 0.765],
+			"depot": {"at": [0.6, 0.805], "label": "DEPOT", "label_at": [0.6, 0.83]}},
+		{"id": 6, "at": [0.8, 0.88], "symbol": "hq", "label": "CAPITAL", "label_at": [0.77, 0.915]}
+	],
+	"legend": {"box": [0.655, 0.07, 0.955, 0.42]}
+}

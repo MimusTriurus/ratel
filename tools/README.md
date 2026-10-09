@@ -62,6 +62,7 @@ WindowsApps). Blender — Store-сборка, запускается через
 | `game_over_shot.gd` | снимок экрана конца игры 3D-превью (`Level3DGameOverScreen`: кладбище и KILLED IN ACTION над ним) без этапа под ним: спасённые каждого игрока, сколько пленных было, через сколько секунд снимать, `--menu` — дождаться выбора CONTINUE / END; нужно окно | `godot --path . --windowed --resolution 1920x1080 --script tools/game_over_shot.gd -- out.png 7,4:24 4.5` |
 | `victory_shot.gd` | снимок конца миссии 3D-превью (`Level3DVictoryScreen`: джипы со спины, сгоревшие танки босса, итоги сверху) без этапа: один или два игрока, через сколько секунд снимать, апгрейды на джипах; без превью нет иконок пленных; нужно окно | `godot --path . --windowed --resolution 1920x1080 --script tools/victory_shot.gd -- out.png 2 6 radar,twin` |
 | `blender/render_top.py` | рендер этапа сверху его камерой или сравнение двух таких рендеров | `blender-launcher -b build/level3d/jackal_stage1_gen.blend --python tools/blender/render_top.py -- --render build/level3d/top_gen.png 50` |
+| `blender/sahrun_map.py` | печатает карту Сахруна для стола брифинга из `assets/story/sahrun_map.json`: военная топокарта (отмывка, горизонтали, море, река, болото, дороги, железная дорога, знаки этапов, сетка, легенда) в `resources/3d/story/sahrun_print.png` и красный карандаш отряда отдельным прозрачным слоем в `sahrun_marks.png`, потом натягивает их на лист `SF1P_Map`; около 15 секунд | `blender-launcher -b resources/3d/jackal_intro_01_3d.blend --python tools/blender/sahrun_map.py -- --build` |
 
 ## Звук 3D-превью
 
