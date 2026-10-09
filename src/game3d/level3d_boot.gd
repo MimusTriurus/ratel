@@ -11,6 +11,13 @@
 # breathing meanwhile. The engine's own start, before any scene can draw, is
 # black too (project.godot's boot splash, with no image).
 #
+# The intro's contours (Level3DBriefing.hull), 0.6 s of them, are made
+# here too, while the sign breathes, so that the preview finds them made:
+# HULL_BUDGET of every frame once its glb is in (HELD), on this thread --
+# on one of their own they took eight seconds, every mesh read back from
+# the renderer having to wait for it. Made in the intro's _init, they and
+# its sheet's pictures, read there too, kept the screen black 1.5 s more.
+#
 # The preview's _ready then builds the title before it hands a frame back
 # (Level3DTitle and its splash, ~0.4 s warm, more cold), every frame stopped
 # meanwhile; so the sign goes out first and that is done on black (SIGN_OUT).
@@ -42,6 +49,8 @@ const SIGN_OUT := 0.25
 const SETTLED := 0.025     # seconds, a frame
 const SETTLED_RUN := 3
 const SETTLE_MAX := 1.0    # seconds
+# Of every frame, seconds (_make_hulls).
+const HULL_BUDGET := 0.008
 # Over the preview's own layers (Level3DPreview.CRT_LAYER is the top one).
 const LAYER := 100
 
@@ -77,6 +86,11 @@ const HELD := [
 	"res://resources/3d/jackal_dest_Hangar_N.glb",
 	"res://resources/3d/jackal_dest_Hangar_W.glb",
 	"res://resources/3d/jackal_dest_BunkerGun.glb",
+	# The intro's: its table and hangar (Level3DBriefing.hull's), and its
+	# sheet's print and pencil, 0.4 s read where the intro was built.
+	Level3DBriefing.SCENE,
+	Level3DBriefing.PRINT,
+	Level3DBriefing.MARKS,
 ]
 # Level3DAudio.MUSIC_DIRS.
 const MUSIC := ["res://assets/music3d/modern/", "res://assets/music3d/classic/",
@@ -89,6 +103,9 @@ var _layer: CanvasLayer
 var _screen: Control
 var _sign: Level3DLoading
 var _started := false
+var _hulls: Array = []          # the intro's meshes yet to have their contours
+var _hulls_of: Node             # their scene, instanced for them
+var _hulls_made := false
 
 
 func _ready() -> void:
@@ -125,17 +142,44 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	_make_hulls()
 	if not _started and _loaded():
 		_started = true
 		_start()
 
 
 func _loaded() -> bool:
+	if not _hulls_made:
+		return false
 	for path in _paths:
 		if ResourceLoader.exists(path) \
 				and ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 			return false
 	return true
+
+
+# Level3DBriefing.hull for HULL_BUDGET of the frame, once its glb is in.
+func _make_hulls() -> void:
+	if _hulls_made:
+		return
+	var scene := Level3DBriefing.SCENE
+	if _hulls_of == null:
+		if ResourceLoader.load_threaded_get_status(scene) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			return
+		var packed := load(scene) as PackedScene
+		if packed == null:
+			_hulls_made = true
+			return
+		_hulls_of = packed.instantiate()
+		for node in _hulls_of.find_children("*", "MeshInstance3D", true, false):
+			if (node as MeshInstance3D).mesh != null:
+				_hulls.append(node)
+	var from := Time.get_ticks_usec()
+	while not _hulls.is_empty() and Time.get_ticks_usec() - from < HULL_BUDGET * 1e6:
+		Level3DBriefing.hull(_hulls.pop_back())
+	if _hulls.is_empty():
+		_hulls_of.free()
+		_hulls_made = true
 
 
 func _start() -> void:

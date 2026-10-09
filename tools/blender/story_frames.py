@@ -1295,6 +1295,11 @@ def _emblem(c, at, size):
     root.rotation_euler = (math.radians(90), 0, 0)
     root.scale = (size / 1.18,) * 3
     for o in dst.objects:
+        # A second one (the hangar has two) on the first's curves: each its
+        # own, the game made each one's contour again, 0.4 s of them.
+        first = bpy.data.curves.get(o.data.name.rsplit(".", 1)[0]) if o.type == "CURVE" else None
+        if first is not None and first is not o.data:
+            o.data = first
         c.objects.link(o)
         o.parent = root
     return root
@@ -1817,6 +1822,9 @@ def _phone(c, M, at, yaw):
         pts.append(tuple(q))
     coil = _cord(c, M["phone"], pts, "SF1P_PhoneCoil")
     coil.data.bevel_depth = 0.0022
+    # Its points eight a turn already: at the curve's 12 between them it was
+    # 29000 vertices, its contour the game's longest to make.
+    coil.data.resolution_u = 2
     parts.append(coil)
     # The line cord out of the back, across the desk to its far edge, over
     # it and down to the floor, and away along the floor -- in world terms

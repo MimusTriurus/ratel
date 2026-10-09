@@ -26,6 +26,13 @@ round), find them in the cache, and `Level3DHull` its rebuilt meshes. That
 costs ~100 MB and saved ~160 ms of the build, measured. A model added to the
 preview wants its path in `HELD`.
 
+Among them the intro's glb and its map's two pictures. The intro's contours
+(`Level3DBriefing.hull`) are made in the boot too, while the sign breathes:
+`HULL_BUDGET` (8 ms) of every frame on the main thread. On a thread of their
+own they took eight seconds, because every mesh read back from the renderer
+waits for it. Built in the intro's `_init`, the contours and the pictures
+kept the screen black 1.5 s more after the sign went out.
+
 Naming the preview's scene, as the level editor's Play and the `--shot` runs
 do, skips the boot scene.
 

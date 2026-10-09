@@ -429,6 +429,26 @@ func _show() -> void:
 		m.set_shader_parameter("shown", shown)
 
 
+# The contour round `mesh_instance`, as _dress gives it (Level3DHull);
+# made ahead by Level3DBoot, a few a frame while its loading sign
+# breathes, they are found made: made in _init, a second and more of it,
+# they held the preview's first frame on the boot's black.
+static func hull(mesh_instance: MeshInstance3D) -> void:
+	# Nor round the loupe's glass, whose line showed black through it.
+	var glass := false   # or unlined
+	for surface in mesh_instance.mesh.get_surface_count():
+		var paint := mesh_instance.mesh.surface_get_material(surface)
+		if paint != null and float((paint.get_meta("extras", {}) as Dictionary).get("glass", 0.0)) > 0.0:
+			glass = true
+	var size := mesh_instance.mesh.get_aabb().size
+	var named := String(mesh_instance.name)
+	for unlined in UNLINED:
+		glass = glass or named.begins_with(unlined)
+	if minf(size.x, minf(size.y, size.z)) > PRINTED and not glass:
+		var kind := Level3DHull.Kind.VEHICLES if named.begins_with(TOKENS) else Level3DHull.Kind.STAGE
+		Level3DHull.apply(mesh_instance, kind, true, named in CREASED)
+
+
 func _dress(mesh_instance: MeshInstance3D) -> void:
 	if mesh_instance.mesh == null:
 		return
@@ -443,19 +463,7 @@ func _dress(mesh_instance: MeshInstance3D) -> void:
 	# Its own layer alone: on the world's too, the sun -- whose cull mask
 	# leaves the hangar's out -- lit it still, unshadowed, the map white.
 	mesh_instance.layers = Level3DSplash3D.HANGAR_LAYER
-	# Nor round the loupe's glass, whose line showed black through it.
-	var glass := false   # or unlined
-	for surface in mesh_instance.mesh.get_surface_count():
-		var paint := mesh_instance.mesh.surface_get_material(surface)
-		if paint != null and float((paint.get_meta("extras", {}) as Dictionary).get("glass", 0.0)) > 0.0:
-			glass = true
-	var size := mesh_instance.mesh.get_aabb().size
-	var named := String(mesh_instance.name)
-	for unlined in UNLINED:
-		glass = glass or named.begins_with(unlined)
-	if minf(size.x, minf(size.y, size.z)) > PRINTED and not glass:
-		var kind := Level3DHull.Kind.VEHICLES if named.begins_with(TOKENS) else Level3DHull.Kind.STAGE
-		Level3DHull.apply(mesh_instance, kind, true, named in CREASED)
+	hull(mesh_instance)
 	var mesh := mesh_instance.mesh
 	for surface in mesh.get_surface_count():
 		var paint := mesh.surface_get_material(surface) as BaseMaterial3D
