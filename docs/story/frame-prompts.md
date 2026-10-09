@@ -11,8 +11,10 @@
 общим блоком стиля и описанием.
 
 - Blend: `resources/3d/jackal_story_frames.blend`, по сцене на кадр
-  старого комикса (`Intro_01` … `Intro_08`), текстовый блок
-  `jackal_story_frames.py`: `build_frame(n)`, `render_frame(n, path)`.
+  старого комикса (`Intro_01` … `Intro_08`); скрипт —
+  `tools/blender/story_frames.py` (`build_frame(n)`, `render_frame(n, path)`),
+  тот же, что строит стол брифинга в `jackal_intro_01_3d.blend`; текстовый
+  блок `jackal_story_frames.py` в обоих blend'ах только запускает его.
   Нумерация сцен в blend — старая; соответствие — в таблице ниже.
 - Рендеры: `docs/renders/story/intro_NN.png`, 2048×1152.
 - Отрисованное: `docs/story/paint/` (кадр 1, снимки 2–4 — пока в цвете,
@@ -62,8 +64,8 @@ photo», остальное то же.
 
 Бывший кадр 1. Уже собрана в 3D (`jackal_intro_01_3d.blend`). На столе
 телефон: чёрный дисковый, за картой слева вверху, под лампой, в стороне от
-флажка столицы (`SF1P_Phone`, `_phone()` в `jackal_story_frames.py` этого
-blend'а).
+флажка столицы (`SF1P_Phone`, `_phone()` в
+`tools/blender/story_frames.py`).
 
 > A large paper military map of a fictional desert country, unrolled on a
 > dark wooden desk at night, under a single warm desk lamp out of frame on

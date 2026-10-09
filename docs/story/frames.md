@@ -17,8 +17,9 @@
 маркером — текст, `{total}` и галочки зависят от прохождения, а тот же
 стол — интерактивные карта между этапами и Intel. Прототипируется в
 Blender (`resources/3d/jackal_intro_01_3d.blend`, сцена `Intro_01_3D`,
-текстовый блок `jackal_story_frames.py`: `build_intro_01_3d()`), в игру
-идёт `.glb`.
+скрипт `tools/blender/story_frames.py`: `build_intro_01_3d()`, или
+`build_frame("01_3D")`; текстовый блок `jackal_story_frames.py` в blend'е
+только запускает этот файл), в игру идёт `.glb`.
 
 **Сет.** Всё собрано в прототипе:
 
@@ -149,7 +150,7 @@ Blender (`resources/3d/jackal_intro_01_3d.blend`, сцена `Intro_01_3D`,
 ### Аниматик
 
 Вступление собрано аниматиком в той же сцене `Intro_01_3D`
-(`build_intro_animatic()` в `jackal_story_frames.py`): 68 с, 24 кадра в
+(`build_intro_animatic()` в `tools/blender/story_frames.py`): 68 с, 24 кадра в
 секунду, камера сцены — `Intro_01_3D_Animatic` (её точки —
 `INTRO_CAMERA`), на таймлайне маркер на начало каждой карточки. Камеры
 стола и титула остаются для стоп-кадров.

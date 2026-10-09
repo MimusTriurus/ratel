@@ -62,6 +62,7 @@ WindowsApps). Blender — Store-сборка, запускается через
 | `game_over_shot.gd` | снимок экрана конца игры 3D-превью (`Level3DGameOverScreen`: кладбище и KILLED IN ACTION над ним) без этапа под ним: спасённые каждого игрока, сколько пленных было, через сколько секунд снимать, `--menu` — дождаться выбора CONTINUE / END; нужно окно | `godot --path . --windowed --resolution 1920x1080 --script tools/game_over_shot.gd -- out.png 7,4:24 4.5` |
 | `victory_shot.gd` | снимок конца миссии 3D-превью (`Level3DVictoryScreen`: джипы со спины, сгоревшие танки босса, итоги сверху) без этапа: один или два игрока, через сколько секунд снимать, апгрейды на джипах; без превью нет иконок пленных; нужно окно | `godot --path . --windowed --resolution 1920x1080 --script tools/victory_shot.gd -- out.png 2 6 radar,twin` |
 | `blender/render_top.py` | рендер этапа сверху его камерой или сравнение двух таких рендеров | `blender-launcher -b build/level3d/jackal_stage1_gen.blend --python tools/blender/render_top.py -- --render build/level3d/top_gen.png 50` |
+| `blender/story_frames.py` | строит кадры сюжета: блокауты старого комикса (`Intro_01` … `Intro_08`, в `resources/3d/jackal_story_frames.blend`) и стол брифинга с аниматиком вступления (`Intro_01_3D`, `"01_3D"`, в `resources/3d/jackal_intro_01_3d.blend`); в Blender — `exec(bpy.data.texts["jackal_story_frames.py"].as_string())`, затем `build_frame(n)`, `render_frame(n, path)`: этот текстовый блок в обоих blend'ах только запускает файл. `--save` сохраняет сцену в blend | `blender-launcher -b resources/3d/jackal_intro_01_3d.blend --python tools/blender/story_frames.py -- --build 01_3D --save` |
 | `blender/sahrun_map.py` | печатает карту Сахруна для стола брифинга из `assets/story/sahrun_map.json`: военная топокарта (отмывка, горизонтали, море, река, болото, дороги, железная дорога, знаки этапов, сетка, легенда) в `resources/3d/story/sahrun_print.png` и красный карандаш отряда отдельным прозрачным слоем в `sahrun_marks.png`, потом натягивает их на лист `SF1P_Map`; около 15 секунд | `blender-launcher -b resources/3d/jackal_intro_01_3d.blend --python tools/blender/sahrun_map.py -- --build` |
 
 ## Звук 3D-превью
@@ -82,7 +83,7 @@ WindowsApps). Blender — Store-сборка, запускается через
 
 | файл | что делает | запуск |
 |---|---|---|
-| `story_paint_map.py` | переносит карту с нарисованного GPT кадра 1 (`docs/story/paint/intro_01.webp`) обратно на лист через камеру блокаута; пропсы (кружку, лупу, карандаш, пикап, флажки) стирает подходящими кусками бумаги, кольца этапов дорисовывает. Пишет `docs/story/paint/intro_01_map.jpg` и флаг хунты `intro_01_junta_flag.png` для сцены `Intro_01_3D` в `resources/3d/jackal_story_frames.blend`; около двух минут | `py tools/story_paint_map.py` |
+| `story_paint_map.py` | переносит карту с нарисованного GPT кадра 1 (`docs/story/paint/intro_01.webp`) обратно на лист через камеру блокаута; пропсы (кружку, лупу, карандаш, пикап, флажки) стирает подходящими кусками бумаги, кольца этапов дорисовывает. Пишет `docs/story/paint/intro_01_map.jpg` и флаг хунты `intro_01_junta_flag.png` для сцены `Intro_01_3D` в `resources/3d/jackal_intro_01_3d.blend`; около двух минут | `py tools/story_paint_map.py` |
 
 ## Не здесь
 
