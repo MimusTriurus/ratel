@@ -31,7 +31,14 @@ do, skips the boot scene.
 
 ## Title screen, settings and light
 
-The 3D preview opens on a title screen, `Level3DTitle`
+The 3D preview opens on the intro, the briefing table (`Level3DBriefing`,
+`src/game3d/ui/level3d_briefing.gd`; `docs/story/frames.md`, "В движке"),
+played whole-screen in the title splash's own world: it ends by flying out
+of the hangar's door into the splash's shot, the frame settles to its place
+and the title opens over it without a cut. P, Space, Pause or a pad's
+Back pause it, left and right seek it by 5 s; any other key skips it; it plays again
+after a minute on the title untouched; `--no-briefing` leaves it out.
+The title screen is `Level3DTitle`
 (`src/game3d/ui/level3d_title.gd`): the scene with the sun and the jeeps in
 the middle of the screen, the game's name over it and the menu under it --
 1 player, 2 players, settings and quit, in the HUD's font, a ▶ before the one

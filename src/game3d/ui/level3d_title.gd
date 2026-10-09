@@ -83,6 +83,28 @@ const SCREEN_MIDDLE := Vector2(1024, 576)
 # going with the menu.
 const LOGO_AFTER := 1.6
 const LOGO_IN := 1.2
+# The briefing, the intro (Level3DBriefing), is played on the splash before
+# the title opens -- at the start, and again after ATTRACT_AFTER seconds on
+# the title with no key touched -- the whole screen big, and ends on the
+# splash's own shot: the frame comes back to its place over SETTLE seconds
+# (Level3DSplash3D.settle, focus the other way) and the title opens over it,
+# the name, the menu and the Chinook coming in as they always do. Held on
+# its first frame till the stage under it is built (game_ready), whose
+# frames are slow. Any key, button or click but the pause's (PAUSE_KEYS)
+# and the seek's (SEEK_STEP) skips it: to black over SKIP_FADE and the title out of it over FROM_SKIP.
+const SETTLE := 1.4
+const SKIP_FADE := 0.3
+const FROM_SKIP := 0.6
+const ATTRACT_AFTER := 60.0
+# Paused and on again, rather than skipped, by these keys or the pad's
+# Back; PAUSED under it meanwhile, PAUSED_FROM_FOOT over the frame's foot.
+const PAUSE_KEYS := [KEY_P, KEY_SPACE, KEY_PAUSE]
+const PAUSE_BUTTON := JOY_BUTTON_BACK
+const PAUSED_FROM_FOOT := 96.0
+# Left and right (the arrows, the keys bound to them, the pad's d-pad) take
+# it SEEK_STEP seconds back or on, paused or not, held for as long as they
+# are held; on to the title's shot, it hands over as at its end.
+const SEEK_STEP := 5.0
 
 var settings: Level3DSettings
 # Level3DSettings.hud_scale, the preview's to set; laid out again with it.
@@ -116,6 +138,11 @@ var _selection: Level3DSelection
 var _text: Control           # the entries, in the font's filter
 var _logo: Level3DLogo
 var _logo_in: Tween          # the name coming up (LOGO_AFTER)
+var _briefing: Level3DBriefing   # playing (open_briefing), or null
+var _settling: Tween         # the splash coming back to its place after it
+var _skip: Tween             # to black over a skipped one
+var _idle := 0.0             # seconds on the title with no key touched (ATTRACT_AFTER)
+var _paused_note: Control    # PAUSED, over a paused briefing
 
 
 func _ready() -> void:
@@ -151,6 +178,12 @@ func _ready() -> void:
 	_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_text.draw.connect(_draw_text)
 	add_child(_text)
+	_paused_note = Control.new()
+	_paused_note.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_paused_note.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_paused_note.visible = false
+	_paused_note.draw.connect(_draw_paused)
+	add_child(_paused_note)
 	_veil = ColorRect.new()
 	_veil.color = Color(0, 0, 0, 0)
 	_veil.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -179,6 +212,7 @@ func is_open() -> bool:
 
 
 func open() -> void:
+	_idle = 0.0
 	if _from_black != null:
 		_from_black.kill()
 		_from_black = null
@@ -227,7 +261,130 @@ func _tell_splash() -> void:
 
 
 func close() -> void:
+	_stop_briefing()
 	visible = false
+
+
+# Whether the splash can play the briefing: the 3D one, and the files there.
+func can_brief() -> bool:
+	return _splash is Level3DSplash3D and Level3DBriefing.available()
+
+
+# The title opened on the briefing (SETTLE, ATTRACT_AFTER), or at once
+# where there is none.
+func open_briefing() -> void:
+	if not can_brief():
+		open()
+		return
+	_stop_briefing()
+	visible = true
+	_launching = false
+	_veil.color.a = 0.0
+	for tween in [_from_black, _menu_hide, _logo_in]:
+		if tween != null:
+			(tween as Tween).kill()
+	_text.modulate.a = 0.0
+	_selection.modulate.a = 0.0
+	_logo.modulate.a = 0.0
+	var splash := _splash as Level3DSplash3D
+	splash.reset_launch()
+	splash.show_menu(0, settings.hard)
+	_briefing = splash.play_briefing()
+	_briefing.playing = _game_ready
+	_briefing.arrived.connect(_briefing_arrived)
+
+
+# On the splash's own shot: the frame back to its place, and the title.
+func _briefing_arrived() -> void:
+	_pause_briefing(false)
+	(_splash as Level3DSplash3D).end_briefing(SETTLE)
+	_briefing = null
+	_settling = create_tween()
+	_settling.tween_interval(SETTLE)
+	_settling.tween_callback(func():
+		_settling = null
+		_open_after_briefing(false))
+
+
+func _open_after_briefing(from_black: bool) -> void:
+	if from_black:
+		open_from_black(FROM_SKIP)
+	else:
+		open()
+	_text.modulate.a = 0.0
+	_selection.modulate.a = 0.0
+	var menu_in := create_tween().set_parallel()
+	menu_in.tween_property(_text, "modulate:a", 1.0, LOGO_IN)
+	menu_in.tween_property(_selection, "modulate:a", 1.0, LOGO_IN)
+
+
+# Skipped: to black, and the title out of it.
+func _skip_briefing() -> void:
+	if _skip != null:
+		return
+	_skip = create_tween()
+	_skip.tween_property(_veil, "color:a", 1.0, SKIP_FADE)
+	_skip.tween_callback(func():
+		_skip = null
+		_stop_briefing()
+		_open_after_briefing(true))
+
+
+# -1 back, 1 on, 0 neither: a press or its repeat.
+func _seek_of(event: InputEvent) -> int:
+	var key := event as InputEventKey
+	if key != null and key.pressed:
+		if key.keycode in [KEY_LEFT, settings.key("left")]:
+			return -1
+		if key.keycode in [KEY_RIGHT, settings.key("right")]:
+			return 1
+	var button := event as InputEventJoypadButton
+	if button != null and button.pressed:
+		if button.button_index == JOY_BUTTON_DPAD_LEFT:
+			return -1
+		if button.button_index == JOY_BUTTON_DPAD_RIGHT:
+			return 1
+	return 0
+
+
+func _is_pause(event: InputEvent) -> bool:
+	var key := event as InputEventKey
+	if key != null:
+		return key.keycode in PAUSE_KEYS
+	var button := event as InputEventJoypadButton
+	return button != null and button.button_index == PAUSE_BUTTON
+
+
+# The briefing held or on again (PAUSE_KEYS); once it has come to the
+# title's shot there is nothing to hold.
+func _pause_briefing(on: bool) -> void:
+	if _briefing != null:
+		_briefing.paused = on
+	_paused_note.visible = on and _briefing != null
+	_paused_note.queue_redraw()
+
+
+func _draw_paused() -> void:
+	var g := Level3DFont.size(Level3DFont.SMALL, scale_factor)
+	var text := "paused"
+	Level3DFont.draw(_paused_note, text, roundf(SCREEN_MIDDLE.x - Level3DFont.width(text, g) * 0.5),
+			FRAME_HEIGHT - PAUSED_FROM_FOOT, g, Level3DFont.WHITE, PICKED_TINT)
+
+
+func _stop_briefing() -> void:
+	_pause_briefing(false)
+	for tween in [_settling, _skip]:
+		if tween != null:
+			(tween as Tween).kill()
+	_settling = null
+	_skip = null
+	if _briefing != null:
+		(_splash as Level3DSplash3D).end_briefing(0.0)
+		_briefing = null
+
+
+func is_briefing() -> bool:
+	return _briefing != null or _settling != null
 
 
 # Whether its bar is up: while the title is and the settings are not over it.
@@ -240,6 +397,8 @@ func _selection_up() -> bool:
 # waits for it to lift off.
 func game_ready() -> void:
 	_game_ready = true
+	if _briefing != null:
+		_briefing.playing = true
 	if _splash != null and _splash.has_method("game_ready"):
 		_splash.game_ready()
 	if _tell_later and visible and not _launching:
@@ -286,7 +445,13 @@ func _process(delta: float) -> void:
 			_fade_out(count, after)
 	if not visible:
 		return
-	if not _launching and not (settings_open.is_valid() and settings_open.call()):
+	# Left on the title long enough, it plays the briefing again.
+	if not _launching and not is_briefing() and not (settings_open.is_valid() and settings_open.call()):
+		_idle += delta
+		if _idle >= ATTRACT_AFTER:
+			open_briefing()
+			return
+	if not _launching and not is_briefing() and not (settings_open.is_valid() and settings_open.call()):
 		var again := _repeat.tick(Level3DPad.held_dir(Level3DPad.connected()), delta)
 		if again.y != 0:
 			_select(_selected + again.y)
@@ -406,6 +571,23 @@ func _input(event: InputEvent) -> void:
 	# The settings over the title have the keys while they are open; while
 	# the jeeps drive off, a key or a button only hurries the fade on.
 	if not visible or settings_open.is_valid() and settings_open.call():
+		return
+	var touched: bool = event is InputEventKey and event.pressed and not event.echo 			or event is InputEventJoypadButton and event.pressed 			or event is InputEventMouseButton and event.pressed
+	if touched:
+		_idle = 0.0
+	if is_briefing():
+		var seek := _seek_of(event)
+		if seek != 0:
+			if _briefing != null:
+				_briefing.seek(_briefing.time + seek * SEEK_STEP)
+			get_viewport().set_input_as_handled()
+			return
+		if touched:
+			if _is_pause(event):
+				_pause_briefing(not _briefing.paused if _briefing != null else false)
+			else:
+				_skip_briefing()
+			get_viewport().set_input_as_handled()
 		return
 	if _launching:
 		var pressed: bool = event is InputEventKey and event.pressed and not event.echo \

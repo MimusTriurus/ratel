@@ -641,6 +641,12 @@ func _process(delta: float) -> void:
 			_sound.stop()
 		_silence_engines()
 		return
+	# The briefing first: the Chinook comes in once the title opens on it
+	# (reset_launch), and is nowhere till then.
+	_chinook.visible = briefing == null
+	if briefing != null:
+		super(delta)
+		return
 	_clock += delta
 	var hurry := _launched and _ramp_state in ["", "opening"]
 	# Eased both ends: set off at a steady rate, the speeding up was a jolt.

@@ -201,6 +201,42 @@ const GROUND_SUN_OFF := 0.35   # of the rise, the sun off the ground by then
 # Dark, so that the faces the low sun catches are a glint and not a stripe.
 const GROUND_COLOUR := Color(0.085, 0.036, 0.028)
 
+# The briefing (Level3DBriefing, docs/story/frames.md): the intro, played on
+# the briefing table in a hangar behind the camera, whose door it leaves at
+# the end for this very frame -- so that the title takes over without a
+# cut. Its hangar's door is HANGAR_DOOR metres behind the camera, its floor
+# at the ground's 0: the near ground goes FLOOR_CLEAR under it from the
+# door in, coming down to it over the two metres before (behind the camera,
+# out of the title's frame).
+const HANGAR_DOOR := 3.0
+const FLOOR_CLEAR := 0.06
+# It starts at night and ends on this dawn (set_daylight): the night's
+# light the moon's, high behind the camera on the right, and cold, as the
+# briefing table's blend has it (story_frames.py's NIGHT, its tint of the
+# lit tone) -- and the night's sky (SKY_SHADER's `day`); the sun and the
+# shade going over to the title's own, SUN_* and AMBIENT, by the dawn.
+const NIGHT_TRAVEL := Vector3(0.3, -0.6, 1.0)
+const NIGHT_COLOUR := Color(0.42, 0.52, 0.8)
+const NIGHT_ENERGY := 1.4
+const NIGHT_AMBIENT := Color(0.16, 0.2, 0.34)
+# The hangar is lit by its lamps and by what comes in at its door, and not
+# by the title's sun: its meshes on HANGAR_LAYER, which the sun leaves out,
+# and the sun casts no shadow, as on the title. What comes in at the door
+# is door_light's, on that layer alone and with shadows -- so that the
+# hangar's shell leaves the door's shape on the floor, its edges running on
+# from the jambs -- the moon (NIGHT_*) going over to the dawn's sun with
+# the daylight, coming in DOOR_DIP degrees down: the title's sun, a shade
+# under the horizon and its light a shade upward, lit nothing in the
+# hangar. Both always there, door_light at no strength on the title: a
+# light coming or going, or the sun's shadows turned on and off, changed
+# the light of every paint in the world, and the renderer built their
+# shaders anew mid-flight, the first run on a machine.
+const HANGAR_LAYER := 1 << 19
+const DOOR_DIP := 14.0
+const DOOR_ENERGY := 1.0
+const DOOR_SHADOW_DISTANCE := 40.0
+const BRIEFING_FREE_AFTER := 0.5
+
 # CULL is replaced: back for a solid, disabled for a single plane -- the
 # palms' fronds, the jeep's glass. Godot turns a back face's normal round
 # itself when nothing is culled; turned again here, it lit every pane and
@@ -850,6 +886,51 @@ const vec3 MORNING_HIGH = vec3(0.40, 0.55, 0.74);
 const float MORNING_MID = 0.22;
 const float MORNING_TOP = 0.6;
 const vec3 DAWN_GROUND = vec3(0.08, 0.04, 0.012);
+// The night before it (Level3DBriefing, set_daylight): `day` 0 the night,
+// 1 the title's sky as it always was. The night's sky graded up from the
+// horizon, NIGHT_LOW to NIGHT_HIGH by NIGHT_TOP of the way up, and stars:
+// one a cell of the sky's azimuth and elevation, STAR_CELLS a radian, a
+// STAR_RADIUS of the cell round its point, the STAR_DARK share of the cells
+// without one, none in the horizon's haze (STAR_LOW radians up) -- going out
+// by half the dawn. As the briefing table's blend has it
+// (tools/blender/story_frames.py, _title_sky_mat, NIGHT, STARS).
+uniform float day = 1.0;
+const vec3 NIGHT_LOW = vec3(52.0, 66.0, 104.0) / 255.0;
+const vec3 NIGHT_HIGH = vec3(12.0, 16.0, 34.0) / 255.0;
+const float NIGHT_TOP = 0.4;
+const vec3 NIGHT_GROUND = vec3(3.0, 3.0, 6.0) / 255.0;
+const vec3 STAR = vec3(0.9, 0.92, 1.0);
+const float STAR_CELLS = 12.0;
+const float STAR_RADIUS = 0.02;
+const float STAR_DARK = 0.55;
+const float STAR_LOW = 0.06;
+
+vec2 star_hash(vec2 cell) {
+	return fract(sin(vec2(dot(cell, vec2(127.1, 311.7)), dot(cell, vec2(269.5, 183.3)))) * 43758.5453);
+}
+
+vec3 night(vec3 d) {
+	vec3 c = mix(NIGHT_LOW, NIGHT_HIGH, clamp(d.y / NIGHT_TOP, 0.0, 1.0));
+	float elevation = asin(clamp(d.y, -1.0, 1.0));
+	vec2 p = vec2(atan(d.x, -d.z), elevation) * STAR_CELLS;
+	vec2 cell = floor(p);
+	float nearest = 8.0;
+	float lit = 0.0;
+	for (int j = -1; j <= 1; j++) {
+		for (int i = -1; i <= 1; i++) {
+			vec2 at = cell + vec2(float(i), float(j));
+			vec2 h = star_hash(at);
+			float r = length(at + h - p);
+			if (r < nearest) {
+				nearest = r;
+				lit = fract(h.x * 17.0 + h.y * 31.0);
+			}
+		}
+	}
+	float star = (1.0 - smoothstep(STAR_RADIUS * 0.6, STAR_RADIUS, nearest)) * step(STAR_DARK, lit)
+			* step(STAR_LOW, elevation) * clamp(1.0 - 2.0 * day, 0.0, 1.0);
+	return mix(c, STAR, star);
+}
 // sRGB, 0..1.
 const vec3 HEART = vec3(253.0, 227.0, 6.0) / 255.0;
 const vec3 EDGE = vec3(246.0, 58.0, 1.0) / 255.0;
@@ -892,6 +973,9 @@ void sky() {
 	c = r < 1.0 ? c : 1.0 - (1.0 - clamp(c, 0.0, 1.0)) * (1.0 - lit);
 	// Below the horizon only past the far ground's edge: as dark as it.
 	c = d.y < 0.0 ? GROUND + DAWN_GROUND * dawn : c;
+	if (day < 1.0) {
+		c = mix(d.y < 0.0 ? NIGHT_GROUND : night(d), c, day);
+	}
 	// The Compatibility renderer takes the sky's colour as sRGB as it is.
 	COLOR = c;
 }
@@ -899,6 +983,8 @@ void sky() {
 
 var viewport: SubViewport
 var camera: Camera3D
+var briefing: Level3DBriefing        # the intro playing in this world (play_briefing), or null
+var door_light := DirectionalLight3D.new()   # the hangar's (HANGAR_LAYER)
 var jeeps: Array[Node3D] = []
 # Which vehicle the jeeps are (KINDS), and its Level3DBtr.VEHICLES' entry:
 # its glb, its parts' prefix, its wheels' radius.
@@ -1016,6 +1102,10 @@ func place(centre: Vector2, width: float) -> void:
 	size = Vector2(width, width / ASPECT)
 	position = centre - size * 0.5
 	_rest = Rect2(position, size)
+	# The briefing is the whole screen till it has come to this frame.
+	if briefing != null:
+		size = SCREEN
+		position = Vector2.ZERO
 	_focused = size * FOCUS_ZOOM
 	# At the screen's pixels, not the frame's: blown up, the edges stepped
 	# (Level3DPixels).
@@ -1062,6 +1152,79 @@ func focus(centre: Vector2, seconds: float) -> void:
 	_focus.tween_property(self, "zoom", 1.0, seconds)
 
 
+# Back from the whole screen to its place on the title, over `seconds`
+# (at once for none): focus the other way.
+func settle(seconds: float) -> void:
+	if _focus != null:
+		_focus.kill()
+		_focus = null
+	if seconds <= 0.0:
+		position = _rest.position
+		size = _rest.size
+		zoom = 1.0 / FOCUS_ZOOM
+		_show_frame()
+		return
+	_focus = create_tween().set_parallel().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_focus.tween_property(self, "size", _rest.size, seconds)
+	_focus.tween_property(self, "position", _rest.position, seconds)
+	_focus.tween_property(self, "zoom", 1.0 / FOCUS_ZOOM, seconds)
+
+
+# The briefing played in this world, its camera the frame's, the whole
+# screen big, from the night (Level3DBriefing).
+func play_briefing() -> Level3DBriefing:
+	end_briefing(0.0)
+	briefing = Level3DBriefing.new(self)
+	camera.get_parent().add_child(briefing)
+	briefing.camera.make_current()
+	viewport.positional_shadow_atlas_size = Level3DBriefing.SHADOW_ATLAS
+	if _focus != null:
+		_focus.kill()
+		_focus = null
+	size = SCREEN
+	position = Vector2.ZERO
+	zoom = 1.0
+	_show_frame()
+	return briefing
+
+
+# The briefing over: the title's camera, its dawn, the door's light out;
+# the frame back to its place over `seconds`.
+func end_briefing(seconds: float) -> void:
+	if briefing == null:
+		return
+	camera.make_current()
+	set_daylight(1.0)
+	door_light.light_energy = 0.0
+	# Hidden at once and freed a little later (BRIEFING_FREE_AFTER): its
+	# hangar, its lights and its cards gone in the frame the title's camera
+	# took over was the one frame both had work to do.
+	var done := briefing
+	briefing = null
+	done.visible = false
+	done.set_process(false)
+	get_tree().create_timer(BRIEFING_FREE_AFTER).timeout.connect(done.queue_free)
+	settle(seconds)
+
+
+# The light from the night (0) to the title's dawn (1): the sky, the sun's
+# way, colour and strength, the shade (NIGHT_*), and while the briefing
+# plays what comes in at the hangar's door (door_light), `door_open` of it.
+func set_daylight(t: float, door_open := 1.0) -> void:
+	_sky_material.set_shader_parameter("day", t)
+	var dawn := Vector3(0, sin(deg_to_rad(-SUN_ELEVATION)), cos(deg_to_rad(SUN_ELEVATION)))
+	var night := NIGHT_TRAVEL.normalized()
+	_sun.basis = Basis.looking_at(night.slerp(dawn, t), Vector3.UP)
+	_sun.light_color = NIGHT_COLOUR.lerp(SUN_COLOUR, t)
+	_sun.light_energy = lerpf(NIGHT_ENERGY, SUN_ENERGY, t)
+	_environment.ambient_light_color = NIGHT_AMBIENT.lerp(AMBIENT, t)
+	if briefing != null:
+		var door := Vector3(0.0, -sin(deg_to_rad(DOOR_DIP)), cos(deg_to_rad(DOOR_DIP)))
+		door_light.basis = Basis.looking_at(night.slerp(door, t), Vector3.UP)
+		door_light.light_color = NIGHT_COLOUR.lerp(SUN_COLOUR, t)
+		door_light.light_energy = lerpf(NIGHT_ENERGY, DOOR_ENERGY, t) * door_open
+
+
 func _build() -> void:
 	var world := Node3D.new()
 	viewport.add_child(world)
@@ -1090,6 +1253,12 @@ func _build() -> void:
 	_sun = DirectionalLight3D.new()
 	_sun.light_color = SUN_COLOUR
 	_sun.light_energy = SUN_ENERGY
+	_sun.light_cull_mask = 0xFFFFF & ~HANGAR_LAYER
+	door_light.light_energy = 0.0
+	door_light.light_cull_mask = HANGAR_LAYER
+	door_light.shadow_enabled = true
+	door_light.directional_shadow_max_distance = DOOR_SHADOW_DISTANCE
+	world.add_child(door_light)
 	world.add_child(_sun)
 	# Pointing from the sky at the camera, the light's -Z its way.
 	var travel := Vector3(0, sin(deg_to_rad(-SUN_ELEVATION)), cos(deg_to_rad(SUN_ELEVATION)))
@@ -1145,7 +1314,9 @@ func _ground() -> Node3D:
 		# would be a broad lit band across the frame.
 		var side := clampf(absf(x) / 30.0, 0.0, 1.0)
 		var far := clampf(-z / 25.0, 0.0, 1.0)
-		return noise.get_noise_2d(x, z) * (0.2 + 1.4 * side * side * far)
+		var h := noise.get_noise_2d(x, z) * (0.2 + 1.4 * side * side * far)
+		# Under the briefing's hangar floor (HANGAR_DOOR).
+		return lerpf(h, -FLOOR_CLEAR, clampf((z - HANGAR_DOOR + 2.0) * 0.5, 0.0, 1.0))
 	_height = height
 	for j in cells.y:
 		for i in cells.x:

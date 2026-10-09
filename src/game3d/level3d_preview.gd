@@ -426,7 +426,7 @@ func _ready() -> void:
 	if titled:
 		_make_menu()
 		_apply_settings()
-		_show_title()
+		_show_title(0.0, not run_args.has("--no-briefing"))
 		await get_tree().process_frame
 		_slicing = true
 		_slice_from = Time.get_ticks_usec()
@@ -3072,8 +3072,10 @@ func _make_menu() -> void:
 
 # The title screen over the stage, the tree paused under it and its own song
 # playing (Level3DAudio.MUSIC's "title"); out of black over `from_black`
-# seconds, its song coming up with it, if given (the game over's END).
-func _show_title(from_black := 0.0) -> void:
+# seconds, its song coming up with it, if given (the game over's END); or
+# opened on the briefing, the intro (`briefing`: at the start, but for
+# --no-briefing; Level3DTitle.open_briefing).
+func _show_title(from_black := 0.0, briefing := false) -> void:
 	_menu.leave()
 	# From the shop's Escape menu: the run given up there too.
 	if _shop != null:
@@ -3083,6 +3085,8 @@ func _show_title(from_black := 0.0) -> void:
 	if from_black > 0.0:
 		Level3DAudio.fade_in_music(from_black)
 		_title.open_from_black(from_black)
+	elif briefing:
+		_title.open_briefing()
 	else:
 		_title.open()
 

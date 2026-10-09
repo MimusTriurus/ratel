@@ -1516,8 +1516,10 @@ def _tex_mat(name, path, flat=False):
 
 
 def _wood_mat(name, light, dark):
-    """The desk: dark wood, its grain along X."""
+    """The desk: dark wood, its grain along X; `dark` kept for the game,
+    which draws the grain itself (export_intro's extras)."""
     m = _mat(name, light)
+    m["wood_dark"] = list(dark)
     nt = m.node_tree
     tc = nt.nodes.new("ShaderNodeTexCoord")
     wave = nt.nodes.new("ShaderNodeTexWave")
@@ -1655,52 +1657,88 @@ def _glass_mat(name, rgb, alpha):
     return m
 
 
-# The team on the map: a token for each player, the armoured pickup cast in
-# one colour and cut down to its silhouette, on an oval stand -- the first
+# The team on the map: a token for each player, the armoured pickup cut
+# down to its silhouette and without its turret, standing on its wheels on
+# the map -- the first
 # player's in the game's olive, the second's in its blue (Level3DBtr.PAINTS:
-# the olive turned 150 degrees), shown only with two players (PLAYERS).
+# the olive turned 150 degrees), shown only with two players (PLAYERS); its
+# wheels in TOKEN_DARK, its windows TOKEN_GLASS, so that from
+# above it is not olive on olive. An oval stand under it was one more dark mass round it, in
+# which the jeep was lost.
 # Its length nose to tail, metres -- grown with the sheet, as the pins are
 # (PIN_SIZE); each from the landing: x, y and its yaw.
 TOKEN = 0.056 * PIN_SIZE
 TOKEN_PAINTS = ((0x58, 0x66, 0x36), (54, 64, 102))   # PAINT_OLIVE, and it turned
+TOKEN_DARK = (58, 58, 56)
+TOKEN_GLASS = (34, 44, 56)
+TOKEN_CAB = 1.35         # the cab's paint over the body's
 TOKENS_AT = ((-0.04, 0.02, 160.0), (0.042, -0.02, 146.0))
 PLAYERS = "players"      # the scene's property the second token follows
 
 
-def _token(c, name, mat, at, yaw):
-    """A player's token, its nose down -Y at yaw 0 as the glb's: bonnet,
-    the cab with its raked screen, the bed with the turret and its gun over
-    the cab, four wheels -- all on SF1P_Token<n>, an empty at its stand."""
+def _token(c, name, mat, cab, dark, glass, at, yaw):
+    """A player's token, its nose down -Y at yaw 0 as the glb's: the body --
+    bonnet, cab floor, bed; no turret, which hid the cab from above -- the
+    cab on it as a block of its own, narrower, taller than the bed and in
+    `cab`, the paint lighter, so that from above its roof stands out of the
+    body; its raked screen and side windows in `glass`; and four wheels
+    clear of its sides -- all on SF1P_Token<n>, an empty under it. Parts of
+    their own, each drawn round by the game's line: as one profile the cab
+    ran into the bonnet and the bed, and the body's line crossed the wheels
+    in it."""
     k = TOKEN / 0.056
     L, W = TOKEN, 0.03 * k
     root = _empty(c, name, None, at)
     root.rotation_euler = (0, 0, math.radians(yaw))
-    sh = 0.003 * k
-    stand = cyl(c, name + "Stand", mat, 1.0, sh, (0, 0, sh / 2), seg=48)
-    stand.scale = ((W + 0.016 * k) / 2, (L + 0.014 * k) / 2, 1.0)
-    parts = [stand]
-    r = 0.0068 * k
+    parts = []
+
+    def profile(part, width, side, paint):
+        """`side`, (y, z) nose to tail, drawn `width` across."""
+        bm = bmesh.new()
+        face = bm.faces.new([bm.verts.new((-width / 2, y, z)) for y, z in side])
+        out = bmesh.ops.extrude_face_region(bm, geom=[face])
+        bmesh.ops.translate(bm, vec=(width, 0, 0),
+                            verts=[v for v in out["geom"] if isinstance(v, bmesh.types.BMVert)])
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+        bmesh.ops.bevel(bm, geom=bm.edges[:], offset=0.0006 * k, segments=1, affect="EDGES")
+        parts.append(_obj(c, name + part, bm, [paint]))
+
+    def pane(part, corners):
+        """A window: a flat quad on the cab, `corners` in order."""
+        bm = bmesh.new()
+        bm.faces.new([bm.verts.new(v) for v in corners])
+        parts.append(_obj(c, name + part, bm, [glass]))
+
+    # The wheels wholly out of the body's sides: half in, the body's line
+    # along its side ran across them.
+    r, ww = 0.0068 * k, 0.0029 * k
     for i, (x, y) in enumerate(((-1, -1), (1, -1), (-1, 1), (1, 1))):
-        parts.append(cyl(c, "%sWheel%d" % (name, i), mat, r, 0.0058 * k,
-                         (x * (W / 2 - 0.0015 * k), y * 0.018 * k, sh + r), rot=(0, 90, 0), seg=16))
-    # The hull: its side's outline, nose to tail, drawn across its width.
-    z0 = sh + 0.0065 * k
-    side = [(-L / 2, z0), (-L / 2, z0 + 0.009 * k), (-L / 2 + 0.015 * k, z0 + 0.011 * k),
-            (-L / 2 + 0.023 * k, z0 + 0.019 * k), (-L / 2 + 0.035 * k, z0 + 0.019 * k),
-            (-L / 2 + 0.036 * k, z0 + 0.012 * k), (L / 2, z0 + 0.012 * k), (L / 2, z0)]
-    bm = bmesh.new()
-    face = bm.faces.new([bm.verts.new((-W / 2, y, z)) for y, z in side])
-    out = bmesh.ops.extrude_face_region(bm, geom=[face])
-    bmesh.ops.translate(bm, vec=(W, 0, 0), verts=[v for v in out["geom"] if isinstance(v, bmesh.types.BMVert)])
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
-    bmesh.ops.bevel(bm, geom=bm.edges[:], offset=0.0007 * k, segments=1, affect="EDGES")
-    parts.append(_obj(c, name + "Hull", bm, [mat]))
-    # The turret on a post in the bed, its gun forward over the cab's roof.
-    ty, top = 0.016 * k, z0 + 0.024 * k
-    parts.append(cyl(c, name + "Post", mat, 0.0035 * k, top - z0 - 0.012 * k,
-                     (0, ty, (z0 + 0.012 * k + top) / 2), seg=12))
-    parts.append(cyl(c, name + "Turret", mat, 0.006 * k, 0.004 * k, (0, ty, top), seg=16))
-    parts.append(_rod(c, name + "Gun", mat, Vector((0, ty, top)), Vector((0, ty - 0.026 * k, top)), 0.0013 * k, seg=8))
+        parts.append(cyl(c, "%sWheel%d" % (name, i), dark, r, ww,
+                         (x * (W / 2 + ww / 2 + 0.0003 * k), y * 0.018 * k, r), rot=(0, 90, 0), seg=16))
+    # The body: the bonnet, the cab's floor, the bed.
+    z0 = 0.0065 * k
+    y_cab, y_roof, y_back = -L / 2 + 0.015 * k, -L / 2 + 0.023 * k, -L / 2 + 0.036 * k
+    profile("Hull", W, [(-L / 2, z0), (-L / 2, z0 + 0.008 * k), (y_cab, z0 + 0.009 * k), (y_back, z0 + 0.010 * k),
+                        (L / 2, z0 + 0.010 * k), (L / 2, z0)], mat)
+    # The cab on it: up the raked screen to the roof and down its back.
+    wc = W * 0.84
+    z1, zr = z0 + 0.009 * k, z0 + 0.022 * k
+    profile("Cab", wc, [(y_cab, z1 - 0.001 * k), (y_cab, z1), (y_roof, zr), (y_back - 0.001 * k, zr),
+                        (y_back, z1 + 0.001 * k), (y_back, z1 - 0.001 * k)], cab)
+    # Its glass: the screen on the rake and a window a side, a hair proud.
+    e, h = 0.0012 * k, 0.0003
+    run = Vector((0, y_roof - y_cab, zr - z1)).normalized()
+    out = Vector((0, -run.z, run.y)) * h
+    a = Vector((0, y_cab, z1)) + run * e
+    b = Vector((0, y_roof, zr)) - run * e
+    x = wc / 2 - e
+    pane("Screen", [a + out + Vector((-x, 0, 0)), a + out + Vector((x, 0, 0)),
+                    b + out + Vector((x, 0, 0)), b + out + Vector((-x, 0, 0))])
+    for sign, part in ((-1, "WindowL"), (1, "WindowR")):
+        xs = sign * (wc / 2 + h)
+        ya, yb = y_roof + 0.0015 * k, y_back - 0.0025 * k
+        za, zb = z1 + 0.0025 * k, zr - 0.0015 * k
+        pane(part, [(xs, ya, za), (xs, yb, za), (xs, yb, zb), (xs, ya, zb)])
     for o in parts:
         o.parent = root
     return root
@@ -1983,13 +2021,10 @@ def _hangar(c):
         drum=_mat("SF1H_Drum", _srgb(90, 60, 40)),
         bench=_mat("SF1H_Bench", _srgb(80, 70, 56)),
     )
-    # The table under the desk's top: four legs and an apron.
+    # The table under the desk's top: four legs. No rail between them: seen
+    # from over the table it stood out under the top in steps.
     for k, (x, y) in enumerate(((-1.38, -0.88), (1.38, -0.88), (-1.38, 0.88), (1.38, 0.88))):
         box(c, "SF1H_TableLeg%d" % k, M["leg"], (0.08, 0.08, -F - 0.06), (x, y, (F - 0.06) / 2))
-    box(c, "SF1H_ApronX0", M["leg"], (2.7, 0.04, 0.12), (0, -0.9, -0.12))
-    box(c, "SF1H_ApronX1", M["leg"], (2.7, 0.04, 0.12), (0, 0.9, -0.12))
-    box(c, "SF1H_ApronY0", M["leg"], (0.04, 1.7, 0.12), (-1.4, 0, -0.12))
-    box(c, "SF1H_ApronY1", M["leg"], (0.04, 1.7, 0.12), (1.4, 0, -0.12))
     box(c, "SF1H_Floor", M["floor"], (W + 2, y1 - y0, 0.1), (0, (y0 + y1) / 2, F - 0.05))
     # The vault: one sheet of the circle's segment from floor to floor, its
     # faces turned in; arched ribs along it, closer where the corrugation
@@ -2387,7 +2422,14 @@ def build_intro_01_3d(dawn=0.0):
         junta=_tex_mat("SF1P_JuntaFlag", PAINT_FLAG, flat=True),
         token1=_mat("SF1P_Token1", _srgb(*TOKEN_PAINTS[0])),
         token2=_mat("SF1P_Token2", _srgb(*TOKEN_PAINTS[1])),
+        cab1=_mat("SF1P_Token1Cab", _srgb(*(min(255, round(v * TOKEN_CAB)) for v in TOKEN_PAINTS[0]))),
+        cab2=_mat("SF1P_Token2Cab", _srgb(*(min(255, round(v * TOKEN_CAB)) for v in TOKEN_PAINTS[1]))),
+        token_dark=_mat("SF1P_TokenDark", _srgb(*TOKEN_DARK)),
+        token_glass=_mat("SF1P_TokenGlass", _srgb(*TOKEN_GLASS)),
     )
+    # The desk's top, square: the game draws a line along its edges
+    # (Level3DBriefing.CREASED); a chamfer caught the lamp and the fill in
+    # patches.
     box(c, "SF1P_Desk", M["desk"], (3.0, 2.0, 0.06), (0, 0, -0.03))
     _painted_sheet(c)
     # The pins: a red flag on each stage, the junta's black one with its
@@ -2400,7 +2442,8 @@ def build_intro_01_3d(dawn=0.0):
     # with two (PLAYERS).
     land = _uv_world(*STAGES[0], 0.002)
     for n, (x, y, yaw) in enumerate(TOKENS_AT, 1):
-        _token(c, "SF1P_Token%d" % n, M["token%d" % n], land + Vector((x, y, 0.0)), yaw)
+        _token(c, "SF1P_Token%d" % n, M["token%d" % n], M["cab%d" % n], M["token_dark"], M["token_glass"],
+               land + Vector((x, y, 0.0)), yaw)
     # The mug on the sea by the map's left edge, holding it down: a thick
     # lip, coffee in it, the handle to the left.
     mug = _uv_world(0.07, 0.33, 0.002)
@@ -2505,9 +2548,19 @@ ID_STEP = 0.001          # the passport photographs' pitch in the pile: each is 
 LAND = dict(folder=(0.92, -0.36, -6), tanks=(0.66, 0.40, -8), vassar=(0.57, 0.27, 7), ids=(0.30, -0.36, 0),
             hostages=(-0.28, -0.49, 4), clipping=(1.15, 0.1, 14), contract=(0.0, 0.0, -4),
             team=(-0.04, -0.34, 8))
+# How high each card out of the folder lies (its middle), over what is
+# under it; the folder's own on the desk, and its cover's hinge open.
+LAND_Z = dict(tanks=0.0045, vassar=0.0057, hostages=0.0045, clipping=0.0035, contract=0.0085, team=0.0102)
+FOLDER_REST = 0.003
+FOLDER_DOWN = 0.0036
 # The camera's keys: (time, where, looking at, lens); a key held twice is a
 # hold, the moves between them eased.
-_TABLE = ((0.0, -1.18 * MAP_W / 1.2, 0.78 * MAP_W / 1.2), (0.0, -0.02 * MAP_W / 1.2, 0.0), 40.0)
+# The opening shot: the table the whole frame, from in front of the lamp
+# and steeply down, the lamp's shade over the top of it. Level with the
+# table, as the still's camera is, the top of the frame was the hangar
+# beyond it, its floor blue in the moon through the door -- read as a cold
+# light on the table before anything had happened.
+_TABLE = ((0.0, -1.6, 2.0), (0.0, -0.38, 0.0), 26.0)
 _SHOTS = dict(
     push=((-0.6, -1.75, 0.75), (-0.75, -0.6, 0.0), 36.0),
     right=((1.15, -1.55, 1.25), (0.74, 0.0, 0.0), 34.0),
@@ -2525,9 +2578,29 @@ INTRO_CAMERA = [(0.0, _TABLE), (6.3, _SHOTS["push"]), (7.6, _SHOTS["right"]), (9
                 (15.6, _SHOTS["capital"]), (21.3, _SHOTS["capital"]), (22.6, _SHOTS["ids"]), (29.3, _SHOTS["ids"]),
                 (30.6, _SHOTS["hostages"]), (36.3, _SHOTS["hostages"]), (37.6, _SHOTS["clipping"]),
                 (43.3, _SHOTS["clipping"]), (44.6, _SHOTS["contract"]), (51.3, _SHOTS["contract"]),
-                (52.6, _SHOTS["team"]), (57.0, _SHOTS["team"]), (60.0, _SHOTS["rise"]), (63.5, _title_camera()),
+                (52.6, _SHOTS["team"]), (57.0, _SHOTS["team"]), (63.5, _title_camera()),
                 (INTRO_END, _title_camera())]
-INTRO_DAWN = (58.0, 62.5)        # daylight from 0 to 1 while the camera leaves the table
+# The way out, from the team's shot to the title's (INTRO_CAMERA's keys at
+# either end): up off the table under the lamp and out of the door, one
+# move -- a cubic Bezier from the one camera to the other, its controls
+# EXIT_UP (straight up from the team's shot, so that it rises first) and
+# EXIT_IN (back from the door's, so that it comes in level), the time
+# spread over its length by smootherstep, so that it gathers speed and
+# sheds it with no kink; the point looked at on a Bezier of its own through
+# the rise's (EXIT_LOOK), the lens eased with it; keyed every frame
+# (_exit_flight). The rise's point a key of its own, the camera crept up
+# off the table for three seconds, then lurched for the door at ten times
+# the speed, the lens widening as it went; a curve through it overshot,
+# backing away from the door before it went for it.
+INTRO_EXIT = (57.0, 63.5)
+EXIT_UP = Vector((0.0, -0.6, 1.25))
+EXIT_IN = Vector((0.0, 6.0, 0.6))
+EXIT_LOOK = Vector(_SHOTS["rise"][1])
+# The daylight from 0 to 1 while the camera is still over the team's
+# photograph, the door out of the shot: the dawn is there when it turns to
+# the door. Coming up as the camera flew to the door, the light in it went
+# from the moon's blue through grey to the sun's red on the screen.
+INTRO_DAWN = (52.0, 57.5)
 # The telephone: rings of 0.4 s, two to a ring, three rings.
 INTRO_RINGS = ((0.4, 0.8), (1.0, 1.4), (2.6, 3.0), (3.2, 3.6), (4.8, 5.2), (5.4, 5.8))
 
@@ -2667,6 +2740,33 @@ def _pop(o, t):
     _key(o, f, scale=own, interp="CONSTANT")
 
 
+# The dossier: what Arden Mutual sends is in its folder from the first --
+# all but the passport photographs, whose pile under its clip is too thick
+# for the cover -- stacked on the folder's own sheets (FOLDER_FLOOR their
+# top) FOLDER_PITCH apart, bottom up FOLDER_CARDS, so that each comes off
+# the top in its turn; the photographs turned across to fit (FOLDER_TURNED),
+# each a little out of true (FOLDER_SKEW: x y, yaw). The cover over the
+# stack (FOLDER_COVER) comes down to the desk as it opens. Dropped in from
+# over the lamp one by one, eight cards fell the same way; the first
+# photograph, wider than the folder, was put on it from nowhere.
+FOLDER_CARDS = ("Team", "Contract", "Clipping", "Hostages", "Vassar", "Tanks")
+FOLDER_FLOOR = 0.0029
+FOLDER_PITCH = 0.0012
+FOLDER_COVER = FOLDER_FLOOR + FOLDER_PITCH * len(FOLDER_CARDS) + 0.0003
+FOLDER_TURNED = -90.0
+FOLDER_SKEW = (0.004, 1.5)
+# Out of the folder: over its far edge (+y in its terms, FOLDER_MOUTH past
+# it), up over the desk's things (CARD_LIFT pulls the curve up over its
+# place) and down into its place -- a cubic Bezier, keyed every frame, the
+# time spread over its length by smootherstep (CARD_TIME: seconds, and
+# seconds a metre more), turning for its place once it is on its way
+# (CARD_TURN_FROM of the way).
+FOLDER_MOUTH = 0.02
+CARD_LIFT = 0.3
+CARD_TIME = (0.6, 0.6)
+CARD_TURN_FROM = 0.15
+
+
 def _folder(c, A):
     """Arden Mutual's folder: its back with the tab, the sheets in it, the
     cover on a hinge down its left edge (SF1A_FolderHinge)."""
@@ -2677,13 +2777,56 @@ def _folder(c, A):
     for k in range(3):
         box(c, "SF1A_FolderSheet%d" % k, A["paper"], (w - 0.03, h - 0.03, 0.0004),
             (0.004 * k, -0.003 * k, 0.0017 + 0.0005 * k), rot=(0, 0, 1.5 * k - 1)).parent = root
-    hinge = _empty(c, "SF1A_FolderHinge", root, (-w / 2, 0, 0.0036))
+    hinge = _empty(c, "SF1A_FolderHinge", root, (-w / 2, 0, FOLDER_COVER))
     box(c, "SF1A_FolderCover", A["manila"], (w, h, 0.0012), (w / 2, 0, 0.0006)).parent = hinge
     _words(c, "SF1A_FolderName", A["ink_print"], "ARDEN MUTUAL", 0.03, A["print"], (w / 2, 0.15, 0.00125), hinge)
     _words(c, "SF1A_FolderStamp", A["stamp"], "CONFIDENTIAL", 0.032, A["print"], (w / 2, -0.04, 0.00125), hinge,
            rot_z=9)
     _words(c, "SF1A_FolderFile", A["ink_print"], "FILE 87/SAH/041", 0.014, A["print"], (w / 2, -0.17, 0.00125), hinge)
     return root, hinge
+
+
+FOLDER_W, FOLDER_H = 0.32, 0.44
+
+
+def _in_folder(card, k, turned, rnd):
+    """`card` in the folder, k-th up the stack: its place and yaw there."""
+    d, a = FOLDER_SKEW
+    at = Vector((rnd.uniform(-d, d), rnd.uniform(-d, d), FOLDER_FLOOR + 0.0004 + FOLDER_PITCH * k))
+    yaw = turned + rnd.uniform(-a, a)
+    _key(card, 1, at, (0, 0, math.radians(yaw)), interp="CONSTANT")
+    return at, yaw
+
+
+def _from_folder(card, start, turned, reach, place, t):
+    """`card`, in the folder at `start` turned `turned`, out of it from `t`
+    and into `place` (x y z yaw on the desk) -- FOLDER_MOUTH, CARD_*; in
+    the folder's terms, which is where it rests. `reach`: half its length
+    along the folder. Returns when it is down."""
+    fx, fy, fyaw = LAND["folder"]
+    x, y, z, yaw = place
+    rest = Matrix.Rotation(math.radians(-fyaw), 3, "Z") @ Vector((x - fx, y - fy, z - FOLDER_REST))
+    out = Vector((start.x, FOLDER_H / 2 + reach + FOLDER_MOUTH, start.z + 0.004))
+    pts = (start, out, rest + Vector((0, 0, CARD_LIFT)), rest)
+    n = 600
+    path = [_bezier(pts, k / n) for k in range(n + 1)]
+    run = [0.0]
+    for a, b in zip(path, path[1:]):
+        run.append(run[-1] + (b - a).length)
+    end = t + CARD_TIME[0] + CARD_TIME[1] * run[-1]
+    f0, f1 = _f(t), _f(end)
+    to = yaw - fyaw
+    for f in range(f0, f1 + 1):
+        u = (f - f0) / (f1 - f0)
+        e = u * u * u * (u * (6 * u - 15) + 10)
+        want = e * run[-1]
+        i = min(max(next((k for k, r in enumerate(run) if r >= want), len(run) - 1), 1), len(run) - 1)
+        k = (want - run[i - 1]) / max(run[i] - run[i - 1], 1e-9)
+        v = min(max((e - CARD_TURN_FROM) / (1 - CARD_TURN_FROM), 0.0), 1.0)
+        v = v * v * (3 - 2 * v)
+        _key(card, f, path[i - 1].lerp(path[i], k), (0, 0, math.radians(turned + (to - turned) * v)),
+             interp="LINEAR")
+    return end
 
 
 def _id_photos(c, A, n=8):
@@ -2793,7 +2936,44 @@ def _intro_camera(c, sc):
         _key(look, float(t), loc=to)
         cam.data.lens = lens
         cam.data.keyframe_insert("lens", frame=_f(t))
+    _exit_flight(cam, look)
     return cam
+
+
+def _bezier(points, u):
+    """The Bezier of `points` (any number) at `u`, de Casteljau."""
+    pts = list(points)
+    while len(pts) > 1:
+        pts = [a.lerp(b, u) for a, b in zip(pts, pts[1:])]
+    return pts[0]
+
+
+def _exit_flight(cam, look):
+    """INTRO_EXIT keyed frame by frame, linear between."""
+    t0, t1 = INTRO_EXIT
+    team, title = _SHOTS["team"], _title_camera()
+    n = 2000
+    path = [_bezier((Vector(team[0]), EXIT_UP, EXIT_IN, Vector(title[0])), k / n) for k in range(n + 1)]
+    aims = [_bezier((Vector(team[1]), EXIT_LOOK, Vector(title[1])), k / n) for k in range(n + 1)]
+    run = [0.0]
+    for a, b in zip(path, path[1:]):
+        run.append(run[-1] + (b - a).length)
+    fov0, fov1 = (2 * math.atan(18.0 / shot[2]) for shot in (team, title))
+    f0, f1 = _f(t0), _f(t1)
+    for f in range(f0, f1 + 1):
+        x = (f - f0) / (f1 - f0)
+        e = x * x * x * (x * (6 * x - 15) + 10)
+        want = e * run[-1]
+        i = min(max(next((k for k, r in enumerate(run) if r >= want), len(run) - 1), 1), len(run) - 1)
+        k = (want - run[i - 1]) / max(run[i] - run[i - 1], 1e-9)
+        _key(cam, f, loc=path[i - 1].lerp(path[i], k), interp="LINEAR")
+        _key(look, f, loc=aims[i - 1].lerp(aims[i], k), interp="LINEAR")
+        cam.data.lens = 18.0 / math.tan((fov0 + (fov1 - fov0) * e) / 2)
+        cam.data.keyframe_insert("lens", frame=f)
+    for fc in _fcurves(cam.data):
+        for kp in fc.keyframe_points:
+            if f0 <= kp.co.x <= f1:
+                kp.interpolation = "LINEAR"
 
 
 def build_intro_animatic(c, sc):
@@ -2827,32 +3007,43 @@ def build_intro_animatic(c, sc):
                  (-0.98, -0.7, 0.0032), sheet, rot_z=-3)
     _pop(cap, 4.6)
     _ring_phone(sc)
-    # 2. The folder falls, opens; the first photograph slides out of it on
-    # to the capital.
+    # 2. The folder falls, the dossier in it (FOLDER_CARDS), and opens;
+    # the first photograph comes off the top of it on to the capital.
     t = starts["2"]
     folder, hinge = _folder(c, A)
-    x, y, yaw = LAND["folder"]
-    _drop(folder, (x, y), 0.003, yaw, t + 0.7)
+    fx, fy, fyaw = LAND["folder"]
+    _drop(folder, (fx, fy), FOLDER_REST, fyaw, t + 0.7)
     _key(hinge, t + 2.0, rot=(0, 0, 0))
-    _key(hinge, t + 2.7, rot=(0, math.radians(-180), 0))
-    tanks, cap = _photo(c, A, "Tanks", "Coup. One night.", 2)
-    x, y, yaw = LAND["tanks"]
-    at = Vector((LAND["folder"][0], LAND["folder"][1], 0.0075))
-    to = Vector((x, y, 0.0045))
-    clear = at.lerp(to, 0.8)
-    clear.z = at.z
-    f = _f(t + 2.9)
-    _key(tanks, f - 1, at + Vector((0, 0, HIDE_Z)), (0, 0, math.radians(LAND["folder"][2])), interp="CONSTANT")
-    _key(tanks, f, at, (0, 0, math.radians(LAND["folder"][2])), interp="LINEAR")
-    _key(tanks, f + 17, clear, (0, 0, math.radians(LAND["folder"][2] + 0.8 * (yaw - LAND["folder"][2]))))
-    _key(tanks, f + 26, to, (0, 0, math.radians(yaw)))
-    _pop(cap, t + 4.6)
+    _key(hinge, t + 2.35, loc=(-FOLDER_W / 2, 0, FOLDER_COVER))
+    _key(hinge, t + 2.7, loc=(-FOLDER_W / 2, 0, FOLDER_DOWN), rot=(0, math.radians(-180), 0))
+    rnd = random.Random(87)
+    cards = dict(
+        Tanks=_photo(c, A, "Tanks", "Coup. One night.", 2),
+        Vassar=_photo(c, A, "Vassar", 'Gen. Tarek Vassar\n"the Mamba"', 3, size=0.026),
+        Hostages=_photo(c, A, "Hostages", "Ashra checkpoint.\n3 days ago.", 5, size=0.026),
+        Clipping=_clipping(c, A),
+        Contract=_contract(c, A),
+        Team=_photo(c, A, "Team", "They don't do peace talks.", 8, size=0.026),
+    )
+    held = {}
+    for k, name in enumerate(FOLDER_CARDS):
+        card = cards[name][0]
+        card.parent = folder
+        photo = name not in ("Clipping", "Contract")
+        reach = PHOTO_W / 2 if photo else bpy.data.objects[card.name + "Paper"].dimensions.y / 2
+        held[name] = _in_folder(card, k, FOLDER_TURNED if photo else 0.0, rnd) + (reach,)
+
+    def out(name, t):
+        at, yaw, reach = held[name]
+        return _from_folder(cards[name][0], at, yaw, reach, LAND[name.lower()][:2] + (LAND_Z[name.lower()],
+                            LAND[name.lower()][2]), t)
+
+    out("Tanks", t + 2.8)
+    _pop(cards["Tanks"][1], t + 4.6)
     # 3. Vassar at the tribune, on the capital, over the tanks.
     t = starts["3"]
-    vassar, cap = _photo(c, A, "Vassar", 'Gen. Tarek Vassar\n"the Mamba"', 3, size=0.026)
-    x, y, yaw = LAND["vassar"]
-    _drop(vassar, (x, y), 0.0057, yaw, t + 0.8, come=(-0.3, 1.0))
-    _pop(cap, t + 2.8)
+    out("Vassar", t + 0.5)
+    _pop(cards["Vassar"][1], t + 2.8)
     # 4. The passport photographs under their clip, fanned out; 41 on the tag.
     t = starts["4"]
     ids, count = _id_photos(c, A)
@@ -2865,30 +3056,22 @@ def build_intro_animatic(c, sc):
     _pop(count, t + 4.2)
     # 5. The hostages led to the truck, by the checkpoint.
     t = starts["5"]
-    hostages, cap = _photo(c, A, "Hostages", "Ashra checkpoint.\n3 days ago.", 5, size=0.026)
-    x, y, yaw = LAND["hostages"]
-    _drop(hostages, (x, y), 0.0045, yaw, t + 0.8, come=(-0.2, 1.0))
-    _pop(cap, t + 2.8)
+    out("Hostages", t + 0.5)
+    _pop(cards["Hostages"][1], t + 2.8)
     # 6. The clipping at the sheet's right edge; across it: No one's coming.
     t = starts["6"]
-    clipping, cap = _clipping(c, A)
-    x, y, yaw = LAND["clipping"]
-    _drop(clipping, (x, y), 0.0035, yaw, t + 0.8, come=(-0.4, 1.0))
-    _pop(cap, t + 3.0)
+    out("Clipping", t + 0.5)
+    _pop(cards["Clipping"][1], t + 3.0)
     # 7. The contract in the middle, over everything; the rate ringed.
     t = starts["7"]
-    contract, ring, cap = _contract(c, A)
-    x, y, yaw = LAND["contract"]
-    _drop(contract, (x, y), 0.0085, yaw, t + 0.8, spin=-15)
-    _pop(ring, t + 3.0)
-    _pop(cap, t + 3.8)
+    out("Contract", t + 0.5)
+    _pop(cards["Contract"][1], t + 3.0)
+    _pop(cards["Contract"][2], t + 3.8)
     # 8. The team at the pickups, over the contract; then the camera leaves
     # the table for the door and the dawn.
     t = starts["8"]
-    team, cap = _photo(c, A, "Team", "They don't do peace talks.", 8, size=0.026)
-    x, y, yaw = LAND["team"]
-    _drop(team, (x, y), 0.0102, yaw, t + 0.7, come=(0.3, 1.0))
-    _pop(cap, t + 2.6)
+    out("Team", t + 0.5)
+    _pop(cards["Team"][1], t + 2.6)
     sc.render.fps = FPS
     sc.frame_start, sc.frame_end = 1, _f(INTRO_END)
     return _intro_camera(c, sc)
@@ -2908,7 +3091,9 @@ def intro_overlaps(sc):
     units = {}
     for r in [o for o in sc.objects if o.name.startswith("SF1A_") and o.parent is None and o.type == "EMPTY"]:
         taken = set()
-        for sub in [o for o in r.children_recursive if o.name.startswith(("SF1A_IDPivot", "SF1A_FolderHinge"))]:
+        for sub in [o for o in r.children_recursive
+                    if o.name.startswith(("SF1A_IDPivot", "SF1A_FolderHinge"))
+                    or o.name in ["SF1A_" + n for n in FOLDER_CARDS]]:
             ms = [o for o in tree(sub) if o.type == "MESH"]
             units[sub.name] = (r.name, ms)
             taken |= {o.name for o in ms}
@@ -2937,7 +3122,7 @@ def intro_overlaps(sc):
     here = sc.frame_current
     sc.frame_set(sc.frame_start)
     props = {o.name: bvh([o]) for o in sc.objects if o.type in ("MESH", "CURVE") and o.name not in carded
-             and not o.name.startswith("SF1H_") and on_desk(o)}
+             and not o.name.startswith("SF1H_") and o.visible_get() and on_desk(o)}
     prev, cache, hits = {}, {}, {}
     for f in range(sc.frame_start, sc.frame_end + 1):
         sc.frame_set(f)
@@ -2975,9 +3160,15 @@ def intro_overlaps(sc):
 
 
 def intro_dawn(sc):
-    """daylight keyed: the night till the camera leaves the table, the dawn
-    by the time it looks out of the door."""
+    """daylight keyed (INTRO_DAWN): the night, and the dawn come by the time
+    the camera turns to the door."""
     t0, t1 = INTRO_DAWN
+    # The keys of a build before go, or they are keyed over.
+    ad = sc.animation_data
+    if ad and ad.action:
+        for fc in list(_fcurves(sc)):
+            if fc.data_path == '["%s"]' % DAYLIGHT:
+                fc.keyframe_points.clear()
     for t, v in ((t0, 0.0), (t1, 1.0)):
         sc[DAYLIGHT] = v
         sc.keyframe_insert('["%s"]' % DAYLIGHT, frame=_f(t))
@@ -2997,6 +3188,159 @@ def render_frame(n, path, percent=100, samples=32):
     sc.eevee.taa_render_samples = samples
     sc.render.filepath = bpy.path.abspath(path)
     bpy.ops.render.render(scene=sc.name, write_still=True)
+
+
+
+# ---------------------------------------------------------------------------
+# The intro for the game (docs/story/frames.md, "В движке"): the briefing
+# table, the hangar and the cards with their falls and captions as a glb,
+# and the camera's way and the dawn as a track beside it -- played in the
+# title's own world (Level3DIntro, src/game3d/ui/level3d_intro.gd), which is
+# what is beyond the door, so that what is _outside() here is left out.
+#
+# Both in the title's terms: Godot's metres, y up, its origin TITLE_AT.
+# The glb's own axes are the glTF exporter's (x, z, -y), so the game puts
+# it at -TITLE_AT in those; the track's every frame (FPS) is the camera's
+# place, its turn as a quaternion, its field of view across the frame's
+# width (degrees) and the daylight then -- baked, the camera's Track-To
+# and its eased keys done here and not again in the game; with it where
+# the blend's origin is (the glb's), the hangar's door (Level3DSplash3D.
+# HANGAR_DOOR), when the camera leaves the table (leave, INTRO_EXIT) and
+# when it has come to the title's shot (arrive).
+#
+# The paints go plain: each material its base colour or the image feeding
+# it, toon() and the photographs' grey undone (the game draws both), and
+# what the game must know of it in its extras -- wood (its grain drawn
+# by the game, from its colour to wood_dark), flat (not lit), glass
+# (see-through, this opaque, glowing its tint), photo (a
+# painted frame, grey in the game), sheet (the map: the game lays its
+# print and pencil from resources/3d/story/ itself, not packed in).
+INTRO_GLB = "//story/briefing_intro.glb"
+INTRO_TRACK = "//story/briefing_intro.json"
+_TO_GODOT = Matrix(((1, 0, 0), (0, 0, 1), (0, -1, 0)))
+
+
+def _godot_point(v):
+    return _TO_GODOT @ (Vector(v) - TITLE_AT)
+
+
+def _plain_paint(m):
+    """`m` as one Principled BSDF: the image that fed its colour, or its own
+    colour; the extras the game reads."""
+    nt = m.node_tree
+    image = None
+    for name in ("SF_Photo", "SF_Tex"):
+        n = nt.nodes.get(name)
+        if n is not None and n.image is not None:
+            image = n.image
+            break
+    m["photo"] = nt.nodes.get("SF_Photo") is not None
+    m["sheet"] = m.name == "SF1P_Map"
+    m["vcol"] = any(n.type == "ATTRIBUTE" for n in nt.nodes)
+    m["wood"] = "wood_dark" in m
+    m["flat"] = bool(m.get("flat", False))
+    colour = tuple(m.diffuse_color)
+    alpha = 1.0
+    if not any(n.type == "BSDF_PRINCIPLED" for n in nt.nodes):
+        # The loupe's glass (_glass_mat): its tint, see-through.
+        em = next((n for n in nt.nodes if n.type == "EMISSION"), None)
+        mix = next((n for n in nt.nodes if n.type == "MIX_SHADER"), None)
+        if em is not None:
+            colour = tuple(em.inputs["Color"].default_value)
+        if mix is not None:
+            alpha = mix.inputs[0].default_value
+    for n in list(nt.nodes):
+        nt.nodes.remove(n)
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    b = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    b.inputs["Base Color"].default_value = (*colour[:3], 1.0)
+    b.inputs["Roughness"].default_value = 1.0
+    b.inputs["Alpha"].default_value = alpha
+    m["glass"] = alpha if alpha < 1.0 else 0.0
+    nt.links.new(b.outputs[0], out.inputs["Surface"])
+    if image is not None and not m["sheet"]:
+        tex = nt.nodes.new("ShaderNodeTexImage")
+        tex.image, tex.extension = image, "EXTEND"
+        nt.links.new(tex.outputs["Color"], b.inputs["Base Color"])
+    if m["vcol"]:
+        a = nt.nodes.new("ShaderNodeVertexColor")
+        nt.links.new(a.outputs["Color"], b.inputs["Base Color"])
+    if alpha < 1.0 and hasattr(m, "surface_render_method"):
+        m.surface_render_method = "BLENDED"
+
+
+def intro_track(sc):
+    """The camera's way and the daylight, frame by frame (INTRO_TRACK)."""
+    cam = sc.objects[sc.name + "_Animatic"]
+    frames = []
+    for f in range(sc.frame_start, sc.frame_end + 1):
+        sc.frame_set(f)
+        m = cam.matrix_world
+        at = _godot_point(m.translation)
+        q = (_TO_GODOT @ m.to_3x3().normalized()).to_quaternion()
+        fov = math.degrees(2 * math.atan(cam.data.sensor_width / 2 / cam.data.lens))
+        frames.append([round(v, 5) for v in (*at, q.x, q.y, q.z, q.w, fov, sc.get(DAYLIGHT, 0.0))])
+    # When the camera is on the title's own shot to stay: the title's to
+    # take over from then.
+    last = len(frames) - 1
+    while last > 0 and all(abs(a - b) < 1e-4 for a, b in zip(frames[last - 1][:8], frames[-1][:8])):
+        last -= 1
+    return dict(fps=FPS, end=INTRO_END, arrive=last / FPS, leave=INTRO_EXIT[0],
+                origin=[round(v, 5) for v in _godot_point((0, 0, 0))],
+                door=round(_godot_point((0, HANGAR_Y[1], HANGAR_FLOOR)).z, 5),
+                cards=[[t, name] for t, name in INTRO_CARDS], rings=[list(r) for r in INTRO_RINGS],
+                frames=frames)
+
+
+def export_intro(glb=INTRO_GLB, track=INTRO_TRACK):
+    """The briefing table for the game: the scene as built, cut down to
+    what the game draws itself -- not saved; run it on a blend you will not
+    save, or headless (--export)."""
+    import json
+    sc = bpy.data.scenes["Intro_01_3D"]
+    data = intro_track(sc)
+    with open(bpy.path.abspath(track), "w", encoding="utf-8", newline="\n") as f:
+        json.dump(data, f, separators=(",", ":"))
+        f.write("\n")
+    # What the title's world has of its own, and the cameras: out.
+    drop = [o for o in sc.objects if o.get("outside") or o.type == "CAMERA" or o.name in (
+        "SF1H_Sun", sc.name + "_AnimaticLook")]
+    for o in drop:
+        bpy.data.objects.remove(o, do_unlink=True)
+    # What casts no shadow -- the lamp's shade and bulb round its light, the
+    # loupe's glass -- says so in its extras (the second token's is its
+    # driver's; the game hides it whole).
+    for o in sc.objects:
+        o["cast"] = bool(o.visible_shadow)
+    # The drivers are the daylight's and the second token's, the game's now.
+    for idb in [*sc.objects, *bpy.data.materials, *bpy.data.node_groups, *bpy.data.lights]:
+        ad = getattr(idb, "animation_data", None)
+        nt = getattr(idb, "node_tree", None)
+        for a in [x for x in (ad, nt and nt.animation_data) if x]:
+            for d in list(a.drivers):
+                a.drivers.remove(d)
+    mats = {s.material for o in sc.objects for s in getattr(o, "material_slots", []) if s.material}
+    for m in mats:
+        if m.use_nodes:
+            _plain_paint(m)
+    # A caption popping up from nothing (_pop) from next to nothing: a
+    # scale of 0 is a turn no importer can read.
+    for o in sc.objects:
+        for fc in _fcurves(o):
+            if fc.data_path == "scale":
+                for kp in fc.keyframe_points:
+                    kp.co.y = max(kp.co.y, 1e-4)
+    # Its nodes' rest as at the end, everything laid down: at the start
+    # the captions are scaled to nothing, which no rotation can be read from.
+    sc.frame_set(sc.frame_end)
+    with bpy.context.temp_override(scene=sc):
+        bpy.ops.export_scene.gltf(
+            filepath=bpy.path.abspath(glb), export_format="GLB", use_active_scene=True,
+            export_extras=True, export_lights=True, export_cameras=False, export_apply=True,
+            export_animations=True, export_animation_mode="SCENE", export_anim_scene_split_object=False, export_force_sampling=True,
+            export_frame_range=True, export_anim_single_armature=False, export_vertex_color="ACTIVE",
+            export_image_format="AUTO", export_yup=True)
+    return data
 
 
 # The text block each blend keeps in place of this file (LOADER_TEXT):
@@ -3026,3 +3370,5 @@ if __name__ == "__main__" and "--" in sys.argv:
         if "--save" in _args:
             install_loader()
             bpy.ops.wm.save_mainfile()
+    if "--export" in _args:
+        export_intro()

@@ -118,13 +118,18 @@ static func is_hull(material: Material) -> bool:
 
 
 # Gives `instance` the engine's hull in place of its baked one, if it has
-# one, as wide as `kind`'s.
-static func apply(instance: MeshInstance3D, kind := Kind.STAGE) -> void:
+# one, as wide as `kind`'s. `whole`: a hull round all of it though it has
+# none baked -- a model with no Solidify, the briefing table's
+# (Level3DBriefing); nothing is bare on it. `edged`: the lines along its
+# sharp edges as well (Level3DCreases), as --engine-creases gives every
+# model -- the briefing's desk, whose edge between its top and its sides
+# is inside its outline.
+static func apply(instance: MeshInstance3D, kind := Kind.STAGE, whole := false, edged := false) -> void:
 	var mesh := instance.mesh as ArrayMesh
 	if mesh == null:
 		return
 	if not _made.has(mesh):
-		_made[mesh] = _rebuild(mesh)
+		_made[mesh] = _rebuild(mesh, whole, edged)
 	instance.mesh = _made[mesh]
 	# The stage's is the mesh's own. Nor does it undo another's: the
 	# cemetery's guard is given the people's and then put in the preview's
@@ -136,7 +141,7 @@ static func apply(instance: MeshInstance3D, kind := Kind.STAGE) -> void:
 			instance.set_surface_override_material(surface, material(kind))
 
 
-static func _rebuild(mesh: ArrayMesh) -> ArrayMesh:
+static func _rebuild(mesh: ArrayMesh, whole := false, edged := false) -> ArrayMesh:
 	var baked := -1
 	for surface in mesh.get_surface_count():
 		var material := mesh.surface_get_material(surface)
@@ -146,14 +151,15 @@ static func _rebuild(mesh: ArrayMesh) -> ArrayMesh:
 			return mesh
 		if material != null and material.resource_name.ends_with("Contour"):
 			baked = surface
-	if baked < 0 or mesh.get_blend_shape_count() > 0:
+	if baked < 0 and not whole or mesh.get_blend_shape_count() > 0:
 		return mesh  # nothing baked to replace; no model has blend shapes
 	# Where the shell lies on the part rather than round it: what is bare.
 	var kept_in := {}
-	for p in mesh.surface_get_arrays(baked)[Mesh.ARRAY_VERTEX] as PackedVector3Array:
-		kept_in[_key(p)] = true
 	var out := mesh.duplicate() as ArrayMesh
-	out.surface_remove(baked)
+	if baked >= 0:
+		for p in mesh.surface_get_arrays(baked)[Mesh.ARRAY_VERTEX] as PackedVector3Array:
+			kept_in[_key(p)] = true
+		out.surface_remove(baked)
 	if not drawn:
 		return out
 	var positions := PackedVector3Array()
@@ -230,7 +236,7 @@ static func _rebuild(mesh: ArrayMesh) -> ArrayMesh:
 		hull[Mesh.ARRAY_WEIGHTS] = weights
 	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, hull)
 	out.surface_set_material(out.get_surface_count() - 1, material())
-	if creases:
+	if creases or edged:
 		Level3DCreases.add_to(out, positions, flat, indices, black, bare,
 				aabb.get_longest_axis_size() * REACH, bones if skinned else PackedInt32Array(), weights)
 	return out
