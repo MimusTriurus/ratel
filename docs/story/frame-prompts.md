@@ -60,8 +60,10 @@ photo», остальное то же.
 
 ### Карта на столе
 
-Бывший кадр 1. Уже собрана в 3D (`jackal_intro_01_3d.blend`). На стол
-добавляется телефон: чёрный дисковый, справа под лампой.
+Бывший кадр 1. Уже собрана в 3D (`jackal_intro_01_3d.blend`). На столе
+телефон: чёрный дисковый, за картой слева вверху, под лампой, в стороне от
+флажка столицы (`SF1P_Phone`, `_phone()` в `jackal_story_frames.py` этого
+blend'а).
 
 > A large paper military map of a fictional desert country, unrolled on a
 > dark wooden desk at night, under a single warm desk lamp out of frame on
